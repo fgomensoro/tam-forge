@@ -1,6 +1,6 @@
 # TAM Forge — Product and Architecture Design
 
-**Status:** Design approved in conversation; independent specification review complete; awaiting written-spec confirmation
+**Status:** Approved; independent specification review complete
 
 **Date:** 2026-08-25
 
@@ -1066,7 +1066,7 @@ The active role and its permissions are visible in the UI.
 The Claude worker uses the Python Claude Agent SDK with:
 
 - a manually provisioned one-year `CLAUDE_CODE_OAUTH_TOKEN` created with `claude setup-token` and stored only as a host secret;
-- subscription authentication only, never Anthropic API credits;
+- Claude subscription authentication only, with no Anthropic API key, Console balance, pay-per-token API billing, or automatic paid fallback;
 - a configurable model preference resolved during installation against the models actually supported by the user's subscription/SDK, with no durable assumption that a marketing alias will remain available;
 - an installation compatibility gate before production activation and the exact resolved model identifier recorded on every run;
 - custom system prompts rather than implicit user/project settings (`setting_sources=[]`);
@@ -1074,7 +1074,7 @@ The Claude worker uses the Python Claude Agent SDK with:
 - one concurrent Claude job initially;
 - resumable/idempotent application jobs, not reliance on opaque agent session storage as the source of truth.
 
-As of this specification date, Anthropic has paused the separately announced Agent SDK monthly-credit change, so Agent SDK use still draws from normal subscription usage limits. This policy is checked again during deployment because it can change. Quota exhaustion moves work to `NeedsAttention` or retry; it never buys credits or switches to a paid provider automatically. Deterministic transcript metrics remain usable.
+TAM Forge therefore consumes only the usage allowance already included in the user's Claude subscription. Anthropic calls this the subscription's usage limits. As of this specification date, Anthropic has paused a proposed change that would have moved Agent SDK use onto an additional, separately claimed monthly SDK credit; that proposal is unrelated to API tokens and does not change TAM Forge's chosen subscription-only architecture. The policy is checked again during deployment because it can change. Quota exhaustion moves work to `NeedsAttention` or retry; it never buys credits or switches to a paid provider automatically. Deterministic transcript metrics remain usable.
 
 ### 13.3 Constrained tool use
 
