@@ -536,7 +536,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforg
 exit 0
 ~~~
 
-Expected: PASS and an empty final `ps --status running`. Before checking or creating `tamforge_test`, the helper probes the same loopback admin connection immediately and retries only readiness failures for at most 30 attempts with a one-second delay, then fails closed. Every normal, failing, INT, and TERM exit runs `down --remove-orphans` then a fail-closed running-service check; any remaining service/container or failed check exits 1, otherwise the original failure status is preserved. Traps are removed only after that check. If approval is not granted, leave the integration test skipped and rely on the later CI PostgreSQL service.
+Expected: PASS and an empty final `ps --status running`. Before checking or creating `tamforge_test`, the helper runs `pg_isready` immediately and retries only its documented startup/no-response statuses for at most 30 attempts with a one-second delay, then fails closed. Once accepting, one authenticated `psql` probe must succeed without retry before the existence/create flow begins. Every normal, failing, INT, and TERM exit runs `down --remove-orphans` then a fail-closed running-service check; any remaining service/container or failed check exits 1, otherwise the original failure status is preserved. Traps are removed only after that check. If approval is not granted, leave the integration test skipped and rely on the later CI PostgreSQL service.
 
 - [ ] **Step 7: Commit database foundations**
 

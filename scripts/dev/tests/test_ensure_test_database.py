@@ -32,24 +32,35 @@ def fake_database_tools(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:
         bin_dir / "psql",
         shared_log
         + 'previous=""\n'
-        + 'is_readiness=0\n'
+        + 'is_auth_check=0\n'
         + 'for argument in "$@"; do\n'
         + '  if [ "$previous" = "--command" ] && [ "$argument" = "SELECT 1" ]; then\n'
-        + '    is_readiness=1\n'
+        + '    is_auth_check=1\n'
         + "  fi\n"
         + '  previous="$argument"\n'
         + "done\n"
-        + 'if [ "$is_readiness" = "1" ]; then\n'
-        + '  ready_count=0\n'
-        + '  if [ -f "$FAKE_READY_STATE" ]; then read -r ready_count < "$FAKE_READY_STATE"; fi\n'
-        + '  ready_count=$((ready_count + 1))\n'
-        + '  printf "%s\\n" "$ready_count" > "$FAKE_READY_STATE"\n'
-        + '  if [ "$ready_count" -le "${FAKE_READY_FAILURES:-0}" ]; then exit 16; fi\n'
-        + '  printf "1\\n"\n'
+        + 'if [ "$is_auth_check" = "1" ]; then\n'
+        + '  if [ "${FAKE_AUTH_PSQL_FAIL:-0}" = "1" ]; then exit 16; fi\n'
+        + '  printf "%s\\n" "${FAKE_AUTH_PSQL_OUTPUT:-1}"\n'
         + "  exit 0\n"
         + "fi\n"
         + 'if [ "${FAKE_PSQL_FAIL:-0}" = "1" ]; then exit 17; fi\n'
         + 'if [ -f "$FAKE_DATABASE_STATE" ]; then printf "1\\n"; fi\n',
+    )
+    write_fake_command(
+        bin_dir / "pg_isready",
+        shared_log
+        + 'ready_count=0\n'
+        + 'if [ -f "$FAKE_READY_STATE" ]; then read -r ready_count < "$FAKE_READY_STATE"; fi\n'
+        + 'ready_count=$((ready_count + 1))\n'
+        + 'printf "%s\\n" "$ready_count" > "$FAKE_READY_STATE"\n'
+        + 'selected_status=0\n'
+        + 'status_index=1\n'
+        + 'for candidate in ${FAKE_PG_ISREADY_STATUSES:-0}; do\n'
+        + '  if [ "$status_index" -eq "$ready_count" ]; then selected_status="$candidate"; fi\n'
+        + '  status_index=$((status_index + 1))\n'
+        + 'done\n'
+        + 'exit "$selected_status"\n',
     )
     write_fake_command(
         bin_dir / "createdb",
@@ -138,6 +149,7 @@ def fake_postgres_client_body() -> str:
         'printf "%s\\n" "$0" "$@" "--END--" >> "$FAKE_COMMAND_LOG"\n'
         'printf "%s\\n" "${PGPASSWORD-}" "${PGCONNECT_TIMEOUT-}" "${PGOPTIONS-}" '
         '"--END--" >> "$FAKE_ENV_LOG"\n'
+        'if [ "${0##*/}" = "pg_isready" ]; then exit 0; fi\n'
         'previous=""\n'
         'for argument in "$@"; do\n'
         '  if [ "$previous" = "--command" ] && [ "$argument" = "SELECT 1" ]; then\n'
@@ -168,16 +180,16 @@ def test_default_target_is_created_once_and_repeated_runs_are_idempotent(
     assert state_path.exists()
     blocks = command_blocks(log_path)
     assert [Path(block[0]).name for block in blocks] == [
+        "pg_isready",
         "psql",
         "psql",
         "createdb",
         "psql",
+        "pg_isready",
         "psql",
         "psql",
     ]
     assert blocks[0][1:] == [
-        "--no-psqlrc",
-        "--no-password",
         "--host",
         "127.0.0.1",
         "--port",
@@ -186,11 +198,9 @@ def test_default_target_is_created_once_and_repeated_runs_are_idempotent(
         "tamforge",
         "--dbname",
         "postgres",
-        "--tuples-only",
-        "--no-align",
-        "--set=ON_ERROR_STOP=1",
-        "--command",
-        "SELECT 1",
+        "--timeout",
+        "5",
+        "--quiet",
     ]
     assert blocks[1][1:] == [
         "--no-psqlrc",
@@ -207,9 +217,26 @@ def test_default_target_is_created_once_and_repeated_runs_are_idempotent(
         "--no-align",
         "--set=ON_ERROR_STOP=1",
         "--command",
-        "SELECT 1 FROM pg_database WHERE datname = 'tamforge_test'",
+        "SELECT 1",
     ]
     assert blocks[2][1:] == [
+        "--no-psqlrc",
+        "--no-password",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "54329",
+        "--username",
+        "tamforge",
+        "--dbname",
+        "postgres",
+        "--tuples-only",
+        "--no-align",
+        "--set=ON_ERROR_STOP=1",
+        "--command",
+        "SELECT 1 FROM pg_database WHERE datname = 'tamforge_test'",
+    ]
+    assert blocks[3][1:] == [
         "--no-password",
         "--host",
         "127.0.0.1",
@@ -222,17 +249,19 @@ def test_default_target_is_created_once_and_repeated_runs_are_idempotent(
         "tamforge_test",
     ]
     assert environment_blocks(env) == [
+        ["", "5", "-c statement_timeout=5000 -c lock_timeout=5000"],
         ["tamforge", "5", "-c statement_timeout=5000 -c lock_timeout=5000"],
         ["tamforge", "5", "-c statement_timeout=5000 -c lock_timeout=5000"],
         ["tamforge", "5", "-c statement_timeout=5000 -c lock_timeout=5000"],
         ["tamforge", "5", "-c statement_timeout=5000 -c lock_timeout=5000"],
+        ["", "5", "-c statement_timeout=5000 -c lock_timeout=5000"],
         ["tamforge", "5", "-c statement_timeout=5000 -c lock_timeout=5000"],
         ["tamforge", "5", "-c statement_timeout=5000 -c lock_timeout=5000"],
     ]
 
 
 @pytest.mark.parametrize("database_exists", [True, False])
-def test_readiness_retries_fail_fail_success_before_existing_or_creation_flow(
+def test_pg_isready_rejecting_no_response_then_accepting_continues_flow(
     fake_database_tools: tuple[dict[str, str], Path, Path],
     database_exists: bool,
 ) -> None:
@@ -241,7 +270,7 @@ def test_readiness_retries_fail_fail_success_before_existing_or_creation_flow(
         state_path.touch()
     env.update(
         {
-            "FAKE_READY_FAILURES": "2",
+            "FAKE_PG_ISREADY_STATUSES": "1 2 0",
             "TAMFORGE_TEST_DB_READY_ATTEMPTS": "3",
             "TAMFORGE_TEST_DB_READY_DELAY_SECONDS": "0",
         }
@@ -251,19 +280,23 @@ def test_readiness_retries_fail_fail_success_before_existing_or_creation_flow(
 
     assert result.returncode == 0, result.stderr
     names = [Path(block[0]).name for block in command_blocks(log_path)]
-    assert names[:3] == ["psql", "psql", "psql"]
-    assert names[3:] == (["psql"] if database_exists else ["psql", "createdb", "psql"])
+    assert names[:3] == ["pg_isready", "pg_isready", "pg_isready"]
+    assert names[3:] == (
+        ["psql", "psql"]
+        if database_exists
+        else ["psql", "psql", "createdb", "psql"]
+    )
     assert state_path.exists()
 
 
-def test_readiness_permanent_failure_exhausts_exact_attempts_without_createdb(
+def test_pg_isready_retry_exhaustion_uses_exact_attempts_without_db_tools(
     fake_database_tools: tuple[dict[str, str], Path, Path],
 ) -> None:
     env, log_path, state_path = fake_database_tools
     password = "readiness-password-must-not-leak"
     env.update(
         {
-            "FAKE_READY_FAILURES": "99",
+            "FAKE_PG_ISREADY_STATUSES": "2 2 2",
             "TAMFORGE_TEST_DB_PASSWORD": password,
             "TAMFORGE_TEST_DB_READY_ATTEMPTS": "3",
             "TAMFORGE_TEST_DB_READY_DELAY_SECONDS": "0",
@@ -274,12 +307,67 @@ def test_readiness_permanent_failure_exhausts_exact_attempts_without_createdb(
 
     assert result.returncode != 0
     assert [Path(block[0]).name for block in command_blocks(log_path)] == [
-        "psql",
-        "psql",
-        "psql",
+        "pg_isready",
+        "pg_isready",
+        "pg_isready",
     ]
     assert not state_path.exists()
     assert "PostgreSQL did not become ready within the bounded wait" in result.stderr
+    assert password not in result.stdout
+    assert password not in result.stderr
+
+
+@pytest.mark.parametrize("fatal_status", [3, 4, 99])
+def test_pg_isready_fatal_status_fails_immediately_without_db_tools(
+    fake_database_tools: tuple[dict[str, str], Path, Path],
+    fatal_status: int,
+) -> None:
+    env, log_path, state_path = fake_database_tools
+    env.update(
+        {
+            "FAKE_PG_ISREADY_STATUSES": str(fatal_status),
+            "TAMFORGE_TEST_DB_READY_ATTEMPTS": "5",
+            "TAMFORGE_TEST_DB_READY_DELAY_SECONDS": "0",
+        }
+    )
+
+    result = run_helper(env)
+
+    assert result.returncode != 0
+    assert [Path(block[0]).name for block in command_blocks(log_path)] == ["pg_isready"]
+    assert not state_path.exists()
+    assert "PostgreSQL readiness probe failed fatally" in result.stderr
+
+
+@pytest.mark.parametrize("auth_failure", ["exit", "unexpected-output"])
+def test_accepting_server_then_auth_sql_failure_is_fatal_without_retry_or_create(
+    fake_database_tools: tuple[dict[str, str], Path, Path],
+    auth_failure: str,
+) -> None:
+    env, log_path, state_path = fake_database_tools
+    password = "auth-password-must-not-leak"
+    env.update(
+        {
+            "FAKE_PG_ISREADY_STATUSES": "0",
+            "TAMFORGE_TEST_DB_PASSWORD": password,
+            "TAMFORGE_TEST_DB_READY_ATTEMPTS": "5",
+            "TAMFORGE_TEST_DB_READY_DELAY_SECONDS": "0",
+        }
+    )
+    if auth_failure == "exit":
+        env["FAKE_AUTH_PSQL_FAIL"] = "1"
+    else:
+        env["FAKE_AUTH_PSQL_OUTPUT"] = "unexpected"
+
+    result = run_helper(env)
+
+    assert result.returncode != 0
+    assert [Path(block[0]).name for block in command_blocks(log_path)] == [
+        "pg_isready",
+        "psql",
+    ]
+    assert not state_path.exists()
+    assert "PostgreSQL authenticated readiness check failed" in result.stderr
     assert password not in result.stdout
     assert password not in result.stderr
 
@@ -362,11 +450,13 @@ def test_invalid_configuration_is_rejected_before_any_command_runs(
     assert command_blocks(log_path) == []
 
 
-def test_missing_tool_is_rejected_without_running_the_other_tool(
+@pytest.mark.parametrize("missing_tool", ["createdb", "pg_isready"])
+def test_missing_tool_is_rejected_before_running_any_database_tool(
     fake_database_tools: tuple[dict[str, str], Path, Path],
+    missing_tool: str,
 ) -> None:
     env, log_path, _ = fake_database_tools
-    (Path(env["PATH"]) / "createdb").unlink()
+    (Path(env["PATH"]) / missing_tool).unlink()
 
     result = run_helper(env)
 
@@ -388,6 +478,7 @@ def test_symlinked_tool_within_isolated_test_root_is_resolved_and_allowed(
     assert result.returncode == 0, result.stderr
     assert state_path.exists()
     assert [Path(block[0]).name for block in command_blocks(log_path)] == [
+        "pg_isready",
         "real-psql",
         "real-psql",
         "createdb",
@@ -407,6 +498,7 @@ def test_debian_pg_wrapper_symlinks_are_classified_and_invoked_by_client_name(
     write_fake_command(wrapper, fake_postgres_client_body())
     (bin_dir / "psql").symlink_to("../share/postgresql-common/pg_wrapper")
     (bin_dir / "createdb").symlink_to("../share/postgresql-common/pg_wrapper")
+    (bin_dir / "pg_isready").symlink_to("../share/postgresql-common/pg_wrapper")
     env, log_path, state_path, _ = fake_platform_environment(
         tmp_path,
         path_directory=bin_dir,
@@ -417,6 +509,7 @@ def test_debian_pg_wrapper_symlinks_are_classified_and_invoked_by_client_name(
     assert result.returncode == 0, result.stderr
     assert state_path.exists()
     assert [Path(block[0]).name for block in command_blocks(log_path)] == [
+        "pg_isready",
         "psql",
         "psql",
         "createdb",
@@ -432,6 +525,7 @@ def test_debian_versioned_postgresql_clients_are_allowed(
     bin_dir.mkdir(parents=True)
     write_fake_command(bin_dir / "psql", fake_postgres_client_body())
     write_fake_command(bin_dir / "createdb", fake_postgres_client_body())
+    write_fake_command(bin_dir / "pg_isready", fake_postgres_client_body())
     env, log_path, state_path, _ = fake_platform_environment(
         tmp_path,
         path_directory=bin_dir,
@@ -442,6 +536,7 @@ def test_debian_versioned_postgresql_clients_are_allowed(
     assert result.returncode == 0, result.stderr
     assert state_path.exists()
     assert [Path(block[0]).name for block in command_blocks(log_path)] == [
+        "pg_isready",
         "psql",
         "psql",
         "createdb",
@@ -449,7 +544,10 @@ def test_debian_versioned_postgresql_clients_are_allowed(
     ]
 
 
-@pytest.mark.parametrize("near_miss", ["pg_wrapper_backup", "16.1", "sibling-binary"])
+@pytest.mark.parametrize(
+    "near_miss",
+    ["pg_wrapper_backup", "16.1", "sibling-binary", "misnamed-pg-isready"],
+)
 def test_debian_client_layout_near_misses_are_rejected_without_execution(
     tmp_path: Path,
     near_miss: str,
@@ -464,18 +562,29 @@ def test_debian_client_layout_near_misses_are_rejected_without_execution(
         write_fake_command(target, fake_postgres_client_body())
         (bin_dir / "psql").symlink_to(f"../share/postgresql-common/{near_miss}")
         (bin_dir / "createdb").symlink_to(f"../share/postgresql-common/{near_miss}")
+        (bin_dir / "pg_isready").symlink_to(f"../share/postgresql-common/{near_miss}")
     elif near_miss == "16.1":
         bin_dir = platform_root / "usr" / "lib" / "postgresql" / near_miss / "bin"
         bin_dir.mkdir(parents=True)
         write_fake_command(bin_dir / "psql", fake_postgres_client_body())
         write_fake_command(bin_dir / "createdb", fake_postgres_client_body())
-    else:
+        write_fake_command(bin_dir / "pg_isready", fake_postgres_client_body())
+    elif near_miss == "sibling-binary":
         bin_dir = platform_root / "usr" / "lib" / "postgresql" / "16" / "bin"
         bin_dir.mkdir(parents=True)
         sibling = bin_dir / near_miss
         write_fake_command(sibling, fake_postgres_client_body())
         (bin_dir / "psql").symlink_to(sibling)
         write_fake_command(bin_dir / "createdb", fake_postgres_client_body())
+        write_fake_command(bin_dir / "pg_isready", fake_postgres_client_body())
+    else:
+        bin_dir = platform_root / "usr" / "lib" / "postgresql" / "16" / "bin"
+        bin_dir.mkdir(parents=True)
+        write_fake_command(bin_dir / "psql", fake_postgres_client_body())
+        write_fake_command(bin_dir / "createdb", fake_postgres_client_body())
+        sibling = bin_dir / "pg_isready-sibling"
+        write_fake_command(sibling, fake_postgres_client_body())
+        (bin_dir / "pg_isready").symlink_to(sibling)
     env, log_path, state_path, _ = fake_platform_environment(
         tmp_path,
         path_directory=bin_dir,
@@ -488,17 +597,19 @@ def test_debian_client_layout_near_misses_are_rejected_without_execution(
     assert not state_path.exists()
 
 
+@pytest.mark.parametrize("tool_name", ["psql", "pg_isready"])
 def test_symlink_target_outside_isolated_root_is_rejected_without_execution(
     fake_database_tools: tuple[dict[str, str], Path, Path],
+    tool_name: str,
 ) -> None:
     env, log_path, state_path = fake_database_tools
     bin_dir = Path(env["PATH"])
     outside_dir = state_path.parent / "outside"
     outside_dir.mkdir(mode=0o700)
-    outside_tool = outside_dir / "psql"
+    outside_tool = outside_dir / tool_name
     write_fake_command(outside_tool, ': > "$FAKE_DATABASE_STATE"\n')
-    (bin_dir / "psql").unlink()
-    (bin_dir / "psql").symlink_to(outside_tool)
+    (bin_dir / tool_name).unlink()
+    (bin_dir / tool_name).symlink_to(outside_tool)
 
     result = run_helper(env)
 
@@ -551,7 +662,7 @@ def test_insecure_test_root_or_writable_target_is_rejected_before_execution(
 def test_password_override_is_child_only_and_never_appears_in_output(
     fake_database_tools: tuple[dict[str, str], Path, Path],
 ) -> None:
-    env, _, _ = fake_database_tools
+    env, log_path, _ = fake_database_tools
     password = "local-test-password-123"
     env["TAMFORGE_TEST_DB_PASSWORD"] = password
 
@@ -560,7 +671,13 @@ def test_password_override_is_child_only_and_never_appears_in_output(
     assert result.returncode == 0, result.stderr
     assert password not in result.stdout
     assert password not in result.stderr
-    assert all(block[0] == password for block in environment_blocks(env))
+    for command, child_environment in zip(
+        command_blocks(log_path),
+        environment_blocks(env),
+        strict=True,
+    ):
+        expected_password = "" if Path(command[0]).name == "pg_isready" else password
+        assert child_environment[0] == expected_password
 
 
 def test_psql_failure_stops_before_createdb(
@@ -572,7 +689,11 @@ def test_psql_failure_stops_before_createdb(
     result = run_helper(env)
 
     assert result.returncode != 0
-    assert [Path(block[0]).name for block in command_blocks(log_path)] == ["psql", "psql"]
+    assert [Path(block[0]).name for block in command_blocks(log_path)] == [
+        "pg_isready",
+        "psql",
+        "psql",
+    ]
 
 
 def test_createdb_failure_is_rechecked_and_fails_when_database_is_still_absent(
@@ -585,6 +706,7 @@ def test_createdb_failure_is_rechecked_and_fails_when_database_is_still_absent(
 
     assert result.returncode != 0
     assert [Path(block[0]).name for block in command_blocks(log_path)] == [
+        "pg_isready",
         "psql",
         "psql",
         "createdb",

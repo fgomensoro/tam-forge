@@ -129,13 +129,13 @@ classify_tool_path() {
     return
   fi
 
-  if [[ "$logical_resolved" =~ ^/usr/lib/postgresql/([1-9][0-9])/bin/(psql|createdb)$ ]]; then
+  if [[ "$logical_resolved" =~ ^/usr/lib/postgresql/([1-9][0-9])/bin/(psql|createdb|pg_isready)$ ]]; then
     [[ "${BASH_REMATCH[2]}" == "$name" ]] || return 1
     printf 'binary'
     return
   fi
 
-  if [[ "$logical_resolved" =~ ^/Applications/Postgres[.]app/Contents/Versions/([1-9][0-9]*)/bin/(psql|createdb)$ ]]; then
+  if [[ "$logical_resolved" =~ ^/Applications/Postgres[.]app/Contents/Versions/([1-9][0-9]*)/bin/(psql|createdb|pg_isready)$ ]]; then
     [[ "${BASH_REMATCH[2]}" == "$name" ]] || return 1
     printf 'binary'
     return
@@ -199,8 +199,25 @@ resolve_tool() {
 
 psql_path="$(resolve_tool psql)"
 createdb_path="$(resolve_tool createdb)"
+pg_isready_path="$(resolve_tool pg_isready)"
 
-postgres_is_ready() {
+pg_isready_status() {
+  local status=0
+  PGPASSWORD="" \
+  PGCONNECT_TIMEOUT="$connect_timeout" \
+  PGOPTIONS="$statement_options" \
+  "$pg_isready_path" \
+    --host "$host" \
+    --port "$port" \
+    --username "$admin_user" \
+    --dbname "$admin_database" \
+    --timeout "$connect_timeout" \
+    --quiet \
+    >/dev/null 2>&1 || status=$?
+  return "$status"
+}
+
+verify_authenticated_connection() {
   local output
   output="$(
     PGPASSWORD="$password" \
@@ -223,15 +240,30 @@ postgres_is_ready() {
 }
 
 ready_attempt=1
-while ! postgres_is_ready; do
-  if (( ready_attempt >= ready_attempts )); then
-    fail "PostgreSQL did not become ready within the bounded wait"
-  fi
-  if (( ready_delay_seconds > 0 )); then
-    /bin/sleep "$ready_delay_seconds"
-  fi
-  ready_attempt=$((ready_attempt + 1))
+while true; do
+  ready_status=0
+  pg_isready_status || ready_status=$?
+  case "$ready_status" in
+    0)
+      break
+      ;;
+    1|2)
+      if (( ready_attempt >= ready_attempts )); then
+        fail "PostgreSQL did not become ready within the bounded wait"
+      fi
+      if (( ready_delay_seconds > 0 )); then
+        /bin/sleep "$ready_delay_seconds"
+      fi
+      ready_attempt=$((ready_attempt + 1))
+      ;;
+    *)
+      fail "PostgreSQL readiness probe failed fatally"
+      ;;
+  esac
 done
+
+verify_authenticated_connection \
+  || fail "PostgreSQL authenticated readiness check failed"
 
 database_exists() {
   local output
