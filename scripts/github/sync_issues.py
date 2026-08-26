@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -24,10 +25,15 @@ from urllib.parse import quote
 import yaml  # type: ignore[import-untyped]
 
 EXPECTED_REPOSITORY = "fgomensoro/tam-forge"
-MARKER_PATTERN = re.compile(r"<!-- tam-forge-key: ([A-Z][A-Z0-9-]*) -->")
+EXPECTED_GITHUB_HOST = "github.com"
+EXPECTED_OWNER_LOGIN = "fgomensoro"
+EXPECTED_OWNER_ID = 102269369
+MARKER_TOKEN = "tam-forge-key"
+MARKER_PATTERN = re.compile(r"^<!-- tam-forge-key: ([A-Z][A-Z0-9-]*) -->$")
 EPIC_KEY_PATTERN = re.compile(r"E[1-9][0-9]*")
 CHILD_KEY_PATTERN = re.compile(r"E[1-9][0-9]*-I[0-9]{2}")
 HEX_COLOR_PATTERN = re.compile(r"[0-9A-Fa-f]{6}")
+PRIVACY_LEVELS = {"none", "low", "medium", "high"}
 
 
 class ManifestError(ValueError):
@@ -126,6 +132,8 @@ class SyncPlan:
 
 
 class GhClient(Protocol):
+    def preflight_apply(self) -> None: ...
+
     def list_labels(self) -> list[dict[str, object]]: ...
 
     def list_milestones(self) -> list[dict[str, object]]: ...
@@ -141,6 +149,9 @@ class GhClient(Protocol):
 
 class EmptyGhClient:
     """Read-only empty state used for an offline pre-repository dry-run."""
+
+    def preflight_apply(self) -> None:
+        raise PermissionError("offline client cannot be authorized for apply")
 
     def list_labels(self) -> list[dict[str, object]]:
         return []
@@ -168,6 +179,55 @@ class GhCliClient:
             raise ValueError("unsupported repository")
         self.repository = repository
 
+    def preflight_apply(self) -> None:
+        """Bind apply to Frank's exact private personal github.com repository."""
+
+        configured_host = os.environ.get("GH_HOST", "").strip()
+        if configured_host and configured_host != EXPECTED_GITHUB_HOST:
+            raise PermissionError("GitHub host must be github.com")
+        if not origin_matches(self.repository):
+            raise PermissionError("origin must be the exact private personal GitHub repository")
+
+        user = self._preflight_mapping(self._get("user"), "authenticated user")
+        if user.get("login") != EXPECTED_OWNER_LOGIN:
+            raise PermissionError("authenticated login is not the approved personal owner")
+        if user.get("id") != EXPECTED_OWNER_ID:
+            raise PermissionError("authenticated user ID is not the approved immutable owner ID")
+
+        repository = self._preflight_mapping(
+            self._get(f"repos/{self.repository}"), "target repository"
+        )
+        if repository.get("full_name") != EXPECTED_REPOSITORY:
+            raise PermissionError(
+                "target repository identity does not match the approved repository"
+            )
+        owner = self._preflight_mapping(repository.get("owner"), "repository owner")
+        if owner.get("login") != EXPECTED_OWNER_LOGIN:
+            raise PermissionError("repository owner login is not the approved personal owner")
+        if owner.get("id") != EXPECTED_OWNER_ID:
+            raise PermissionError("repository owner ID is not the approved immutable owner ID")
+        if repository.get("private") is not True:
+            raise PermissionError("target repository must be private")
+
+    def _get(self, endpoint: str) -> object:
+        return self._run_json(
+            [
+                "gh",
+                "api",
+                "--hostname",
+                EXPECTED_GITHUB_HOST,
+                "--method",
+                "GET",
+                endpoint,
+            ]
+        )
+
+    @staticmethod
+    def _preflight_mapping(value: object, context: str) -> dict[str, object]:
+        if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
+            raise PermissionError(f"{context} response is invalid")
+        return cast(dict[str, object], value)
+
     def list_labels(self) -> list[dict[str, object]]:
         return self._list("labels")
 
@@ -185,6 +245,8 @@ class GhCliClient:
             command = [
                 "gh",
                 "api",
+                "--hostname",
+                EXPECTED_GITHUB_HOST,
                 "--method",
                 "GET",
                 f"repos/{self.repository}/{resource}",
@@ -227,7 +289,17 @@ class GhCliClient:
         return cast(dict[str, object], result)
 
     def _request(self, method: str, endpoint: str, payload: dict[str, object]) -> object:
-        command = ["gh", "api", "--method", method, endpoint, "--input", "-"]
+        command = [
+            "gh",
+            "api",
+            "--hostname",
+            EXPECTED_GITHUB_HOST,
+            "--method",
+            method,
+            endpoint,
+            "--input",
+            "-",
+        ]
         return self._run_json(command, input_text=json.dumps(payload, separators=(",", ":")))
 
     @staticmethod
@@ -384,6 +456,11 @@ def load_and_validate(path: Path, *, _enforce_catalog_counts: bool = True) -> Ma
                 raise ManifestError(f"child {key} cannot define children")
             if epic is None:
                 raise ManifestError(f"child {key} must define epic")
+        privacy_impact = _string(record["privacy_impact"], f"issue {key} privacy_impact")
+        if privacy_impact not in PRIVACY_LEVELS:
+            raise ManifestError(
+                f"issue {key} privacy_impact must be one of {sorted(PRIVACY_LEVELS)}"
+            )
         issues.append(
             IssueSpec(
                 key=key,
@@ -391,7 +468,7 @@ def load_and_validate(path: Path, *, _enforce_catalog_counts: bool = True) -> Ma
                 milestone=_string(record["milestone"], f"issue {key} milestone"),
                 labels=_strings(record["labels"], f"issue {key} labels"),
                 acceptance=_strings(record["acceptance"], f"issue {key} acceptance"),
-                privacy_impact=_string(record["privacy_impact"], f"issue {key} privacy_impact"),
+                privacy_impact=privacy_impact,
                 verification=_strings(record["verification"], f"issue {key} verification"),
                 plan=_string(record["plan"], f"issue {key} plan"),
                 task=_string(record["task"], f"issue {key} task"),
@@ -457,6 +534,10 @@ def load_and_validate(path: Path, *, _enforce_catalog_counts: bool = True) -> Ma
                 if dependency == issue.key:
                     raise ManifestError(f"issue {issue.key} cannot depend on itself")
 
+    _validate_dependency_dag(manifest.children)
+    if _enforce_catalog_counts:
+        _validate_catalog_content_quality(manifest)
+
     return manifest
 
 
@@ -482,15 +563,65 @@ def _validate_catalog_counts(manifest: Manifest) -> None:
         raise ManifestError("catalog epic keys must be exactly E1 through E9")
 
 
+def _validate_dependency_dag(children: tuple[IssueSpec, ...]) -> None:
+    by_key = {issue.key: issue for issue in children}
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(key: str) -> None:
+        if key in visiting:
+            raise ManifestError(f"dependency cycle includes {key}")
+        if key in visited:
+            return
+        visiting.add(key)
+        for dependency in by_key[key].depends_on:
+            visit(dependency)
+        visiting.remove(key)
+        visited.add(key)
+
+    for key in by_key:
+        visit(key)
+
+
+def _validate_catalog_content_quality(manifest: Manifest) -> None:
+    placeholder = "satisfies the approved product and implementation-plan contract"
+    generated_prefix = "focused success and fail-closed tests demonstrate"
+    if any(
+        placeholder in " ".join(issue.acceptance).lower()
+        or generated_prefix in " ".join(issue.acceptance).lower()
+        for issue in manifest.children
+    ):
+        raise ManifestError("catalog acceptance criteria contain title-restatement boilerplate")
+    commands = {command for issue in manifest.children for command in issue.verification}
+    if len(commands) < 20:
+        raise ManifestError("catalog verification evidence is not sufficiently issue-specific")
+    for issue in manifest.children:
+        if "master-implementation-plan" in issue.plan:
+            raise ManifestError(f"issue {issue.key} must point to an executable child plan")
+        if re.fullmatch(r"Task [0-9]+: .+", issue.task) is None:
+            raise ManifestError(f"issue {issue.key} must name its executable plan task")
+
+
 def marker(key: str) -> str:
     return f"<!-- tam-forge-key: {key} -->"
 
 
-def issue_key_from_body(body: object) -> str | None:
-    if not isinstance(body, str):
+def managed_key_from_issue(issue: dict[str, object]) -> str | None:
+    """Return one unambiguous first-line marker or fail closed on marker-like content."""
+
+    body = issue.get("body")
+    if not isinstance(body, str) or MARKER_TOKEN not in body.lower():
         return None
-    match = MARKER_PATTERN.search(body)
-    return match.group(1) if match else None
+    number = issue.get("number")
+    context = f"issue #{number}" if isinstance(number, int) else "issue with unknown number"
+    lines = body.splitlines()
+    first_line = lines[0] if lines else ""
+    match = MARKER_PATTERN.fullmatch(first_line)
+    if match is None or body.lower().count(MARKER_TOKEN) != 1:
+        raise ManifestError(
+            f"{context} has invalid managed marker; require one exact marker on the first line"
+        )
+    return match.group(1)
 
 
 def render_issue_body(issue: IssueSpec, manifest: Manifest, numbers: dict[str, int]) -> str:
@@ -555,11 +686,16 @@ def build_sync_plan(manifest: Manifest, current: CurrentState) -> SyncPlan:
     issue_by_key: dict[str, dict[str, object]] = {}
     numbers: dict[str, int] = {}
     for item in current.issues:
-        key = issue_key_from_body(item.get("body"))
+        key = managed_key_from_issue(item)
         if key is None:
             continue
         if key in issue_by_key:
-            raise ManifestError(f"duplicate managed issue marker: {key}")
+            first_number = issue_by_key[key].get("number")
+            second_number = item.get("number")
+            raise ManifestError(
+                f"duplicate managed issue marker: {key} on issues "
+                f"#{first_number} and #{second_number}"
+            )
         issue_by_key[key] = item
         number = item.get("number")
         if isinstance(number, int):
@@ -692,7 +828,7 @@ def apply_sync_plan(plan: SyncPlan, client: GhClient) -> None:
     issues_by_key = {
         key: item
         for item in current_issues
-        if (key := issue_key_from_body(item.get("body"))) is not None
+        if (key := managed_key_from_issue(item)) is not None
     }
     issue_changes = [item for item in plan.changes if item.resource == "issues"]
     issue_order = {issue.key: index for index, issue in enumerate(plan.manifest.issues)}
@@ -761,6 +897,8 @@ def sync_manifest(
     _enforce_catalog_counts: bool = True,
 ) -> SyncPlan:
     manifest = load_and_validate(path, _enforce_catalog_counts=_enforce_catalog_counts)
+    if apply:
+        client.preflight_apply()
     current = load_current_state(client)
     plan = build_sync_plan(manifest, current)
     if apply:

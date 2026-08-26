@@ -15,6 +15,7 @@ from scripts.github.sync_issues import (
     CATALOG_COUNTS,
     GhCliClient,
     ManifestError,
+    TargetNotFoundError,
     load_and_validate,
     main,
     origin_matches,
@@ -23,11 +24,17 @@ from scripts.github.sync_issues import (
 
 
 class FakeGitHub:
-    def __init__(self) -> None:
+    def __init__(self, *, preflight_error: Exception | None = None) -> None:
         self.labels: list[dict[str, Any]] = []
         self.milestones: list[dict[str, Any]] = []
         self.issues: list[dict[str, Any]] = []
         self.calls: list[tuple[str, str, int | None, dict[str, object] | None]] = []
+        self.preflight_error = preflight_error
+
+    def preflight_apply(self) -> None:
+        self.calls.append(("preflight", "authorization", None, None))
+        if self.preflight_error is not None:
+            raise self.preflight_error
 
     @property
     def writes(self) -> list[tuple[str, str, int | None, dict[str, object] | None]]:
@@ -117,7 +124,7 @@ def small_manifest(tmp_path: Path) -> Path:
                 "labels": ["type:epic"],
                 "children": ["E1-I01", "E1-I02"],
                 "acceptance": ["Both children are complete."],
-                "privacy_impact": "No private learner data.",
+                "privacy_impact": "none",
                 "verification": ["make check"],
                 "plan": "docs/plan.md",
                 "task": "Epic E1",
@@ -130,7 +137,7 @@ def small_manifest(tmp_path: Path) -> Path:
                 "labels": ["type:feature"],
                 "depends_on": [],
                 "acceptance": ["Bootstrap passes."],
-                "privacy_impact": "No private learner data.",
+                "privacy_impact": "none",
                 "verification": ["make check"],
                 "plan": "docs/plan.md",
                 "task": "Task 1",
@@ -143,7 +150,7 @@ def small_manifest(tmp_path: Path) -> Path:
                 "labels": ["type:feature"],
                 "depends_on": ["E1-I01"],
                 "acceptance": ["CI passes."],
-                "privacy_impact": "No private learner data.",
+                "privacy_impact": "none",
                 "verification": ["make check"],
                 "plan": "docs/plan.md",
                 "task": "Task 2",
@@ -220,6 +227,162 @@ def test_catalog_keys_and_titles_match_the_master_plan_exactly(catalog_path: Pat
     assert {epic.key: epic.milestone for epic in manifest.epics} == expected_assignment
 
 
+def test_all_children_have_actionable_metadata_and_an_acyclic_dependency_dag(
+    catalog_path: Path,
+) -> None:
+    manifest = load_and_validate(catalog_path)
+    children = {issue.key: issue for issue in manifest.children}
+    assert all(issue.acceptance and issue.verification for issue in children.values())
+    assert not any(
+        "satisfies the approved product and implementation-plan contract"
+        in " ".join(issue.acceptance)
+        for issue in children.values()
+    )
+    assert not any(
+        "focused success and fail-closed tests demonstrate"
+        in " ".join(issue.acceptance).lower()
+        for issue in children.values()
+    )
+    assert len({command for issue in children.values() for command in issue.verification}) >= 20
+    assert all(
+        issue.privacy_impact in {"none", "low", "medium", "high"}
+        for issue in children.values()
+    )
+    assert all("master-implementation-plan" not in issue.plan for issue in children.values())
+    assert all(re.match(r"Task \d+: .+", issue.task) for issue in children.values())
+    for issue in children.values():
+        plan_path = Path(issue.plan)
+        assert plan_path.is_file(), issue.key
+        headings = {
+            line.lstrip("# ").strip()
+            for line in plan_path.read_text(encoding="utf-8").splitlines()
+            if line.startswith("#")
+        }
+        assert issue.task in headings, issue.key
+
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(key: str) -> None:
+        if key in visiting:
+            raise AssertionError(f"dependency cycle includes {key}")
+        if key in visited:
+            return
+        visiting.add(key)
+        for dependency in children[key].depends_on:
+            visit(dependency)
+        visiting.remove(key)
+        visited.add(key)
+
+    for child_key in children:
+        visit(child_key)
+
+
+@pytest.mark.parametrize(
+    ("key", "dependency", "verification_fragment", "privacy", "plan_fragment", "task"),
+    [
+        ("E1-I04", "E1-I03", "test_migrations", "low", "01-foundation", "Task 3:"),
+        ("E2-I05", "E1-I04", "auth/test_service", "medium", "01-foundation", "Task 9:"),
+        ("E3-I06", "E3-I05", "spool", "high", "02-recording", "Task 6:"),
+        ("E4-I04", "E4-I03", "transcript", "high", "02-recording", "Task 15:"),
+        ("E5-I05", "E5-I04", "correction", "medium", "03-agents", "Task 8:"),
+        ("E6-I08", "E6-I07", "retrieval", "high", "03-agents", "Task 10:"),
+        ("E7-I06", "E7-I05", "interview", "high", "03-agents", "Task 17:"),
+        ("E8-I08", "E8-I05", "portfolio", "medium", "03-agents", "Task 20:"),
+        ("E9-I03", "E9-I02", "export", "high", "03-agents", "Task 23:"),
+    ],
+)
+def test_representative_child_metadata_is_specific(
+    catalog_path: Path,
+    key: str,
+    dependency: str,
+    verification_fragment: str,
+    privacy: str,
+    plan_fragment: str,
+    task: str,
+) -> None:
+    issue = next(item for item in load_and_validate(catalog_path).children if item.key == key)
+    assert dependency in issue.depends_on
+    assert verification_fragment in " ".join(issue.verification).lower()
+    assert issue.privacy_impact == privacy
+    assert plan_fragment in issue.plan
+    assert issue.task.startswith(task)
+
+
+def test_critical_approval_gate_labels_are_exact(catalog_path: Path) -> None:
+    issues = {issue.key: set(issue.labels) for issue in load_and_validate(catalog_path).children}
+    assert "gate/docker-local" in issues["E1-I04"]
+    assert "gate/docker-local" in issues["E1-I05"]
+    assert "gate/destructive" not in issues["E1-I06"]
+    assert "gate/destructive" not in issues["E1-I07"]
+    assert "gate/destructive" not in issues["E1-I08"]
+    assert "gate/destructive" in issues["E1-I09"]
+    assert "gate/privacy" in issues["E7-I06"]
+    assert "gate/privacy" in issues["E9-I03"]
+
+
+@pytest.mark.parametrize(
+    ("mutate", "error"),
+    [
+        (
+            lambda data: data["issues"][1].__setitem__(
+                "acceptance",
+                [
+                    f"{data['issues'][1]['title']} satisfies the approved product "
+                    "and implementation-plan contract."
+                ],
+            ),
+            "title-restatement boilerplate",
+        ),
+        (
+            lambda data: data["issues"][1].__setitem__(
+                "acceptance",
+                [
+                    "Focused success and fail-closed tests demonstrate the issue title "
+                    "under the invariants defined in Task 1."
+                ],
+            ),
+            "title-restatement boilerplate",
+        ),
+        (
+            lambda data: [
+                issue.__setitem__("verification", ["make check"])
+                for issue in data["issues"]
+                if "epic" in issue
+            ],
+            "verification evidence is not sufficiently issue-specific",
+        ),
+        (lambda data: data["issues"][1].__setitem__("acceptance", []), "must not be empty"),
+        (lambda data: data["issues"][1].__setitem__("verification", []), "must not be empty"),
+        (
+            lambda data: data["issues"][1].__setitem__("privacy_impact", "unbounded"),
+            "privacy_impact must be one of",
+        ),
+        (
+            lambda data: (
+                data["issues"][1].__setitem__("depends_on", ["E1-I02"]),
+                data["issues"][2].__setitem__("depends_on", ["E1-I01"]),
+            ),
+            "dependency cycle",
+        ),
+    ],
+)
+def test_catalog_content_quality_failures_precede_client_access(
+    catalog_path: Path,
+    tmp_path: Path,
+    mutate: Any,
+    error: str,
+) -> None:
+    data = yaml.safe_load(catalog_path.read_text(encoding="utf-8"))
+    mutate(data)
+    path = tmp_path / "invalid-quality.yml"
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    github = FakeGitHub()
+    with pytest.raises(ManifestError, match=error):
+        sync_manifest(path, github, apply=True)
+    assert github.calls == []
+
+
 def test_second_apply_is_a_true_no_op(small_manifest: Path) -> None:
     github = FakeGitHub()
     first = sync_manifest(small_manifest, github, apply=True, _enforce_catalog_counts=False)
@@ -259,6 +422,71 @@ def test_hidden_marker_identifies_issue_after_title_edit(small_manifest: Path) -
     plan = sync_manifest(small_manifest, github, apply=False, _enforce_catalog_counts=False)
     assert all(change.key != "E1-I01" or change.action == "update" for change in plan.changes)
     assert not any(change.key == "E1-I01" and change.action == "create" for change in plan.changes)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "This prose mentions tam-forge-key: E1-I01.",
+        "Intro first.\n<!-- tam-forge-key: E1-I01 -->\n",
+        "<!-- tam-forge-key E1-I01 -->\n",
+        "```\n<!-- tam-forge-key: E1-I01 -->\n```\n",
+        "<!-- tam-forge-key: E1-I01 -->\n<!-- tam-forge-key: E1-I02 -->\n",
+        "<!-- tam-forge-key: E1-I01 -->\nLater tam-forge-key token.\n",
+    ],
+)
+def test_marker_like_content_must_be_one_exact_first_line_marker(
+    small_manifest: Path, body: str
+) -> None:
+    github = FakeGitHub()
+    github.issues = [
+        {
+            "number": 71,
+            "title": "Adversarial marker",
+            "body": body,
+            "state": "open",
+            "labels": [],
+            "milestone": None,
+        }
+    ]
+    with pytest.raises(ManifestError, match=r"issue #71.*marker"):
+        sync_manifest(small_manifest, github, apply=False, _enforce_catalog_counts=False)
+    assert github.writes == []
+
+
+def test_duplicate_valid_marker_claim_fails_closed_without_writes(small_manifest: Path) -> None:
+    github = FakeGitHub()
+    github.issues = [
+        {
+            "number": number,
+            "title": f"Issue {number}",
+            "body": "<!-- tam-forge-key: E1-I01 -->\n",
+            "state": "open",
+            "labels": [],
+            "milestone": None,
+        }
+        for number in (81, 82)
+    ]
+    with pytest.raises(ManifestError, match="duplicate managed issue marker: E1-I01"):
+        sync_manifest(small_manifest, github, apply=False, _enforce_catalog_counts=False)
+    assert github.writes == []
+
+
+def test_valid_first_line_marker_is_managed(small_manifest: Path) -> None:
+    github = FakeGitHub()
+    github.issues = [
+        {
+            "number": 91,
+            "title": "Edited title",
+            "body": "<!-- tam-forge-key: E1-I01 -->\nExisting body\n",
+            "state": "open",
+            "labels": [],
+            "milestone": None,
+        }
+    ]
+    plan = sync_manifest(small_manifest, github, apply=False, _enforce_catalog_counts=False)
+    assert not any(change.key == "E1-I01" and change.action == "create" for change in plan.changes)
+    assert github.writes == []
 
 
 def test_bodies_have_deterministic_relationship_links(small_manifest: Path) -> None:
@@ -447,6 +675,155 @@ def test_cli_rejects_wrong_catalog_counts_before_any_api_call(
     assert github.calls == []
 
 
+def test_apply_preflight_failure_precedes_all_catalog_reads_and_writes(catalog_path: Path) -> None:
+    github = FakeGitHub(preflight_error=PermissionError("authorization failed"))
+    with pytest.raises(PermissionError, match="authorization failed"):
+        sync_manifest(catalog_path, github, apply=True)
+    assert github.calls == [("preflight", "authorization", None, None)]
+
+
+@pytest.mark.parametrize(
+    ("user", "repository", "error"),
+    [
+        ({"login": "company", "id": 102269369}, None, "authenticated login"),
+        ({"login": "fgomensoro", "id": 7}, None, "authenticated user ID"),
+        (
+            {"login": "fgomensoro", "id": 102269369},
+            {
+                "full_name": "company/tam-forge",
+                "private": True,
+                "owner": {"login": "fgomensoro", "id": 102269369},
+            },
+            "repository identity",
+        ),
+        (
+            {"login": "fgomensoro", "id": 102269369},
+            {
+                "full_name": "fgomensoro/tam-forge",
+                "private": True,
+                "owner": {"login": "company", "id": 102269369},
+            },
+            "repository owner login",
+        ),
+        (
+            {"login": "fgomensoro", "id": 102269369},
+            {
+                "full_name": "fgomensoro/tam-forge",
+                "private": True,
+                "owner": {"login": "fgomensoro", "id": 7},
+            },
+            "repository owner ID",
+        ),
+        (
+            {"login": "fgomensoro", "id": 102269369},
+            {
+                "full_name": "fgomensoro/tam-forge",
+                "private": False,
+                "owner": {"login": "fgomensoro", "id": 102269369},
+            },
+            "private",
+        ),
+    ],
+)
+def test_apply_preflight_rejects_wrong_identity_or_privacy(
+    user: dict[str, object],
+    repository: dict[str, object] | None,
+    error: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GH_HOST", raising=False)
+    monkeypatch.setattr("scripts.github.sync_issues.origin_matches", lambda _repo: True)
+
+    def fake_json(command: list[str], *, input_text: str | None = None) -> object:
+        if command[-1] == "user":
+            return user
+        assert repository is not None
+        return repository
+
+    monkeypatch.setattr(GhCliClient, "_run_json", staticmethod(fake_json))
+    with pytest.raises(PermissionError, match=error):
+        GhCliClient("fgomensoro/tam-forge").preflight_apply()
+
+
+def test_apply_preflight_rejects_absent_repository(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GH_HOST", raising=False)
+    monkeypatch.setattr("scripts.github.sync_issues.origin_matches", lambda _repo: True)
+
+    def fake_json(command: list[str], *, input_text: str | None = None) -> object:
+        if command[-1] == "user":
+            return {"login": "fgomensoro", "id": 102269369}
+        raise TargetNotFoundError("target repository was not found")
+
+    monkeypatch.setattr(GhCliClient, "_run_json", staticmethod(fake_json))
+    with pytest.raises(TargetNotFoundError):
+        GhCliClient("fgomensoro/tam-forge").preflight_apply()
+
+
+def test_apply_preflight_rejects_host_environment_or_origin_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = GhCliClient("fgomensoro/tam-forge")
+    monkeypatch.setenv("GH_HOST", "enterprise.example")
+    with pytest.raises(PermissionError, match="GitHub host"):
+        client.preflight_apply()
+    monkeypatch.delenv("GH_HOST")
+    monkeypatch.setattr("scripts.github.sync_issues.origin_matches", lambda _repo: False)
+    with pytest.raises(PermissionError, match="origin"):
+        client.preflight_apply()
+
+
+def test_apply_preflight_accepts_exact_private_personal_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GH_HOST", raising=False)
+    monkeypatch.setattr("scripts.github.sync_issues.origin_matches", lambda _repo: True)
+    responses: list[object] = [
+        {"login": "fgomensoro", "id": 102269369},
+        {
+            "full_name": "fgomensoro/tam-forge",
+            "private": True,
+            "owner": {"login": "fgomensoro", "id": 102269369},
+        },
+    ]
+    monkeypatch.setattr(
+        GhCliClient,
+        "_run_json",
+        staticmethod(lambda command, *, input_text=None: responses.pop(0)),
+    )
+    GhCliClient("fgomensoro/tam-forge").preflight_apply()
+    assert responses == []
+
+
+def test_apply_preflight_gh_calls_are_host_bound_argv_without_shell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GH_HOST", raising=False)
+    monkeypatch.setattr("scripts.github.sync_issues.origin_matches", lambda _repo: True)
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append((command, kwargs))
+        payload: object
+        if command[-1] == "user":
+            payload = {"login": "fgomensoro", "id": 102269369}
+        else:
+            payload = {
+                "full_name": "fgomensoro/tam-forge",
+                "private": True,
+                "owner": {"login": "fgomensoro", "id": 102269369},
+            }
+        return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    GhCliClient("fgomensoro/tam-forge").preflight_apply()
+    assert len(calls) == 2
+    for command, kwargs in calls:
+        assert command[:4] == ["gh", "api", "--hostname", "github.com"]
+        assert command[4:6] == ["--method", "GET"]
+        assert kwargs["input"] is None
+        assert "shell" not in kwargs
+
+
 def test_cli_rejects_repository_mismatch(small_manifest: Path) -> None:
     with pytest.raises(SystemExit):
         main(["--repo", "someone/else", "--manifest", str(small_manifest)])
@@ -468,6 +845,8 @@ def test_gh_cli_uses_argument_arrays_and_paginates(monkeypatch: pytest.MonkeyPat
     assert len(calls) == 2
     assert all(isinstance(command, list) for command, _kwargs in calls)
     assert all(command[:2] == ["gh", "api"] for command, _kwargs in calls)
+    assert all("--hostname" in command for command, _kwargs in calls)
+    assert all("github.com" in command for command, _kwargs in calls)
     assert all("--paginate" not in command for command, _kwargs in calls)
     assert all("shell" not in kwargs for _command, kwargs in calls)
 
@@ -490,6 +869,8 @@ def test_gh_cli_sends_write_payload_only_on_stdin(monkeypatch: pytest.MonkeyPatc
     assert command == [
         "gh",
         "api",
+        "--hostname",
+        "github.com",
         "--method",
         "POST",
         "repos/fgomensoro/tam-forge/labels",
