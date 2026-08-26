@@ -1,0 +1,22 @@
+.env
+.venv/
+node_modules/
+dist/
+coverage/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.superpowers/
+
+# Local runtime data
+object-data/
+local-object-data/
+audio/
+spools/
+*.sqlite3
+*.db
+
+# Tool and operating-system noise
+.DS_Store
+*.pyc
+__pycache__/
