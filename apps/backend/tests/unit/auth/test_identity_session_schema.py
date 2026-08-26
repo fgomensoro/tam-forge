@@ -60,7 +60,7 @@ def _offline_upgrade_sql() -> str:
         port=54329,
         database="tamforge_test",
     ).render_as_string(hide_password=False)
-    command.upgrade(config, "head", sql=True)
+    command.upgrade(config, "20260825_0001_identity_sessions", sql=True)
     return output.getvalue()
 
 
@@ -389,7 +389,7 @@ def test_revision_renders_complete_offline_sql_without_url_leakage() -> None:
     ).render_as_string(hide_password=False)
     config.attributes["database_url"] = offline_url
 
-    command.upgrade(config, "head", sql=True)
+    command.upgrade(config, "20260825_0001_identity_sessions", sql=True)
 
     sql = output.getvalue()
     assert secret not in sql

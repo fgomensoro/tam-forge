@@ -4,7 +4,10 @@ from importlib import import_module
 
 from .base import Base
 
-_MODEL_MODULES = ("tamforge_backend.auth.models",)
+_MODEL_MODULES = (
+    "tamforge_backend.auth.models",
+    "tamforge_backend.roadmaps.models",
+)
 
 
 def load_all_models() -> None:
