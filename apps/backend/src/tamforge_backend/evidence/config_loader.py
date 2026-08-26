@@ -4,16 +4,20 @@ from __future__ import annotations
 
 import hashlib
 import json
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path, PurePosixPath
+from types import MappingProxyType
 from typing import Any
 
 import yaml
 from pydantic import BaseModel, ValidationError
+from yaml.composer import ComposerError
 from yaml.constructor import ConstructorError
-from yaml.nodes import MappingNode, ScalarNode
+from yaml.events import AliasEvent
+from yaml.nodes import MappingNode, Node, ScalarNode
 
 from .config_models import (
+    CanonicalConfigPayload,
     ConfigBundle,
     ExerciseTypeConfig,
     ExerciseTypesFile,
@@ -31,6 +35,8 @@ _FILES = {
     "roadmap_tasks": "tam-roadmap-task-map.yaml",
 }
 _MAX_CONFIG_BYTES = 2 * 1024 * 1024
+_MAX_YAML_DEPTH = 64
+_MAX_YAML_NODES = 20_000
 
 
 class ConfigError(ValueError):
@@ -45,10 +51,52 @@ class _LocatedDict(dict[str, Any]):
 
 
 class _StrictLoader(yaml.SafeLoader):
-    pass
+    def __init__(self, stream: str) -> None:
+        super().__init__(stream)
+        self._config_depth = 0
+        self._config_nodes = 0
+
+    def compose_node(self, parent: Node | None, index: int) -> Node | None:
+        if self.check_event(AliasEvent):
+            event = self.get_event()  # type: ignore[no-untyped-call]
+            raise ComposerError(
+                "while composing configuration",
+                event.start_mark,
+                "YAML aliases are not allowed",
+                event.start_mark,
+            )
+        self._config_depth += 1
+        self._config_nodes += 1
+        event = self.peek_event()  # type: ignore[no-untyped-call]
+        try:
+            if self._config_depth > _MAX_YAML_DEPTH:
+                raise ComposerError(
+                    "while composing configuration",
+                    event.start_mark,
+                    f"YAML exceeds maximum depth {_MAX_YAML_DEPTH}",
+                    event.start_mark,
+                )
+            if self._config_nodes > _MAX_YAML_NODES:
+                raise ComposerError(
+                    "while composing configuration",
+                    event.start_mark,
+                    f"YAML exceeds node limit {_MAX_YAML_NODES}",
+                    event.start_mark,
+                )
+            return super().compose_node(parent, index)
+        finally:
+            self._config_depth -= 1
 
 
 def _construct_mapping(loader: _StrictLoader, node: MappingNode, deep: bool = False) -> Any:
+    for key_node, _ in node.value:
+        if key_node.tag == "tag:yaml.org,2002:merge":
+            raise ConstructorError(
+                "while constructing a mapping",
+                node.start_mark,
+                "YAML merge keys are not allowed",
+                key_node.start_mark,
+            )
     loader.flatten_mapping(node)
     result = _LocatedDict()
     result.line = node.start_mark.line + 1
@@ -74,7 +122,24 @@ def _construct_mapping(loader: _StrictLoader, node: MappingNode, deep: bool = Fa
 
 
 def _construct_decimal(loader: _StrictLoader, node: ScalarNode) -> Decimal:
-    return Decimal(loader.construct_scalar(node).replace("_", ""))
+    scalar = loader.construct_scalar(node)
+    try:
+        value = Decimal(scalar.replace("_", ""))
+    except InvalidOperation as exc:
+        raise ConstructorError(
+            "while constructing a decimal",
+            node.start_mark,
+            "configuration number must be a finite decimal",
+            node.start_mark,
+        ) from exc
+    if not value.is_finite():
+        raise ConstructorError(
+            "while constructing a decimal",
+            node.start_mark,
+            "configuration number must be a finite decimal",
+            node.start_mark,
+        )
+    return value
 
 
 _StrictLoader.add_constructor(
@@ -154,6 +219,14 @@ def _unique(
         seen.add(key)
 
 
+def _decimal_text(value: Decimal) -> str:
+    if not value.is_finite():
+        raise ConfigError("<config>:1:1: configuration number must be a finite decimal")
+    if value == 0:
+        return "0"
+    return format(value.normalize(), "f")
+
+
 def _canonical(value: object) -> object:
     if isinstance(value, BaseModel):
         return _canonical(value.model_dump(mode="python", by_alias=True))
@@ -165,19 +238,74 @@ def _canonical(value: object) -> object:
     if isinstance(value, (list, tuple)):
         return [_canonical(item) for item in value]
     if isinstance(value, Decimal):
-        return format(value, "f")
+        return _decimal_text(value)
     return value
 
 
-def _content_hash(*documents: BaseModel) -> bytes:
-    payload = _canonical(documents)
-    encoded = json.dumps(
+def _canonical_payload(
+    skills: SkillsFile,
+    exercises: ExerciseTypesFile,
+    rubrics: RubricsFile,
+    roadmap: RoadmapTaskMapFile,
+) -> dict[str, Any]:
+    skill_payload = skills.model_dump(mode="python", by_alias=True)
+    skill_payload["skills"] = sorted(skill_payload["skills"], key=lambda item: item["slug"])
+
+    exercise_payload = exercises.model_dump(mode="python", by_alias=True)
+    exercise_payload["supporting_tags"] = sorted(exercise_payload["supporting_tags"])
+    for item in exercise_payload["exercise_types"]:
+        item["skill_impacts"] = sorted(
+            item["skill_impacts"], key=lambda impact: impact["skill_slug"]
+        )
+        item["tags"] = sorted(item["tags"])
+        item["allowed_domain_competencies"] = sorted(
+            item["allowed_domain_competencies"]
+        )
+        item["allowed_story_competencies"] = sorted(
+            item["allowed_story_competencies"]
+        )
+        item["composite_metrics"] = sorted(
+            item["composite_metrics"], key=lambda metric: metric["metric_slug"]
+        )
+        item["child_exercise_type_refs"] = sorted(
+            item["child_exercise_type_refs"],
+            key=lambda child: (child["exercise_type"], child["mapping_version"]),
+        )
+    exercise_payload["exercise_types"] = sorted(
+        exercise_payload["exercise_types"], key=lambda item: item["slug"]
+    )
+
+    rubric_payload = rubrics.model_dump(mode="python", by_alias=True)
+    rubric_payload["rubrics"] = sorted(
+        rubric_payload["rubrics"], key=lambda item: (item["slug"], item["version"])
+    )
+
+    roadmap_payload = roadmap.model_dump(mode="python", by_alias=True)
+    roadmap_payload["reconciliations"] = sorted(
+        roadmap_payload["reconciliations"], key=lambda item: item["slug"]
+    )
+    roadmap_payload["tasks"] = sorted(
+        roadmap_payload["tasks"],
+        key=lambda item: (item["week"], item["day"], item["order"], item["stable_id"]),
+    )
+
+    return _canonical(
+        {
+            "skills": skill_payload,
+            "exercise_types": exercise_payload,
+            "rubrics": rubric_payload,
+            "roadmap_tasks": roadmap_payload,
+        }
+    )  # type: ignore[return-value]
+
+
+def _payload_json(payload: dict[str, Any]) -> str:
+    return json.dumps(
         payload,
         ensure_ascii=False,
         separators=(",", ":"),
         sort_keys=True,
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).digest()
+    )
 
 
 def _link_exercises(
@@ -190,6 +318,8 @@ def _link_exercises(
     _unique(config.exercise_types, "slug", path=path, raw_items=raw_items)
     for index, exercise in enumerate(config.exercise_types):
         source = raw_items[index] if index < len(raw_items) else raw
+        if exercise.mapping_version != config.mapping_version:
+            raise _at(path, source, "exercise item mapping version must match release")
         impact_slugs = [impact.skill_slug for impact in exercise.impacts]
         if len(impact_slugs) != len(set(impact_slugs)):
             raise _at(path, source, f"duplicate skill impact in {exercise.slug!r}")
@@ -212,6 +342,10 @@ def _link_exercises(
         }:
             raise _at(path, source, "TAM English impact must require produced English")
         if exercise.allowed_selected_competencies:
+            if len(exercise.allowed_selected_competencies) != len(
+                set(exercise.allowed_selected_competencies)
+            ):
+                raise _at(path, source, "duplicate selected skill")
             unknown_selected = set(exercise.allowed_selected_competencies) - skills.keys()
             if unknown_selected:
                 raise _at(
@@ -219,6 +353,18 @@ def _link_exercises(
                     source,
                     f"unknown selected skill {sorted(unknown_selected)[0]!r}",
                 )
+            if set(impact_slugs) & set(exercise.allowed_selected_competencies):
+                raise _at(path, source, "selected skill duplicates a fixed impact")
+        metric_slugs = [metric.metric_slug for metric in exercise.composite_metrics]
+        if len(metric_slugs) != len(set(metric_slugs)):
+            raise _at(path, source, f"duplicate composite metric in {exercise.slug!r}")
+        if set(metric_slugs) - {"portfolio_judgment"}:
+            raise _at(path, source, "unknown composite metric")
+        if exercise.slug == "portfolio_triage":
+            if exercise.composite_metric_weights != {"portfolio_judgment": Decimal("1")}:
+                raise _at(path, source, "portfolio_triage composite metric is required")
+        elif exercise.composite_metrics:
+            raise _at(path, source, "composite metric is not allowed for this exercise")
 
     exercises = {item.slug: item for item in config.exercise_types}
     for index, exercise in enumerate(config.exercise_types):
@@ -293,6 +439,33 @@ def _link_tasks(
         if total != expected:
             raise _at(path, raw, f"day {key[1]} must total exactly {expected} minutes")
 
+    task_by_id = {task.stable_id: task for task in config.tasks}
+    reconciliation_items = (
+        raw.get("reconciliations", []) if isinstance(raw, dict) else []
+    )
+    _unique(
+        config.reconciliations,
+        "slug",
+        path=path,
+        raw_items=reconciliation_items,
+    )
+    for index, reconciliation in enumerate(config.reconciliations):
+        source = (
+            reconciliation_items[index]
+            if index < len(reconciliation_items)
+            else raw
+        )
+        target_task = task_by_id.get(reconciliation.target_task_id)
+        if target_task is None:
+            raise _at(path, source, "reconciliation target task does not exist")
+        if reconciliation.executable_text != target_task.objective:
+            raise _at(path, source, "reconciliation executable text must match task objective")
+        if (reconciliation.source_path, reconciliation.source_heading) != (
+            target_task.source_path,
+            target_task.source_heading,
+        ):
+            raise _at(path, source, "reconciliation source must match task provenance")
+
 
 def load_config_bundle(
     config_dir: Path,
@@ -313,6 +486,65 @@ def load_config_bundle(
     exercise_file, exercise_raw = _load_yaml(paths["exercise_types"], ExerciseTypesFile)
     rubrics_file, rubrics_raw = _load_yaml(paths["rubrics"], RubricsFile)
     roadmap_file, roadmap_raw = _load_yaml(paths["roadmap_tasks"], RoadmapTaskMapFile)
+
+    return _build_bundle(
+        skills_file,
+        exercise_file,
+        rubrics_file,
+        roadmap_file,
+        raws={
+            "skills": skills_raw,
+            "exercise_types": exercise_raw,
+            "rubrics": rubrics_raw,
+            "roadmap_tasks": roadmap_raw,
+        },
+        paths=paths,
+    )
+
+
+def load_config_payload(payload: object) -> ConfigBundle:
+    """Validate and reconstruct a bundle from its persisted canonical payload."""
+    try:
+        detached = json.loads(json.dumps(payload))
+        parsed = CanonicalConfigPayload.model_validate(detached)
+    except (TypeError, ValueError, ValidationError) as exc:
+        if isinstance(exc, ValidationError):
+            error = exc.errors(include_url=False)[0]
+            message = error["msg"]
+        else:
+            message = str(exc)
+        raise ConfigError(f"canonical-payload:1:1: {message}") from exc
+
+    raws = {
+        "skills": detached["skills"],
+        "exercise_types": detached["exercise_types"],
+        "rubrics": detached["rubrics"],
+        "roadmap_tasks": detached["roadmap_tasks"],
+    }
+    paths = {key: Path(f"canonical-payload/{key}") for key in raws}
+    return _build_bundle(
+        parsed.skills,
+        parsed.exercise_types,
+        parsed.rubrics,
+        parsed.roadmap_tasks,
+        raws=raws,
+        paths=paths,
+    )
+
+
+def _build_bundle(
+    skills_file: SkillsFile,
+    exercise_file: ExerciseTypesFile,
+    rubrics_file: RubricsFile,
+    roadmap_file: RoadmapTaskMapFile,
+    *,
+    raws: dict[str, object],
+    paths: dict[str, Path],
+) -> ConfigBundle:
+    skills_raw = raws["skills"]
+    exercise_raw = raws["exercise_types"]
+    rubrics_raw = raws["rubrics"]
+    roadmap_raw = raws["roadmap_tasks"]
 
     versions = {
         skills_file.schema_version,
@@ -348,8 +580,18 @@ def load_config_bundle(
     exercises = {item.slug: item for item in exercise_file.exercise_types}
     _link_tasks(roadmap_file, roadmap_raw, paths["roadmap_tasks"], exercises)
 
-    content_hash = _content_hash(skills_file, exercise_file, rubrics_file, roadmap_file)
+    canonical_payload = _canonical_payload(
+        skills_file, exercise_file, rubrics_file, roadmap_file
+    )
+    canonical_payload_json = _payload_json(canonical_payload)
+    content_hash = hashlib.sha256(canonical_payload_json.encode("utf-8")).digest()
     version_key = f"{skills_file.config_version}-{content_hash.hex()[:12]}"
+    sorted_tasks = tuple(
+        sorted(
+            roadmap_file.tasks,
+            key=lambda task: (task.week, task.day, task.order, task.stable_id),
+        )
+    )
     return ConfigBundle(
         schema_version=versions.pop(),
         config_version=skills_file.config_version,
@@ -358,10 +600,13 @@ def load_config_bundle(
         formula=rubrics_file.formula,
         rubrics=rubrics_file.rubrics,
         roadmap_version=roadmap_file.roadmap_version,
-        roadmap_tasks=roadmap_file.tasks,
+        roadmap_contracts=MappingProxyType(dict(roadmap_file.contracts)),
+        reconciliations=roadmap_file.reconciliations,
+        roadmap_tasks=sorted_tasks,
         content_hash=content_hash,
         version_key=version_key,
         _skills_by_slug=immutable_index(skills_file.skills, "slug"),
         _exercises_by_slug=immutable_index(exercise_file.exercise_types, "slug"),
         _rubrics_by_slug=immutable_index(rubrics_file.rubrics, "slug"),
+        _canonical_payload_json=canonical_payload_json,
     )

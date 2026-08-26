@@ -201,6 +201,7 @@ def test_models_expose_required_tables_columns_and_types() -> None:
             "version_key",
             "schema_version",
             "content_hash",
+            "canonical_payload",
             "created_at",
         },
         "competencies": {
@@ -540,6 +541,7 @@ def test_constraints_are_named_and_encode_ranges_shapes_and_reproducibility() ->
             "ck_config_seed_versions_version_key_safe",
             "ck_config_seed_versions_schema_version_positive",
             "ck_config_seed_versions_content_hash_length",
+            "ck_config_seed_versions_canonical_payload_valid",
         },
         "competencies": {"ck_competencies_slug_safe", "ck_competencies_targets_bounded"},
         "exercise_type_versions": {

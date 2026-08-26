@@ -64,14 +64,13 @@ ASSISTANCE_CODES = frozenset(
     {
         "no_ai",
         "ai_after_committed_attempt",
-        "ai_interviewer_only",
         "ai_hints_during_attempt",
         "ai_co_created",
         "ai_generated",
     }
 )
 QUALIFYING_ASSISTANCE_CODES = frozenset(
-    {"no_ai", "ai_after_committed_attempt", "ai_interviewer_only"}
+    {"no_ai", "ai_after_committed_attempt"}
 )
 EVALUATOR_KINDS = frozenset(
     {
@@ -119,6 +118,16 @@ class ConfigSeedVersion(Base):
         ),
         CheckConstraint("schema_version > 0", name="schema_version_positive"),
         CheckConstraint("octet_length(content_hash) = 32", name="content_hash_length"),
+        CheckConstraint(
+            "jsonb_typeof(canonical_payload) = 'object' "
+            "AND canonical_payload ?& ARRAY["
+            "'skills', 'exercise_types', 'rubrics', 'roadmap_tasks'] "
+            "AND canonical_payload - ARRAY["
+            "'skills', 'exercise_types', 'rubrics', 'roadmap_tasks'"
+            "] = '{}'::jsonb "
+            "AND octet_length(canonical_payload::text) <= 8388608",
+            name="canonical_payload_valid",
+        ),
         Index("ix_config_seed_versions_owner_id", "owner_id"),
     )
 
@@ -133,6 +142,7 @@ class ConfigSeedVersion(Base):
     version_key: Mapped[str] = mapped_column(Text, nullable=False)
     schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
     content_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
+    canonical_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, server_default=func.now(), nullable=False
     )
@@ -702,8 +712,7 @@ class SkillEvidenceEvent(Base):
         ),
         CheckConstraint(
             "assistance_code IN ('no_ai', 'ai_after_committed_attempt', "
-            "'ai_interviewer_only', 'ai_hints_during_attempt', 'ai_co_created', "
-            "'ai_generated')",
+            "'ai_hints_during_attempt', 'ai_co_created', 'ai_generated')",
             name="assistance_code_allowed",
         ),
         CheckConstraint(
@@ -750,8 +759,7 @@ class SkillEvidenceEvent(Base):
             "AND attempt_id IS NOT NULL "
             "AND practice_mode IN ('independent_practice', 'timed_assessment', "
             "'mock_interview', 'real_interview') "
-            "AND assistance_code IN ('no_ai', 'ai_after_committed_attempt', "
-            "'ai_interviewer_only')) OR "
+            "AND assistance_code IN ('no_ai', 'ai_after_committed_attempt')) OR "
             "(NOT qualifying_for_level AND qualification_reason_code <> 'qualifies')",
             name="qualification_coherent",
         ),

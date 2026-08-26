@@ -305,6 +305,7 @@ exercise_types:
       executive_communication: {weight: 0.60}
       tam_english: {weight: 0.60, condition: spoken_or_written_english}
       structured_troubleshooting: {weight: 0.40}
+    composite_metrics: {portfolio_judgment: 1.00}
     tags: [portfolio_prioritization]
 
   - slug: technical_writing_timed
@@ -349,3 +350,8 @@ exercise_types:
   - slug: application_or_outreach
     evidence_mode: pipeline_only
     skill_impacts: {}
+
+  - slug: correction_warmup
+    evidence_mode: guided_practice
+    skill_impacts: {}
+    condition_note: Structural Attempt B or targeted SQL carryover; never skill-level evidence.

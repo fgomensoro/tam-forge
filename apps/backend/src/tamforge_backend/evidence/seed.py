@@ -5,10 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.models import Owner
+from .config_loader import ConfigError, load_config_payload
 from .config_models import ConfigBundle
 from .models import (
     Competency,
@@ -86,6 +87,14 @@ async def seed_config(
         raise SeedConfigError("seed apply requires a database session")
 
     resolved_owner_id = await _resolve_owner_id(session, owner_id)
+    await session.execute(
+        text(
+            "SELECT pg_advisory_xact_lock("
+            "hashtextextended("
+            "'tamforge:config-seed:' || CAST(CAST(:owner_id AS bigint) AS text), 0))"
+        ),
+        {"owner_id": resolved_owner_id},
+    )
     existing = await session.scalar(
         select(ConfigSeedVersion).where(
             ConfigSeedVersion.owner_id == resolved_owner_id,
@@ -95,6 +104,15 @@ async def seed_config(
     if existing is not None:
         if existing.content_hash != bundle.content_hash:
             raise SeedConfigError("existing config version has a different content hash")
+        try:
+            persisted = load_config_payload(existing.canonical_payload)
+        except ConfigError as exc:
+            raise SeedConfigError("existing config payload is invalid") from exc
+        if (
+            persisted.content_hash != bundle.content_hash
+            or persisted.canonical_payload != bundle.canonical_payload
+        ):
+            raise SeedConfigError("existing config payload does not match its content hash")
         return SeedResult(
             status="unchanged",
             inserted_rows=0,
@@ -107,6 +125,7 @@ async def seed_config(
         version_key=bundle.version_key,
         schema_version=bundle.schema_version,
         content_hash=bundle.content_hash,
+        canonical_payload=bundle.canonical_payload,
     )
     session.add(config_version)
     await session.flush()

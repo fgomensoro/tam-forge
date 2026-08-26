@@ -17,7 +17,6 @@ formula:
   assistance_factors:
     no_ai: 1.00
     ai_after_committed_attempt: 1.00
-    ai_interviewer_only: 1.00
     ai_hints_during_attempt: 0.75
     ai_co_created: 0.40
     ai_generated: 0.10
@@ -39,7 +38,6 @@ formula:
   qualifying_assistance:
     - no_ai
     - ai_after_committed_attempt
-    - ai_interviewer_only
   requires_rubric_score: true
   independent_practice_requires_attempt_a: true
   attempt_b_qualifies: false

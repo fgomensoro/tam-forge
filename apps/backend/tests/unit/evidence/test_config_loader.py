@@ -5,7 +5,12 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from tamforge_backend.evidence.config_loader import ConfigError, load_config_bundle
+import yaml
+from tamforge_backend.evidence.config_loader import (
+    ConfigError,
+    load_config_bundle,
+    load_config_payload,
+)
 
 CONFIG_DIR = Path(__file__).parents[5] / "config"
 
@@ -61,6 +66,7 @@ EXPECTED_EXERCISES = {
     "full_tam_gauntlet",
     "company_product_research",
     "application_or_outreach",
+    "correction_warmup",
 }
 EXPECTED_IMPACTS = {
     "official_reading": {},
@@ -270,6 +276,7 @@ EXPECTED_IMPACTS = {
     "full_tam_gauntlet": {},
     "company_product_research": {},
     "application_or_outreach": {},
+    "correction_warmup": {},
 }
 
 
@@ -350,7 +357,6 @@ def test_portfolio_and_formula_match_approved_contract(config_bundle) -> None:
     assert config_bundle.formula.assistance_factors.model_dump() == {
         "no_ai": Decimal("1.00"),
         "ai_after_committed_attempt": Decimal("1.00"),
-        "ai_interviewer_only": Decimal("1.00"),
         "ai_hints_during_attempt": Decimal("0.75"),
         "ai_co_created": Decimal("0.40"),
         "ai_generated": Decimal("0.10"),
@@ -376,15 +382,14 @@ def test_portfolio_and_formula_match_approved_contract(config_bundle) -> None:
     assert config_bundle.formula.qualifying_assistance == {
         "no_ai",
         "ai_after_committed_attempt",
-        "ai_interviewer_only",
     }
     assert config_bundle.formula.independent_practice_requires_attempt_a is True
     assert config_bundle.formula.attempt_b_qualifies is False
 
 
 def test_month_one_task_map_is_explicit_and_time_bounded(config_bundle) -> None:
-    assert len(config_bundle.roadmap_tasks) == 138
-    assert len({task.stable_id for task in config_bundle.roadmap_tasks}) == 138
+    assert len(config_bundle.roadmap_tasks) == 158
+    assert len({task.stable_id for task in config_bundle.roadmap_tasks}) == 158
     weekdays = {(task.week, task.day) for task in config_bundle.roadmap_tasks if task.day % 6}
     saturdays = {(task.week, task.day) for task in config_bundle.roadmap_tasks if task.day % 6 == 0}
     assert all(
@@ -409,11 +414,162 @@ def test_month_one_task_map_is_explicit_and_time_bounded(config_bundle) -> None:
     assert all(task.mapping_version == "seed-v1" for task in config_bundle.roadmap_tasks)
 
 
+def test_weekdays_expose_one_dynamic_correction_warmup(config_bundle) -> None:
+    for week in range(1, 5):
+        for day in range((week - 1) * 6 + 1, week * 6):
+            tasks = [
+                task
+                for task in config_bundle.roadmap_tasks
+                if (task.week, task.day) == (week, day)
+            ]
+            warmups = [task for task in tasks if task.block == "correction_warmup"]
+            communication = [
+                task for task in tasks if task.block == "communication_spoken"
+            ]
+            assert len(warmups) == 1
+            assert warmups[0].timebox_minutes == 10
+            assert warmups[0].correction_selection is not None
+            assert warmups[0].correction_selection.source == "due_corrections"
+            assert warmups[0].correction_selection.maximum_items == 1
+            assert warmups[0].correction_selection.no_attempt_c is True
+            assert len(communication) == 1
+            assert communication[0].timebox_minutes == 35
+
+    correction = config_bundle.exercise("correction_warmup")
+    assert correction.evidence_mode == "guided_practice"
+    assert correction.skill_impacts == {}
+
+
+def test_day_23_correction_conflict_has_reviewed_reconciliation(config_bundle) -> None:
+    day_23_close = next(
+        task
+        for task in config_bundle.roadmap_tasks
+        if task.stable_id == "m1-w4-d23-close"
+    )
+    assert "no more than two" in day_23_close.objective.lower()
+    reconciliation = config_bundle.reconciliations[0]
+    assert reconciliation.reviewed is True
+    assert reconciliation.target_task_id == day_23_close.stable_id
+    assert "exactly three" in reconciliation.original_source_text.lower()
+    assert reconciliation.executable_text == day_23_close.objective
+    assert reconciliation.what_changed
+    assert reconciliation.why_changed
+    assert reconciliation.evidence
+    assert reconciliation.roadmap_objective
+    assert reconciliation.affects_time is False
+    assert reconciliation.affects_required_coverage is False
+
+
+def test_normative_composite_and_activity_contracts_are_executable(config_bundle) -> None:
+    assert config_bundle.exercise("portfolio_triage").composite_metric_weights == {
+        "portfolio_judgment": Decimal("1.00")
+    }
+
+    technical = config_bundle.roadmap_contracts["technical"]
+    assert [(step.phase, step.minutes) for step in technical.procedure] == [
+        ("preview", 2),
+        ("focused_reading", 20),
+        ("closed_source_recall", 8),
+        ("application", 10),
+        ("teach_back", 5),
+    ]
+    assert any("three key ideas" in item.lower() for item in technical.required_output)
+    tam_case = config_bundle.roadmap_contracts["case"]
+    assert [(step.phase, step.minutes) for step in tam_case.procedure] == [
+        ("understand", 5),
+        ("discovery", 10),
+        ("structure", 5),
+        ("solve_produce", 25),
+        ("present_defend", 10),
+        ("self_review", 5),
+    ]
+    assert any("canonical prompt" in item.lower() for item in tam_case.evidence_requirements)
+    assert all(contract.constraints for contract in config_bundle.roadmap_contracts.values())
+
+
 def test_hash_is_canonical_and_stable(config_bundle) -> None:
     again = load_config_bundle(CONFIG_DIR)
     assert config_bundle.content_hash == again.content_hash
     assert len(config_bundle.content_hash) == 32
     assert config_bundle.version_key.startswith("seed-v1-")
+
+
+def test_canonical_payload_round_trips_every_runtime_contract(config_bundle) -> None:
+    reconstructed = load_config_payload(config_bundle.canonical_payload)
+    assert reconstructed.content_hash == config_bundle.content_hash
+    assert reconstructed.canonical_payload == config_bundle.canonical_payload
+    assert reconstructed.formula == config_bundle.formula
+    assert reconstructed.roadmap_tasks == config_bundle.roadmap_tasks
+    assert reconstructed.roadmap_contracts == config_bundle.roadmap_contracts
+    assert reconstructed.reconciliations == config_bundle.reconciliations
+    assert reconstructed.exercise("portfolio_triage").composite_metric_weights == {
+        "portfolio_judgment": Decimal("1")
+    }
+    assert reconstructed.exercise("full_tam_gauntlet").child_exercise_type_refs
+
+
+def test_hash_ignores_semantically_unordered_collections_and_decimal_spelling(
+    config_bundle, tmp_path: Path
+) -> None:
+    fixture_dir = tmp_path / "config"
+    shutil.copytree(CONFIG_DIR, fixture_dir)
+
+    skills_path = fixture_dir / "tam-skills.yaml"
+    skills = yaml.safe_load(skills_path.read_text(encoding="utf-8"))
+    skills["skills"].reverse()
+    skills_path.write_text(yaml.safe_dump(skills, sort_keys=False), encoding="utf-8")
+
+    exercises_path = fixture_dir / "tam-exercise-types.yaml"
+    exercises = yaml.safe_load(exercises_path.read_text(encoding="utf-8"))
+    exercises["supporting_tags"].reverse()
+    exercises["exercise_types"].reverse()
+    for exercise in exercises["exercise_types"]:
+        impacts = exercise.get("skill_impacts")
+        if impacts:
+            exercise["skill_impacts"] = dict(reversed(tuple(impacts.items())))
+        for field in (
+            "tags",
+            "allowed_domain_competencies",
+            "allowed_story_competencies",
+            "child_exercise_type_refs",
+        ):
+            if field in exercise:
+                exercise[field].reverse()
+    exercises_path.write_text(
+        yaml.safe_dump(exercises, sort_keys=False), encoding="utf-8"
+    )
+
+    roadmap_path = fixture_dir / "tam-roadmap-task-map.yaml"
+    roadmap = yaml.safe_load(roadmap_path.read_text(encoding="utf-8"))
+    roadmap["days"].reverse()
+    for day in roadmap["days"]:
+        day["tasks"].reverse()
+    roadmap_path.write_text(yaml.safe_dump(roadmap, sort_keys=False), encoding="utf-8")
+
+    equivalent = load_config_bundle(fixture_dir)
+    assert equivalent.content_hash == config_bundle.content_hash
+    assert equivalent.canonical_payload == config_bundle.canonical_payload
+
+
+def test_hash_preserves_rubric_dimension_and_explicit_task_semantic_order(
+    config_bundle, tmp_path: Path
+) -> None:
+    fixture_dir = tmp_path / "config"
+    shutil.copytree(CONFIG_DIR, fixture_dir)
+    rubrics_path = fixture_dir / "tam-rubrics.yaml"
+    rubrics = yaml.safe_load(rubrics_path.read_text(encoding="utf-8"))
+    rubrics["rubrics"][0]["dimensions"].reverse()
+    rubrics_path.write_text(yaml.safe_dump(rubrics, sort_keys=False), encoding="utf-8")
+    assert load_config_bundle(fixture_dir).content_hash != config_bundle.content_hash
+
+    shutil.rmtree(fixture_dir)
+    shutil.copytree(CONFIG_DIR, fixture_dir)
+    roadmap_path = fixture_dir / "tam-roadmap-task-map.yaml"
+    roadmap = yaml.safe_load(roadmap_path.read_text(encoding="utf-8"))
+    roadmap["days"][0]["tasks"][0]["order"] = 2
+    roadmap["days"][0]["tasks"][1]["order"] = 1
+    roadmap_path.write_text(yaml.safe_dump(roadmap, sort_keys=False), encoding="utf-8")
+    assert load_config_bundle(fixture_dir).content_hash != config_bundle.content_hash
 
 
 def test_invalid_mapping_reports_source_location() -> None:
@@ -495,4 +651,129 @@ def test_partial_release_version_bump_is_rejected(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(ConfigError, match=r"versions must match"):
+        load_config_bundle(fixture_dir)
+
+
+def test_explicit_rogue_exercise_mapping_version_is_rejected(tmp_path: Path) -> None:
+    fixture_dir = tmp_path / "config"
+    shutil.copytree(CONFIG_DIR, fixture_dir)
+    mapping = fixture_dir / "tam-exercise-types.yaml"
+    text = mapping.read_text(encoding="utf-8")
+    mapping.write_text(
+        text.replace(
+            "  - slug: official_reading\n    evidence_mode:",
+            "  - slug: official_reading\n    mapping_version: rogue-v9\n    evidence_mode:",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match=r"item mapping version must match release"):
+        load_config_bundle(fixture_dir)
+
+
+@pytest.mark.parametrize(
+    ("injection", "message"),
+    [
+        (
+            "    name: &shared API and integration architecture",
+            "YAML aliases are not allowed",
+        ),
+        ("    <<: {unexpected: true}", "YAML merge keys are not allowed"),
+    ],
+)
+def test_yaml_aliases_and_merge_keys_are_rejected(
+    tmp_path: Path, injection: str, message: str
+) -> None:
+    fixture_dir = tmp_path / "config"
+    shutil.copytree(CONFIG_DIR, fixture_dir)
+    skills = fixture_dir / "tam-skills.yaml"
+    text = skills.read_text(encoding="utf-8")
+    if "&shared" in injection:
+        text = text.replace(
+            "    name: API and integration architecture",
+            injection,
+            1,
+        ).replace("    name: Structured troubleshooting", "    name: *shared", 1)
+    else:
+        text = text.replace("    name: API and integration architecture", injection, 1)
+    skills.write_text(text, encoding="utf-8")
+
+    with pytest.raises(ConfigError, match=message):
+        load_config_bundle(fixture_dir)
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ("nested: " + "[" * 80 + "0" + "]" * 80, "maximum depth"),
+        ("nodes: [" + "0," * 25000 + "]", "node limit"),
+    ],
+)
+def test_yaml_complexity_is_bounded(tmp_path: Path, payload: str, message: str) -> None:
+    fixture_dir = tmp_path / "config"
+    shutil.copytree(CONFIG_DIR, fixture_dir)
+    skills = fixture_dir / "tam-skills.yaml"
+    skills.write_text(
+        skills.read_text(encoding="utf-8") + f"\n{payload}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match=message):
+        load_config_bundle(fixture_dir)
+
+
+@pytest.mark.parametrize("value", [".nan", ".inf", "-.inf"])
+def test_nonfinite_decimal_is_a_source_located_config_error(
+    tmp_path: Path, value: str
+) -> None:
+    fixture_dir = tmp_path / "config"
+    shutil.copytree(CONFIG_DIR, fixture_dir)
+    mapping = fixture_dir / "tam-exercise-types.yaml"
+    text = mapping.read_text(encoding="utf-8")
+    mapping.write_text(text.replace("weight: 0.35", f"weight: {value}", 1), encoding="utf-8")
+    with pytest.raises(
+        ConfigError,
+        match=r"tam-exercise-types\.yaml:\d+:\d+.*finite decimal",
+    ):
+        load_config_bundle(fixture_dir)
+
+
+@pytest.mark.parametrize(
+    ("filename", "old", "new", "message"),
+    [
+        (
+            "tam-skills.yaml",
+            "name: API and integration architecture",
+            "name: '   '",
+            "must not be blank",
+        ),
+        (
+            "tam-skills.yaml",
+            "name: API and integration architecture",
+            "name: '" + "é" * 65 + "'",
+            "UTF-8 bytes",
+        ),
+        (
+            "tam-rubrics.yaml",
+            "    scale_min: 0\n    scale_max: 20",
+            "    scale_min: 20\n    scale_max: 20",
+            "scale maximum must be greater",
+        ),
+        (
+            "tam-rubrics.yaml",
+            "  performance_scale_min: 0\n  performance_scale_max: 4",
+            "  performance_scale_min: 4\n  performance_scale_max: 4",
+            "performance scale maximum must be greater",
+        ),
+    ],
+)
+def test_dry_run_mirrors_database_text_and_scale_constraints(
+    tmp_path: Path, filename: str, old: str, new: str, message: str
+) -> None:
+    fixture_dir = tmp_path / "config"
+    shutil.copytree(CONFIG_DIR, fixture_dir)
+    target = fixture_dir / filename
+    text = target.read_text(encoding="utf-8")
+    assert old in text
+    target.write_text(text.replace(old, new, 1), encoding="utf-8")
+    with pytest.raises(ConfigError, match=message):
         load_config_bundle(fixture_dir)
