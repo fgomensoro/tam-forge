@@ -20,11 +20,25 @@ from sqlalchemy.orm import make_transient_to_detached
 MIGRATION_PATH = Path(
     "apps/backend/alembic/versions/20260825_0001_identity_sessions.py"
 )
+INTEGRATION_CONTRACT_PATH = Path(
+    "apps/backend/tests/integration/test_0001_identity_sessions.py"
+)
 EXPECTED_TABLES = {"owners", "auth_sessions", "command_receipts", "audit_events"}
 
 
 def _load_migration() -> object:
     spec = importlib.util.spec_from_file_location("identity_sessions_migration", MIGRATION_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_integration_contract() -> object:
+    spec = importlib.util.spec_from_file_location(
+        "identity_sessions_integration_contract",
+        INTEGRATION_CONTRACT_PATH,
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -162,6 +176,17 @@ def test_identity_models_register_exact_tables_and_postgresql_types() -> None:
     assert events.c.redacted_metadata.server_default is None
     assert events.c.occurred_at.type.timezone is True
     assert events.c.owner_id.nullable is True
+
+
+def test_integration_contract_has_explicit_nullability_for_every_column() -> None:
+    contract = _load_integration_contract()
+    expected_columns = contract.EXPECTED_COLUMNS
+    expected_nullable = contract.EXPECTED_NULLABLE
+
+    assert set(expected_columns) == EXPECTED_TABLES
+    assert set(expected_nullable) == EXPECTED_TABLES
+    for table_name, column_names in expected_columns.items():
+        assert set(expected_nullable[table_name]) == column_names
 
 
 def test_identity_models_expose_named_constraints_and_fk_indexes() -> None:

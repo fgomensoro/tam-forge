@@ -7,6 +7,94 @@ import pytest
 
 pytestmark = pytest.mark.integration
 
+EXPECTED_COLUMNS = {
+    "owners": {
+        "id",
+        "github_user_id",
+        "github_login",
+        "created_at",
+        "updated_at",
+    },
+    "auth_sessions": {
+        "id",
+        "owner_id",
+        "token_hash",
+        "csrf_hash",
+        "expires_at",
+        "revoked_at",
+        "last_seen_at",
+        "created_at",
+    },
+    "command_receipts": {
+        "id",
+        "owner_id",
+        "command_scope",
+        "idempotency_key",
+        "request_hash",
+        "status",
+        "result_payload",
+        "created_at",
+        "expires_at",
+    },
+    "audit_events": {
+        "id",
+        "owner_id",
+        "actor_kind",
+        "actor_subject_hash",
+        "action",
+        "aggregate_type",
+        "aggregate_id",
+        "request_correlation_hash",
+        "idempotency_correlation_hash",
+        "redacted_metadata",
+        "occurred_at",
+    },
+}
+
+EXPECTED_NULLABLE = {
+    "owners": {
+        "id": False,
+        "github_user_id": False,
+        "github_login": False,
+        "created_at": False,
+        "updated_at": False,
+    },
+    "auth_sessions": {
+        "id": False,
+        "owner_id": False,
+        "token_hash": False,
+        "csrf_hash": False,
+        "expires_at": False,
+        "revoked_at": True,
+        "last_seen_at": True,
+        "created_at": False,
+    },
+    "command_receipts": {
+        "id": False,
+        "owner_id": False,
+        "command_scope": False,
+        "idempotency_key": False,
+        "request_hash": False,
+        "status": False,
+        "result_payload": False,
+        "created_at": False,
+        "expires_at": False,
+    },
+    "audit_events": {
+        "id": False,
+        "owner_id": True,
+        "actor_kind": False,
+        "actor_subject_hash": False,
+        "action": False,
+        "aggregate_type": False,
+        "aggregate_id": False,
+        "request_correlation_hash": True,
+        "idempotency_correlation_hash": True,
+        "redacted_metadata": False,
+        "occurred_at": False,
+    },
+}
+
 
 def test_identity_session_schema_contract_and_round_trip(test_database_url: str) -> None:
     from alembic import command
@@ -39,56 +127,13 @@ def test_identity_session_schema_contract_and_round_trip(test_database_url: str)
         inspector = inspect(engine)
         assert set(inspector.get_table_names()) == revision_tables | {"alembic_version"}
 
-        expected_columns = {
-            "owners": {
-                "id",
-                "github_user_id",
-                "github_login",
-                "created_at",
-                "updated_at",
-            },
-            "auth_sessions": {
-                "id",
-                "owner_id",
-                "token_hash",
-                "csrf_hash",
-                "expires_at",
-                "revoked_at",
-                "last_seen_at",
-                "created_at",
-            },
-            "command_receipts": {
-                "id",
-                "owner_id",
-                "command_scope",
-                "idempotency_key",
-                "request_hash",
-                "status",
-                "result_payload",
-                "created_at",
-                "expires_at",
-            },
-            "audit_events": {
-                "id",
-                "owner_id",
-                "actor_kind",
-                "actor_subject_hash",
-                "action",
-                "aggregate_type",
-                "aggregate_id",
-                "request_correlation_hash",
-                "idempotency_correlation_hash",
-                "redacted_metadata",
-                "occurred_at",
-            },
-        }
         timestamptz_columns = {
             "owners": {"created_at", "updated_at"},
             "auth_sessions": {"expires_at", "revoked_at", "last_seen_at", "created_at"},
             "command_receipts": {"created_at", "expires_at"},
             "audit_events": {"occurred_at"},
         }
-        for table_name, names in expected_columns.items():
+        for table_name, names in EXPECTED_COLUMNS.items():
             columns = {column["name"]: column for column in inspector.get_columns(table_name)}
             assert set(columns) == names
             assert columns["id"]["identity"]["always"] is True
@@ -97,44 +142,7 @@ def test_identity_session_schema_contract_and_round_trip(test_database_url: str)
                 if column_name in {"created_at", "updated_at", "occurred_at"}:
                     assert columns[column_name]["default"] is not None
 
-        expected_nullable = {
-            "owners": {"id": False, "github_user_id": False, "github_login": False},
-            "auth_sessions": {
-                "id": False,
-                "owner_id": False,
-                "token_hash": False,
-                "csrf_hash": False,
-                "expires_at": False,
-                "revoked_at": True,
-                "last_seen_at": True,
-                "created_at": False,
-            },
-            "command_receipts": {
-                "id": False,
-                "owner_id": False,
-                "command_scope": False,
-                "idempotency_key": False,
-                "request_hash": False,
-                "status": False,
-                "result_payload": False,
-                "created_at": False,
-                "expires_at": False,
-            },
-            "audit_events": {
-                "id": False,
-                "owner_id": True,
-                "actor_kind": False,
-                "actor_subject_hash": False,
-                "action": False,
-                "aggregate_type": False,
-                "aggregate_id": False,
-                "request_correlation_hash": True,
-                "idempotency_correlation_hash": True,
-                "redacted_metadata": False,
-                "occurred_at": False,
-            },
-        }
-        for table_name, expected in expected_nullable.items():
+        for table_name, expected in EXPECTED_NULLABLE.items():
             actual = {
                 column["name"]: column["nullable"]
                 for column in inspector.get_columns(table_name)
@@ -158,11 +166,11 @@ def test_identity_session_schema_contract_and_round_trip(test_database_url: str)
             assert primary_key["name"] == f"pk_{table_name}"
             assert primary_key["constrained_columns"] == ["id"]
 
-        auth_column_names = set(expected_columns["auth_sessions"])
+        auth_column_names = set(EXPECTED_COLUMNS["auth_sessions"])
         assert "token" not in auth_column_names
         assert "csrf_token" not in auth_column_names
-        assert all("raw" not in name for names in expected_columns.values() for name in names)
-        audit_column_names = expected_columns["audit_events"]
+        assert all("raw" not in name for names in EXPECTED_COLUMNS.values() for name in names)
+        audit_column_names = EXPECTED_COLUMNS["audit_events"]
         assert "request_id" not in audit_column_names
         assert "idempotency_key" not in audit_column_names
         assert all(
