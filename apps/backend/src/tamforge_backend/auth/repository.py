@@ -46,6 +46,7 @@ class SqlAlchemyAuthRepository:
                     owner_id=owner.id,
                     token_hash=token_hash,
                     csrf_hash=csrf_hash,
+                    created_at=func.current_timestamp(),
                     expires_at=func.now() + session_ttl,
                 )
                 .returning(
