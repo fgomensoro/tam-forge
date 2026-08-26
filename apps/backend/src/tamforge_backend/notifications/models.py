@@ -19,9 +19,11 @@ from sqlalchemy import (
     event,
     func,
     inspect,
+    select,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Mapped, Mapper, mapped_column
 from sqlalchemy.orm.base import LoaderCallableStatus
 
@@ -588,16 +590,6 @@ def _validate_job_state_change(
     del initiator
     if value not in JOB_STATES:
         raise JobWorkflowError("invalid background job state")
-    if _is_persisted_change(target, value, old_value):
-        assert isinstance(old_value, str)
-        if old_value in {"succeeded", "failed"}:
-            raise JobWorkflowError("terminal background job cannot transition")
-        if value not in JOB_TRANSITIONS[old_value]:
-            raise JobWorkflowError("invalid background job state transition")
-        if old_value == "running" and value == "queued":
-            lease_expires_at = target.lease_expires_at
-            if lease_expires_at is None or lease_expires_at > utc_now():
-                raise JobWorkflowError("background job lease has not expired")
     return value
 
 
@@ -610,7 +602,7 @@ event.listen(
 )
 
 
-def _validate_job_attempt_count(
+def _validate_job_attempt_count_monotonic(
     target: BackgroundJob,
     value: int,
     old_value: int | LoaderCallableStatus,
@@ -619,72 +611,15 @@ def _validate_job_attempt_count(
     del initiator
     if _is_persisted_change(target, value, old_value):
         assert isinstance(old_value, int)
-        if value != old_value + 1 or target.state != "running":
-            raise JobWorkflowError("background job attempt count must increase by one on claim")
+        if value < old_value:
+            raise JobWorkflowError("background job attempt count cannot decrease")
     return value
 
 
 event.listen(
     BackgroundJob.attempt_count,
     "set",
-    _validate_job_attempt_count,
-    retval=True,
-    active_history=True,
-)
-
-
-def _job_state_is_changing(target: BackgroundJob) -> bool:
-    history = inspect(target).attrs.state.history
-    return history.has_changes() and bool(history.deleted)
-
-
-def _reject_running_worker_change(
-    target: BackgroundJob,
-    value: str | None,
-    old_value: str | None | LoaderCallableStatus,
-    initiator: object,
-) -> str | None:
-    del initiator
-    if (
-        _is_persisted_change(target, value, old_value)
-        and target.state == "running"
-        and not _job_state_is_changing(target)
-    ):
-        raise JobWorkflowError("running heartbeat cannot change lease owner")
-    return value
-
-
-event.listen(
-    BackgroundJob.lease_owner,
-    "set",
-    _reject_running_worker_change,
-    retval=True,
-    active_history=True,
-)
-
-
-def _validate_running_lease_expiry(
-    target: BackgroundJob,
-    value: datetime | None,
-    old_value: datetime | None | LoaderCallableStatus,
-    initiator: object,
-) -> datetime | None:
-    del initiator
-    if (
-        _is_persisted_change(target, value, old_value)
-        and target.state == "running"
-        and not _job_state_is_changing(target)
-        and isinstance(old_value, datetime)
-        and (value is None or value < old_value)
-    ):
-        raise JobWorkflowError("running lease expiry cannot move backwards")
-    return value
-
-
-event.listen(
-    BackgroundJob.lease_expires_at,
-    "set",
-    _validate_running_lease_expiry,
+    _validate_job_attempt_count_monotonic,
     retval=True,
     active_history=True,
 )
@@ -805,7 +740,78 @@ def validate_background_job(
 
 
 event.listen(BackgroundJob, "before_insert", validate_background_job)
-event.listen(BackgroundJob, "before_update", validate_background_job)
+
+
+def validate_background_job_update(
+    mapper: Mapper[BackgroundJob] | None,
+    connection: Connection,
+    target: BackgroundJob,
+) -> None:
+    """Validate one update against a locked persisted row, independent of assignment order."""
+    del mapper
+    validate_background_job(None, None, target)
+    old = connection.execute(
+        select(*BackgroundJob.__table__.c)
+        .where(BackgroundJob.__table__.c.id == target.id)
+        .with_for_update()
+    ).mappings().one_or_none()
+    if old is None:
+        raise JobWorkflowError("persisted background job does not exist")
+
+    old_state = old["state"]
+    assert isinstance(old_state, str)
+    if old_state in {"succeeded", "failed"}:
+        raise JobWorkflowError("terminal background job is immutable")
+
+    for attribute_name in _JOB_PROVENANCE_ATTRIBUTES:
+        if getattr(target, attribute_name) != old[attribute_name]:
+            raise JobWorkflowError("background job provenance is immutable")
+    if target.updated_at < old["updated_at"]:
+        raise JobWorkflowError("background job updated_at must be monotonic")
+    for attribute_name in ("started_at", "completed_at"):
+        old_value = old[attribute_name]
+        if old_value is not None and getattr(target, attribute_name) != old_value:
+            raise JobWorkflowError("background job lifecycle timestamps are write-once")
+
+    if target.state != old_state and target.state not in JOB_TRANSITIONS[old_state]:
+        raise JobWorkflowError("invalid background job state transition")
+
+    old_attempt_count = old["attempt_count"]
+    assert isinstance(old_attempt_count, int)
+    if old_state == "queued" and target.state == "running":
+        if target.attempt_count != old_attempt_count + 1:
+            raise JobWorkflowError(
+                "background job claim must increment attempt count exactly once"
+            )
+    elif target.attempt_count != old_attempt_count:
+        raise JobWorkflowError("background job attempt count changes only on claim")
+
+    if old_state == "running" and target.state == "running":
+        permitted_changes = {"lease_expires_at", "updated_at"}
+        changed = {
+            column.name
+            for column in BackgroundJob.__table__.columns
+            if getattr(target, column.name) != old[column.name]
+        }
+        if not changed <= permitted_changes or target.lease_owner != old["lease_owner"]:
+            raise JobWorkflowError("running heartbeat may only extend its lease")
+        old_expiry = old["lease_expires_at"]
+        if (
+            not isinstance(old_expiry, datetime)
+            or target.lease_expires_at is None
+            or target.lease_expires_at < old_expiry
+        ):
+            raise JobWorkflowError("running heartbeat cannot shorten its lease")
+
+    if old_state == "running" and target.state == "queued":
+        old_expiry = old["lease_expires_at"]
+        if not isinstance(old_expiry, datetime) or old_expiry > utc_now():
+            raise JobWorkflowError("background job lease has not expired")
+        if target.lease_owner is not None or target.lease_expires_at is not None:
+            raise JobWorkflowError("reclaimed background job must clear its lease")
+
+
+event.listen(BackgroundJob, "before_update", validate_background_job_update)
 
 
 def _validate_cursor_event_id(
@@ -854,6 +860,7 @@ __all__ = [
     "OutboxEvent",
     "OutboxWorkflowError",
     "validate_background_job",
+    "validate_background_job_update",
     "validate_error_details_v1",
     "validate_reference_payload_v1",
 ]

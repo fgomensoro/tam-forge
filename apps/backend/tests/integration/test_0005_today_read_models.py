@@ -114,6 +114,47 @@ def test_today_notification_contract_and_round_trip(test_database_url: str) -> N
             },
         ).scalar_one()
 
+        future_day = execute(
+            "INSERT INTO study_days "
+            "(owner_id, roadmap_version_id, local_date, planned_minutes, focused_minutes, "
+            "day_type, status) VALUES (:owner, :version, DATE '2026-08-27', 240, 0, "
+            "'weekday', 'planned') RETURNING id",
+            {"owner": owner, "version": version},
+        ).scalar_one()
+        activity_b_correct = execute(
+            "INSERT INTO activity_instances "
+            "(owner_id, study_day_id, roadmap_version_id, task_definition_id, "
+            "task_stable_id_snapshot, task_mapping_version_snapshot, task_objective_snapshot, "
+            "task_timebox_minutes_snapshot, roadmap_version_key_snapshot, state, attempt_kind, "
+            "assistance_mode, classification, timebox_minutes, source_hidden, optimistic_version, "
+            "replacement_version) VALUES (:owner, :day, :version, :task, 'case-1', 'seed-v1', "
+            "'Solve a case', 60, 'month-1-v1', 'ready', 'attempt_b', 'none', 'required', "
+            "10, false, 1, 1) RETURNING id",
+            {"owner": owner, "day": future_day, "version": version, "task": task},
+        ).scalar_one()
+
+        other_task = execute(
+            "INSERT INTO task_definitions "
+            "(owner_id, roadmap_version_id, curriculum_node_id, stable_id, exercise_type, "
+            "mapping_version, objective, timebox_minutes, block, required, output_contract, "
+            "pass_contract, evidence_contract, source_references, allowed_ai_role) VALUES "
+            "(:owner, :version, :node, 'case-2', 'troubleshooting_case', 'seed-v1', "
+            "'Solve another case', 60, 'tam_case', true, '{}'::jsonb, '{}'::jsonb, "
+            "'{}'::jsonb, '[]'::jsonb, 'interviewer') RETURNING id",
+            {"owner": owner, "version": version, "node": node},
+        ).scalar_one()
+        other_activity_a = execute(
+            "INSERT INTO activity_instances "
+            "(owner_id, study_day_id, roadmap_version_id, task_definition_id, "
+            "task_stable_id_snapshot, task_mapping_version_snapshot, task_objective_snapshot, "
+            "task_timebox_minutes_snapshot, roadmap_version_key_snapshot, state, attempt_kind, "
+            "assistance_mode, classification, timebox_minutes, source_hidden, optimistic_version, "
+            "replacement_version) VALUES (:owner, :day, :version, :task, 'case-2', 'seed-v1', "
+            "'Solve another case', 60, 'month-1-v1', 'ready', 'attempt_a', 'none', "
+            "'required', 60, false, 1, 1) RETURNING id",
+            {"owner": owner, "day": day, "version": version, "task": other_task},
+        ).scalar_one()
+
         attempt = execute(
             "INSERT INTO attempts "
             "(owner_id, activity_instance_id, attempt_kind, original_text, audience, prompt, "
@@ -121,6 +162,14 @@ def test_today_notification_contract_and_round_trip(test_database_url: str) -> N
             "(:owner, :activity, 'attempt_a', 'Answer', 'hiring_manager', 'Solve', 'none', "
             ":hash, now()) RETURNING id",
             {"owner": owner, "activity": activity_a, "hash": b"a" * 32},
+        ).scalar_one()
+        other_attempt_a = execute(
+            "INSERT INTO attempts "
+            "(owner_id, activity_instance_id, attempt_kind, original_text, audience, prompt, "
+            "assistance_mode, commitment_hash, committed_at) VALUES "
+            "(:owner, :activity, 'attempt_a', 'Other answer', 'hiring_manager', 'Solve', "
+            "'none', :hash, now()) RETURNING id",
+            {"owner": owner, "activity": other_activity_a, "hash": b"o" * 32},
         ).scalar_one()
         config_seed = execute(
             "INSERT INTO config_seed_versions "
@@ -248,7 +297,7 @@ def test_today_notification_contract_and_round_trip(test_database_url: str) -> N
                 due_date=date(2026, 8, 27),
                 instruction="Lead with the conclusion.",
             )
-            create_correction_with_slot_reservation(
+            second_correction = create_correction_with_slot_reservation(
                 connection,
                 owner_id=owner,
                 source_activity_id=activity_a,
@@ -276,6 +325,72 @@ def test_today_notification_contract_and_round_trip(test_database_url: str) -> N
             "UPDATE corrections SET source_activity_id = :attempt_b "
             "WHERE owner_id = :owner AND id = :correction",
             {"owner": owner, "correction": correction, "attempt_b": activity_b},
+        )
+        rejects(
+            "UPDATE corrections SET due_date = DATE '2026-08-28' "
+            "WHERE owner_id = :owner AND id = :correction",
+            {"owner": owner, "correction": correction},
+        )
+        execute(
+            "INSERT INTO attempts "
+            "(owner_id, activity_instance_id, attempt_kind, parent_attempt_id, original_text, "
+            "audience, prompt, assistance_mode, commitment_hash, committed_at) VALUES "
+            "(:owner, :activity, 'attempt_b', :parent, 'Wrong lineage', 'hiring_manager', "
+            "'Solve', 'none', :hash, now())",
+            {
+                "owner": owner,
+                "activity": activity_b,
+                "parent": other_attempt_a,
+                "hash": b"w" * 32,
+            },
+        )
+        rejects(
+            "UPDATE corrections SET status = 'completed', completed_at = now(), "
+            "updated_at = now() WHERE owner_id = :owner AND id = :correction",
+            {"owner": owner, "correction": correction},
+        )
+        execute(
+            "UPDATE corrections SET status = 'superseded', completed_at = now(), "
+            "updated_at = now() WHERE owner_id = :owner AND id = :correction",
+            {"owner": owner, "correction": correction},
+        )
+        with engine.begin() as connection:
+            rescheduled_correction = create_correction_with_slot_reservation(
+                connection,
+                owner_id=owner,
+                source_activity_id=activity_a,
+                source_evidence_event_id=evidence,
+                priority=1,
+                due_date=date(2026, 8, 28),
+                instruction="Lead with the conclusion.",
+            )
+        assert rescheduled_correction != correction
+        execute(
+            "UPDATE corrections SET status = 'scheduled', attempt_b_activity_id = :attempt_b, "
+            "updated_at = now() WHERE owner_id = :owner AND id = :correction",
+            {
+                "owner": owner,
+                "correction": second_correction,
+                "attempt_b": activity_b_correct,
+            },
+        )
+        execute(
+            "INSERT INTO attempts "
+            "(owner_id, activity_instance_id, attempt_kind, parent_attempt_id, original_text, "
+            "audience, prompt, assistance_mode, commitment_hash, committed_at) VALUES "
+            "(:owner, :activity, 'attempt_b', :parent, 'Corrected answer', 'hiring_manager', "
+            "'Solve', 'none', :hash, now())",
+            {
+                "owner": owner,
+                "activity": activity_b_correct,
+                "parent": attempt,
+                "hash": b"b" * 32,
+            },
+        )
+        execute(
+            "UPDATE corrections SET status = 'completed', completed_at = now(), "
+            "updated_at = now() WHERE owner_id = :owner AND id = :correction",
+            {"owner": owner, "correction": second_correction},
         )
 
         execute(
@@ -448,6 +563,15 @@ def test_today_notification_contract_and_round_trip(test_database_url: str) -> N
             "(:owner, 'transcribe_activity', 1, "
             "'{\"schema_version\": 1, \"subject_id\": 1, \"url\": \"secret\"}'::jsonb, "
             "50, 'queued', 'job-bad', now(), 0, 3)",
+            {"owner": owner},
+        )
+        rejects(
+            "INSERT INTO background_jobs "
+            "(owner_id, kind, payload_schema_version, payload, priority, state, "
+            "idempotency_key, available_at, attempt_count, max_attempts) VALUES "
+            "(:owner, 'transcribe_activity', 1, "
+            "'{\"schema_version\": 1, \"subject_id\": 9223372036854775808}'::jsonb, "
+            "50, 'queued', 'job-bigint-overflow', now(), 0, 3)",
             {"owner": owner},
         )
 

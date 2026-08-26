@@ -303,6 +303,31 @@ def test_two_correction_slots_are_service_enforced_not_a_global_database_limit()
         )
         for constraint in table.constraints
     )
+    assert "uq_corrections_owner_source_activity_priority" not in _constraint_names(table)
+
+
+def test_scheduled_correction_can_be_superseded_without_rewriting_history() -> None:
+    from tamforge_backend.today.models import Correction, validate_correction
+
+    now = datetime.now(UTC)
+    correction = Correction(
+        owner_id=1,
+        source_activity_id=1,
+        source_evidence_event_id=7,
+        priority=1,
+        status="scheduled",
+        due_date=date.today(),
+        instruction="Lead with customer impact.",
+        attempt_b_activity_id=2,
+        created_at=now,
+        updated_at=now,
+        completed_at=None,
+    )
+    _detach(correction)
+    correction.status = "superseded"
+    correction.updated_at = now + timedelta(seconds=1)
+    correction.completed_at = now + timedelta(seconds=1)
+    validate_correction(None, None, correction)
 
 
 
@@ -449,6 +474,15 @@ def test_structured_payload_contracts_reject_free_text_urls_and_secrets() -> Non
 
     assert validate_reference_payload_v1({"schema_version": 1, "subject_id": 7})
     assert validate_reference_payload_v1(
+        {"schema_version": 1, "subject_id": 2**63 - 1, "related_id": 2**63 - 1}
+    )
+    assert not validate_reference_payload_v1(
+        {"schema_version": 1, "subject_id": 2**63}
+    )
+    assert not validate_reference_payload_v1(
+        {"schema_version": 1, "subject_id": 7, "related_id": 2**63}
+    )
+    assert validate_reference_payload_v1(
         {"schema_version": 1, "subject_id": 7, "related_id": 9}
     )
     assert validate_error_details_v1(
@@ -514,7 +548,7 @@ def test_processing_status_transitions_and_error_shape_are_deterministic() -> No
     needs_attention.last_error_details = None
 
 
-def test_correction_source_evidence_must_belong_to_source_activity() -> None:
+def test_correction_requires_committed_attempt_a_source_and_exact_attempt_b_lineage() -> None:
     from tamforge_backend.today.models import (
         Correction,
         CorrectionWorkflowError,
@@ -522,13 +556,22 @@ def test_correction_source_evidence_must_belong_to_source_activity() -> None:
     )
 
     class _Result:
-        def scalar_one_or_none(self) -> int:
-            return 2
+        def __init__(self, value: object) -> None:
+            self.value = value
+
+        def one_or_none(self) -> object:
+            return self.value
+
+        def scalar_one_or_none(self) -> object:
+            return self.value
 
     class _Connection:
+        def __init__(self, results: list[object]) -> None:
+            self.results = results
+
         def execute(self, statement: object) -> _Result:
             del statement
-            return _Result()
+            return _Result(self.results.pop(0))
 
     now = datetime.now(UTC)
     correction = Correction(
@@ -546,7 +589,62 @@ def test_correction_source_evidence_must_belong_to_source_activity() -> None:
     )
 
     with pytest.raises(CorrectionWorkflowError, match="source evidence"):
-        validate_correction(None, _Connection(), correction)  # type: ignore[arg-type]
+        validate_correction(
+            None,
+            _Connection([(2, 17, "attempt_a")]),  # type: ignore[arg-type]
+            correction,
+        )
+
+    with pytest.raises(CorrectionWorkflowError, match="committed Attempt A"):
+        validate_correction(
+            None,
+            _Connection([(1, 17, "attempt_b")]),  # type: ignore[arg-type]
+            correction,
+        )
+
+    scheduled = Correction(
+        owner_id=1,
+        source_activity_id=1,
+        source_evidence_event_id=7,
+        priority=1,
+        status="scheduled",
+        due_date=date.today(),
+        instruction="State the evidence.",
+        attempt_b_activity_id=2,
+        created_at=now,
+        updated_at=now,
+        completed_at=None,
+    )
+    validate_correction(
+        None,
+        _Connection([(1, 17, "attempt_a"), "attempt_b"]),  # type: ignore[arg-type]
+        scheduled,
+    )
+
+    completed = Correction(
+        owner_id=1,
+        source_activity_id=1,
+        source_evidence_event_id=7,
+        priority=1,
+        status="completed",
+        due_date=date.today(),
+        instruction="State the evidence.",
+        attempt_b_activity_id=2,
+        created_at=now,
+        updated_at=now,
+        completed_at=now,
+    )
+    with pytest.raises(CorrectionWorkflowError, match="parent Attempt A"):
+        validate_correction(
+            None,
+            _Connection([(1, 17, "attempt_a"), "attempt_b", None]),  # type: ignore[arg-type]
+            completed,
+        )
+    validate_correction(
+        None,
+        _Connection([(1, 17, "attempt_a"), "attempt_b", 23]),  # type: ignore[arg-type]
+        completed,
+    )
 
     missing = Correction(
         owner_id=1,
@@ -565,61 +663,266 @@ def test_correction_source_evidence_must_belong_to_source_activity() -> None:
         validate_correction(None, None, missing)
 
 
-def test_job_claim_retry_reclaim_heartbeat_and_terminal_guards() -> None:
-    from tamforge_backend.notifications.models import JobWorkflowError, validate_background_job
+def test_job_updates_use_persisted_snapshot_and_are_assignment_order_independent() -> None:
+    from tamforge_backend.notifications.models import validate_background_job_update
+
+    class _MappingResult:
+        def __init__(self, value: dict[str, object]) -> None:
+            self.value = value
+
+        def mappings(self) -> _MappingResult:
+            return self
+
+        def one_or_none(self) -> dict[str, object]:
+            return self.value
+
+    class _Connection:
+        def __init__(self, value: dict[str, object]) -> None:
+            self.value = value
+
+        def execute(self, statement: object) -> _MappingResult:
+            del statement
+            return _MappingResult(self.value)
+
+    def snapshot(job: object) -> dict[str, object]:
+        from tamforge_backend.notifications.models import BackgroundJob
+
+        assert isinstance(job, BackgroundJob)
+        return {
+            column.name: getattr(job, column.name)
+            for column in BackgroundJob.__table__.columns
+        }
 
     now = datetime.now(UTC)
-    job = _job()
-    _detach(job)
-    job.updated_at = now + timedelta(seconds=1)
-    job.state = "running"
-    job.attempt_count = 1
-    job.lease_owner = "worker-1"
-    job.lease_expires_at = now + timedelta(minutes=1)
-    job.started_at = now + timedelta(seconds=1)
-    validate_background_job(None, None, job)
+    for state_first in (True, False):
+        queued = _job(id=1)
+        old = snapshot(queued)
+        _detach(queued)
+        queued.updated_at = now + timedelta(seconds=1)
+        if state_first:
+            queued.state = "running"
+        queued.attempt_count = 1
+        queued.lease_owner = "worker-1"
+        queued.lease_expires_at = now + timedelta(minutes=1)
+        queued.started_at = now + timedelta(seconds=1)
+        if not state_first:
+            queued.state = "running"
+        validate_background_job_update(None, _Connection(old), queued)  # type: ignore[arg-type]
 
-    job.updated_at = now + timedelta(seconds=2)
-    job.lease_expires_at = now + timedelta(minutes=2)
-    validate_background_job(None, None, job)
+    old_time = now - timedelta(minutes=2)
+    for state_first in (True, False):
+        running = _job(
+            id=2,
+            state="running",
+            attempt_count=1,
+            lease_owner="worker-1",
+            lease_expires_at=now - timedelta(minutes=1),
+            created_at=old_time,
+            updated_at=old_time + timedelta(seconds=1),
+            started_at=old_time + timedelta(seconds=1),
+        )
+        old = snapshot(running)
+        _detach(running)
+        running.updated_at = now
+        if state_first:
+            running.state = "queued"
+        running.lease_owner = None
+        running.lease_expires_at = None
+        running.available_at = now + timedelta(seconds=20)
+        running.last_error_category = "transient_dependency"
+        running.last_error_details = {"schema_version": 1, "attempt": 1}
+        if not state_first:
+            running.state = "queued"
+        validate_background_job_update(None, _Connection(old), running)  # type: ignore[arg-type]
 
-    job.updated_at = now + timedelta(seconds=3)
-    with pytest.raises(JobWorkflowError, match="lease has not expired"):
-        job.state = "queued"
+    for state_first in (True, False):
+        running = _job(
+            id=3,
+            state="running",
+            attempt_count=1,
+            lease_owner="worker-1",
+            lease_expires_at=now + timedelta(minutes=1),
+            created_at=now - timedelta(seconds=1),
+            updated_at=now,
+            started_at=now,
+        )
+        old = snapshot(running)
+        _detach(running)
+        running.updated_at = now + timedelta(seconds=2)
+        if state_first:
+            running.state = "succeeded"
+        running.lease_owner = None
+        running.lease_expires_at = None
+        running.completed_at = now + timedelta(seconds=2)
+        if not state_first:
+            running.state = "succeeded"
+        validate_background_job_update(None, _Connection(old), running)  # type: ignore[arg-type]
 
-    old = now - timedelta(minutes=2)
-    expired = _job(
+    heartbeat = _job(
+        id=4,
         state="running",
         attempt_count=1,
         lease_owner="worker-1",
-        lease_expires_at=now - timedelta(minutes=1),
-        created_at=old,
-        updated_at=old + timedelta(seconds=1),
-        started_at=old + timedelta(seconds=1),
+        lease_expires_at=now + timedelta(minutes=1),
+        created_at=now - timedelta(seconds=1),
+        updated_at=now,
+        started_at=now,
     )
-    _detach(expired)
-    expired.updated_at = now
-    expired.state = "queued"
-    expired.lease_owner = None
-    expired.lease_expires_at = None
-    expired.available_at = now + timedelta(seconds=20)
-    expired.last_error_category = "transient_dependency"
-    expired.last_error_details = {"schema_version": 1, "attempt": 1}
-    validate_background_job(None, None, expired)
+    old = snapshot(heartbeat)
+    _detach(heartbeat)
+    heartbeat.updated_at = now + timedelta(seconds=1)
+    heartbeat.lease_expires_at = now + timedelta(minutes=2)
+    validate_background_job_update(None, _Connection(old), heartbeat)  # type: ignore[arg-type]
 
-    with pytest.raises(JobWorkflowError, match="attempt count"):
-        expired.attempt_count = 3
 
-    terminal = _job(
+def test_job_update_final_rows_reject_invalid_claim_heartbeat_reclaim_and_terminal() -> None:
+    from tamforge_backend.notifications.models import (
+        BackgroundJob,
+        JobWorkflowError,
+        validate_background_job_update,
+    )
+
+    class _Result:
+        def __init__(self, value: dict[str, object]) -> None:
+            self.value = value
+
+        def mappings(self) -> _Result:
+            return self
+
+        def one_or_none(self) -> dict[str, object]:
+            return self.value
+
+    class _Connection:
+        def __init__(self, value: dict[str, object]) -> None:
+            self.value = value
+
+        def execute(self, statement: object) -> _Result:
+            del statement
+            return _Result(self.value)
+
+    def snapshot(job: object) -> dict[str, object]:
+        assert isinstance(job, BackgroundJob)
+        return {
+            column.name: getattr(job, column.name)
+            for column in BackgroundJob.__table__.columns
+        }
+
+    now = datetime.now(UTC)
+    created_at = now - timedelta(seconds=1)
+    invalid_rows: list[tuple[object, dict[str, object], str]] = []
+
+    queued_retry = _job(
+        id=1,
+        state="queued",
+        attempt_count=1,
+        created_at=created_at,
+        updated_at=now,
+        started_at=now,
+    )
+    bad_claim = _job(
+        id=1,
+        state="running",
+        attempt_count=1,
+        lease_owner="worker-1",
+        lease_expires_at=now + timedelta(minutes=1),
+        created_at=created_at,
+        started_at=now,
+        updated_at=now + timedelta(seconds=1),
+    )
+    invalid_rows.append((bad_claim, snapshot(queued_retry), "attempt"))
+
+    heartbeat_old = _job(
+        id=2,
+        state="running",
+        attempt_count=1,
+        lease_owner="worker-1",
+        lease_expires_at=now + timedelta(minutes=1),
+        created_at=created_at,
+        updated_at=now,
+        started_at=now,
+    )
+    heartbeat = _job(
+        id=2,
+        state="running",
+        attempt_count=1,
+        lease_owner="worker-2",
+        lease_expires_at=now + timedelta(minutes=2),
+        created_at=created_at,
+        started_at=now,
+        updated_at=now + timedelta(seconds=1),
+    )
+    invalid_rows.append((heartbeat, snapshot(heartbeat_old), "heartbeat"))
+
+    future_old = _job(
+        id=3,
+        state="running",
+        attempt_count=1,
+        lease_owner="worker-1",
+        lease_expires_at=now + timedelta(minutes=1),
+        created_at=created_at,
+        updated_at=now,
+        started_at=now,
+    )
+    reclaim = _job(
+        id=3,
+        state="queued",
+        attempt_count=1,
+        created_at=created_at,
+        started_at=now,
+        updated_at=now + timedelta(seconds=1),
+    )
+    invalid_rows.append((reclaim, snapshot(future_old), "lease has not expired"))
+
+    terminal_old = _job(
+        id=4,
         state="succeeded",
         attempt_count=1,
+        created_at=created_at,
         started_at=now,
         completed_at=now + timedelta(seconds=1),
         updated_at=now + timedelta(seconds=1),
     )
-    _detach(terminal)
-    with pytest.raises(JobWorkflowError, match="terminal"):
-        terminal.state = "queued"
+    terminal = _job(
+        id=4,
+        state="queued",
+        attempt_count=1,
+        created_at=created_at,
+        started_at=now,
+        updated_at=now + timedelta(seconds=2),
+    )
+    invalid_rows.append((terminal, snapshot(terminal_old), "terminal"))
+
+    failed_without_error = _job(
+        id=5,
+        state="failed",
+        attempt_count=1,
+        created_at=created_at,
+        updated_at=now + timedelta(seconds=1),
+        started_at=now,
+        completed_at=now + timedelta(seconds=1),
+    )
+    invalid_rows.append(
+        (
+            failed_without_error,
+            snapshot(
+                _job(
+                    id=5,
+                    state="running",
+                    attempt_count=1,
+                    lease_owner="worker-1",
+                    lease_expires_at=now + timedelta(minutes=1),
+                    created_at=created_at,
+                    updated_at=now,
+                    started_at=now,
+                )
+            ),
+            "typed error",
+        )
+    )
+
+    for job, old, message in invalid_rows:
+        with pytest.raises(JobWorkflowError, match=message):
+            validate_background_job_update(None, _Connection(old), job)  # type: ignore[arg-type]
 
 
 def test_job_lifecycle_rejects_incoherent_leases_attempts_and_errors() -> None:
@@ -714,6 +1017,8 @@ def test_workflow_timestamp_and_provenance_mutations_are_rejected_at_orm_boundar
     _detach(correction)
     with pytest.raises(CorrectionWorkflowError, match="provenance"):
         correction.source_activity_id = 2
+    with pytest.raises(CorrectionWorkflowError, match="provenance"):
+        correction.due_date = correction.due_date + timedelta(days=1)
     correction.attempt_b_activity_id = 2
     with pytest.raises(CorrectionWorkflowError, match="write-once"):
         correction.attempt_b_activity_id = 3
@@ -756,20 +1061,6 @@ def test_workflow_timestamp_and_provenance_mutations_are_rejected_at_orm_boundar
     with pytest.raises(JobWorkflowError, match="monotonic"):
         job.updated_at = now - timedelta(seconds=1)
 
-    running = _job(
-        state="running",
-        attempt_count=1,
-        lease_owner="worker-1",
-        lease_expires_at=now + timedelta(minutes=1),
-        started_at=now,
-    )
-    _detach(running)
-    with pytest.raises(JobWorkflowError, match="heartbeat"):
-        running.lease_owner = "worker-2"
-    with pytest.raises(JobWorkflowError, match="lease expiry"):
-        running.lease_expires_at = now + timedelta(seconds=30)
-
-
 def test_offline_sql_contains_guards_search_path_indexes_and_reversible_downgrade() -> None:
     upgrade_sql = _offline_sql("upgrade", "20260825_0005_today_read_models")
     downgrade_sql = _offline_sql(
@@ -789,6 +1080,9 @@ def test_offline_sql_contains_guards_search_path_indexes_and_reversible_downgrad
     assert "tamforge_guard_processing_status_mutation" in lower_upgrade
     assert "tamforge_guard_outbox_event_mutation" in lower_upgrade
     assert "tamforge_guard_notification_cursor_mutation" in lower_upgrade
+    assert "9223372036854775807" in lower_upgrade
+    assert "new.due_date is distinct from old.due_date" in lower_upgrade
+    assert "parent_attempt_id = source_attempt_id" in lower_upgrade
     assert "on delete cascade" not in lower_upgrade
     assert "postgresql://" not in lower_upgrade
     assert "https://" not in lower_upgrade

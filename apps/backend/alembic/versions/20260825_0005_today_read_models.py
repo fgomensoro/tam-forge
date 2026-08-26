@@ -56,7 +56,8 @@ def _create_validation_functions() -> None:
                 OR jsonb_typeof(payload->'schema_version') <> 'number'
                 OR payload->>'schema_version' <> '1'
                 OR jsonb_typeof(payload->'subject_id') <> 'number'
-                OR payload->>'subject_id' !~ '^[1-9][0-9]{0,18}$' THEN
+                OR payload->>'subject_id' !~ '^[1-9][0-9]{0,18}$'
+                OR (payload->>'subject_id')::numeric > 9223372036854775807 THEN
                 RETURN false;
             END IF;
             FOR payload_key IN SELECT jsonb_object_keys(payload) LOOP
@@ -69,6 +70,7 @@ def _create_validation_functions() -> None:
             IF payload ? 'related_id' AND (
                 jsonb_typeof(payload->'related_id') <> 'number'
                 OR payload->>'related_id' !~ '^[1-9][0-9]{0,18}$'
+                OR (payload->>'related_id')::numeric > 9223372036854775807
             ) THEN
                 RETURN false;
             END IF;
@@ -170,8 +172,7 @@ def _create_tables() -> None:
             "AND completed_at IS NULL) OR "
             "(status = 'completed' AND attempt_b_activity_id IS NOT NULL "
             "AND completed_at IS NOT NULL) OR "
-            "(status IN ('dismissed', 'superseded') AND attempt_b_activity_id IS NULL "
-            "AND completed_at IS NOT NULL)",
+            "(status IN ('dismissed', 'superseded') AND completed_at IS NOT NULL)",
             name="lifecycle_coherent",
         ),
         sa.CheckConstraint(
@@ -198,12 +199,6 @@ def _create_tables() -> None:
         ),
         sa.PrimaryKeyConstraint("id", name="pk_corrections"),
         sa.UniqueConstraint("owner_id", "id", name="uq_corrections_owner_id_id"),
-        sa.UniqueConstraint(
-            "owner_id",
-            "source_activity_id",
-            "priority",
-            name="uq_corrections_owner_source_activity_priority",
-        ),
     )
     op.create_index(
         "ix_corrections_owner_due_status_priority",
@@ -603,12 +598,15 @@ def _create_guards() -> None:
         AS $$
         DECLARE attempt_kind_value text;
         DECLARE evidence_activity_id bigint;
+        DECLARE source_attempt_id bigint;
+        DECLARE source_attempt_kind text;
         BEGIN
             IF TG_OP = 'UPDATE' THEN
                 IF NEW.owner_id IS DISTINCT FROM OLD.owner_id
                     OR NEW.source_activity_id IS DISTINCT FROM OLD.source_activity_id
                     OR NEW.source_evidence_event_id IS DISTINCT FROM OLD.source_evidence_event_id
                     OR NEW.priority IS DISTINCT FROM OLD.priority
+                    OR NEW.due_date IS DISTINCT FROM OLD.due_date
                     OR NEW.instruction IS DISTINCT FROM OLD.instruction
                     OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
                     RAISE EXCEPTION 'correction provenance is immutable';
@@ -638,14 +636,21 @@ def _create_guards() -> None:
                     RAISE EXCEPTION 'correction updated_at cannot decrease';
                 END IF;
             END IF;
-            IF NEW.source_evidence_event_id IS NOT NULL THEN
-                SELECT item.activity_instance_id INTO evidence_activity_id
-                FROM public.skill_evidence_events AS item
-                WHERE item.owner_id = NEW.owner_id
-                    AND item.id = NEW.source_evidence_event_id;
-                IF evidence_activity_id IS DISTINCT FROM NEW.source_activity_id THEN
-                    RAISE EXCEPTION 'correction source evidence does not match activity';
-                END IF;
+            SELECT evidence.activity_instance_id, evidence.attempt_id, attempt.attempt_kind
+                INTO evidence_activity_id, source_attempt_id, source_attempt_kind
+            FROM public.skill_evidence_events AS evidence
+            JOIN public.attempts AS attempt
+                ON attempt.owner_id = evidence.owner_id
+                AND attempt.activity_instance_id = evidence.activity_instance_id
+                AND attempt.id = evidence.attempt_id
+            WHERE evidence.owner_id = NEW.owner_id
+                AND evidence.id = NEW.source_evidence_event_id;
+            IF evidence_activity_id IS DISTINCT FROM NEW.source_activity_id THEN
+                RAISE EXCEPTION 'correction source evidence does not match activity';
+            END IF;
+            IF source_attempt_id IS NULL
+                OR source_attempt_kind IS DISTINCT FROM 'attempt_a' THEN
+                RAISE EXCEPTION 'correction source evidence must resolve to Attempt A';
             END IF;
             IF NEW.attempt_b_activity_id IS NOT NULL THEN
                 SELECT item.attempt_kind INTO attempt_kind_value
@@ -654,6 +659,17 @@ def _create_guards() -> None:
                     AND item.id = NEW.attempt_b_activity_id;
                 IF attempt_kind_value IS DISTINCT FROM 'attempt_b' THEN
                     RAISE EXCEPTION 'correction target must be Attempt B';
+                END IF;
+            END IF;
+            IF NEW.status = 'completed' THEN
+                PERFORM item.id
+                FROM public.attempts AS item
+                WHERE item.owner_id = NEW.owner_id
+                    AND item.activity_instance_id = NEW.attempt_b_activity_id
+                    AND item.attempt_kind = 'attempt_b'
+                    AND item.parent_attempt_id = source_attempt_id;
+                IF NOT FOUND THEN
+                    RAISE EXCEPTION 'completed correction requires matching Attempt B lineage';
                 END IF;
             END IF;
             RETURN NEW;

@@ -17,6 +17,7 @@ from sqlalchemy import (
     Integer,
     Text,
     UniqueConstraint,
+    and_,
     event,
     func,
     inspect,
@@ -28,7 +29,7 @@ from sqlalchemy.orm import Mapped, Mapper, mapped_column
 from sqlalchemy.orm.base import LoaderCallableStatus
 
 from ..evidence.models import SkillEvidenceEvent
-from ..learning.models import ActivityInstance
+from ..learning.models import ActivityInstance, Attempt
 from ..models.base import Base, utc_now
 from ..notifications.models import ERROR_CATEGORIES, validate_error_details_v1
 
@@ -106,12 +107,6 @@ class Correction(Base):
             ondelete="RESTRICT",
         ),
         UniqueConstraint("owner_id", "id", name="uq_corrections_owner_id_id"),
-        UniqueConstraint(
-            "owner_id",
-            "source_activity_id",
-            "priority",
-            name="uq_corrections_owner_source_activity_priority",
-        ),
         CheckConstraint("priority BETWEEN 1 AND 2", name="priority_slot_allowed"),
         CheckConstraint(
             "status IN ('pending', 'scheduled', 'completed', 'dismissed', 'superseded')",
@@ -131,8 +126,7 @@ class Correction(Base):
             "AND completed_at IS NULL) OR "
             "(status = 'completed' AND attempt_b_activity_id IS NOT NULL "
             "AND completed_at IS NOT NULL) OR "
-            "(status IN ('dismissed', 'superseded') AND attempt_b_activity_id IS NULL "
-            "AND completed_at IS NOT NULL)",
+            "(status IN ('dismissed', 'superseded') AND completed_at IS NOT NULL)",
             name="lifecycle_coherent",
         ),
         CheckConstraint(
@@ -313,6 +307,7 @@ _CORRECTION_PROVENANCE_ATTRIBUTES = (
     "source_activity_id",
     "source_evidence_event_id",
     "priority",
+    "due_date",
     "instruction",
     "created_at",
 )
@@ -450,25 +445,47 @@ def validate_correction(
         target.attempt_b_activity_id is None or target.completed_at is None
     ):
         raise CorrectionWorkflowError("completed correction lifecycle is incoherent")
-    if target.status in {"dismissed", "superseded"} and (
-        target.attempt_b_activity_id is not None or target.completed_at is None
-    ):
+    if target.status in {"dismissed", "superseded"} and target.completed_at is None:
         raise CorrectionWorkflowError("closed correction lifecycle is incoherent")
     if target.updated_at < target.created_at or (
         target.completed_at is not None and target.completed_at < target.created_at
     ):
         raise CorrectionWorkflowError("correction timestamps are incoherent")
     if connection is not None:
-        evidence_activity_id = connection.execute(
-            select(SkillEvidenceEvent.__table__.c.activity_instance_id).where(
-                SkillEvidenceEvent.__table__.c.owner_id == target.owner_id,
-                SkillEvidenceEvent.__table__.c.id == target.source_evidence_event_id,
+        evidence = SkillEvidenceEvent.__table__
+        attempt = Attempt.__table__
+        source_row = connection.execute(
+            select(
+                evidence.c.activity_instance_id,
+                evidence.c.attempt_id,
+                attempt.c.attempt_kind,
             )
-        ).scalar_one_or_none()
-        if evidence_activity_id != target.source_activity_id:
+            .select_from(
+                evidence.join(
+                    attempt,
+                    and_(
+                        attempt.c.owner_id == evidence.c.owner_id,
+                        attempt.c.activity_instance_id == evidence.c.activity_instance_id,
+                        attempt.c.id == evidence.c.attempt_id,
+                    ),
+                )
+            )
+            .where(
+                evidence.c.owner_id == target.owner_id,
+                evidence.c.id == target.source_evidence_event_id,
+            )
+        ).one_or_none()
+        if source_row is None or source_row[0] != target.source_activity_id:
             raise CorrectionWorkflowError(
                 "correction source evidence must belong to its source activity"
             )
+        source_attempt_id = source_row[1]
+        if source_attempt_id is None or source_row[2] != "attempt_a":
+            raise CorrectionWorkflowError(
+                "correction source evidence must resolve to a committed Attempt A"
+            )
+    else:
+        source_attempt_id = None
     if connection is not None and target.attempt_b_activity_id is not None:
         attempt_kind = connection.execute(
             select(ActivityInstance.__table__.c.attempt_kind).where(
@@ -478,6 +495,20 @@ def validate_correction(
         ).scalar_one_or_none()
         if attempt_kind != "attempt_b":
             raise CorrectionWorkflowError("correction target must be an Attempt B activity")
+        if target.status == "completed":
+            committed_attempt_b_id = connection.execute(
+                select(Attempt.__table__.c.id).where(
+                    Attempt.__table__.c.owner_id == target.owner_id,
+                    Attempt.__table__.c.activity_instance_id == target.attempt_b_activity_id,
+                    Attempt.__table__.c.attempt_kind == "attempt_b",
+                    Attempt.__table__.c.parent_attempt_id == source_attempt_id,
+                )
+            ).scalar_one_or_none()
+            if committed_attempt_b_id is None:
+                raise CorrectionWorkflowError(
+                    "completed correction requires an Attempt B whose parent Attempt A "
+                    "matches the source evidence"
+                )
 
 
 event.listen(Correction, "before_insert", validate_correction)
