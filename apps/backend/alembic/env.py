@@ -7,7 +7,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 from tamforge_backend.database import resolve_migration_url
-from tamforge_backend.models.base import Base
+from tamforge_backend.models import Base
 
 config = context.config
 if config.config_file_name is not None:
