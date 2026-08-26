@@ -1065,6 +1065,70 @@ def test_basis_ids_are_unique_scoped_and_context_specific() -> None:
     )
 
 
+def test_snapshot_application_guard_reconstructs_scoped_stored_events() -> None:
+    from tamforge_backend.evidence.models import (
+        EvidenceContractError,
+        SkillSnapshot,
+        validate_skill_snapshot,
+    )
+
+    snapshot = SkillSnapshot(
+        owner_id=1,
+        config_seed_version_id=1,
+        competency_id=1,
+        formula_version="skill-v1",
+        snapshot_date=date.today(),
+        snapshot_sequence=1,
+        estimated_level=Decimal("2.000"),
+        confidence_code="low",
+        trend_code="insufficient_evidence",
+        recency_code="fresh",
+        baseline_target_gap=Decimal("0.000"),
+        month_one_target_gap=Decimal("0.500"),
+        final_target_gap=Decimal("1.000"),
+        total_effective_weight=Decimal("0.100000"),
+        qualifying_event_count=1,
+        exercise_type_count=1,
+        last_strong_evidence_date=date.today(),
+        contributing_event_manifest={
+            "schema_version": 1,
+            "events": [
+                {"event_id": 1, "effective_weight": 0.1, "inclusion_code": "included"}
+            ],
+        },
+        confidence_basis={
+            "schema_version": 1,
+            "basis_code": "low_weight",
+            "event_ids": [1],
+        },
+        trend_basis={
+            "schema_version": 1,
+            "basis_code": "too_few_events",
+            "event_ids": [1],
+        },
+        created_at=datetime.now(UTC),
+    )
+    coherent = _StubConnection(
+        (Decimal("2.000"), Decimal("2.500"), Decimal("3.000")),
+        (Decimal("0.100000"), Decimal("2.000"), 7, True),
+    )
+    validate_skill_snapshot(None, coherent, snapshot)  # type: ignore[arg-type]
+
+    fabricated_event = _StubConnection(
+        (Decimal("2.000"), Decimal("2.500"), Decimal("3.000")),
+        None,
+    )
+    with pytest.raises(EvidenceContractError, match="event provenance"):
+        validate_skill_snapshot(None, fabricated_event, snapshot)  # type: ignore[arg-type]
+
+    wrong_weight = _StubConnection(
+        (Decimal("2.000"), Decimal("2.500"), Decimal("3.000")),
+        (Decimal("0.200000"), Decimal("2.000"), 7, True),
+    )
+    with pytest.raises(EvidenceContractError, match="included snapshot event weight"):
+        validate_skill_snapshot(None, wrong_weight, snapshot)  # type: ignore[arg-type]
+
+
 def test_immutable_configuration_and_history_are_rejected_by_orm() -> None:
     from tamforge_backend.evidence.models import (
         AppendOnlyEvidenceError,

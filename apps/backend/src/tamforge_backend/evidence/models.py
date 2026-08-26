@@ -1534,8 +1534,8 @@ def validate_skill_snapshot(
     connection: Connection | None,
     target: SkillSnapshot,
 ) -> None:
-    del mapper, connection
-    _validate_structured_payloads(None, None, target)
+    del mapper
+    _validate_structured_payloads(None, connection, target)
     manifest_ids = {
         int(item["event_id"]) for item in target.contributing_event_manifest["events"]
     }
@@ -1560,6 +1560,109 @@ def validate_skill_snapshot(
         raise EvidenceContractError("confidence basis code does not match snapshot confidence")
     if target.trend_basis["basis_code"] not in trend_codes.get(target.trend_code, set()):
         raise EvidenceContractError("trend basis code does not match snapshot trend")
+    if connection is None:
+        return
+
+    competency_targets = connection.execute(
+        select(
+            Competency.__table__.c.baseline_level,
+            Competency.__table__.c.month_one_target,
+            Competency.__table__.c.final_target,
+        ).where(
+            Competency.__table__.c.owner_id == target.owner_id,
+            Competency.__table__.c.config_seed_version_id
+            == target.config_seed_version_id,
+            Competency.__table__.c.id == target.competency_id,
+        )
+    ).one_or_none()
+    if competency_targets is None:
+        raise EvidenceContractError("snapshot competency provenance is invalid")
+    baseline, month_target, final_target = map(_as_decimal, competency_targets)
+
+    reconstructed_weight = Decimal("0")
+    reconstructed_weighted_sum = Decimal("0")
+    reconstructed_event_count = 0
+    exercise_type_ids: set[int] = set()
+    for item in target.contributing_event_manifest["events"]:
+        stored_event = connection.execute(
+            select(
+                SkillEvidenceEvent.__table__.c.effective_weight,
+                SkillEvidenceEvent.__table__.c.performance_score,
+                SkillEvidenceEvent.__table__.c.exercise_type_version_id,
+                SkillEvidenceEvent.__table__.c.qualifying_for_level,
+            ).where(
+                SkillEvidenceEvent.__table__.c.owner_id == target.owner_id,
+                SkillEvidenceEvent.__table__.c.config_seed_version_id
+                == target.config_seed_version_id,
+                SkillEvidenceEvent.__table__.c.competency_id == target.competency_id,
+                SkillEvidenceEvent.__table__.c.formula_version == target.formula_version,
+                SkillEvidenceEvent.__table__.c.id == item["event_id"],
+            )
+        ).one_or_none()
+        if stored_event is None:
+            raise EvidenceContractError("snapshot event provenance is invalid")
+        (
+            stored_weight_value,
+            performance_value,
+            exercise_type_id,
+            stored_qualifying,
+        ) = stored_event
+        stored_weight = _as_decimal(stored_weight_value)
+        performance_score = _as_decimal(performance_value)
+        manifest_weight = _as_decimal(item["effective_weight"])
+        inclusion_code = item["inclusion_code"]
+        if inclusion_code == "included" and (
+            not stored_qualifying or manifest_weight != stored_weight
+        ):
+            raise EvidenceContractError("included snapshot event weight is invalid")
+        if inclusion_code == "discounted_same_day" and (
+            not stored_qualifying
+            or manifest_weight <= 0
+            or manifest_weight > stored_weight
+        ):
+            raise EvidenceContractError("discounted snapshot event weight is invalid")
+        if (
+            inclusion_code in {"excluded_nonqualifying", "excluded_outside_window"}
+            and manifest_weight != 0
+        ):
+            raise EvidenceContractError("excluded snapshot event weight must be zero")
+        if inclusion_code in {"included", "discounted_same_day"}:
+            reconstructed_weight += manifest_weight
+            reconstructed_weighted_sum += performance_score * manifest_weight
+            reconstructed_event_count += 1
+            exercise_type_ids.add(int(exercise_type_id))
+
+    expected_estimate = (
+        (baseline * Decimal("2") + reconstructed_weighted_sum)
+        / (Decimal("2") + reconstructed_weight)
+    ).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+    expected_weight = reconstructed_weight.quantize(
+        Decimal("0.000001"), rounding=ROUND_HALF_UP
+    )
+    expected_gaps = (
+        (baseline - expected_estimate).quantize(
+            Decimal("0.001"), rounding=ROUND_HALF_UP
+        ),
+        (month_target - expected_estimate).quantize(
+            Decimal("0.001"), rounding=ROUND_HALF_UP
+        ),
+        (final_target - expected_estimate).quantize(
+            Decimal("0.001"), rounding=ROUND_HALF_UP
+        ),
+    )
+    if (
+        target.total_effective_weight != expected_weight
+        or target.qualifying_event_count != reconstructed_event_count
+        or target.exercise_type_count != len(exercise_type_ids)
+        or target.estimated_level != expected_estimate
+        or (
+            target.baseline_target_gap,
+            target.month_one_target_gap,
+            target.final_target_gap,
+        )
+        != expected_gaps
+    ):
+        raise EvidenceContractError("snapshot estimate is not reproducible")
 
 
 def validate_portfolio_judgment_score(
