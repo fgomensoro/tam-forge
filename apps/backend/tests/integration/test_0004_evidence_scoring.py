@@ -105,10 +105,15 @@ def test_evidence_scoring_contract_and_round_trip(test_database_url: str) -> Non
         day = execute(
             "INSERT INTO study_days "
             "(owner_id, roadmap_version_id, local_date, planned_minutes, focused_minutes, "
-            "day_type, status) VALUES (:owner, :version, DATE '2026-08-26', 240, 60, "
+            "day_type, status) VALUES (:owner, :version, DATE '2026-08-26', 240, 0, "
             "'weekday', 'planned') RETURNING id",
             {"owner": owner, "version": version},
         ).scalar_one()
+        execute(
+            "UPDATE study_days SET status = 'in_progress', started_at = now(), "
+            "focused_minutes = 60 WHERE owner_id = :owner AND id = :day",
+            {"owner": owner, "day": day},
+        )
         activity = execute(
             "INSERT INTO activity_instances "
             "(owner_id, study_day_id, roadmap_version_id, task_definition_id, "
@@ -571,10 +576,15 @@ def test_evidence_scoring_contract_and_round_trip(test_database_url: str) -> Non
         foreign_day = execute(
             "INSERT INTO study_days "
             "(owner_id, roadmap_version_id, local_date, planned_minutes, focused_minutes, "
-            "day_type, status) VALUES (:owner, :version, DATE '2026-08-25', 240, 60, "
+            "day_type, status) VALUES (:owner, :version, DATE '2026-08-25', 240, 0, "
             "'weekday', 'planned') RETURNING id",
             {"owner": foreign_owner, "version": foreign_version},
         ).scalar_one()
+        execute(
+            "UPDATE study_days SET status = 'in_progress', started_at = now(), "
+            "focused_minutes = 60 WHERE owner_id = :owner AND id = :day",
+            {"owner": foreign_owner, "day": foreign_day},
+        )
         foreign_activity = execute(
             "INSERT INTO activity_instances "
             "(owner_id, study_day_id, roadmap_version_id, task_definition_id, "
