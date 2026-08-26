@@ -151,7 +151,7 @@ def test_identity_session_schema_contract_and_round_trip(test_database_url: str)
             BYTEA,
         )
         assert isinstance(audit_columns["redacted_metadata"]["type"], JSONB)
-        assert audit_columns["redacted_metadata"]["default"] is not None
+        assert audit_columns["redacted_metadata"]["default"] is None
 
         for table_name in revision_tables:
             primary_key = inspector.get_pk_constraint(table_name)
