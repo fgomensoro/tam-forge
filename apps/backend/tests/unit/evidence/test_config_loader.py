@@ -448,6 +448,25 @@ def test_weekdays_expose_one_dynamic_correction_warmup(config_bundle) -> None:
     }
 
 
+def test_every_loaded_task_has_a_persistable_task_definition_reference_shape(
+    config_bundle,
+) -> None:
+    from tamforge_backend.roadmaps.models import TaskDefinition
+
+    table = TaskDefinition.__table__
+    assert table.c.exercise_type.nullable is True
+    assert table.c.mapping_version.nullable is True
+    constraint_names = {constraint.name for constraint in table.constraints}
+    assert "ck_task_definitions_exercise_mapping_coherent" in constraint_names
+
+    for task in config_bundle.roadmap_tasks:
+        if task.block == "correction_warmup":
+            assert (task.exercise_type, task.mapping_version) == (None, None)
+        else:
+            assert task.exercise_type is not None and task.exercise_type.strip()
+            assert task.mapping_version is not None and task.mapping_version.strip()
+
+
 @pytest.mark.parametrize(
     ("old", "new", "message"),
     [

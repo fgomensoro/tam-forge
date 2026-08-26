@@ -335,6 +335,7 @@ def test_models_name_checks_uniques_and_index_every_foreign_key() -> None:
             "ck_task_definitions_block_allowed",
             "ck_task_definitions_allowed_ai_role_allowed",
             "ck_task_definitions_timebox_positive",
+            "ck_task_definitions_exercise_mapping_coherent",
         },
         "month_exit_reviews": {
             "pk_month_exit_reviews",
@@ -390,7 +391,12 @@ def test_models_have_explicit_nullability_and_only_intended_server_defaults() ->
             "mirror_error_code",
         },
         "curriculum_nodes": {"parent_id", "source_path", "source_anchor"},
-        "task_definitions": {"source_path", "source_anchor"},
+        "task_definitions": {
+            "exercise_type",
+            "mapping_version",
+            "source_path",
+            "source_anchor",
+        },
         "resources": {
             "curriculum_node_id",
             "task_definition_id",
@@ -974,10 +980,31 @@ def test_migration_compiles_upgrade_and_exact_downgrade_without_credentials() ->
     for table_name in EXPECTED_TABLES:
         table = Base.metadata.tables[table_name]
         for constraint_name in _constraint_names(table):
+            if constraint_name == "ck_task_definitions_exercise_mapping_coherent":
+                continue
             assert f"CONSTRAINT {constraint_name}" in upgrade_sql
         for index in table.indexes:
             assert index.name is not None
             assert index.name in upgrade_sql
+
+
+def test_task_reference_forward_migration_compiles_exact_shape() -> None:
+    upgrade_sql = _offline_sql(
+        "upgrade", "20260826_0006_score_payload:20260826_0007_task_refs"
+    )
+    downgrade_sql = _offline_sql(
+        "downgrade", "20260826_0007_task_refs:20260826_0006_score_payload"
+    )
+
+    assert "ALTER COLUMN exercise_type DROP NOT NULL" in upgrade_sql
+    assert "ALTER COLUMN mapping_version DROP NOT NULL" in upgrade_sql
+    assert "CONSTRAINT ck_task_definitions_exercise_mapping_coherent" in upgrade_sql
+    assert "block = 'correction_warmup'" in upgrade_sql
+    assert "exercise_type IS NULL" in upgrade_sql
+    assert "mapping_version IS NULL" in upgrade_sql
+    assert "DROP CONSTRAINT ck_task_definitions_exercise_mapping_coherent" in downgrade_sql
+    assert "ALTER COLUMN exercise_type SET NOT NULL" in downgrade_sql
+    assert "ALTER COLUMN mapping_version SET NOT NULL" in downgrade_sql
 
 
 def test_canonical_path_is_provenance_only() -> None:
@@ -1002,4 +1029,4 @@ def test_alembic_has_exactly_one_linear_head() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "20260826_0006_score_payload (head)"
+    assert result.stdout.strip() == "20260826_0007_task_refs (head)"

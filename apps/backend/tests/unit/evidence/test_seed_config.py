@@ -69,6 +69,20 @@ def test_payload_migration_is_linear_and_does_not_rewrite_old_migrations() -> No
     assert len(migration.revision) <= 32
     assert migration.down_revision == "20260825_0005_today_read_models"
 
+    task_refs_path = Path(
+        "apps/backend/alembic/versions/20260826_0007_task_definition_refs.py"
+    )
+    assert task_refs_path.exists()
+    task_refs_spec = importlib.util.spec_from_file_location(
+        "task_definition_refs", task_refs_path
+    )
+    assert task_refs_spec is not None and task_refs_spec.loader is not None
+    task_refs = importlib.util.module_from_spec(task_refs_spec)
+    task_refs_spec.loader.exec_module(task_refs)
+    assert task_refs.revision == "20260826_0007_task_refs"
+    assert len(task_refs.revision) <= 32
+    assert task_refs.down_revision == "20260826_0006_score_payload"
+
 
 @pytest.mark.integration
 def test_seed_is_idempotent_and_changed_mapping_creates_new_version(

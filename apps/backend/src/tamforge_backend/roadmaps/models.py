@@ -490,6 +490,13 @@ class TaskDefinition(Base):
         CheckConstraint("octet_length(exercise_type) <= 64", name="exercise_type_bounded"),
         CheckConstraint("btrim(mapping_version) <> ''", name="mapping_version_nonblank"),
         CheckConstraint("octet_length(mapping_version) <= 64", name="mapping_version_bounded"),
+        CheckConstraint(
+            "(block = 'correction_warmup' AND exercise_type IS NULL "
+            "AND mapping_version IS NULL) OR "
+            "(block <> 'correction_warmup' AND exercise_type IS NOT NULL "
+            "AND mapping_version IS NOT NULL)",
+            name="exercise_mapping_coherent",
+        ),
         CheckConstraint("btrim(objective) <> ''", name="objective_nonblank"),
         CheckConstraint("octet_length(objective) <= 4096", name="objective_bounded"),
         CheckConstraint("timebox_minutes > 0", name="timebox_positive"),
@@ -547,8 +554,8 @@ class TaskDefinition(Base):
     roadmap_version_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     curriculum_node_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     stable_id: Mapped[str] = mapped_column(Text, nullable=False)
-    exercise_type: Mapped[str] = mapped_column(Text, nullable=False)
-    mapping_version: Mapped[str] = mapped_column(Text, nullable=False)
+    exercise_type: Mapped[str | None] = mapped_column(Text)
+    mapping_version: Mapped[str | None] = mapped_column(Text)
     objective: Mapped[str] = mapped_column(Text, nullable=False)
     timebox_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     block: Mapped[str] = mapped_column(Text, nullable=False)
