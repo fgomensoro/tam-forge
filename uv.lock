@@ -575,6 +575,12 @@ wheels = [
 name = "tam-forge-workspace"
 version = "0.1.0"
 source = { virtual = "." }
+dependencies = [
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pyyaml", specifier = ">=6,<7" }]
 
 [[package]]
 name = "tamforge-backend"

@@ -3,7 +3,7 @@ name = "tam-forge-workspace"
 version = "0.1.0"
 description = "TAM Forge private learning workspace"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["pyyaml>=6,<7"]
 
 [tool.uv.workspace]
 members = ["apps/backend", "packages/protocol"]
@@ -16,7 +16,8 @@ addopts = "-m 'not integration'"
 markers = [
   "integration: tests that require external services",
 ]
-testpaths = ["apps/backend/tests", "packages/protocol/tests"]
+pythonpath = ["."]
+testpaths = ["apps/backend/tests", "packages/protocol/tests", "scripts/github/tests"]
 
 [tool.ruff]
 line-length = 100
@@ -28,4 +29,5 @@ select = ["E", "F", "I", "UP"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["apps/backend/src", "packages/protocol/src"]
+explicit_package_bases = true
+files = ["apps/backend/src", "packages/protocol/src", "scripts/github"]

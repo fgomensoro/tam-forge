@@ -1,0 +1,1433 @@
+version: 1
+repository: fgomensoro/tam-forge
+
+labels:
+  - name: "type/epic"
+    color: "5319E7"
+    description: "Parent tracking issue"
+  - name: "type/feature"
+    color: "1D76DB"
+    description: "User-visible behavior"
+  - name: "type/infrastructure"
+    color: "0052CC"
+    description: "Deployment/storage/operations"
+  - name: "type/security"
+    color: "B60205"
+    description: "Authentication/privacy/hardening"
+  - name: "type/evaluation"
+    color: "FBCA04"
+    description: "Quality or reliability measurement"
+  - name: "area/backend"
+    color: "0E8A16"
+    description: "FastAPI/domain/worker work"
+  - name: "area/web"
+    color: "1D76DB"
+    description: "React client work"
+  - name: "area/recorder"
+    color: "C5DEF5"
+    description: "macOS recorder work"
+  - name: "area/speech"
+    color: "D4C5F9"
+    description: "Audio/transcript/metrics work"
+  - name: "area/agents"
+    color: "7057FF"
+    description: "Agent SDK/prompts/tools/memory work"
+  - name: "area/curriculum"
+    color: "BFDADC"
+    description: "Roadmap/study/evidence work"
+  - name: "area/operations"
+    color: "006B75"
+    description: "Production/backup/export work"
+  - name: "gate/destructive"
+    color: "D93F0B"
+    description: "Requires explicit destructive approval"
+  - name: "gate/privacy"
+    color: "B60205"
+    description: "Requires privacy contract verification"
+  - name: "gate/spend"
+    color: "E99695"
+    description: "Requires approval before new cost"
+  - name: "gate/docker-local"
+    color: "F9D0C4"
+    description: "Requires explicit approval before local Docker/Testcontainers"
+  - name: "status/blocked"
+    color: "000000"
+    description: "Cannot progress without a named gate/input"
+
+milestones:
+  - key: "M0"
+    title: "M0 — Safe Foundation"
+    description: "Private repo, CI, auth, Postgres/object abstractions, backup rehearsal, roadmap import, universal activity workspace, evidence ledger"
+  - key: "M1"
+    title: "M1 — Closed Spoken Loop"
+    description: "Durable dual-track Attempt A, self-review lock, local transcript/metrics/pronunciation diagnostic, evidence-backed review, exactly two corrections, Attempt B"
+  - key: "M2"
+    title: "M2 — Persistent Agents and Interviews"
+    description: "Subscription-only Agent SDK, role tools/memory, turn interviewer, opportunities, consent/redaction real-interview workflow"
+  - key: "M3"
+    title: "M3 — Complete Month 1 Workspace"
+    description: "Specialized SQL, reading, cases, writing, career, portfolio, reports, weekly/month transition behavior"
+  - key: "M4"
+    title: "M4 — Production and Portability"
+    description: "Dedicated hardened server, restore-tested backups, complete export, optional OKF, failure/security/evaluation gates, release runbook"
+
+issues:
+  - key: "E1"
+    title: "Epic: Repository and infrastructure safety"
+    milestone: "M0"
+    labels: ["type/epic", "area/operations"]
+    children: ["E1-I01", "E1-I02", "E1-I03", "E1-I04", "E1-I05", "E1-I06", "E1-I07", "E1-I08", "E1-I09", "E1-I10", "E1-I11"]
+    acceptance:
+      - "Every approved E1 child issue is completed with its required verification evidence."
+    privacy_impact: "Infrastructure metadata only; no learner content is required."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / Epic E1"
+  - key: "E1-I01"
+    title: "Bootstrap uv/pnpm monorepo and repository conventions"
+    epic: "E1"
+    milestone: "M0"
+    labels: ["type/infrastructure", "area/operations"]
+    depends_on: []
+    acceptance:
+      - "Bootstrap uv/pnpm monorepo and repository conventions satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Infrastructure metadata only; no learner content is required."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E1-I01"
+  - key: "E1-I02"
+    title: "Add deterministic lint, unit-test, typecheck, and build workflows"
+    epic: "E1"
+    milestone: "M0"
+    labels: ["type/infrastructure", "area/operations"]
+    depends_on: []
+    acceptance:
+      - "Add deterministic lint, unit-test, typecheck, and build workflows satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Infrastructure metadata only; no learner content is required."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E1-I02"
+  - key: "E1-I03"
+    title: "Implement typed configuration and fail-closed secret validation"
+    epic: "E1"
+    milestone: "M0"
+    labels: ["type/infrastructure", "area/operations"]
+    depends_on: []
+    acceptance:
+      - "Implement typed configuration and fail-closed secret validation satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Infrastructure metadata only; no learner content is required."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E1-I03"
+  - key: "E1-I04"
+    title: "Implement PostgreSQL session, migration, and health foundations"
+    epic: "E1"
+    milestone: "M0"
+    labels: ["type/infrastructure", "area/operations", "area/backend"]
+    depends_on: []
+    acceptance:
+      - "Implement PostgreSQL session, migration, and health foundations satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Infrastructure metadata only; no learner content is required."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E1-I04"
+  - key: "E1-I05"
+    title: "Implement private S3 artifact abstraction and content-addressed manifests"
+    epic: "E1"
+    milestone: "M0"
+    labels: ["type/infrastructure", "area/operations", "area/backend"]
+    depends_on: []
+    acceptance:
+      - "Implement private S3 artifact abstraction and content-addressed manifests satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Infrastructure metadata only; no learner content is required."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E1-I05"
+  - key: "E1-I06"
+    title: "Inventory Gastos/n8n/NocoDB/PostgreSQL/Caddy state read-only"
+    epic: "E1"
+    milestone: "M0"
+    labels: ["type/infrastructure", "area/operations", "gate/destructive"]
+    depends_on: []
+    acceptance:
+      - "Inventory Gastos/n8n/NocoDB/PostgreSQL/Caddy state read-only satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Infrastructure metadata only; no learner content is required."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E1-I06"
+  - key: "E1-I07"
+    title: "Create encrypted Gastos archive, checksums, recovery inventory, and restore instructions"
+    epic: "E1"
+    milestone: "M0"
+    labels: ["type/infrastructure", "area/operations", "gate/destructive"]
+    depends_on: []
+    acceptance:
+      - "Create encrypted Gastos archive, checksums, recovery inventory, and restore instructions satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Infrastructure metadata only; no learner content is required."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E1-I07"
+  - key: "E1-I08"
+    title: "Prove isolated Gastos restore and record evidence"
+    epic: "E1"
+    milestone: "M0"
+    labels: ["type/infrastructure", "area/operations", "gate/destructive"]
+    depends_on: []
+    acceptance:
+      - "Prove isolated Gastos restore and record evidence satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Infrastructure metadata only; no learner content is required."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E1-I08"
+  - key: "E1-I09"
+    title: "Gate destructive Gastos removal and dedicated TAM Forge host rebuild"
+    epic: "E1"
+    milestone: "M0"
+    labels: ["type/infrastructure", "area/operations", "gate/destructive"]
+    depends_on: []
+    acceptance:
+      - "Gate destructive Gastos removal and dedicated TAM Forge host rebuild satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Infrastructure metadata only; no learner content is required."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E1-I09"
+  - key: "E1-I10"
+    title: "Harden Caddy/systemd/firewall/resource limits/log rotation"
+    epic: "E1"
+    milestone: "M0"
+    labels: ["type/infrastructure", "area/operations"]
+    depends_on: []
+    acceptance:
+      - "Harden Caddy/systemd/firewall/resource limits/log rotation satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Infrastructure metadata only; no learner content is required."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E1-I10"
+  - key: "E1-I11"
+    title: "Configure daily encrypted backups, versioning, retention, and restore drills"
+    epic: "E1"
+    milestone: "M0"
+    labels: ["type/infrastructure", "area/operations"]
+    depends_on: []
+    acceptance:
+      - "Configure daily encrypted backups, versioning, retention, and restore drills satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Infrastructure metadata only; no learner content is required."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E1-I11"
+  - key: "E2"
+    title: "Epic: Learning foundation"
+    milestone: "M0"
+    labels: ["type/epic", "area/curriculum"]
+    children: ["E2-I01", "E2-I02", "E2-I03", "E2-I04", "E2-I05", "E2-I06", "E2-I07", "E2-I08", "E2-I09", "E2-I10", "E2-I11", "E2-I12"]
+    acceptance:
+      - "Every approved E2 child issue is completed with its required verification evidence."
+    privacy_impact: "Private roadmap and learning evidence remain within the approved single-user boundary."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / Epic E2"
+  - key: "E2-I01"
+    title: "Implement immutable curriculum and roadmap-version schema"
+    epic: "E2"
+    milestone: "M0"
+    labels: ["type/feature", "area/curriculum"]
+    depends_on: []
+    acceptance:
+      - "Implement immutable curriculum and roadmap-version schema satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private roadmap and learning evidence remain within the approved single-user boundary."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E2-I01"
+  - key: "E2-I02"
+    title: "Implement manual folder/ZIP roadmap manifest and validation"
+    epic: "E2"
+    milestone: "M0"
+    labels: ["type/feature", "area/curriculum"]
+    depends_on: []
+    acceptance:
+      - "Implement manual folder/ZIP roadmap manifest and validation satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private roadmap and learning evidence remain within the approved single-user boundary."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E2-I02"
+  - key: "E2-I03"
+    title: "Implement immutable snapshot storage and private GitHub mirror status"
+    epic: "E2"
+    milestone: "M0"
+    labels: ["type/feature", "area/curriculum"]
+    depends_on: []
+    acceptance:
+      - "Implement immutable snapshot storage and private GitHub mirror status satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private roadmap and learning evidence remain within the approved single-user boundary."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E2-I03"
+  - key: "E2-I04"
+    title: "Implement semantic roadmap diff, preview, approval, and activation guards"
+    epic: "E2"
+    milestone: "M0"
+    labels: ["type/feature", "area/curriculum"]
+    depends_on: []
+    acceptance:
+      - "Implement semantic roadmap diff, preview, approval, and activation guards satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private roadmap and learning evidence remain within the approved single-user boundary."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E2-I04"
+  - key: "E2-I05"
+    title: "Implement GitHub OAuth restricted to immutable owner ID `102269369`"
+    epic: "E2"
+    milestone: "M0"
+    labels: ["type/feature", "area/curriculum"]
+    depends_on: []
+    acceptance:
+      - "Implement GitHub OAuth restricted to immutable owner ID `102269369` satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private roadmap and learning evidence remain within the approved single-user boundary."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E2-I05"
+  - key: "E2-I06"
+    title: "Implement resumable StudyDay/Activity state machine and timers"
+    epic: "E2"
+    milestone: "M0"
+    labels: ["type/feature", "area/curriculum", "area/backend"]
+    depends_on: []
+    acceptance:
+      - "Implement resumable StudyDay/Activity state machine and timers satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private roadmap and learning evidence remain within the approved single-user boundary."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E2-I06"
+  - key: "E2-I07"
+    title: "Implement universal source/hide/Markdown/SQL/artifact activity workspace"
+    epic: "E2"
+    milestone: "M0"
+    labels: ["type/feature", "area/curriculum", "area/web"]
+    depends_on: []
+    acceptance:
+      - "Implement universal source/hide/Markdown/SQL/artifact activity workspace satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private roadmap and learning evidence remain within the approved single-user boundary."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E2-I07"
+  - key: "E2-I08"
+    title: "Enforce self-review, assessment, Sunday, hard-stop, and missed-work rules"
+    epic: "E2"
+    milestone: "M0"
+    labels: ["type/feature", "area/curriculum", "area/backend"]
+    depends_on: []
+    acceptance:
+      - "Enforce self-review, assessment, Sunday, hard-stop, and missed-work rules satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private roadmap and learning evidence remain within the approved single-user boundary."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E2-I08"
+  - key: "E2-I09"
+    title: "Seed canonical competencies, rubrics, exercise mappings, and Portfolio Judgment"
+    epic: "E2"
+    milestone: "M0"
+    labels: ["type/feature", "area/curriculum"]
+    depends_on: []
+    acceptance:
+      - "Seed canonical competencies, rubrics, exercise mappings, and Portfolio Judgment satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private roadmap and learning evidence remain within the approved single-user boundary."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E2-I09"
+  - key: "E2-I10"
+    title: "Implement inspectable versioned evidence ledger and skill estimator"
+    epic: "E2"
+    milestone: "M0"
+    labels: ["type/feature", "area/curriculum", "area/backend"]
+    depends_on: []
+    acceptance:
+      - "Implement inspectable versioned evidence ledger and skill estimator satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private roadmap and learning evidence remain within the approved single-user boundary."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E2-I10"
+  - key: "E2-I11"
+    title: "Implement Today screen and primary Continue selection"
+    epic: "E2"
+    milestone: "M0"
+    labels: ["type/feature", "area/curriculum", "area/web"]
+    depends_on: []
+    acceptance:
+      - "Implement Today screen and primary Continue selection satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private roadmap and learning evidence remain within the approved single-user boundary."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E2-I11"
+  - key: "E2-I12"
+    title: "Implement allowed notification/status stream"
+    epic: "E2"
+    milestone: "M0"
+    labels: ["type/feature", "area/curriculum"]
+    depends_on: []
+    acceptance:
+      - "Implement allowed notification/status stream satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private roadmap and learning evidence remain within the approved single-user boundary."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E2-I12"
+  - key: "E3"
+    title: "Epic: Durable macOS recording"
+    milestone: "M1"
+    labels: ["type/epic", "area/recorder", "gate/privacy"]
+    children: ["E3-I01", "E3-I02", "E3-I03", "E3-I04", "E3-I05", "E3-I06", "E3-I07", "E3-I08", "E3-I09", "E3-I10", "E3-I11", "E3-I12"]
+    acceptance:
+      - "Every approved E3 child issue is completed with its required verification evidence."
+    privacy_impact: "Processes sensitive learner audio under the approved recording and retention contract."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / Epic E3"
+  - key: "E3-I01"
+    title: "Specify and test versioned binary/control protocol and golden vectors"
+    epic: "E3"
+    milestone: "M1"
+    labels: ["type/feature", "area/recorder", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Specify and test versioned binary/control protocol and golden vectors satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes sensitive learner audio under the approved recording and retention contract."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E3-I01"
+  - key: "E3-I02"
+    title: "Implement authenticated recorder pairing, revocation, and Keychain storage"
+    epic: "E3"
+    milestone: "M1"
+    labels: ["type/feature", "area/recorder", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement authenticated recorder pairing, revocation, and Keychain storage satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes sensitive learner audio under the approved recording and retention contract."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E3-I02"
+  - key: "E3-I03"
+    title: "Implement minimal topmost Tkinter shell and audio-device diagnostics"
+    epic: "E3"
+    milestone: "M1"
+    labels: ["type/feature", "area/recorder", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement minimal topmost Tkinter shell and audio-device diagnostics satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes sensitive learner audio under the approved recording and retention contract."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E3-I03"
+  - key: "E3-I04"
+    title: "Implement synchronized microphone and BlackHole capture adapters"
+    epic: "E3"
+    milestone: "M1"
+    labels: ["type/feature", "area/recorder", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement synchronized microphone and BlackHole capture adapters satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes sensitive learner audio under the approved recording and retention contract."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E3-I04"
+  - key: "E3-I05"
+    title: "Implement callback-safe bounded queues and overload behavior"
+    epic: "E3"
+    milestone: "M1"
+    labels: ["type/feature", "area/recorder", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement callback-safe bounded queues and overload behavior satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes sensitive learner audio under the approved recording and retention contract."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E3-I05"
+  - key: "E3-I06"
+    title: "Implement encrypted bounded recovery spool and reserve-space gate"
+    epic: "E3"
+    milestone: "M1"
+    labels: ["type/feature", "area/recorder", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement encrypted bounded recovery spool and reserve-space gate satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes sensitive learner audio under the approved recording and retention contract."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E3-I06"
+  - key: "E3-I07"
+    title: "Implement WSS sender, high-water resume, retry, and stop/seal controls"
+    epic: "E3"
+    milestone: "M1"
+    labels: ["type/feature", "area/recorder", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement WSS sender, high-water resume, retry, and stop/seal controls satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes sensitive learner audio under the approved recording and retention contract."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E3-I07"
+  - key: "E3-I08"
+    title: "Implement FastAPI recording-session and track authorization"
+    epic: "E3"
+    milestone: "M1"
+    labels: ["type/feature", "area/recorder", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement FastAPI recording-session and track authorization satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes sensitive learner audio under the approved recording and retention contract."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E3-I08"
+  - key: "E3-I09"
+    title: "Implement deterministic object segment persistence and DB high-water ACK"
+    epic: "E3"
+    milestone: "M1"
+    labels: ["type/feature", "area/recorder", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement deterministic object segment persistence and DB high-water ACK satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes sensitive learner audio under the approved recording and retention contract."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E3-I09"
+  - key: "E3-I10"
+    title: "Implement orphan reconciliation and byte-for-byte WAV finalization"
+    epic: "E3"
+    milestone: "M1"
+    labels: ["type/feature", "area/recorder", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement orphan reconciliation and byte-for-byte WAV finalization satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes sensitive learner audio under the approved recording and retention contract."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E3-I10"
+  - key: "E3-I11"
+    title: "Run disconnect/crash/disk/duplicate/reorder reliability suite"
+    epic: "E3"
+    milestone: "M1"
+    labels: ["type/feature", "area/recorder", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Run disconnect/crash/disk/duplicate/reorder reliability suite satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes sensitive learner audio under the approved recording and retention contract."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E3-I11"
+  - key: "E3-I12"
+    title: "Package, sign/notarization-ready, and smoke-test the `.app` bundle"
+    epic: "E3"
+    milestone: "M1"
+    labels: ["type/feature", "area/recorder", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Package, sign/notarization-ready, and smoke-test the `.app` bundle satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes sensitive learner audio under the approved recording and retention contract."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E3-I12"
+  - key: "E4"
+    title: "Epic: Local speech and English measurement"
+    milestone: "M1"
+    labels: ["type/epic", "area/speech", "gate/privacy"]
+    children: ["E4-I01", "E4-I02", "E4-I03", "E4-I04", "E4-I05", "E4-I06", "E4-I07", "E4-I08", "E4-I09", "E4-I10", "E4-I11", "E4-I12"]
+    acceptance:
+      - "Every approved E4 child issue is completed with its required verification evidence."
+    privacy_impact: "Processes local speech, transcript, and pronunciation evidence; original audio is not released to Claude."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / Epic E4"
+  - key: "E4-I01"
+    title: "Implement PostgreSQL durable jobs, leases, retries, and transactional outbox"
+    epic: "E4"
+    milestone: "M1"
+    labels: ["type/evaluation", "area/speech", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement PostgreSQL durable jobs, leases, retries, and transactional outbox satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes local speech, transcript, and pronunciation evidence; original audio is not released to Claude."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E4-I01"
+  - key: "E4-I02"
+    title: "Implement sealed-audio preprocessing and quality metadata"
+    epic: "E4"
+    milestone: "M1"
+    labels: ["type/evaluation", "area/speech", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement sealed-audio preprocessing and quality metadata satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes local speech, transcript, and pronunciation evidence; original audio is not released to Claude."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E4-I02"
+  - key: "E4-I03"
+    title: "Integrate Silero VAD through a local ONNX adapter"
+    epic: "E4"
+    milestone: "M1"
+    labels: ["type/evaluation", "area/speech", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Integrate Silero VAD through a local ONNX adapter satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes local speech, transcript, and pronunciation evidence; original audio is not released to Claude."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E4-I03"
+  - key: "E4-I04"
+    title: "Integrate faster-whisper `small.en` CPU-int8 transcription"
+    epic: "E4"
+    milestone: "M1"
+    labels: ["type/evaluation", "area/speech", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Integrate faster-whisper `small.en` CPU-int8 transcription satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes local speech, transcript, and pronunciation evidence; original audio is not released to Claude."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E4-I04"
+  - key: "E4-I05"
+    title: "Implement transcript/word/speaker/uncertainty versioning and corrections"
+    epic: "E4"
+    milestone: "M1"
+    labels: ["type/evaluation", "area/speech", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement transcript/word/speaker/uncertainty versioning and corrections satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes local speech, transcript, and pronunciation evidence; original audio is not released to Claude."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E4-I05"
+  - key: "E4-I06"
+    title: "Implement deterministic pace/pause/filler/restart/latency metrics"
+    epic: "E4"
+    milestone: "M1"
+    labels: ["type/evaluation", "area/speech", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement deterministic pace/pause/filler/restart/latency metrics satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes local speech, transcript, and pronunciation evidence; original audio is not released to Claude."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E4-I06"
+  - key: "E4-I07"
+    title: "Build 10/60-minute performance and resource benchmark harness"
+    epic: "E4"
+    milestone: "M1"
+    labels: ["type/evaluation", "area/speech", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Build 10/60-minute performance and resource benchmark harness satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes local speech, transcript, and pronunciation evidence; original audio is not released to Claude."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E4-I07"
+  - key: "E4-I08"
+    title: "Build the speech gold-set manifest and adjudication workflow"
+    epic: "E4"
+    milestone: "M1"
+    labels: ["type/evaluation", "area/speech", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Build the speech gold-set manifest and adjudication workflow satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes local speech, transcript, and pronunciation evidence; original audio is not released to Claude."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E4-I08"
+  - key: "E4-I09"
+    title: "Spike local forced-alignment/GOP pronunciation candidates"
+    epic: "E4"
+    milestone: "M1"
+    labels: ["type/evaluation", "area/speech", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Spike local forced-alignment/GOP pronunciation candidates satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes local speech, transcript, and pronunciation evidence; original audio is not released to Claude."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E4-I09"
+  - key: "E4-I10"
+    title: "Implement controlled pronunciation diagnostic behind calibration gate"
+    epic: "E4"
+    milestone: "M1"
+    labels: ["type/evaluation", "area/speech", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement controlled pronunciation diagnostic behind calibration gate satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes local speech, transcript, and pronunciation evidence; original audio is not released to Claude."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E4-I10"
+  - key: "E4-I11"
+    title: "Enforce WER/timestamp/pause/pronunciation decision-grade gates"
+    epic: "E4"
+    milestone: "M1"
+    labels: ["type/evaluation", "area/speech", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Enforce WER/timestamp/pause/pronunciation decision-grade gates satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes local speech, transcript, and pronunciation evidence; original audio is not released to Claude."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E4-I11"
+  - key: "E4-I12"
+    title: "Implement priority per-turn transcription scheduling"
+    epic: "E4"
+    milestone: "M1"
+    labels: ["type/evaluation", "area/speech", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement priority per-turn transcription scheduling satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Processes local speech, transcript, and pronunciation evidence; original audio is not released to Claude."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E4-I12"
+  - key: "E5"
+    title: "Epic: Closed evidence and correction loop"
+    milestone: "M1"
+    labels: ["type/epic", "area/backend"]
+    children: ["E5-I01", "E5-I02", "E5-I03", "E5-I04", "E5-I05", "E5-I06", "E5-I07", "E5-I08", "E5-I09", "E5-I10", "E5-I11"]
+    acceptance:
+      - "Every approved E5 child issue is completed with its required verification evidence."
+    privacy_impact: "Uses private learning evidence and preserves versioned provenance."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / Epic E5"
+  - key: "E5-I01"
+    title: "Implement immutable prompt, rubric, schema, and model-run versions"
+    epic: "E5"
+    milestone: "M1"
+    labels: ["type/feature", "area/backend", "area/curriculum"]
+    depends_on: []
+    acceptance:
+      - "Implement immutable prompt, rubric, schema, and model-run versions satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Uses private learning evidence and preserves versioned provenance."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E5-I01"
+  - key: "E5-I02"
+    title: "Implement separate English and TAM analysis contracts"
+    epic: "E5"
+    milestone: "M1"
+    labels: ["type/feature", "area/backend", "area/curriculum"]
+    depends_on: []
+    acceptance:
+      - "Implement separate English and TAM analysis contracts satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Uses private learning evidence and preserves versioned provenance."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E5-I02"
+  - key: "E5-I03"
+    title: "Implement mandatory self-review release gate"
+    epic: "E5"
+    milestone: "M1"
+    labels: ["type/feature", "area/backend", "area/curriculum"]
+    depends_on: []
+    acceptance:
+      - "Implement mandatory self-review release gate satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Uses private learning evidence and preserves versioned provenance."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E5-I03"
+  - key: "E5-I04"
+    title: "Implement evidence-linked observations and confidence/uncertainty"
+    epic: "E5"
+    milestone: "M1"
+    labels: ["type/feature", "area/backend", "area/curriculum"]
+    depends_on: []
+    acceptance:
+      - "Implement evidence-linked observations and confidence/uncertainty satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Uses private learning evidence and preserves versioned provenance."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E5-I04"
+  - key: "E5-I05"
+    title: "Enforce exactly two strengths and exactly two corrections"
+    epic: "E5"
+    milestone: "M1"
+    labels: ["type/feature", "area/backend", "area/curriculum"]
+    depends_on: []
+    acceptance:
+      - "Enforce exactly two strengths and exactly two corrections satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Uses private learning evidence and preserves versioned provenance."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E5-I05"
+  - key: "E5-I06"
+    title: "Implement compact structure and Attempt B instruction contract"
+    epic: "E5"
+    milestone: "M1"
+    labels: ["type/feature", "area/backend", "area/curriculum"]
+    depends_on: []
+    acceptance:
+      - "Implement compact structure and Attempt B instruction contract satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Uses private learning evidence and preserves versioned provenance."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E5-I06"
+  - key: "E5-I07"
+    title: "Implement correction scheduling and no-Attempt-C invariant"
+    epic: "E5"
+    milestone: "M1"
+    labels: ["type/feature", "area/backend", "area/curriculum"]
+    depends_on: []
+    acceptance:
+      - "Implement correction scheduling and no-Attempt-C invariant satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Uses private learning evidence and preserves versioned provenance."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E5-I07"
+  - key: "E5-I08"
+    title: "Implement A/B comparison and transfer-only later evidence"
+    epic: "E5"
+    milestone: "M1"
+    labels: ["type/feature", "area/backend", "area/curriculum"]
+    depends_on: []
+    acceptance:
+      - "Implement A/B comparison and transfer-only later evidence satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Uses private learning evidence and preserves versioned provenance."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E5-I08"
+  - key: "E5-I09"
+    title: "Update competency/readiness only from qualifying evidence"
+    epic: "E5"
+    milestone: "M1"
+    labels: ["type/feature", "area/backend", "area/curriculum"]
+    depends_on: []
+    acceptance:
+      - "Update competency/readiness only from qualifying evidence satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Uses private learning evidence and preserves versioned provenance."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E5-I09"
+  - key: "E5-I10"
+    title: "Implement daily and weekly evidence reports"
+    epic: "E5"
+    milestone: "M1"
+    labels: ["type/feature", "area/backend", "area/curriculum"]
+    depends_on: []
+    acceptance:
+      - "Implement daily and weekly evidence reports satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Uses private learning evidence and preserves versioned provenance."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E5-I10"
+  - key: "E5-I11"
+    title: "Prove 15/60-minute end-to-end FeedbackReady SLOs"
+    epic: "E5"
+    milestone: "M1"
+    labels: ["type/feature", "area/backend", "area/curriculum"]
+    depends_on: []
+    acceptance:
+      - "Prove 15/60-minute end-to-end FeedbackReady SLOs satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Uses private learning evidence and preserves versioned provenance."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E5-I11"
+  - key: "E6"
+    title: "Epic: Persistent role agents"
+    milestone: "M2"
+    labels: ["type/epic", "area/agents"]
+    children: ["E6-I01", "E6-I02", "E6-I03", "E6-I04", "E6-I05", "E6-I06", "E6-I07", "E6-I08", "E6-I09", "E6-I10", "E6-I11", "E6-I12"]
+    acceptance:
+      - "Every approved E6 child issue is completed with its required verification evidence."
+    privacy_impact: "Releases only approved minimal text context to subscription-authenticated Claude roles."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / Epic E6"
+  - key: "E6-I01"
+    title: "Add Claude Agent SDK installation/auth/model compatibility probe"
+    epic: "E6"
+    milestone: "M2"
+    labels: ["type/feature", "area/agents", "gate/spend"]
+    depends_on: []
+    acceptance:
+      - "Add Claude Agent SDK installation/auth/model compatibility probe satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Releases only approved minimal text context to subscription-authenticated Claude roles."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E6-I01"
+  - key: "E6-I02"
+    title: "Reject API credentials and enforce subscription-only/no-paid-fallback policy"
+    epic: "E6"
+    milestone: "M2"
+    labels: ["type/feature", "area/agents", "gate/spend"]
+    depends_on: []
+    acceptance:
+      - "Reject API credentials and enforce subscription-only/no-paid-fallback policy satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Releases only approved minimal text context to subscription-authenticated Claude roles."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E6-I02"
+  - key: "E6-I03"
+    title: "Implement bounded Claude job runner and structured-output repair"
+    epic: "E6"
+    milestone: "M2"
+    labels: ["type/feature", "area/agents", "gate/spend"]
+    depends_on: []
+    acceptance:
+      - "Implement bounded Claude job runner and structured-output repair satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Releases only approved minimal text context to subscription-authenticated Claude roles."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E6-I03"
+  - key: "E6-I04"
+    title: "Implement role-authorized typed in-process tools"
+    epic: "E6"
+    milestone: "M2"
+    labels: ["type/feature", "area/agents"]
+    depends_on: []
+    acceptance:
+      - "Implement role-authorized typed in-process tools satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Releases only approved minimal text context to subscription-authenticated Claude roles."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E6-I04"
+  - key: "E6-I05"
+    title: "Implement Planner, Tutor, Coach, Reviewer, and Analyst prompt contracts"
+    epic: "E6"
+    milestone: "M2"
+    labels: ["type/feature", "area/agents"]
+    depends_on: []
+    acceptance:
+      - "Implement Planner, Tutor, Coach, Reviewer, and Analyst prompt contracts satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Releases only approved minimal text context to subscription-authenticated Claude roles."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E6-I05"
+  - key: "E6-I06"
+    title: "Implement isolated Interviewer contract and local TTS turn orchestration"
+    epic: "E6"
+    milestone: "M2"
+    labels: ["type/feature", "area/agents"]
+    depends_on: []
+    acceptance:
+      - "Implement isolated Interviewer contract and local TTS turn orchestration satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Releases only approved minimal text context to subscription-authenticated Claude roles."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E6-I06"
+  - key: "E6-I07"
+    title: "Implement versioned episodic/semantic/hypothesis/procedural memory schema"
+    epic: "E6"
+    milestone: "M2"
+    labels: ["type/feature", "area/agents"]
+    depends_on: []
+    acceptance:
+      - "Implement versioned episodic/semantic/hypothesis/procedural memory schema satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Releases only approved minimal text context to subscription-authenticated Claude roles."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E6-I07"
+  - key: "E6-I08"
+    title: "Implement local embeddings, relational filtering, and pgvector retrieval"
+    epic: "E6"
+    milestone: "M2"
+    labels: ["type/feature", "area/agents"]
+    depends_on: []
+    acceptance:
+      - "Implement local embeddings, relational filtering, and pgvector retrieval satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Releases only approved minimal text context to subscription-authenticated Claude roles."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E6-I08"
+  - key: "E6-I09"
+    title: "Implement memory proposal, promotion, conflict, expiry, and supersession"
+    epic: "E6"
+    milestone: "M2"
+    labels: ["type/feature", "area/agents"]
+    depends_on: []
+    acceptance:
+      - "Implement memory proposal, promotion, conflict, expiry, and supersession satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Releases only approved minimal text context to subscription-authenticated Claude roles."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E6-I09"
+  - key: "E6-I10"
+    title: "Implement role overlays and minimal context manifests"
+    epic: "E6"
+    milestone: "M2"
+    labels: ["type/feature", "area/agents"]
+    depends_on: []
+    acceptance:
+      - "Implement role overlays and minimal context manifests satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Releases only approved minimal text context to subscription-authenticated Claude roles."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E6-I10"
+  - key: "E6-I11"
+    title: "Evaluate recall/relevance/provenance and zero forbidden leakage"
+    epic: "E6"
+    milestone: "M2"
+    labels: ["type/feature", "area/agents"]
+    depends_on: []
+    acceptance:
+      - "Evaluate recall/relevance/provenance and zero forbidden leakage satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Releases only approved minimal text context to subscription-authenticated Claude roles."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E6-I11"
+  - key: "E6-I12"
+    title: "Implement quota/expiry monitoring and NeedsAttention behavior"
+    epic: "E6"
+    milestone: "M2"
+    labels: ["type/feature", "area/agents", "gate/spend"]
+    depends_on: []
+    acceptance:
+      - "Implement quota/expiry monitoring and NeedsAttention behavior satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Releases only approved minimal text context to subscription-authenticated Claude roles."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E6-I12"
+  - key: "E7"
+    title: "Epic: Real interviews and opportunities"
+    milestone: "M2"
+    labels: ["type/epic", "area/backend", "gate/privacy"]
+    children: ["E7-I01", "E7-I02", "E7-I03", "E7-I04", "E7-I05", "E7-I06", "E7-I07", "E7-I08", "E7-I09", "E7-I10"]
+    acceptance:
+      - "Every approved E7 child issue is completed with its required verification evidence."
+    privacy_impact: "Real-interview content is isolated and requires the approved consent and redaction gates."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / Epic E7"
+  - key: "E7-I01"
+    title: "Implement opportunity/company/job-description/stage model and workspace"
+    epic: "E7"
+    milestone: "M2"
+    labels: ["type/feature", "area/backend", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement opportunity/company/job-description/stage model and workspace satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Real-interview content is isolated and requires the approved consent and redaction gates."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E7-I01"
+  - key: "E7-I02"
+    title: "Implement scheduled interview preparation and final 60–90 minute protection"
+    epic: "E7"
+    milestone: "M2"
+    labels: ["type/feature", "area/backend", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement scheduled interview preparation and final 60–90 minute protection satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Real-interview content is isolated and requires the approved consent and redaction gates."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E7-I02"
+  - key: "E7-I03"
+    title: "Implement permission attestation state machine and recording lock"
+    epic: "E7"
+    milestone: "M2"
+    labels: ["type/feature", "area/backend", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement permission attestation state machine and recording lock satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Real-interview content is isolated and requires the approved consent and redaction gates."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E7-I03"
+  - key: "E7-I04"
+    title: "Implement practice versus real-interview storage/retrieval isolation"
+    epic: "E7"
+    milestone: "M2"
+    labels: ["type/feature", "area/backend", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement practice versus real-interview storage/retrieval isolation satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Real-interview content is isolated and requires the approved consent and redaction gates."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E7-I04"
+  - key: "E7-I05"
+    title: "Implement mandatory immediate debrief before feedback"
+    epic: "E7"
+    milestone: "M2"
+    labels: ["type/feature", "area/backend", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement mandatory immediate debrief before feedback satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Real-interview content is isolated and requires the approved consent and redaction gates."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E7-I05"
+  - key: "E7-I06"
+    title: "Implement transcript redaction preview and explicit Claude-release approval"
+    epic: "E7"
+    milestone: "M2"
+    labels: ["type/feature", "area/backend", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement transcript redaction preview and explicit Claude-release approval satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Real-interview content is isolated and requires the approved consent and redaction gates."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E7-I06"
+  - key: "E7-I07"
+    title: "Implement question segmentation, timeline, speaker separation, and attribution"
+    epic: "E7"
+    milestone: "M2"
+    labels: ["type/feature", "area/backend", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement question segmentation, timeline, speaker separation, and attribution satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Real-interview content is isolated and requires the approved consent and redaction gates."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E7-I07"
+  - key: "E7-I08"
+    title: "Implement two-correction real-interview recovery flow"
+    epic: "E7"
+    milestone: "M2"
+    labels: ["type/feature", "area/backend", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement two-correction real-interview recovery flow satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Real-interview content is isolated and requires the approved consent and redaction gates."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E7-I08"
+  - key: "E7-I09"
+    title: "Track outcomes/stage timing without tone-based predictions"
+    epic: "E7"
+    milestone: "M2"
+    labels: ["type/feature", "area/backend", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Track outcomes/stage timing without tone-based predictions satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Real-interview content is isolated and requires the approved consent and redaction gates."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E7-I09"
+  - key: "E7-I10"
+    title: "Use active opportunity evidence to vary adaptive practice without changing the roadmap"
+    epic: "E7"
+    milestone: "M2"
+    labels: ["type/feature", "area/backend", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Use active opportunity evidence to vary adaptive practice without changing the roadmap satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Real-interview content is isolated and requires the approved consent and redaction gates."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E7-I10"
+  - key: "E8"
+    title: "Epic: Complete study workspace"
+    milestone: "M3"
+    labels: ["type/epic", "area/curriculum", "area/web"]
+    children: ["E8-I01", "E8-I02", "E8-I03", "E8-I04", "E8-I05", "E8-I06", "E8-I07", "E8-I08", "E8-I09", "E8-I10", "E8-I11", "E8-I12", "E8-I13"]
+    acceptance:
+      - "Every approved E8 child issue is completed with its required verification evidence."
+    privacy_impact: "Private study artifacts and performance evidence remain single-user data."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / Epic E8"
+  - key: "E8-I01"
+    title: "Implement specialized SQL execution and validation sandbox"
+    epic: "E8"
+    milestone: "M3"
+    labels: ["type/feature", "area/curriculum", "area/web"]
+    depends_on: []
+    acceptance:
+      - "Implement specialized SQL execution and validation sandbox satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private study artifacts and performance evidence remain single-user data."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E8-I01"
+  - key: "E8-I02"
+    title: "Implement ordered SQL hint ladder and mistake taxonomy"
+    epic: "E8"
+    milestone: "M3"
+    labels: ["type/feature", "area/curriculum", "area/web"]
+    depends_on: []
+    acceptance:
+      - "Implement ordered SQL hint ladder and mistake taxonomy satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private study artifacts and performance evidence remain single-user data."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E8-I02"
+  - key: "E8-I03"
+    title: "Implement technical reading preview/hide/recall/application/teach-back flow"
+    epic: "E8"
+    milestone: "M3"
+    labels: ["type/feature", "area/curriculum", "area/web"]
+    depends_on: []
+    acceptance:
+      - "Implement technical reading preview/hide/recall/application/teach-back flow satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private study artifacts and performance evidence remain single-user data."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E8-I03"
+  - key: "E8-I04"
+    title: "Implement TAM case stages, artifacts, defense, and follow-ups"
+    epic: "E8"
+    milestone: "M3"
+    labels: ["type/feature", "area/curriculum", "area/web"]
+    depends_on: []
+    acceptance:
+      - "Implement TAM case stages, artifacts, defense, and follow-ups satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private study artifacts and performance evidence remain single-user data."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E8-I04"
+  - key: "E8-I05"
+    title: "Implement cumulative Northstar fact/decision history"
+    epic: "E8"
+    milestone: "M3"
+    labels: ["type/feature", "area/curriculum", "area/web"]
+    depends_on: []
+    acceptance:
+      - "Implement cumulative Northstar fact/decision history satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private study artifacts and performance evidence remain single-user data."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E8-I05"
+  - key: "E8-I06"
+    title: "Implement written Attempt A/self-edit/feedback/Attempt B flow"
+    epic: "E8"
+    milestone: "M3"
+    labels: ["type/feature", "area/curriculum", "area/web"]
+    depends_on: []
+    acceptance:
+      - "Implement written Attempt A/self-edit/feedback/Attempt B flow satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private study artifacts and performance evidence remain single-user data."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E8-I06"
+  - key: "E8-I07"
+    title: "Implement career-pipeline actions and artifact completion"
+    epic: "E8"
+    milestone: "M3"
+    labels: ["type/feature", "area/curriculum", "area/web"]
+    depends_on: []
+    acceptance:
+      - "Implement career-pipeline actions and artifact completion satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private study artifacts and performance evidence remain single-user data."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E8-I07"
+  - key: "E8-I08"
+    title: "Implement portfolio triage, 0–20 composite, and reprioritization"
+    epic: "E8"
+    milestone: "M3"
+    labels: ["type/feature", "area/curriculum", "area/web"]
+    depends_on: []
+    acceptance:
+      - "Implement portfolio triage, 0–20 composite, and reprioritization satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private study artifacts and performance evidence remain single-user data."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E8-I08"
+  - key: "E8-I09"
+    title: "Implement Saturday no-AI assessments and evidence scoring"
+    epic: "E8"
+    milestone: "M3"
+    labels: ["type/feature", "area/curriculum", "area/web"]
+    depends_on: []
+    acceptance:
+      - "Implement Saturday no-AI assessments and evidence scoring satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private study artifacts and performance evidence remain single-user data."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E8-I09"
+  - key: "E8-I10"
+    title: "Implement weekly cadence, daily close, and missed-day replacement rules"
+    epic: "E8"
+    milestone: "M3"
+    labels: ["type/feature", "area/curriculum", "area/web"]
+    depends_on: []
+    acceptance:
+      - "Implement weekly cadence, daily close, and missed-day replacement rules satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private study artifacts and performance evidence remain single-user data."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E8-I10"
+  - key: "E8-I11"
+    title: "Implement month exit review and next-roadmap activation"
+    epic: "E8"
+    milestone: "M3"
+    labels: ["type/feature", "area/curriculum", "area/web"]
+    depends_on: []
+    acceptance:
+      - "Implement month exit review and next-roadmap activation satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private study artifacts and performance evidence remain single-user data."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E8-I11"
+  - key: "E8-I12"
+    title: "Implement interview-family readiness and variation coverage"
+    epic: "E8"
+    milestone: "M3"
+    labels: ["type/feature", "area/curriculum", "area/web"]
+    depends_on: []
+    acceptance:
+      - "Implement interview-family readiness and variation coverage satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private study artifacts and performance evidence remain single-user data."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E8-I12"
+  - key: "E8-I13"
+    title: "Implement evidence-first analytics and self-versus-AI calibration views"
+    epic: "E8"
+    milestone: "M3"
+    labels: ["type/feature", "area/curriculum", "area/web"]
+    depends_on: []
+    acceptance:
+      - "Implement evidence-first analytics and self-versus-AI calibration views satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Private study artifacts and performance evidence remain single-user data."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E8-I13"
+  - key: "E9"
+    title: "Epic: Privacy, portability, and production quality"
+    milestone: "M4"
+    labels: ["type/epic", "area/operations", "gate/privacy"]
+    children: ["E9-I01", "E9-I02", "E9-I03", "E9-I04", "E9-I05", "E9-I06", "E9-I07", "E9-I08", "E9-I09", "E9-I10", "E9-I11", "E9-I12"]
+    acceptance:
+      - "Every approved E9 child issue is completed with its required verification evidence."
+    privacy_impact: "Owns privacy, security, retention, export, restore, and production controls."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / Epic E9"
+  - key: "E9-I01"
+    title: "Implement data classification, sensitivity scopes, and model-submission audit"
+    epic: "E9"
+    milestone: "M4"
+    labels: ["type/security", "area/operations", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement data classification, sensitivity scopes, and model-submission audit satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Owns privacy, security, retention, export, restore, and production controls."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E9-I01"
+  - key: "E9-I02"
+    title: "Implement data-model-improvement attestation gate"
+    epic: "E9"
+    milestone: "M4"
+    labels: ["type/security", "area/operations", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement data-model-improvement attestation gate satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Owns privacy, security, retention, export, restore, and production controls."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E9-I02"
+  - key: "E9-I03"
+    title: "Implement complete versioned export with hashes and relationship manifest"
+    epic: "E9"
+    milestone: "M4"
+    labels: ["type/security", "area/operations", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement complete versioned export with hashes and relationship manifest satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Owns privacy, security, retention, export, restore, and production controls."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E9-I03"
+  - key: "E9-I04"
+    title: "Implement verified import/restore of a TAM Forge export"
+    epic: "E9"
+    milestone: "M4"
+    labels: ["type/security", "area/operations", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement verified import/restore of a TAM Forge export satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Owns privacy, security, retention, export, restore, and production controls."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E9-I04"
+  - key: "E9-I05"
+    title: "Implement optional generated OKF 0.2 export adapter"
+    epic: "E9"
+    milestone: "M4"
+    labels: ["type/security", "area/operations", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement optional generated OKF 0.2 export adapter satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Owns privacy, security, retention, export, restore, and production controls."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E9-I05"
+  - key: "E9-I06"
+    title: "Implement retention, archive, and recoverable deletion controls"
+    epic: "E9"
+    milestone: "M4"
+    labels: ["type/security", "area/operations", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Implement retention, archive, and recoverable deletion controls satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Owns privacy, security, retention, export, restore, and production controls."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E9-I06"
+  - key: "E9-I07"
+    title: "Add structured logs, health/readiness, metrics, and actionable alerts"
+    epic: "E9"
+    milestone: "M4"
+    labels: ["type/security", "area/operations", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Add structured logs, health/readiness, metrics, and actionable alerts satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Owns privacy, security, retention, export, restore, and production controls."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E9-I07"
+  - key: "E9-I08"
+    title: "Run authorization, prompt/tool injection, secret, and context-leak tests"
+    epic: "E9"
+    milestone: "M4"
+    labels: ["type/security", "area/operations", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Run authorization, prompt/tool injection, secret, and context-leak tests satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Owns privacy, security, retention, export, restore, and production controls."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E9-I08"
+  - key: "E9-I09"
+    title: "Run full recording/job/storage failure-injection suite"
+    epic: "E9"
+    milestone: "M4"
+    labels: ["type/security", "area/operations", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Run full recording/job/storage failure-injection suite satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Owns privacy, security, retention, export, restore, and production controls."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E9-I09"
+  - key: "E9-I10"
+    title: "Run speech, agent, memory, and rubric evaluation suite"
+    epic: "E9"
+    milestone: "M4"
+    labels: ["type/security", "area/operations", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Run speech, agent, memory, and rubric evaluation suite satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Owns privacy, security, retention, export, restore, and production controls."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E9-I10"
+  - key: "E9-I11"
+    title: "Prove backup RPO/RTO with a clean-environment restore drill"
+    epic: "E9"
+    milestone: "M4"
+    labels: ["type/security", "area/operations", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Prove backup RPO/RTO with a clean-environment restore drill satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Owns privacy, security, retention, export, restore, and production controls."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E9-I11"
+  - key: "E9-I12"
+    title: "Complete production checklist, user runbook, and versioned release"
+    epic: "E9"
+    milestone: "M4"
+    labels: ["type/security", "area/operations", "gate/privacy"]
+    depends_on: []
+    acceptance:
+      - "Complete production checklist, user runbook, and versioned release satisfies the approved product and implementation-plan contract."
+    privacy_impact: "Owns privacy, security, retention, export, restore, and production controls."
+    verification: ["make check"]
+    plan: "docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md"
+    task: "Section 5 / E9-I12"
