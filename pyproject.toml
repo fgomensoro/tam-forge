@@ -12,12 +12,16 @@ members = ["apps/backend", "packages/protocol"]
 package = false
 
 [tool.pytest.ini_options]
-addopts = "-m 'not integration'"
 markers = [
   "integration: tests that require external services",
 ]
 pythonpath = ["."]
-testpaths = ["apps/backend/tests", "packages/protocol/tests", "scripts/github/tests"]
+testpaths = [
+  "apps/backend/tests",
+  "packages/protocol/tests",
+  "scripts/dev/tests",
+  "scripts/github/tests",
+]
 
 [tool.ruff]
 line-length = 100
