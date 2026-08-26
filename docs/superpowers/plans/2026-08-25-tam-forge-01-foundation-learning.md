@@ -438,6 +438,8 @@ Expected: the branch is feat/foundation-learning-workspace and the worktree is c
 - Create: apps/backend/tests/unit/test_config.py
 - Create: apps/backend/tests/integration/conftest.py
 - Create: apps/backend/tests/integration/test_migrations.py
+- Create: scripts/dev/ensure_test_database.sh
+- Create: scripts/dev/tests/test_ensure_test_database.py
 - Modify: apps/backend/src/tamforge_backend/config.py
 - Modify: apps/backend/src/tamforge_backend/main.py
 - Modify: apps/backend/pyproject.toml
@@ -470,16 +472,18 @@ def test_database_url() -> str:
 
 The migration test upgrades to head, verifies alembic_version, downgrades to base, and upgrades again.
 
+Also write fake-only tests for `scripts/dev/ensure_test_database.sh`. The idempotent helper creates only `tamforge_test` after an approved local PostgreSQL container starts, and refuses non-loopback hosts or database names other than `tamforge_test`. Its tests use fakes and never invoke Docker.
+
 - [ ] **Step 3: Run unit tests and verify expected failures/skips**
 
 Run:
 
 ~~~bash
-uv run pytest apps/backend/tests/unit/test_config.py -q
+uv run pytest apps/backend/tests/unit/test_config.py scripts/dev/tests/test_ensure_test_database.py -q
 uv run pytest apps/backend/tests/integration/test_migrations.py -q
 ~~~
 
-Expected: settings tests fail before implementation; integration test skips with the exact TEST_DATABASE_URL message. Docker remains stopped.
+Expected: settings/helper tests fail before implementation; integration test skips with the exact TEST_DATABASE_URL message. Docker remains stopped.
 
 - [ ] **Step 4: Implement settings, async engine/session factory, metadata, and Alembic**
 
@@ -490,7 +494,7 @@ Use one Settings instance per app lifespan and dependency injection for tests. C
 Run:
 
 ~~~bash
-uv run pytest apps/backend/tests/unit/test_config.py -q
+uv run pytest apps/backend/tests/unit/test_config.py scripts/dev/tests/test_ensure_test_database.py -q
 uv run ruff check apps/backend/src/tamforge_backend/config.py apps/backend/src/tamforge_backend/database.py apps/backend/alembic
 uv run mypy apps/backend/src/tamforge_backend
 ~~~
@@ -499,20 +503,28 @@ Expected: PASS.
 
 - [ ] **Step 6: Run migration harness only after explicit Docker approval**
 
-This step can start Docker and must pause for approval immediately before execution:
+This step can start Docker and must pause for fresh approval immediately before execution; without that approval, no Docker command in this group may run:
 
 ~~~bash
+set -e
+cleanup() {
+  docker compose -f compose.dev.yml down --remove-orphans
+}
+trap cleanup EXIT INT TERM
 docker compose -f compose.dev.yml up -d postgres
+bash scripts/dev/ensure_test_database.sh
 TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test uv run pytest apps/backend/tests/integration/test_migrations.py -q
-docker compose -f compose.dev.yml down
+cleanup
+trap - EXIT INT TERM
+docker compose -f compose.dev.yml ps --status running
 ~~~
 
-Expected: PASS and a clean Compose shutdown. If approval is not granted, leave the integration test skipped and rely on the later CI PostgreSQL service.
+Expected: PASS and an empty final `ps --status running`; the EXIT/INT/TERM trap always removes Compose services and orphans on failure. If approval is not granted, leave the integration test skipped and rely on the later CI PostgreSQL service.
 
 - [ ] **Step 7: Commit database foundations**
 
 ~~~bash
-git add .env.example apps/backend
+git add .env.example apps/backend scripts/dev/ensure_test_database.sh scripts/dev/tests/test_ensure_test_database.py
 git commit -m "feat: add backend database foundation"
 ~~~
 
@@ -1991,17 +2003,26 @@ Expected: all checks pass and only intended source/plan-generated files are pres
 
 - [ ] **Step 6: Run integration/E2E only after explicit Docker approval**
 
-After the user explicitly approves Docker use in that execution turn:
+After the user explicitly approves Docker use in that execution turn, no Docker command in this group may run without that fresh approval:
 
 ~~~bash
+set -e
+cleanup() {
+  docker compose -f compose.dev.yml down --remove-orphans
+}
+trap cleanup EXIT INT TERM
 docker compose -f compose.dev.yml up -d postgres minio
-uv run alembic -c apps/backend/alembic.ini upgrade head
+bash scripts/dev/ensure_test_database.sh
+DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test \
+  uv run alembic -c apps/backend/alembic.ini upgrade head
 TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test uv run pytest -m integration apps/backend/tests/integration -q
 pnpm --filter @tam-forge/web exec playwright test e2e/foundation-learning.spec.ts
-docker compose -f compose.dev.yml down
+cleanup
+trap - EXIT INT TERM
+docker compose -f compose.dev.yml ps --status running
 ~~~
 
-Expected: migrations, integration tests, and browser flow pass. Record container status before/after and do not leave Docker services running. If approval is not given, do not run these commands; rely on unit checks and the exact-head GitHub Actions result without representing skipped integration tests as green.
+When Playwright starts a backend process, it uses this same isolated `DATABASE_URL` and `TEST_DATABASE_URL`; it must never inherit the ordinary `.env` `tamforge` database. Expected: migrations, integration tests, and browser flow pass, followed by an empty final `ps --status running`; the EXIT/INT/TERM trap always removes Compose services and orphans on failure. If approval is not given, do not run these commands; rely on unit checks and the exact-head GitHub Actions result without representing skipped integration tests as green.
 
 - [ ] **Step 7: Refresh generated API types and issue status, then make the final focused commit**
 

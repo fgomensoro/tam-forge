@@ -15,13 +15,15 @@
 This is child plan **03**. Execute it only after the foundation and recording/speech plans have supplied these stable interfaces:
 
 - authenticated single-user FastAPI application and GitHub-owner identity check;
-- PostgreSQL session/transaction helpers, durable job queue, transactional outbox, audit events, object catalog, signed-object access, the approved versioned application signer/verifier, and the Plan 2 `processing_runs`/`processing_suspensions` clock ledger;
+- PostgreSQL session/transaction helpers, durable job queue, transactional outbox, audit events, object catalog, signed-object access, Plan 2 recording-manifest HMAC/signature lineage, and the Plan 2 `processing_runs`/`processing_suspensions` clock ledger;
 - roadmap/task/activity, immutable attempt, self-review, evidence, transcript/version, word-token, deterministic speech-metric, and artifact models;
 - `SelfReviewComplete`, `IngestSealed`, and transcript/metrics readiness events;
 - web application shell, Today screen, universal activity workspace, and server-sent job-status channel;
 - canonical monorepo layout: `apps/backend/src/tamforge_backend/`, `apps/web/`, `apps/recorder/src/tamforge_recorder/`, `packages/protocol/src/tamforge_protocol/`, and `apps/backend/alembic/versions/`.
 
 This plan must not reimplement recording, ASR, VAD, pronunciation measurement, roadmap import, authentication, or base job infrastructure. It consumes those components through their approved interfaces.
+
+Task 23 owns the portable export Ed25519 signer/verifier and independently provisioned trust bundle.
 
 ## Non-negotiable gates
 
@@ -1681,6 +1683,8 @@ git commit -m "feat(reports): add reproducible readiness analytics"
 - Modify: `apps/backend/src/tamforge_backend/exports/models.py`
 - Modify: `apps/backend/src/tamforge_backend/exports/repository.py`
 - Modify: `apps/backend/src/tamforge_backend/config.py`
+- Modify: `apps/backend/pyproject.toml`
+- Modify: `uv.lock`
 - Modify: `.env.example`
 - Modify: `.gitignore`
 - Create: `scripts/bootstrap_export_signing_key.py`
@@ -1716,7 +1720,15 @@ Run: `uv run pytest packages/protocol/tests/test_exports.py apps/backend/tests/u
 
 Expected: FAIL because export/import contracts, production key loading/signing/verification, rotation, the general-worker export handler, archive validation, and importer are absent.
 
-- [ ] **Step 3: Implement bounded streaming export assembly and the durable general-worker handler**
+- [ ] **Step 3: Add and lock the direct backend Ed25519 dependency**
+
+Before any Task 23 code imports `cryptography.hazmat.primitives.asymmetric.ed25519`, add `cryptography` as a direct dependency of `apps/backend` and lock it; do not rely on a transitive or recorder-only dependency.
+
+Run: `uv add --project apps/backend cryptography && uv lock --check`
+
+Expected: `apps/backend/pyproject.toml` declares `cryptography` directly and `uv.lock` records the resolved dependency. The Task 23 signing tests exercise the imported Ed25519 API.
+
+- [ ] **Step 4: Implement bounded streaming export assembly and the durable general-worker handler**
 
 Stream rows and object-store artifacts through a temporary bounded-disk workspace; never accumulate audio or the whole archive in RAM. Include original audio and integrity manifests; every transcript/analysis version; notes, SQL, written artifacts; scores, rubrics, prompts, model-run/context manifests; every roadmap/source snapshot; interview/opportunity history; memory revisions; audit-safe relationships and metadata; plus JSON/CSV human-readable indexes. Preserve original filenames, permanent IDs, and immutable source bytes.
 
@@ -1724,7 +1736,7 @@ Stream rows and object-store artifacts through a temporary bounded-disk workspac
 
 Create `tamforge_backend.workers.general` as the executable module for the general worker. It builds an allowlisted registry of non-speech, non-Claude, non-embedding job types, claims through Plan 1's lease service, dispatches one bounded job at a time initially, heartbeats, and shuts down without abandoning a claimed lease. It explicitly excludes recording/speech, Claude, and embedding job types owned by their dedicated workers. The export handler lazily loads the private signer credential only after claiming an export job; missing/invalid signing material marks that export `NeedsAttention` and leaves unrelated general jobs claimable. Tests prove handler registration, producer-to-lease-to-signed-publication flow, duplicate idempotency, crash/reclaim, disallowed type refusal, and no signing key in API/queue payload/logs.
 
-- [ ] **Step 4: Verify and sign before export publication**
+- [ ] **Step 5: Verify and sign before export publication**
 
 Re-read every staged file, compare size/hash with its canonical catalog record, and validate foreign-key/relationship references in the exported logical graph. Canonicalize the unsigned manifest as strict UTF-8 JSON with sorted keys, no insignificant whitespace or non-finite numbers. Sign exactly `b"TAMFORGE-EXPORT-MANIFEST-V1\x00" + SHA256(canonical_unsigned_manifest_bytes)` using the active Ed25519 private key and persist the envelope without changing the unsigned bytes. Verification selects exactly the envelope's key ID from the independently provisioned public trust bundle and never tries every key, trusts an archive-supplied key, falls back to the active key, or re-signs history. Upload only the verified archive to a private object key and issue a short-lived owner-only download. Incomplete exports remain `NeedsAttention` and are never advertised as complete.
 
@@ -1732,41 +1744,41 @@ Implement `bootstrap_export_signing_key.py` and `rotate_export_signing_key.py` a
 
 Rotation likewise requires a verified encrypted recovery receipt, generates key bytes internally, writes/fsyncs root-owned source files through `0600` temporaries, and retains old public verification keys indefinitely. Both commands print only key IDs/hashes/fingerprints, never accept secret bytes on the command line, and never delete an old trust key. Missing/invalid signing credentials disable export publication only; missing/invalid trust credentials disable import verification only; neither may crash study, ingest, or unrelated workers.
 
-- [ ] **Step 5: Implement archive-safe validation and a mutation-free dry run**
+- [ ] **Step 6: Implement archive-safe validation and a mutation-free dry run**
 
 Stream the uploaded archive into a bounded quarantine directory. Verify its signature against the already provisioned trust bundle before trusting declared paths or relationships. Reject bad/unknown signer or key version, unsupported schema/application version, path traversal, absolute paths, symlinks/devices, duplicate logical/object IDs, decompression bombs/file-count or byte-limit breaches, MIME/size/hash mismatch, missing parents, broken lineage, owner mismatch, and undeclared content. `POST /api/v1/imports/dry-run` performs no canonical database/object-catalog mutation and returns exact insert/reuse/conflict counts, object bytes, required space, version compatibility, sensitive-real-interview scope, and an expiring exact preview hash persisted with the dry-run record. Commit compares that server-stored hash; it is not a bearer credential and needs no second signing key.
 
 For a clean-install restore, the operator must first retrieve the historical public trust bundle from the encrypted off-host recovery repository, verify its independently recorded SHA-256 fingerprint/recovery manifest, and provision it through the API service's read-only systemd credential. An archive's embedded key ID/fingerprint is identification only and can never establish trust. The old private key is not required to verify/import; generating a new post-restore signing key is a separate operation that adds its public key to the retained trust bundle. No trust-on-first-use path exists.
 
-- [ ] **Step 6: Implement explicit conflict policy and transactional restore**
+- [ ] **Step 7: Implement explicit conflict policy and transactional restore**
 
 Classify absent IDs as `insert`, and an existing immutable ID with the identical content hash as idempotent `reuse`. Treat the same permanent ID with different content, a changed roadmap/source snapshot, owner mismatch, or mutable-current-pointer disagreement as a hard conflict; never overwrite or silently remap it. Default commit aborts on any conflict. `POST /api/v1/imports/{import_id}/commit` requires owner session, CSRF, idempotency key, unexpired exact preview hash, and explicit sensitive-scope confirmation. Verify and place content-addressed object bytes first, then acquire one owner-scoped advisory lock and insert all logical rows, links, current pointers, object-catalog entries, and audit/outbox records in one serializable transaction. On failure, roll back every database row and inventory safe orphaned staged objects for cleanup; never delete a pre-existing object. Repeating the exact commit returns the prior result.
 
 Add `GET /api/v1/imports/{import_id}` for durable status. Prove both a clean empty-install restore and an additive idempotent restore; no import operation deletes records absent from the archive.
 
-- [ ] **Step 7: Add optional OKF 0.2 projection tests**
+- [ ] **Step 8: Add optional OKF 0.2 projection tests**
 
 Map only verified, user-approved memory and roadmap knowledge to a pinned, human-readable OKF 0.2 Markdown/YAML projection. Test provenance links, stable IDs, relationships, escaping, deterministic order, and omission of hypotheses/sensitive records outside the chosen scope.
 
-- [ ] **Step 8: Implement OKF as export-only**
+- [ ] **Step 9: Implement OKF as export-only**
 
 Generate an `optional-okf/` directory inside the full export with its own version/readme and mapping manifest. PostgreSQL remains canonical; pgvector remains derived; Obsidian remains unchanged. The complete TAM Forge archive is importable through the importer above; the optional OKF projection itself is not an import/runtime/synchronization format.
 
-- [ ] **Step 9: Write owner export/import UI tests and verify RED**
+- [ ] **Step 10: Write owner export/import UI tests and verify RED**
 
 Run: `pnpm --dir apps/web exec vitest run src/features/exports/ExportPanel.test.tsx src/features/exports/ImportRestorePanel.test.tsx`
 
 Expected: FAIL because the panels are absent. Test export scope/size/sensitive confirmation/OKF/progress/download plus import upload, dry-run-only first step, validation details, exact conflicts, preview expiry, explicit commit confirmation, durable status, idempotent retry, and success/failure recovery after reload.
 
-- [ ] **Step 10: Implement the owner export/import UI and safe unit verification**
+- [ ] **Step 11: Implement the owner export/import UI and safe unit verification**
 
 Implement the two-step UI without a one-click overwrite path. Never enable Commit while conflicts, signature failure, missing space, owner mismatch, or an expired preview exists. Show that import is additive and that optional OKF is not imported.
 
-Run: `uv run pytest packages/protocol/tests/test_exports.py apps/backend/tests/unit/exports/test_builder.py apps/backend/tests/unit/exports/test_validator.py apps/backend/tests/unit/exports/test_importer.py apps/backend/tests/unit/exports/test_okf.py apps/backend/tests/unit/exports/test_job_handler.py apps/backend/tests/unit/integrity/test_export_keys.py apps/backend/tests/unit/integrity/test_export_signing.py apps/backend/tests/unit/integrity/test_export_key_rotation.py apps/backend/tests/unit/workers/test_general_worker.py -q && pnpm --dir apps/web exec vitest run src/features/exports/ExportPanel.test.tsx src/features/exports/ImportRestorePanel.test.tsx && pnpm --dir apps/web exec tsc --noEmit`
+Run: `uv lock --check && uv run pytest packages/protocol/tests/test_exports.py apps/backend/tests/unit/exports/test_builder.py apps/backend/tests/unit/exports/test_validator.py apps/backend/tests/unit/exports/test_importer.py apps/backend/tests/unit/exports/test_okf.py apps/backend/tests/unit/exports/test_job_handler.py apps/backend/tests/unit/integrity/test_export_keys.py apps/backend/tests/unit/integrity/test_export_signing.py apps/backend/tests/unit/integrity/test_export_key_rotation.py apps/backend/tests/unit/workers/test_general_worker.py -q && pnpm --dir apps/web exec vitest run src/features/exports/ExportPanel.test.tsx src/features/exports/ImportRestorePanel.test.tsx && pnpm --dir apps/web exec tsc --noEmit`
 
 Expected: PASS using temporary credential files, deterministic test-only Ed25519 keys, and fake object storage; production credential policy, signature substitution, historical verification after rotation, and clean-restore trust refusal are covered without network/database access.
 
-- [ ] **Step 11: Prove complete export and transactional import only after the database gate**
+- [ ] **Step 12: Prove complete export and transactional import only after the database gate**
 
 `[DOCKER APPROVAL REQUIRED LOCALLY; CI POSTGRESQL SERVICE ALLOWED]`
 
@@ -1779,10 +1791,10 @@ TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforg
 
 Expected: PASS with marked tests collected and zero skips. An independently rehashed export restores every fixture artifact/version/relation into an empty database, exact replay is idempotent, a conflicting replay changes zero canonical rows, injected mid-commit failure leaves zero partial rows, and all restored relationships/hashes equal the source.
 
-- [ ] **Step 12: Commit**
+- [ ] **Step 13: Commit**
 
 ```bash
-git add packages/protocol/src/tamforge_protocol/exports.py packages/protocol/src/tamforge_protocol/__init__.py packages/protocol/tests/test_exports.py apps/backend/src/tamforge_backend/exports apps/backend/src/tamforge_backend/integrity apps/backend/src/tamforge_backend/workers/general.py apps/backend/src/tamforge_backend/jobs/registry.py apps/backend/src/tamforge_backend/config.py apps/backend/src/tamforge_backend/api.py apps/backend/tests/unit/exports apps/backend/tests/unit/integrity apps/backend/tests/unit/workers/test_general_worker.py apps/backend/tests/integration/exports/test_export_import_restore.py apps/web/src/features/exports scripts/bootstrap_export_signing_key.py scripts/rotate_export_signing_key.py docs/runbooks/export-and-portability.md docs/runbooks/export-signing-keys.md .env.example .gitignore
+git add packages/protocol/src/tamforge_protocol/exports.py packages/protocol/src/tamforge_protocol/__init__.py packages/protocol/tests/test_exports.py apps/backend/pyproject.toml uv.lock apps/backend/src/tamforge_backend/exports apps/backend/src/tamforge_backend/integrity apps/backend/src/tamforge_backend/workers/general.py apps/backend/src/tamforge_backend/jobs/registry.py apps/backend/src/tamforge_backend/config.py apps/backend/src/tamforge_backend/api.py apps/backend/tests/unit/exports apps/backend/tests/unit/integrity apps/backend/tests/unit/workers/test_general_worker.py apps/backend/tests/integration/exports/test_export_import_restore.py apps/web/src/features/exports scripts/bootstrap_export_signing_key.py scripts/rotate_export_signing_key.py docs/runbooks/export-and-portability.md docs/runbooks/export-signing-keys.md .env.example .gitignore
 git commit -m "feat(exports): add verified export and transactional restore"
 ```
 

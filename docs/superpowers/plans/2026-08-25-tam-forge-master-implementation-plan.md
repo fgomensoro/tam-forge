@@ -447,7 +447,7 @@ Expected: clean tree; recorded head SHA; all required checks present and passing
 Run:
 
 ```bash
-uv run pytest -m "not integration and not soak" -q
+uv run pytest -m "not integration and not postgres_integration and not object_store_integration and not container_integration and not local_model and not hardware and not soak" -q
 uv run mypy apps/backend/src apps/recorder/src packages/protocol/src
 pnpm --filter @tam-forge/web lint
 pnpm --filter @tam-forge/web typecheck
@@ -455,7 +455,7 @@ pnpm --filter @tam-forge/web test --run
 pnpm --filter @tam-forge/web build
 ```
 
-Expected: all commands pass.
+Expected: all commands pass. Plan 3 PostgreSQL tests run only through its zero-skip runner; integration, object-store, container, model, hardware, and soak evidence comes from the exact CI/manual procedures. A skip is not green.
 
 - [ ] **Step 3: Confirm CI integration/evaluation/soak evidence**
 
