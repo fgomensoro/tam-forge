@@ -85,7 +85,6 @@ def upgrade() -> None:
         _jsonb("semantic_diff", default_object=True),
         sa.Column("idempotency_key", sa.Text(), nullable=False),
         sa.Column("failure_code", sa.Text(), nullable=True),
-        sa.Column("failure_message", sa.Text(), nullable=True),
         _created_at(),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
@@ -115,27 +114,13 @@ def upgrade() -> None:
             name="idempotency_key_bounded",
         ),
         sa.CheckConstraint(
-            "failure_code IS NULL OR "
-            "(failure_code ~ '^[a-z0-9][a-z0-9_.:-]*$' AND "
-            "octet_length(failure_code) <= 64)",
-            name="failure_code_safe",
+            "failure_code IS NULL OR failure_code IN ("
+            "'invalid_package', 'unsupported_schema', 'hash_mismatch', "
+            "'validation_failed', 'storage_unavailable', 'internal_error')",
+            name="failure_code_allowed",
         ),
         sa.CheckConstraint(
-            "failure_message IS NULL OR octet_length(failure_message) <= 1024",
-            name="failure_message_bounded",
-        ),
-        sa.CheckConstraint(
-            "failure_message IS NULL OR lower(failure_message) !~ "
-            "'(bearer[[:space:]]+[a-z0-9._~-]{8,}|gh[pousr]_[a-z0-9]{8,}|"
-            "github_pat_[a-z0-9_]{8,}|sk-[a-z0-9_-]{8,}|"
-            "api[_ -]?key[=:][[:space:]]*[a-z0-9_-]{8,}|"
-            "session[_ -]?token[=:][[:space:]]*[a-z0-9_-]{8,}|"
-            "eyj[a-z0-9_-]{8,})'",
-            name="failure_message_redacted",
-        ),
-        sa.CheckConstraint(
-            "((status IN ('rejected', 'failed')) = (failure_code IS NOT NULL)) "
-            "AND (failure_message IS NULL OR failure_code IS NOT NULL)",
+            "(status IN ('rejected', 'failed')) = (failure_code IS NOT NULL)",
             name="failure_fields_coherent",
         ),
         sa.CheckConstraint(
@@ -151,7 +136,8 @@ def upgrade() -> None:
             "(status = 'validating' AND started_at IS NOT NULL AND completed_at IS NULL) OR "
             "(status IN ('validated', 'imported') AND started_at IS NOT NULL "
             "AND completed_at IS NOT NULL) OR "
-            "(status IN ('rejected', 'failed') AND completed_at IS NOT NULL)",
+            "(status IN ('rejected', 'failed') AND started_at IS NOT NULL "
+            "AND completed_at IS NOT NULL)",
             name="lifecycle_coherent",
         ),
         sa.ForeignKeyConstraint(
@@ -203,7 +189,7 @@ def upgrade() -> None:
         sa.Column("superseded_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("mirror_status", sa.Text(), nullable=False),
         sa.Column("mirror_ref", sa.Text(), nullable=True),
-        sa.Column("mirror_error", sa.Text(), nullable=True),
+        sa.Column("mirror_error_code", sa.Text(), nullable=True),
         sa.Column("state", sa.Text(), nullable=False),
         sa.CheckConstraint("btrim(version_key) <> ''", name="version_key_nonblank"),
         sa.CheckConstraint("octet_length(version_key) <= 128", name="version_key_bounded"),
@@ -241,27 +227,18 @@ def upgrade() -> None:
             name="mirror_ref_bounded",
         ),
         sa.CheckConstraint(
-            "mirror_error IS NULL OR octet_length(mirror_error) <= 1024",
-            name="mirror_error_bounded",
-        ),
-        sa.CheckConstraint(
-            "mirror_error IS NULL OR lower(mirror_error) !~ "
-            "'(bearer[[:space:]]+[a-z0-9._~-]{8,}|gh[pousr]_[a-z0-9]{8,}|"
-            "github_pat_[a-z0-9_]{8,}|sk-[a-z0-9_-]{8,}|"
-            "api[_ -]?key[=:][[:space:]]*[a-z0-9_-]{8,}|"
-            "session[_ -]?token[=:][[:space:]]*[a-z0-9_-]{8,}|"
-            "eyj[a-z0-9_-]{8,})'",
-            name="mirror_error_redacted",
+            "mirror_error_code IS NULL OR mirror_error_code IN ("
+            "'storage_unavailable', 'write_failed', 'conflict', "
+            "'permission_denied', 'invalid_reference', 'internal_error')",
+            name="mirror_error_code_allowed",
         ),
         sa.CheckConstraint(
             "(mirror_status = 'synced' AND mirror_ref IS NOT NULL "
-            "AND mirror_error IS NULL) OR "
-            "(mirror_status = 'failed' AND mirror_error IS NOT NULL) OR "
-            "(mirror_status = 'syncing' AND mirror_error IS NULL) OR "
-            "(mirror_status = 'pending' AND mirror_ref IS NULL "
-            "AND mirror_error IS NULL) OR "
-            "(mirror_status = 'not_required' AND mirror_ref IS NULL "
-            "AND mirror_error IS NULL)",
+            "AND mirror_error_code IS NULL) OR "
+            "(mirror_status = 'failed' AND mirror_ref IS NULL "
+            "AND mirror_error_code IS NOT NULL) OR "
+            "(mirror_status IN ('pending', 'syncing', 'not_required') "
+            "AND mirror_ref IS NULL AND mirror_error_code IS NULL)",
             name="mirror_fields_coherent",
         ),
         sa.CheckConstraint(
@@ -804,6 +781,29 @@ def upgrade() -> None:
 
     op.execute(
         """
+        CREATE FUNCTION public.tamforge_reject_roadmap_source_mutation()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        SET search_path = pg_catalog
+        AS $$
+        BEGIN
+            RAISE EXCEPTION 'roadmap source history is immutable'
+                USING ERRCODE = 'integrity_constraint_violation';
+        END;
+        $$
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER trg_roadmap_sources_immutable
+        BEFORE UPDATE OR DELETE ON roadmap_sources
+        FOR EACH ROW
+        EXECUTE FUNCTION public.tamforge_reject_roadmap_source_mutation()
+        """
+    )
+
+    op.execute(
+        """
         CREATE FUNCTION public.tamforge_guard_roadmap_import_mutation()
         RETURNS trigger
         LANGUAGE plpgsql
@@ -820,13 +820,33 @@ def upgrade() -> None:
                 OR NEW.object_key IS DISTINCT FROM OLD.object_key
                 OR NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key
                 OR NEW.created_at IS DISTINCT FROM OLD.created_at
-                OR (OLD.started_at IS NOT NULL AND NEW.started_at IS DISTINCT FROM OLD.started_at)
+            THEN
+                RAISE EXCEPTION 'roadmap import provenance is immutable'
+                    USING ERRCODE = 'integrity_constraint_violation';
+            END IF;
+            IF (OLD.started_at IS NOT NULL AND NEW.started_at IS DISTINCT FROM OLD.started_at)
                 OR (
                     OLD.completed_at IS NOT NULL
                     AND NEW.completed_at IS DISTINCT FROM OLD.completed_at
                 )
             THEN
-                RAISE EXCEPTION 'roadmap import provenance is immutable'
+                RAISE EXCEPTION 'roadmap import timestamps are write-once'
+                    USING ERRCODE = 'integrity_constraint_violation';
+            END IF;
+            IF OLD.status IN ('imported', 'rejected', 'failed')
+                AND to_jsonb(NEW) IS DISTINCT FROM to_jsonb(OLD)
+            THEN
+                RAISE EXCEPTION 'terminal roadmap import is immutable'
+                    USING ERRCODE = 'integrity_constraint_violation';
+            END IF;
+            IF NEW.status IS DISTINCT FROM OLD.status AND NOT (
+                (OLD.status = 'staged' AND NEW.status = 'validating')
+                OR (OLD.status = 'validating' AND NEW.status IN (
+                    'validated', 'rejected', 'failed'
+                ))
+                OR (OLD.status = 'validated' AND NEW.status = 'imported')
+            ) THEN
+                RAISE EXCEPTION 'invalid roadmap import transition'
                     USING ERRCODE = 'integrity_constraint_violation';
             END IF;
             RETURN NEW;
@@ -895,7 +915,7 @@ def upgrade() -> None:
             END IF;
             IF NEW.mirror_status IS DISTINCT FROM OLD.mirror_status AND NOT (
                 (OLD.mirror_status = 'pending' AND NEW.mirror_status IN (
-                    'syncing', 'failed', 'not_required'
+                    'syncing', 'not_required'
                 ))
                 OR (OLD.mirror_status = 'syncing' AND NEW.mirror_status IN (
                     'synced', 'failed'
@@ -908,7 +928,7 @@ def upgrade() -> None:
             IF OLD.mirror_status IN ('synced', 'not_required') AND (
                 NEW.mirror_status IS DISTINCT FROM OLD.mirror_status
                 OR NEW.mirror_ref IS DISTINCT FROM OLD.mirror_ref
-                OR NEW.mirror_error IS DISTINCT FROM OLD.mirror_error
+                OR NEW.mirror_error_code IS DISTINCT FROM OLD.mirror_error_code
             ) THEN
                 RAISE EXCEPTION 'completed roadmap mirror state is immutable'
                     USING ERRCODE = 'integrity_constraint_violation';
@@ -1025,6 +1045,8 @@ def downgrade() -> None:
     op.execute("DROP FUNCTION IF EXISTS public.tamforge_guard_roadmap_version_update()")
     op.execute("DROP TRIGGER IF EXISTS trg_roadmap_imports_guard_mutation ON roadmap_imports")
     op.execute("DROP FUNCTION IF EXISTS public.tamforge_guard_roadmap_import_mutation()")
+    op.execute("DROP TRIGGER IF EXISTS trg_roadmap_sources_immutable ON roadmap_sources")
+    op.execute("DROP FUNCTION IF EXISTS public.tamforge_reject_roadmap_source_mutation()")
 
     op.drop_index("ix_month_exit_reviews_owner_version", table_name="month_exit_reviews")
     op.drop_table("month_exit_reviews")

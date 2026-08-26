@@ -27,7 +27,6 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Mapped, Mapper, mapped_column
 from sqlalchemy.orm.base import LoaderCallableStatus
-from sqlalchemy.orm.state import InstanceState
 
 from ..models.base import Base, utc_now
 
@@ -36,8 +35,65 @@ class RoadmapVersionImmutableError(ValueError):
     """Raised when immutable roadmap-version provenance is changed."""
 
 
+class RoadmapSourceImmutableError(ValueError):
+    """Raised when immutable roadmap-source provenance is changed."""
+
+
+class RoadmapImportWorkflowError(ValueError):
+    """Raised when an import violates its persistence workflow."""
+
+
+class RoadmapVersionWorkflowError(ValueError):
+    """Raised when a roadmap version violates lifecycle or mirror workflow."""
+
+
 class CurriculumContentImmutableError(ValueError):
     """Raised when imported curriculum content is mutated through the ORM."""
+
+
+IMPORT_FAILURE_CODES = frozenset(
+    {
+        "invalid_package",
+        "unsupported_schema",
+        "hash_mismatch",
+        "validation_failed",
+        "storage_unavailable",
+        "internal_error",
+    }
+)
+MIRROR_ERROR_CODES = frozenset(
+    {
+        "storage_unavailable",
+        "write_failed",
+        "conflict",
+        "permission_denied",
+        "invalid_reference",
+        "internal_error",
+    }
+)
+IMPORT_TRANSITIONS = {
+    "staged": frozenset({"validating"}),
+    "validating": frozenset({"validated", "rejected", "failed"}),
+    "validated": frozenset({"imported"}),
+    "imported": frozenset(),
+    "rejected": frozenset(),
+    "failed": frozenset(),
+}
+VERSION_STATE_TRANSITIONS = {
+    "draft": frozenset({"approved"}),
+    "approved": frozenset({"active"}),
+    "active": frozenset({"superseded"}),
+    "superseded": frozenset(),
+}
+MIRROR_TRANSITIONS = {
+    "pending": frozenset({"syncing", "not_required"}),
+    "syncing": frozenset({"synced", "failed"}),
+    "failed": frozenset({"syncing"}),
+    "synced": frozenset(),
+    "not_required": frozenset(),
+}
+_TERMINAL_IMPORT_STATES = frozenset({"imported", "rejected", "failed"})
+_TERMINAL_MIRROR_STATES = frozenset({"synced", "not_required"})
 
 
 class RoadmapSource(Base):
@@ -124,27 +180,13 @@ class RoadmapImport(Base):
         CheckConstraint("btrim(idempotency_key) <> ''", name="idempotency_key_nonblank"),
         CheckConstraint("octet_length(idempotency_key) <= 256", name="idempotency_key_bounded"),
         CheckConstraint(
-            "failure_code IS NULL OR "
-            "(failure_code ~ '^[a-z0-9][a-z0-9_.:-]*$' AND "
-            "octet_length(failure_code) <= 64)",
-            name="failure_code_safe",
+            "failure_code IS NULL OR failure_code IN ("
+            "'invalid_package', 'unsupported_schema', 'hash_mismatch', "
+            "'validation_failed', 'storage_unavailable', 'internal_error')",
+            name="failure_code_allowed",
         ),
         CheckConstraint(
-            "failure_message IS NULL OR octet_length(failure_message) <= 1024",
-            name="failure_message_bounded",
-        ),
-        CheckConstraint(
-            "failure_message IS NULL OR lower(failure_message) !~ "
-            "'(bearer[[:space:]]+[a-z0-9._~-]{8,}|gh[pousr]_[a-z0-9]{8,}|"
-            "github_pat_[a-z0-9_]{8,}|sk-[a-z0-9_-]{8,}|"
-            "api[_ -]?key[=:][[:space:]]*[a-z0-9_-]{8,}|"
-            "session[_ -]?token[=:][[:space:]]*[a-z0-9_-]{8,}|"
-            "eyj[a-z0-9_-]{8,})'",
-            name="failure_message_redacted",
-        ),
-        CheckConstraint(
-            "((status IN ('rejected', 'failed')) = (failure_code IS NOT NULL)) AND "
-            "(failure_message IS NULL OR failure_code IS NOT NULL)",
+            "(status IN ('rejected', 'failed')) = (failure_code IS NOT NULL)",
             name="failure_fields_coherent",
         ),
         CheckConstraint(
@@ -160,7 +202,8 @@ class RoadmapImport(Base):
             "(status = 'validating' AND started_at IS NOT NULL AND completed_at IS NULL) OR "
             "(status IN ('validated', 'imported') AND started_at IS NOT NULL "
             "AND completed_at IS NOT NULL) OR "
-            "(status IN ('rejected', 'failed') AND completed_at IS NOT NULL)",
+            "(status IN ('rejected', 'failed') AND started_at IS NOT NULL "
+            "AND completed_at IS NOT NULL)",
             name="lifecycle_coherent",
         ),
         Index("ix_roadmap_imports_owner_id_source_id", "owner_id", "source_id"),
@@ -181,7 +224,6 @@ class RoadmapImport(Base):
     )
     idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
     failure_code: Mapped[str | None] = mapped_column(Text)
-    failure_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, server_default=func.now(), nullable=False
     )
@@ -256,24 +298,18 @@ class RoadmapVersion(Base):
             name="mirror_ref_bounded",
         ),
         CheckConstraint(
-            "mirror_error IS NULL OR octet_length(mirror_error) <= 1024",
-            name="mirror_error_bounded",
+            "mirror_error_code IS NULL OR mirror_error_code IN ("
+            "'storage_unavailable', 'write_failed', 'conflict', "
+            "'permission_denied', 'invalid_reference', 'internal_error')",
+            name="mirror_error_code_allowed",
         ),
         CheckConstraint(
-            "mirror_error IS NULL OR lower(mirror_error) !~ "
-            "'(bearer[[:space:]]+[a-z0-9._~-]{8,}|gh[pousr]_[a-z0-9]{8,}|"
-            "github_pat_[a-z0-9_]{8,}|sk-[a-z0-9_-]{8,}|"
-            "api[_ -]?key[=:][[:space:]]*[a-z0-9_-]{8,}|"
-            "session[_ -]?token[=:][[:space:]]*[a-z0-9_-]{8,}|"
-            "eyj[a-z0-9_-]{8,})'",
-            name="mirror_error_redacted",
-        ),
-        CheckConstraint(
-            "(mirror_status = 'synced' AND mirror_ref IS NOT NULL AND mirror_error IS NULL) OR "
-            "(mirror_status = 'failed' AND mirror_error IS NOT NULL) OR "
-            "(mirror_status = 'syncing' AND mirror_error IS NULL) OR "
-            "(mirror_status = 'pending' AND mirror_ref IS NULL AND mirror_error IS NULL) OR "
-            "(mirror_status = 'not_required' AND mirror_ref IS NULL AND mirror_error IS NULL)",
+            "(mirror_status = 'synced' AND mirror_ref IS NOT NULL "
+            "AND mirror_error_code IS NULL) OR "
+            "(mirror_status = 'failed' AND mirror_ref IS NULL "
+            "AND mirror_error_code IS NOT NULL) OR "
+            "(mirror_status IN ('pending', 'syncing', 'not_required') "
+            "AND mirror_ref IS NULL AND mirror_error_code IS NULL)",
             name="mirror_fields_coherent",
         ),
         CheckConstraint(
@@ -338,7 +374,7 @@ class RoadmapVersion(Base):
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     mirror_status: Mapped[str] = mapped_column(Text, nullable=False)
     mirror_ref: Mapped[str | None] = mapped_column(Text)
-    mirror_error: Mapped[str | None] = mapped_column(Text)
+    mirror_error_code: Mapped[str | None] = mapped_column(Text)
     state: Mapped[str] = mapped_column(Text, nullable=False)
 
 
@@ -779,6 +815,283 @@ class MonthExitReview(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+def _is_persisted_change(target: Base, value: object, old_value: object) -> bool:
+    state = inspect(target)
+    return (
+        not isinstance(old_value, LoaderCallableStatus)
+        and (state.persistent or state.detached)
+        and value != old_value
+    )
+
+
+_IMMUTABLE_SOURCE_ATTRIBUTES = (
+    "owner_id",
+    "source_key",
+    "name",
+    "source_kind",
+    "canonical_path",
+    "created_at",
+)
+
+
+def _reject_persisted_source_attribute_change(
+    target: RoadmapSource,
+    value: object,
+    old_value: object,
+    initiator: object,
+) -> object:
+    del initiator
+    if _is_persisted_change(target, value, old_value):
+        raise RoadmapSourceImmutableError("roadmap source provenance is immutable")
+    return value
+
+
+for _attribute_name in _IMMUTABLE_SOURCE_ATTRIBUTES:
+    event.listen(
+        getattr(RoadmapSource, _attribute_name),
+        "set",
+        _reject_persisted_source_attribute_change,
+        retval=True,
+        active_history=True,
+    )
+
+
+def reject_roadmap_source_update(
+    mapper: Mapper[RoadmapSource] | None,
+    connection: Connection | None,
+    target: RoadmapSource,
+) -> None:
+    del mapper, connection, target
+    raise RoadmapSourceImmutableError("roadmap source provenance is immutable")
+
+
+def reject_roadmap_source_delete(
+    mapper: Mapper[RoadmapSource] | None,
+    connection: Connection | None,
+    target: RoadmapSource,
+) -> None:
+    del mapper, connection, target
+    raise RoadmapSourceImmutableError("roadmap source history is immutable")
+
+
+event.listen(RoadmapSource, "before_update", reject_roadmap_source_update)
+event.listen(RoadmapSource, "before_delete", reject_roadmap_source_delete)
+
+
+_IMMUTABLE_IMPORT_ATTRIBUTES = (
+    "owner_id",
+    "source_id",
+    "package_hash",
+    "object_key",
+    "idempotency_key",
+    "created_at",
+)
+
+
+def _reject_persisted_import_attribute_change(
+    target: RoadmapImport,
+    value: object,
+    old_value: object,
+    initiator: object,
+) -> object:
+    del initiator
+    if _is_persisted_change(target, value, old_value):
+        raise RoadmapImportWorkflowError("roadmap import provenance is immutable")
+    return value
+
+
+for _attribute_name in _IMMUTABLE_IMPORT_ATTRIBUTES:
+    event.listen(
+        getattr(RoadmapImport, _attribute_name),
+        "set",
+        _reject_persisted_import_attribute_change,
+        retval=True,
+        active_history=True,
+    )
+
+
+def _validate_import_status_transition(
+    target: RoadmapImport,
+    value: str,
+    old_value: str | LoaderCallableStatus,
+    initiator: object,
+) -> str:
+    del initiator
+    if value not in IMPORT_TRANSITIONS:
+        raise RoadmapImportWorkflowError("invalid roadmap import transition")
+    if _is_persisted_change(target, value, old_value):
+        assert isinstance(old_value, str)
+        if old_value in _TERMINAL_IMPORT_STATES:
+            raise RoadmapImportWorkflowError("terminal roadmap import is immutable")
+        if value not in IMPORT_TRANSITIONS.get(old_value, frozenset()):
+            raise RoadmapImportWorkflowError("invalid roadmap import transition")
+    return value
+
+
+event.listen(
+    RoadmapImport.status,
+    "set",
+    _validate_import_status_transition,
+    retval=True,
+    active_history=True,
+)
+
+
+def _import_was_terminal(target: RoadmapImport) -> bool:
+    status_history = inspect(target).attrs.status.history
+    previous_status = status_history.deleted[0] if status_history.deleted else target.status
+    return previous_status in _TERMINAL_IMPORT_STATES
+
+
+def _validate_import_failure_code(
+    target: RoadmapImport,
+    value: str | None,
+    old_value: str | None | LoaderCallableStatus,
+    initiator: object,
+) -> str | None:
+    del initiator
+    if value is not None and value not in IMPORT_FAILURE_CODES:
+        raise RoadmapImportWorkflowError("invalid roadmap import failure machine code")
+    if _is_persisted_change(target, value, old_value) and _import_was_terminal(target):
+        raise RoadmapImportWorkflowError("terminal roadmap import is immutable")
+    return value
+
+
+event.listen(
+    RoadmapImport.failure_code,
+    "set",
+    _validate_import_failure_code,
+    retval=True,
+    active_history=True,
+)
+
+
+def _reject_terminal_import_result_change(
+    target: RoadmapImport,
+    value: object,
+    old_value: object,
+    initiator: object,
+) -> object:
+    del initiator
+    if _is_persisted_change(target, value, old_value) and _import_was_terminal(target):
+        raise RoadmapImportWorkflowError("terminal roadmap import is immutable")
+    return value
+
+
+for _attribute_name in (
+    "validation_report",
+    "semantic_diff",
+    "started_at",
+    "completed_at",
+):
+    event.listen(
+        getattr(RoadmapImport, _attribute_name),
+        "set",
+        _reject_terminal_import_result_change,
+        retval=True,
+        active_history=True,
+    )
+
+
+def _reject_import_timestamp_rewrite(
+    target: RoadmapImport,
+    value: datetime | None,
+    old_value: datetime | None | LoaderCallableStatus,
+    initiator: object,
+) -> datetime | None:
+    del initiator
+    if (
+        _is_persisted_change(target, value, old_value)
+        and old_value is not None
+        and not isinstance(old_value, LoaderCallableStatus)
+    ):
+        raise RoadmapImportWorkflowError("roadmap import timestamps are write-once immutable")
+    return value
+
+
+for _attribute_name in ("started_at", "completed_at"):
+    event.listen(
+        getattr(RoadmapImport, _attribute_name),
+        "set",
+        _reject_import_timestamp_rewrite,
+        retval=True,
+        active_history=True,
+    )
+
+
+def validate_roadmap_import_workflow(
+    mapper: Mapper[RoadmapImport] | None,
+    connection: Connection | None,
+    target: RoadmapImport,
+) -> None:
+    del mapper, connection
+    instance_state = inspect(target)
+    status_history = instance_state.attrs.status.history
+    previous_status = status_history.deleted[0] if status_history.deleted else target.status
+    has_persisted_changes = (instance_state.persistent or instance_state.detached) and any(
+        instance_state.attrs[column_name].history.has_changes()
+        for column_name in RoadmapImport.__table__.columns.keys()
+    )
+    if previous_status in _TERMINAL_IMPORT_STATES and has_persisted_changes:
+        raise RoadmapImportWorkflowError("terminal roadmap import is immutable")
+    if (
+        (instance_state.persistent or instance_state.detached)
+        and status_history.deleted
+        and target.status != previous_status
+        and target.status not in IMPORT_TRANSITIONS.get(previous_status, frozenset())
+    ):
+        raise RoadmapImportWorkflowError("invalid roadmap import transition")
+
+    status = target.status
+    if status not in IMPORT_TRANSITIONS:
+        raise RoadmapImportWorkflowError("roadmap import lifecycle is not coherent")
+    failure_code = target.failure_code
+    if failure_code is not None and failure_code not in IMPORT_FAILURE_CODES:
+        raise RoadmapImportWorkflowError("invalid roadmap import failure machine code")
+    coherent = (
+        (
+            status == "staged"
+            and target.started_at is None
+            and target.completed_at is None
+            and failure_code is None
+        )
+        or (
+            status == "validating"
+            and target.started_at is not None
+            and target.completed_at is None
+            and failure_code is None
+        )
+        or (
+            status in {"validated", "imported"}
+            and target.started_at is not None
+            and target.completed_at is not None
+            and failure_code is None
+        )
+        or (
+            status in {"rejected", "failed"}
+            and target.started_at is not None
+            and target.completed_at is not None
+            and failure_code in IMPORT_FAILURE_CODES
+        )
+    )
+    if not coherent:
+        raise RoadmapImportWorkflowError("roadmap import lifecycle fields are not coherent")
+
+
+def reject_roadmap_import_delete(
+    mapper: Mapper[RoadmapImport] | None,
+    connection: Connection | None,
+    target: RoadmapImport,
+) -> None:
+    del mapper, connection, target
+    raise RoadmapImportWorkflowError("roadmap import history is immutable")
+
+
+event.listen(RoadmapImport, "before_insert", validate_roadmap_import_workflow)
+event.listen(RoadmapImport, "before_update", validate_roadmap_import_workflow)
+event.listen(RoadmapImport, "before_delete", reject_roadmap_import_delete)
+
+
 _IMMUTABLE_VERSION_ATTRIBUTES = (
     "owner_id",
     "source_id",
@@ -802,9 +1115,7 @@ def _reject_persisted_version_attribute_change(
     initiator: object,
 ) -> object:
     del initiator
-    state: InstanceState[RoadmapVersion] = inspect(target)
-    previously_set = not isinstance(old_value, LoaderCallableStatus)
-    if previously_set and (state.persistent or state.detached) and value != old_value:
+    if _is_persisted_change(target, value, old_value):
         raise RoadmapVersionImmutableError("roadmap version provenance is immutable")
     return value
 
@@ -817,6 +1128,225 @@ for _attribute_name in _IMMUTABLE_VERSION_ATTRIBUTES:
         retval=True,
         active_history=True,
     )
+
+
+def _validate_version_state_transition(
+    target: RoadmapVersion,
+    value: str,
+    old_value: str | LoaderCallableStatus,
+    initiator: object,
+) -> str:
+    del initiator
+    if value not in VERSION_STATE_TRANSITIONS:
+        raise RoadmapVersionWorkflowError("invalid roadmap state transition")
+    if _is_persisted_change(target, value, old_value):
+        assert isinstance(old_value, str)
+        if value not in VERSION_STATE_TRANSITIONS.get(old_value, frozenset()):
+            raise RoadmapVersionWorkflowError("invalid roadmap state transition")
+    return value
+
+
+event.listen(
+    RoadmapVersion.state,
+    "set",
+    _validate_version_state_transition,
+    retval=True,
+    active_history=True,
+)
+
+
+def _reject_version_timestamp_rewrite(
+    target: RoadmapVersion,
+    value: datetime | None,
+    old_value: datetime | None | LoaderCallableStatus,
+    initiator: object,
+) -> datetime | None:
+    del initiator
+    if (
+        _is_persisted_change(target, value, old_value)
+        and old_value is not None
+        and not isinstance(old_value, LoaderCallableStatus)
+    ):
+        raise RoadmapVersionWorkflowError("roadmap lifecycle timestamps are write-once")
+    return value
+
+
+for _attribute_name in ("approved_at", "activated_at", "superseded_at"):
+    event.listen(
+        getattr(RoadmapVersion, _attribute_name),
+        "set",
+        _reject_version_timestamp_rewrite,
+        retval=True,
+        active_history=True,
+    )
+
+
+def _validate_mirror_status_transition(
+    target: RoadmapVersion,
+    value: str,
+    old_value: str | LoaderCallableStatus,
+    initiator: object,
+) -> str:
+    del initiator
+    if value not in MIRROR_TRANSITIONS:
+        raise RoadmapVersionWorkflowError("invalid roadmap mirror transition")
+    if _is_persisted_change(target, value, old_value):
+        assert isinstance(old_value, str)
+        if old_value in _TERMINAL_MIRROR_STATES:
+            raise RoadmapVersionWorkflowError("terminal roadmap mirror is immutable")
+        if value not in MIRROR_TRANSITIONS.get(old_value, frozenset()):
+            raise RoadmapVersionWorkflowError("invalid roadmap mirror transition")
+    return value
+
+
+event.listen(
+    RoadmapVersion.mirror_status,
+    "set",
+    _validate_mirror_status_transition,
+    retval=True,
+    active_history=True,
+)
+
+
+def _mirror_was_terminal(target: RoadmapVersion) -> bool:
+    status_history = inspect(target).attrs.mirror_status.history
+    previous_status = status_history.deleted[0] if status_history.deleted else target.mirror_status
+    return previous_status in _TERMINAL_MIRROR_STATES
+
+
+def _validate_mirror_error_code(
+    target: RoadmapVersion,
+    value: str | None,
+    old_value: str | None | LoaderCallableStatus,
+    initiator: object,
+) -> str | None:
+    del initiator
+    if value is not None and value not in MIRROR_ERROR_CODES:
+        raise RoadmapVersionWorkflowError("invalid roadmap mirror error machine code")
+    if _is_persisted_change(target, value, old_value) and _mirror_was_terminal(target):
+        raise RoadmapVersionWorkflowError("terminal roadmap mirror is immutable")
+    return value
+
+
+event.listen(
+    RoadmapVersion.mirror_error_code,
+    "set",
+    _validate_mirror_error_code,
+    retval=True,
+    active_history=True,
+)
+
+
+def _reject_terminal_mirror_ref_change(
+    target: RoadmapVersion,
+    value: str | None,
+    old_value: str | None | LoaderCallableStatus,
+    initiator: object,
+) -> str | None:
+    del initiator
+    if _is_persisted_change(target, value, old_value) and _mirror_was_terminal(target):
+        raise RoadmapVersionWorkflowError("terminal roadmap mirror is immutable")
+    return value
+
+
+event.listen(
+    RoadmapVersion.mirror_ref,
+    "set",
+    _reject_terminal_mirror_ref_change,
+    retval=True,
+    active_history=True,
+)
+
+
+def validate_roadmap_version_workflow(
+    mapper: Mapper[RoadmapVersion] | None,
+    connection: Connection | None,
+    target: RoadmapVersion,
+) -> None:
+    del mapper, connection
+    instance_state = inspect(target)
+    if (instance_state.persistent or instance_state.detached) and any(
+        instance_state.attrs[attribute_name].history.has_changes()
+        for attribute_name in _IMMUTABLE_VERSION_ATTRIBUTES
+    ):
+        raise RoadmapVersionImmutableError("roadmap version provenance is immutable")
+
+    state = target.state
+    state_history = instance_state.attrs.state.history
+    if (
+        (instance_state.persistent or instance_state.detached)
+        and state_history.deleted
+        and state != state_history.deleted[0]
+        and state not in VERSION_STATE_TRANSITIONS.get(state_history.deleted[0], frozenset())
+    ):
+        raise RoadmapVersionWorkflowError("invalid roadmap state transition")
+    state_coherent = (
+        (
+            state == "draft"
+            and target.approved_at is None
+            and target.activated_at is None
+            and target.superseded_at is None
+        )
+        or (
+            state == "approved"
+            and target.approved_at is not None
+            and target.activated_at is None
+            and target.superseded_at is None
+        )
+        or (
+            state == "active"
+            and target.approved_at is not None
+            and target.activated_at is not None
+            and target.superseded_at is None
+        )
+        or (
+            state == "superseded"
+            and target.approved_at is not None
+            and target.activated_at is not None
+            and target.superseded_at is not None
+        )
+    )
+    if not state_coherent:
+        raise RoadmapVersionWorkflowError("roadmap state lifecycle is not coherent")
+
+    mirror_status = target.mirror_status
+    mirror_status_history = instance_state.attrs.mirror_status.history
+    if (
+        (instance_state.persistent or instance_state.detached)
+        and mirror_status_history.deleted
+        and mirror_status != mirror_status_history.deleted[0]
+        and mirror_status
+        not in MIRROR_TRANSITIONS.get(mirror_status_history.deleted[0], frozenset())
+    ):
+        raise RoadmapVersionWorkflowError("invalid roadmap mirror transition")
+    mirror_ref = target.mirror_ref
+    mirror_error_code = target.mirror_error_code
+    if mirror_error_code is not None and mirror_error_code not in MIRROR_ERROR_CODES:
+        raise RoadmapVersionWorkflowError("invalid roadmap mirror error machine code")
+    mirror_coherent = (
+        (
+            mirror_status in {"pending", "syncing", "not_required"}
+            and mirror_ref is None
+            and mirror_error_code is None
+        )
+        or (
+            mirror_status == "synced"
+            and mirror_ref is not None
+            and bool(mirror_ref.strip())
+            and mirror_error_code is None
+        )
+        or (
+            mirror_status == "failed"
+            and mirror_ref is None
+            and mirror_error_code in MIRROR_ERROR_CODES
+        )
+    )
+    if not mirror_coherent:
+        raise RoadmapVersionWorkflowError("roadmap mirror fields are not coherent")
+
+
+event.listen(RoadmapVersion, "before_insert", validate_roadmap_version_workflow)
+event.listen(RoadmapVersion, "before_update", validate_roadmap_version_workflow)
 
 
 def reject_curriculum_content_update(
@@ -852,14 +1382,27 @@ __all__ = [
     "CurriculumContentImmutableError",
     "CurriculumNode",
     "ExitCriterion",
+    "IMPORT_FAILURE_CODES",
+    "IMPORT_TRANSITIONS",
+    "MIRROR_ERROR_CODES",
+    "MIRROR_TRANSITIONS",
     "MonthExitReview",
     "PassCriterion",
     "Resource",
     "RoadmapImport",
+    "RoadmapImportWorkflowError",
     "RoadmapSource",
+    "RoadmapSourceImmutableError",
     "RoadmapVersion",
     "RoadmapVersionImmutableError",
+    "RoadmapVersionWorkflowError",
     "TaskDefinition",
+    "VERSION_STATE_TRANSITIONS",
+    "reject_roadmap_import_delete",
+    "reject_roadmap_source_delete",
+    "reject_roadmap_source_update",
     "reject_curriculum_content_delete",
     "reject_curriculum_content_update",
+    "validate_roadmap_import_workflow",
+    "validate_roadmap_version_workflow",
 ]

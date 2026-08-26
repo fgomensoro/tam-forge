@@ -8,9 +8,12 @@ from .models import (
     PassCriterion,
     Resource,
     RoadmapImport,
+    RoadmapImportWorkflowError,
     RoadmapSource,
+    RoadmapSourceImmutableError,
     RoadmapVersion,
     RoadmapVersionImmutableError,
+    RoadmapVersionWorkflowError,
     TaskDefinition,
 )
 
@@ -22,8 +25,11 @@ __all__ = [
     "PassCriterion",
     "Resource",
     "RoadmapImport",
+    "RoadmapImportWorkflowError",
     "RoadmapSource",
+    "RoadmapSourceImmutableError",
     "RoadmapVersion",
     "RoadmapVersionImmutableError",
+    "RoadmapVersionWorkflowError",
     "TaskDefinition",
 ]

@@ -74,6 +74,14 @@ def test_curriculum_schema_contract_invariants_and_round_trip(
             "VALUES (:owner, 'obsidian-main', 'Duplicate', 'obsidian')",
             {"owner": owner_1},
         )
+        rejects_integrity(
+            "UPDATE roadmap_sources SET name = 'Changed' WHERE id = :source",
+            {"source": source_1},
+        )
+        rejects_integrity(
+            "DELETE FROM roadmap_sources WHERE id = :source",
+            {"source": source_1},
+        )
 
         import_values = {
             "owner": owner_1,
@@ -92,6 +100,11 @@ def test_curriculum_schema_contract_invariants_and_round_trip(
         rejects_integrity(
             "UPDATE roadmap_imports SET package_hash = :hash WHERE id = :import_id",
             {"hash": b"u" * 32, "import_id": import_id},
+        )
+        rejects_integrity(
+            "UPDATE roadmap_imports SET status = 'imported', started_at = now(), "
+            "completed_at = now() WHERE id = :import_id",
+            {"import_id": import_id},
         )
         rejects_integrity(
             "INSERT INTO roadmap_imports "
@@ -121,11 +134,58 @@ def test_curriculum_schema_contract_invariants_and_round_trip(
             "INSERT INTO roadmap_imports "
             "(owner_id, source_id, package_hash, object_key, status, "
             "validation_report, semantic_diff, idempotency_key, failure_code, "
-            "failure_message, completed_at) VALUES "
+            "started_at, completed_at) VALUES "
             "(:owner, :source, :hash, 'private/roadmaps/failed.tar', 'failed', "
-            "'{}'::jsonb, '{}'::jsonb, 'failed-secret', 'validation_failed', "
-            "'Bearer secret-value', now())",
+            "'{}'::jsonb, '{}'::jsonb, 'failed-secret', 'password=hunter2', "
+            "now(), now())",
             {"owner": owner_1, "source": source_1, "hash": b"f" * 32},
+        )
+        execute(
+            "UPDATE roadmap_imports SET status = 'validating', started_at = now() "
+            "WHERE id = :import_id",
+            {"import_id": import_id},
+        )
+        rejects_integrity(
+            "UPDATE roadmap_imports SET started_at = started_at + interval '1 second' "
+            "WHERE id = :import_id",
+            {"import_id": import_id},
+        )
+        execute(
+            "UPDATE roadmap_imports SET status = 'validated', completed_at = now() "
+            "WHERE id = :import_id",
+            {"import_id": import_id},
+        )
+        execute(
+            "UPDATE roadmap_imports SET status = 'imported' WHERE id = :import_id",
+            {"import_id": import_id},
+        )
+        rejects_integrity(
+            "UPDATE roadmap_imports SET semantic_diff = '{\"changed\":true}'::jsonb "
+            "WHERE id = :import_id",
+            {"import_id": import_id},
+        )
+        failed_import_id = execute(
+            "INSERT INTO roadmap_imports "
+            "(owner_id, source_id, package_hash, object_key, status, "
+            "validation_report, semantic_diff, idempotency_key) VALUES "
+            "(:owner, :source, :hash, 'private/roadmaps/package-failed.tar', 'staged', "
+            "'{}'::jsonb, '{}'::jsonb, 'import-failed') RETURNING id",
+            {"owner": owner_1, "source": source_1, "hash": b"g" * 32},
+        ).scalar_one()
+        execute(
+            "UPDATE roadmap_imports SET status = 'validating', started_at = now() "
+            "WHERE id = :import_id",
+            {"import_id": failed_import_id},
+        )
+        execute(
+            "UPDATE roadmap_imports SET status = 'failed', completed_at = now(), "
+            "failure_code = 'storage_unavailable' WHERE id = :import_id",
+            {"import_id": failed_import_id},
+        )
+        rejects_integrity(
+            "UPDATE roadmap_imports SET validation_report = '{\"retry\":true}'::jsonb "
+            "WHERE id = :import_id",
+            {"import_id": failed_import_id},
         )
 
         version_1 = execute(
@@ -166,27 +226,52 @@ def test_curriculum_schema_contract_invariants_and_round_trip(
         ).scalar_one()
         rejects_integrity(
             "UPDATE roadmap_versions SET mirror_status = 'failed', "
-            "mirror_error = 'Bearer secret-value' WHERE id = :version",
+            "mirror_error_code = 'postgresql://user:password@host/db' "
+            "WHERE id = :version",
+            {"version": version_2},
+        )
+        rejects_integrity(
+            "UPDATE roadmap_versions SET mirror_status = 'failed', "
+            "mirror_error_code = 'storage_unavailable' WHERE id = :version",
             {"version": version_2},
         )
         execute(
-            "UPDATE roadmap_versions SET mirror_status = 'failed', "
-            "mirror_error = 'mirror_unavailable' WHERE id = :version",
+            "UPDATE roadmap_versions SET mirror_status = 'syncing' WHERE id = :version",
+            {"version": version_2},
+        )
+        rejects_integrity(
+            "UPDATE roadmap_versions SET mirror_ref = 'unexpected-ref' WHERE id = :version",
             {"version": version_2},
         )
         rejects_integrity(
             "UPDATE roadmap_versions SET mirror_status = 'synced', "
-            "mirror_ref = 'commit-1', mirror_error = NULL WHERE id = :version",
+            "mirror_ref = 'commit-1', mirror_error_code = 'write_failed' "
+            "WHERE id = :version",
             {"version": version_2},
         )
         execute(
-            "UPDATE roadmap_versions SET mirror_status = 'syncing', mirror_error = NULL "
+            "UPDATE roadmap_versions SET mirror_status = 'failed', "
+            "mirror_error_code = 'storage_unavailable' "
             "WHERE id = :version",
+            {"version": version_2},
+        )
+        rejects_integrity(
+            "UPDATE roadmap_versions SET mirror_status = 'synced', "
+            "mirror_ref = 'commit-1', mirror_error_code = NULL WHERE id = :version",
+            {"version": version_2},
+        )
+        execute(
+            "UPDATE roadmap_versions SET mirror_status = 'syncing', "
+            "mirror_error_code = NULL WHERE id = :version",
             {"version": version_2},
         )
         execute(
             "UPDATE roadmap_versions SET mirror_status = 'synced', mirror_ref = 'commit-1' "
             "WHERE id = :version",
+            {"version": version_2},
+        )
+        rejects_integrity(
+            "UPDATE roadmap_versions SET mirror_ref = 'commit-2' WHERE id = :version",
             {"version": version_2},
         )
         rejects_integrity(
@@ -203,6 +288,11 @@ def test_curriculum_schema_contract_invariants_and_round_trip(
             "'pending', 'draft') RETURNING id",
             {"owner": owner_2, "source": source_2, "hash": b"c" * 32},
         ).scalar_one()
+        rejects_integrity(
+            "UPDATE roadmap_versions SET state = 'active', approved_at = now(), "
+            "activated_at = now() WHERE id = :version",
+            {"version": version_1},
+        )
         execute(
             "UPDATE roadmap_versions SET state = 'approved', approved_at = now() "
             "WHERE id = :version",
@@ -249,6 +339,21 @@ def test_curriculum_schema_contract_invariants_and_round_trip(
             "UPDATE roadmap_versions SET state = 'active', activated_at = now() "
             "WHERE id = :version",
             {"version": version_2},
+        )
+        execute(
+            "UPDATE roadmap_versions SET state = 'superseded', superseded_at = now() "
+            "WHERE id = :version",
+            {"version": version_1},
+        )
+        execute(
+            "UPDATE roadmap_versions SET state = 'active', activated_at = now() "
+            "WHERE id = :version",
+            {"version": version_2},
+        )
+        rejects_integrity(
+            "UPDATE roadmap_versions SET state = 'active', superseded_at = NULL "
+            "WHERE id = :version",
+            {"version": version_1},
         )
         rejects_integrity(
             "UPDATE roadmap_versions SET content_hash = :hash WHERE id = :version",

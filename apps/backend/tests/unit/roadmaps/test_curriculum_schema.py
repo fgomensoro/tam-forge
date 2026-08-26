@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import sys
+from datetime import UTC, datetime, timedelta
 from io import StringIO
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from alembic.config import Config
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import URL
 from sqlalchemy.orm import make_transient_to_detached
+from sqlalchemy.orm.attributes import flag_modified
 
 MIGRATION_PATH = Path("apps/backend/alembic/versions/20260825_0002_curriculum.py")
 EXPECTED_TABLES = {
@@ -128,7 +130,6 @@ def test_roadmap_models_expose_exact_tables_types_and_required_columns() -> None
             "semantic_diff",
             "idempotency_key",
             "failure_code",
-            "failure_message",
             "created_at",
             "started_at",
             "completed_at",
@@ -152,7 +153,7 @@ def test_roadmap_models_expose_exact_tables_types_and_required_columns() -> None
             "superseded_at",
             "mirror_status",
             "mirror_ref",
-            "mirror_error",
+            "mirror_error_code",
             "state",
         },
         "curriculum_nodes": {
@@ -377,7 +378,6 @@ def test_models_have_explicit_nullability_and_only_intended_server_defaults() ->
         "roadmap_sources": {"canonical_path"},
         "roadmap_imports": {
             "failure_code",
-            "failure_message",
             "started_at",
             "completed_at",
         },
@@ -387,7 +387,7 @@ def test_models_have_explicit_nullability_and_only_intended_server_defaults() ->
             "activated_at",
             "superseded_at",
             "mirror_ref",
-            "mirror_error",
+            "mirror_error_code",
         },
         "curriculum_nodes": {"parent_id", "source_path", "source_anchor"},
         "task_definitions": {"source_path", "source_anchor"},
@@ -454,9 +454,9 @@ def test_mirror_workflow_does_not_keep_stale_refs_or_errors() -> None:
         if constraint.name == "ck_roadmap_versions_mirror_fields_coherent"
     )
     expression = str(mirror_check.sqltext)
-    assert "mirror_status = 'pending' AND mirror_ref IS NULL" in expression
-    assert "mirror_status = 'not_required' AND mirror_ref IS NULL" in expression
-    assert "mirror_error IS NULL" in expression
+    assert "mirror_status IN ('pending', 'syncing', 'not_required')" in expression
+    assert "mirror_error_code IS NULL" in expression
+    assert "mirror_status = 'failed' AND mirror_ref IS NULL" in expression
 
     migration_source = MIGRATION_PATH.read_text()
     assert "OLD.mirror_status = 'pending' AND NEW.mirror_status" in migration_source
@@ -465,24 +465,353 @@ def test_mirror_workflow_does_not_keep_stale_refs_or_errors() -> None:
     assert "invalid roadmap mirror transition" in migration_source
 
 
-def test_persisted_error_text_has_bounded_redaction_checks() -> None:
+def test_persisted_errors_are_closed_machine_codes_without_free_text() -> None:
     from tamforge_backend.models import Base, load_all_models
 
     load_all_models()
-    error_checks = {
-        "roadmap_imports": "ck_roadmap_imports_failure_message_redacted",
-        "roadmap_versions": "ck_roadmap_versions_mirror_error_redacted",
-    }
-    for table_name, constraint_name in error_checks.items():
-        constraint = next(
-            item
-            for item in Base.metadata.tables[table_name].constraints
-            if item.name == constraint_name
-        )
-        expression = str(constraint.sqltext).lower()
-        assert "bearer" in expression
-        assert "github_pat_" in expression
-        assert "session" in expression
+    imports = Base.metadata.tables["roadmap_imports"]
+    versions = Base.metadata.tables["roadmap_versions"]
+    assert "failure_message" not in imports.c
+    assert "mirror_error" not in versions.c
+
+    import_error_check = next(
+        item
+        for item in imports.constraints
+        if item.name == "ck_roadmap_imports_failure_code_allowed"
+    )
+    mirror_error_check = next(
+        item
+        for item in versions.constraints
+        if item.name == "ck_roadmap_versions_mirror_error_code_allowed"
+    )
+    import_expression = str(import_error_check.sqltext)
+    mirror_expression = str(mirror_error_check.sqltext)
+    for code in {
+        "invalid_package",
+        "unsupported_schema",
+        "hash_mismatch",
+        "validation_failed",
+        "storage_unavailable",
+        "internal_error",
+    }:
+        assert code in import_expression
+    for code in {
+        "storage_unavailable",
+        "write_failed",
+        "conflict",
+        "permission_denied",
+        "invalid_reference",
+        "internal_error",
+    }:
+        assert code in mirror_expression
+
+
+def test_roadmap_source_provenance_and_history_are_orm_immutable() -> None:
+    from tamforge_backend.roadmaps.models import (
+        RoadmapSource,
+        RoadmapSourceImmutableError,
+        reject_roadmap_source_delete,
+    )
+
+    created_at = datetime.now(UTC) - timedelta(days=1)
+    source = RoadmapSource(
+        id=1,
+        owner_id=1,
+        source_key="obsidian-main",
+        name="TAM Roadmap",
+        source_kind="obsidian",
+        canonical_path="/provenance/original",
+        created_at=created_at,
+    )
+    make_transient_to_detached(source)
+
+    for attribute, value in {
+        "owner_id": 2,
+        "source_key": "changed",
+        "name": "Changed",
+        "source_kind": "package",
+        "canonical_path": "/changed",
+        "created_at": datetime.now(UTC),
+    }.items():
+        with pytest.raises(RoadmapSourceImmutableError, match="immutable"):
+            setattr(source, attribute, value)
+
+    with pytest.raises(RoadmapSourceImmutableError, match="immutable"):
+        reject_roadmap_source_delete(None, None, source)
+
+
+def test_roadmap_import_orm_enforces_transition_machine_and_terminal_history() -> None:
+    from tamforge_backend.roadmaps.models import (
+        RoadmapImport,
+        RoadmapImportWorkflowError,
+        reject_roadmap_import_delete,
+        validate_roadmap_import_workflow,
+    )
+
+    now = datetime.now(UTC)
+    roadmap_import = RoadmapImport(
+        id=1,
+        owner_id=1,
+        source_id=1,
+        package_hash=b"p" * 32,
+        object_key="owners/1/imports/package.tar",
+        status="staged",
+        validation_report={},
+        semantic_diff={},
+        idempotency_key="import-1",
+        failure_code=None,
+        created_at=now,
+        started_at=None,
+        completed_at=None,
+    )
+    make_transient_to_detached(roadmap_import)
+
+    with pytest.raises(RoadmapImportWorkflowError, match="transition"):
+        roadmap_import.status = "imported"
+
+    roadmap_import.status = "validating"
+    roadmap_import.started_at = now
+    validate_roadmap_import_workflow(None, None, roadmap_import)
+
+    with pytest.raises(RoadmapImportWorkflowError, match="machine code"):
+        roadmap_import.failure_code = "password=hunter2"
+
+    roadmap_import.failure_code = "validation_failed"
+    with pytest.raises(RoadmapImportWorkflowError, match="coherent"):
+        validate_roadmap_import_workflow(None, None, roadmap_import)
+
+    terminal = RoadmapImport(
+        id=2,
+        owner_id=1,
+        source_id=1,
+        package_hash=b"q" * 32,
+        object_key="owners/1/imports/imported.tar",
+        status="imported",
+        validation_report={},
+        semantic_diff={},
+        idempotency_key="import-2",
+        failure_code=None,
+        created_at=now,
+        started_at=now,
+        completed_at=now,
+    )
+    make_transient_to_detached(terminal)
+    with pytest.raises(RoadmapImportWorkflowError, match="terminal"):
+        terminal.semantic_diff = {"changed": True}
+    terminal.semantic_diff["changed"] = True
+    flag_modified(terminal, "semantic_diff")
+    with pytest.raises(RoadmapImportWorkflowError, match="terminal"):
+        validate_roadmap_import_workflow(None, None, terminal)
+    with pytest.raises(RoadmapImportWorkflowError, match="immutable"):
+        terminal.started_at = now + timedelta(seconds=1)
+    with pytest.raises(RoadmapImportWorkflowError, match="immutable"):
+        reject_roadmap_import_delete(None, None, terminal)
+
+    skipped_step = RoadmapImport(
+        id=3,
+        owner_id=1,
+        source_id=1,
+        package_hash=b"r" * 32,
+        object_key="owners/1/imports/skipped.tar",
+        status="staged",
+        validation_report={},
+        semantic_diff={},
+        idempotency_key="import-3",
+        failure_code=None,
+        created_at=now,
+        started_at=None,
+        completed_at=None,
+    )
+    make_transient_to_detached(skipped_step)
+    skipped_step.status = "validating"
+    skipped_step.started_at = now
+    skipped_step.status = "validated"
+    skipped_step.completed_at = now
+    with pytest.raises(RoadmapImportWorkflowError, match="transition"):
+        validate_roadmap_import_workflow(None, None, skipped_step)
+
+    failing = RoadmapImport(
+        id=4,
+        owner_id=1,
+        source_id=1,
+        package_hash=b"s" * 32,
+        object_key="owners/1/imports/failing.tar",
+        status="validating",
+        validation_report={},
+        semantic_diff={},
+        idempotency_key="import-4",
+        failure_code=None,
+        created_at=now,
+        started_at=now,
+        completed_at=None,
+    )
+    make_transient_to_detached(failing)
+    failing.status = "failed"
+    failing.completed_at = now
+    failing.failure_code = "storage_unavailable"
+    validate_roadmap_import_workflow(None, None, failing)
+
+
+def test_roadmap_version_orm_matches_state_mirror_and_timestamp_guards() -> None:
+    from tamforge_backend.roadmaps.models import (
+        RoadmapVersion,
+        RoadmapVersionWorkflowError,
+        validate_roadmap_version_workflow,
+    )
+
+    now = datetime.now(UTC)
+    version = RoadmapVersion(
+        id=1,
+        owner_id=1,
+        source_id=1,
+        version_key="month-1-v1",
+        version_number=1,
+        month_number=1,
+        predecessor_id=None,
+        content_hash=b"v" * 32,
+        object_key="owners/1/roadmaps/month-1-v1.json",
+        manifest={},
+        raw_payload={},
+        normalized_payload={},
+        created_at=now,
+        approved_at=None,
+        activated_at=None,
+        superseded_at=None,
+        mirror_status="pending",
+        mirror_ref=None,
+        mirror_error_code=None,
+        state="draft",
+    )
+    make_transient_to_detached(version)
+
+    with pytest.raises(RoadmapVersionWorkflowError, match="state transition"):
+        version.state = "active"
+    version.state = "approved"
+    version.approved_at = now
+    validate_roadmap_version_workflow(None, None, version)
+    with pytest.raises(RoadmapVersionWorkflowError, match="write-once"):
+        version.approved_at = now + timedelta(seconds=1)
+
+    with pytest.raises(RoadmapVersionWorkflowError, match="mirror transition"):
+        version.mirror_status = "failed"
+    version.mirror_status = "syncing"
+    with pytest.raises(RoadmapVersionWorkflowError, match="machine code"):
+        version.mirror_error_code = "postgresql://user:password@host/db"
+    version.mirror_ref = "unexpected-ref"
+    with pytest.raises(RoadmapVersionWorkflowError, match="coherent"):
+        validate_roadmap_version_workflow(None, None, version)
+
+    synced = RoadmapVersion(
+        id=2,
+        owner_id=1,
+        source_id=1,
+        version_key="month-2-v1",
+        version_number=2,
+        month_number=2,
+        predecessor_id=1,
+        content_hash=b"w" * 32,
+        object_key="owners/1/roadmaps/month-2-v1.json",
+        manifest={},
+        raw_payload={},
+        normalized_payload={},
+        created_at=now,
+        approved_at=None,
+        activated_at=None,
+        superseded_at=None,
+        mirror_status="synced",
+        mirror_ref="commit-1",
+        mirror_error_code=None,
+        state="draft",
+    )
+    make_transient_to_detached(synced)
+    with pytest.raises(RoadmapVersionWorkflowError, match="terminal"):
+        synced.mirror_ref = "commit-2"
+
+    completing = RoadmapVersion(
+        id=3,
+        owner_id=1,
+        source_id=1,
+        version_key="month-3-v1",
+        version_number=3,
+        month_number=3,
+        predecessor_id=2,
+        content_hash=b"x" * 32,
+        object_key="owners/1/roadmaps/month-3-v1.json",
+        manifest={},
+        raw_payload={},
+        normalized_payload={},
+        created_at=now,
+        approved_at=None,
+        activated_at=None,
+        superseded_at=None,
+        mirror_status="syncing",
+        mirror_ref=None,
+        mirror_error_code=None,
+        state="draft",
+    )
+    make_transient_to_detached(completing)
+    completing.mirror_status = "synced"
+    completing.mirror_ref = "commit-3"
+    validate_roadmap_version_workflow(None, None, completing)
+
+    skipped_steps = RoadmapVersion(
+        id=4,
+        owner_id=1,
+        source_id=1,
+        version_key="month-4-v1",
+        version_number=4,
+        month_number=4,
+        predecessor_id=3,
+        content_hash=b"y" * 32,
+        object_key="owners/1/roadmaps/month-4-v1.json",
+        manifest={},
+        raw_payload={},
+        normalized_payload={},
+        created_at=now,
+        approved_at=None,
+        activated_at=None,
+        superseded_at=None,
+        mirror_status="pending",
+        mirror_ref=None,
+        mirror_error_code=None,
+        state="draft",
+    )
+    make_transient_to_detached(skipped_steps)
+    skipped_steps.state = "approved"
+    skipped_steps.approved_at = now
+    skipped_steps.state = "active"
+    skipped_steps.activated_at = now
+    with pytest.raises(RoadmapVersionWorkflowError, match="state transition"):
+        validate_roadmap_version_workflow(None, None, skipped_steps)
+
+    skipped_mirror = RoadmapVersion(
+        id=5,
+        owner_id=1,
+        source_id=1,
+        version_key="month-5-v1",
+        version_number=5,
+        month_number=5,
+        predecessor_id=4,
+        content_hash=b"z" * 32,
+        object_key="owners/1/roadmaps/month-5-v1.json",
+        manifest={},
+        raw_payload={},
+        normalized_payload={},
+        created_at=now,
+        approved_at=None,
+        activated_at=None,
+        superseded_at=None,
+        mirror_status="pending",
+        mirror_ref=None,
+        mirror_error_code=None,
+        state="draft",
+    )
+    make_transient_to_detached(skipped_mirror)
+    skipped_mirror.mirror_status = "syncing"
+    skipped_mirror.mirror_status = "synced"
+    skipped_mirror.mirror_ref = "commit-5"
+    with pytest.raises(RoadmapVersionWorkflowError, match="mirror transition"):
+        validate_roadmap_version_workflow(None, None, skipped_mirror)
 
 
 def test_roadmap_version_and_curriculum_orm_guards_reject_mutation() -> None:
@@ -493,6 +822,7 @@ def test_roadmap_version_and_curriculum_orm_guards_reject_mutation() -> None:
         RoadmapVersionImmutableError,
         reject_curriculum_content_delete,
         reject_curriculum_content_update,
+        validate_roadmap_version_workflow,
     )
 
     version = RoadmapVersion(
@@ -505,6 +835,7 @@ def test_roadmap_version_and_curriculum_orm_guards_reject_mutation() -> None:
         content_hash=b"v" * 32,
         object_key="owners/1/roadmaps/month-1-v1.json",
         manifest={},
+        raw_payload={},
         normalized_payload={},
         mirror_status="pending",
         state="draft",
@@ -512,6 +843,10 @@ def test_roadmap_version_and_curriculum_orm_guards_reject_mutation() -> None:
     make_transient_to_detached(version)
     with pytest.raises(RoadmapVersionImmutableError, match="immutable"):
         version.content_hash = b"x" * 32
+    version.raw_payload["changed"] = True
+    flag_modified(version, "raw_payload")
+    with pytest.raises(RoadmapVersionImmutableError, match="immutable"):
+        validate_roadmap_version_workflow(None, None, version)
 
     node = CurriculumNode(
         owner_id=1,
@@ -539,7 +874,11 @@ def test_migration_compiles_upgrade_and_exact_downgrade_without_credentials() ->
         assert f"DROP TABLE {table_name}" in downgrade_sql
     assert "WHERE state = 'active'" in upgrade_sql
     assert "tamforge_guard_roadmap_version_update" in upgrade_sql
+    assert "tamforge_guard_roadmap_import_mutation" in upgrade_sql
+    assert "tamforge_reject_roadmap_source_mutation" in upgrade_sql
     assert "tamforge_reject_curriculum_mutation" in upgrade_sql
+    assert "failure_message" not in upgrade_sql
+    assert re.search(r"\bmirror_error\b", upgrade_sql) is None
     assert "DROP TABLE owners" not in downgrade_sql
     assert "offline-curriculum-contract-password" not in upgrade_sql
     assert "offline-curriculum-contract-password" not in downgrade_sql
