@@ -356,12 +356,6 @@ class ActivityInstance(Base):
             "output_committed_at",
             postgresql_where=text("state = 'output_committed'"),
         ),
-        Index(
-            "uq_activity_instances_one_open_per_owner",
-            "owner_id",
-            unique=True,
-            postgresql_where=text("state = 'active'"),
-        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)

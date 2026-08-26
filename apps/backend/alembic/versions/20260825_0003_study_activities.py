@@ -402,14 +402,6 @@ def upgrade() -> None:
         ["owner_id", "output_committed_at"],
         postgresql_where=sa.text("state = 'output_committed'"),
     )
-    op.create_index(
-        "uq_activity_instances_one_open_per_owner",
-        "activity_instances",
-        ["owner_id"],
-        unique=True,
-        postgresql_where=sa.text("state = 'active'"),
-    )
-
     op.create_table(
         "activity_timer_sessions",
         _id(),

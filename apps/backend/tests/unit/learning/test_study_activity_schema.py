@@ -347,25 +347,20 @@ def test_named_constraints_restrict_history_and_index_every_foreign_key() -> Non
             )
 
 
-def test_partial_uniques_enforce_one_open_activity_and_timer() -> None:
+def test_partial_unique_enforces_one_open_timer_without_owner_global_activity_lock() -> None:
     from tamforge_backend.models import Base, load_all_models
 
     load_all_models()
     activities = Base.metadata.tables["activity_instances"]
     timers = Base.metadata.tables["activity_timer_sessions"]
-    open_activity = next(
-        item
-        for item in activities.indexes
-        if item.name == "uq_activity_instances_one_open_per_owner"
-    )
     open_timer = next(
         item
         for item in timers.indexes
         if item.name == "uq_activity_timer_sessions_one_open_per_activity"
     )
-    assert open_activity.unique is True
-    assert [column.name for column in open_activity.columns] == ["owner_id"]
-    assert str(open_activity.dialect_options["postgresql"]["where"]) == "state = 'active'"
+    assert "uq_activity_instances_one_open_per_owner" not in {
+        item.name for item in activities.indexes
+    }
     assert open_timer.unique is True
     assert [column.name for column in open_timer.columns] == ["activity_instance_id"]
     assert str(open_timer.dialect_options["postgresql"]["where"]) == "ended_at IS NULL"
