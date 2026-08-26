@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import date
 from typing import Any
 
 import pytest
@@ -113,13 +114,159 @@ def test_today_notification_contract_and_round_trip(test_database_url: str) -> N
             },
         ).scalar_one()
 
-        correction = execute(
-            "INSERT INTO corrections "
-            "(owner_id, source_activity_id, priority, status, due_date, instruction) "
-            "VALUES (:owner, :activity, 1, 'pending', DATE '2026-08-27', "
-            "'Lead with the conclusion.') RETURNING id",
-            {"owner": owner, "activity": activity_a},
+        attempt = execute(
+            "INSERT INTO attempts "
+            "(owner_id, activity_instance_id, attempt_kind, original_text, audience, prompt, "
+            "assistance_mode, commitment_hash, committed_at) VALUES "
+            "(:owner, :activity, 'attempt_a', 'Answer', 'hiring_manager', 'Solve', 'none', "
+            ":hash, now()) RETURNING id",
+            {"owner": owner, "activity": activity_a, "hash": b"a" * 32},
         ).scalar_one()
+        config_seed = execute(
+            "INSERT INTO config_seed_versions "
+            "(owner_id, version_key, schema_version, content_hash) "
+            "VALUES (:owner, 'seed-v1', 1, :hash) RETURNING id",
+            {"owner": owner, "hash": b"s" * 32},
+        ).scalar_one()
+        competency = execute(
+            "INSERT INTO competencies "
+            "(owner_id, config_seed_version_id, slug, name, baseline_level, "
+            "month_one_target, final_target) VALUES "
+            "(:owner, :config, 'structured_troubleshooting', 'Structured troubleshooting', "
+            "2, 3, 4) RETURNING id",
+            {"owner": owner, "config": config_seed},
+        ).scalar_one()
+        exercise = execute(
+            "INSERT INTO exercise_type_versions "
+            "(owner_id, config_seed_version_id, exercise_type, mapping_version, evidence_mode, "
+            "condition_code, tags) VALUES "
+            "(:owner, :config, 'troubleshooting_case', 'seed-v1', 'independent_practice', "
+            "'always', '[\"observability\"]'::jsonb) RETURNING id",
+            {"owner": owner, "config": config_seed},
+        ).scalar_one()
+        execute(
+            "INSERT INTO exercise_skill_mappings "
+            "(owner_id, config_seed_version_id, exercise_type_version_id, competency_id, "
+            "impact, condition_code) VALUES "
+            "(:owner, :config, :exercise, :competency, 1, 'always')",
+            {
+                "owner": owner,
+                "config": config_seed,
+                "exercise": exercise,
+                "competency": competency,
+            },
+        )
+        rubric = execute(
+            "INSERT INTO rubric_versions "
+            "(owner_id, config_seed_version_id, rubric_key, version_key, name, scope_code, "
+            "scale_min, scale_max) VALUES "
+            "(:owner, :config, 'tam-case', 'v1', 'TAM case', 'tam', 0, 4) RETURNING id",
+            {"owner": owner, "config": config_seed},
+        ).scalar_one()
+        dimension = execute(
+            "INSERT INTO rubric_dimensions "
+            "(owner_id, config_seed_version_id, rubric_version_id, dimension_key, name, "
+            "weight, max_score, ordinal, availability_rule_code) VALUES "
+            "(:owner, :config, :rubric, 'diagnosis', 'Diagnosis', 1, 4, 0, 'always') "
+            "RETURNING id",
+            {"owner": owner, "config": config_seed, "rubric": rubric},
+        ).scalar_one()
+        evaluation = execute(
+            "INSERT INTO rubric_evaluations "
+            "(owner_id, config_seed_version_id, activity_instance_id, attempt_id, "
+            "rubric_version_id, evaluator_kind, evaluation_schema_version, input_manifest, "
+            "evaluated_at) VALUES (:owner, :config, :activity, :attempt, :rubric, "
+            "'ai_rubric_reviewer', 1, jsonb_build_object('schema_version', 1, "
+            "'artifact_ids', '[]'::jsonb), now()) RETURNING id",
+            {
+                "owner": owner,
+                "config": config_seed,
+                "activity": activity_a,
+                "attempt": attempt,
+                "rubric": rubric,
+            },
+        ).scalar_one()
+        dimension_score = execute(
+            "INSERT INTO rubric_dimension_scores "
+            "(owner_id, config_seed_version_id, rubric_evaluation_id, rubric_version_id, "
+            "rubric_dimension_id, availability, score, weight_used, evidence_manifest) "
+            "VALUES (:owner, :config, :evaluation, :rubric, :dimension, 'scored', 3, 1, "
+            "jsonb_build_object('schema_version', 1, 'artifact_ids', '[]'::jsonb, "
+            "'observation_ids', '[]'::jsonb)) RETURNING id",
+            {
+                "owner": owner,
+                "config": config_seed,
+                "evaluation": evaluation,
+                "rubric": rubric,
+                "dimension": dimension,
+            },
+        ).scalar_one()
+        evidence = execute(
+            "INSERT INTO skill_evidence_events "
+            "(owner_id, config_seed_version_id, activity_instance_id, attempt_id, "
+            "rubric_evaluation_id, rubric_version_id, exercise_type_version_id, competency_id, "
+            "formula_version, practice_mode, assistance_code, evaluator_kind, difficulty_code, "
+            "raw_dimension_scores, raw_score_numerator, raw_score_denominator, "
+            "performance_score, exercise_skill_impact, practice_mode_factor, "
+            "ai_independence_factor, evaluator_confidence_factor, difficulty_factor, "
+            "effective_weight, qualifying_for_level, qualification_reason_code, explanation, "
+            "occurred_at) VALUES (:owner, :config, :activity, :attempt, :evaluation, :rubric, "
+            ":exercise, :competency, 'skill-v1', 'independent_practice', 'no_ai', "
+            "'ai_rubric_reviewer', 'standard', jsonb_build_object('schema_version', 1, "
+            "'scores', jsonb_build_array(jsonb_build_object("
+            "'dimension_score_id', :dimension_score, 'score', 3, 'weight', 1))), "
+            "3, 1, 3, 1, 0.65, 1, 0.75, 1, 0.4875, true, 'qualifies', "
+            "jsonb_build_object('schema_version', 1, "
+            "'summary_code', 'independent_scored_evidence', "
+            "'dimension_score_ids', jsonb_build_array(:dimension_score), "
+            "'discount_codes', '[]'::jsonb), now()) RETURNING id",
+            {
+                "owner": owner,
+                "config": config_seed,
+                "activity": activity_a,
+                "attempt": attempt,
+                "evaluation": evaluation,
+                "rubric": rubric,
+                "exercise": exercise,
+                "competency": competency,
+                "dimension_score": dimension_score,
+            },
+        ).scalar_one()
+
+        from tamforge_backend.today.service import (
+            CorrectionSlotLimitError,
+            create_correction_with_slot_reservation,
+        )
+
+        with engine.begin() as connection:
+            correction = create_correction_with_slot_reservation(
+                connection,
+                owner_id=owner,
+                source_activity_id=activity_a,
+                source_evidence_event_id=evidence,
+                priority=1,
+                due_date=date(2026, 8, 27),
+                instruction="Lead with the conclusion.",
+            )
+            create_correction_with_slot_reservation(
+                connection,
+                owner_id=owner,
+                source_activity_id=activity_a,
+                source_evidence_event_id=evidence,
+                priority=2,
+                due_date=date(2026, 8, 27),
+                instruction="Name the evidence before the implementation detail.",
+            )
+            with pytest.raises(CorrectionSlotLimitError, match="two active corrections"):
+                create_correction_with_slot_reservation(
+                    connection,
+                    owner_id=owner,
+                    source_activity_id=activity_a,
+                    source_evidence_event_id=evidence,
+                    priority=1,
+                    due_date=date(2026, 8, 27),
+                    instruction="This third correction must not be inserted.",
+                )
         execute(
             "UPDATE corrections SET status = 'scheduled', attempt_b_activity_id = :attempt_b, "
             "updated_at = now() WHERE owner_id = :owner AND id = :correction",
@@ -248,7 +395,7 @@ def test_today_notification_contract_and_round_trip(test_database_url: str) -> N
             "updated_at = now() WHERE owner_id = :owner AND id = :job",
             {"owner": owner, "job": job},
         )
-        execute(
+        rejects(
             "UPDATE background_jobs SET state = 'queued', lease_owner = NULL, "
             "lease_expires_at = NULL, available_at = now() + interval '1 minute', "
             "last_error_category = 'transient_dependency', "
@@ -256,23 +403,43 @@ def test_today_notification_contract_and_round_trip(test_database_url: str) -> N
             "updated_at = now() WHERE owner_id = :owner AND id = :job",
             {"owner": owner, "job": job},
         )
+        expired_job = execute(
+            "INSERT INTO background_jobs "
+            "(owner_id, kind, payload_schema_version, payload, priority, state, "
+            "idempotency_key, available_at, attempt_count, max_attempts, lease_owner, "
+            "lease_expires_at, created_at, updated_at, started_at) VALUES "
+            "(:owner, 'transcribe_activity', 1, "
+            "jsonb_build_object('schema_version', 1, 'subject_id', :activity), 50, "
+            "'running', 'job-expired', now() - interval '2 minutes', 1, 3, 'worker-old', "
+            "now() - interval '1 minute', now() - interval '2 minutes', "
+            "now() - interval '2 minutes', now() - interval '2 minutes') RETURNING id",
+            {"owner": owner, "activity": activity_a},
+        ).scalar_one()
+        execute(
+            "UPDATE background_jobs SET state = 'queued', lease_owner = NULL, "
+            "lease_expires_at = NULL, available_at = now() + interval '1 minute', "
+            "last_error_category = 'transient_dependency', "
+            "last_error_details = '{\"schema_version\": 1, \"attempt\": 1}'::jsonb, "
+            "updated_at = now() WHERE owner_id = :owner AND id = :job",
+            {"owner": owner, "job": expired_job},
+        )
         execute(
             "UPDATE background_jobs SET state = 'running', attempt_count = 2, "
             "lease_owner = 'worker-2', lease_expires_at = now() + interval '5 minutes', "
             "last_error_category = NULL, last_error_details = NULL, updated_at = now() "
             "WHERE owner_id = :owner AND id = :job",
-            {"owner": owner, "job": job},
+            {"owner": owner, "job": expired_job},
         )
         execute(
             "UPDATE background_jobs SET state = 'succeeded', lease_owner = NULL, "
             "lease_expires_at = NULL, completed_at = now(), updated_at = now() "
             "WHERE owner_id = :owner AND id = :job",
-            {"owner": owner, "job": job},
+            {"owner": owner, "job": expired_job},
         )
         rejects(
             "UPDATE background_jobs SET state = 'queued', completed_at = NULL "
             "WHERE owner_id = :owner AND id = :job",
-            {"owner": owner, "job": job},
+            {"owner": owner, "job": expired_job},
         )
         rejects(
             "INSERT INTO background_jobs "

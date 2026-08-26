@@ -156,7 +156,7 @@ class Correction(Base):
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     owner_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     source_activity_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    source_evidence_event_id: Mapped[int | None] = mapped_column(BigInteger)
+    source_evidence_event_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     priority: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False)
     due_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -436,6 +436,8 @@ def validate_correction(
     target: Correction,
 ) -> None:
     del mapper
+    if target.source_evidence_event_id is None:
+        raise CorrectionWorkflowError("correction source evidence is required")
     if target.status == "pending" and (
         target.attempt_b_activity_id is not None or target.completed_at is not None
     ):
@@ -456,7 +458,7 @@ def validate_correction(
         target.completed_at is not None and target.completed_at < target.created_at
     ):
         raise CorrectionWorkflowError("correction timestamps are incoherent")
-    if connection is not None and target.source_evidence_event_id is not None:
+    if connection is not None:
         evidence_activity_id = connection.execute(
             select(SkillEvidenceEvent.__table__.c.activity_instance_id).where(
                 SkillEvidenceEvent.__table__.c.owner_id == target.owner_id,

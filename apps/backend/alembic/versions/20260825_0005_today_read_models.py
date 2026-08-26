@@ -142,7 +142,7 @@ def _create_tables() -> None:
         _id(),
         sa.Column("owner_id", sa.BigInteger(), nullable=False),
         sa.Column("source_activity_id", sa.BigInteger(), nullable=False),
-        sa.Column("source_evidence_event_id", sa.BigInteger(), nullable=True),
+        sa.Column("source_evidence_event_id", sa.BigInteger(), nullable=False),
         sa.Column("priority", sa.Integer(), nullable=False),
         sa.Column("status", sa.Text(), nullable=False),
         sa.Column("due_date", sa.Date(), nullable=False),
@@ -835,6 +835,13 @@ def _create_guards() -> None:
                 END IF;
             ELSIF NEW.attempt_count <> OLD.attempt_count THEN
                 RAISE EXCEPTION 'background job attempt changes only on claim';
+            END IF;
+            IF OLD.state = 'running' AND NEW.state = 'queued'
+                AND (
+                    OLD.lease_expires_at IS NULL
+                    OR OLD.lease_expires_at > CURRENT_TIMESTAMP
+                ) THEN
+                RAISE EXCEPTION 'background job lease has not expired';
             END IF;
             IF NEW.state = OLD.state AND OLD.state = 'running' AND (
                 NEW.priority IS DISTINCT FROM OLD.priority

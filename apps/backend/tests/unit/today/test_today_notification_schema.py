@@ -250,6 +250,7 @@ def test_corrections_use_restrictive_owner_scoped_history_links() -> None:
 
     load_all_models()
     table = Base.metadata.tables["corrections"]
+    assert not table.c.source_evidence_event_id.nullable
     targets = {
         tuple(element.parent.name for element in constraint.elements): (
             constraint.referred_table.name,
@@ -282,7 +283,6 @@ def test_corrections_use_restrictive_owner_scoped_history_links() -> None:
 
 def test_two_correction_slots_are_service_enforced_not_a_global_database_limit() -> None:
     from tamforge_backend.models import Base, load_all_models
-    from tamforge_backend.today.service import CorrectionSlotLimitError, ensure_slot_available
 
     load_all_models()
     table = Base.metadata.tables["corrections"]
@@ -304,11 +304,92 @@ def test_two_correction_slots_are_service_enforced_not_a_global_database_limit()
         for constraint in table.constraints
     )
 
-    ensure_slot_available([1], candidate_priority=2)
+
+
+def test_correction_slot_service_locks_queries_and_inserts_in_one_transaction() -> None:
+    from tamforge_backend.today.service import create_correction_with_slot_reservation
+
+    class _Result:
+        def __init__(
+            self,
+            *,
+            rows: list[tuple[int]] | None = None,
+            scalar: int | None = None,
+        ) -> None:
+            self.rows = rows or []
+            self.scalar = scalar
+
+        def all(self) -> list[tuple[int]]:
+            return self.rows
+
+        def scalar_one(self) -> int:
+            assert self.scalar is not None
+            return self.scalar
+
+    class _Executor:
+        def __init__(self) -> None:
+            self.calls: list[tuple[object, object]] = []
+            self.results = [_Result(), _Result(rows=[(1,)]), _Result(scalar=42)]
+
+        def execute(self, statement: object, parameters: object = None) -> _Result:
+            self.calls.append((statement, parameters))
+            return self.results.pop(0)
+
+    executor = _Executor()
+    correction_id = create_correction_with_slot_reservation(
+        executor,  # type: ignore[arg-type]
+        owner_id=7,
+        source_activity_id=11,
+        source_evidence_event_id=13,
+        priority=2,
+        due_date=date(2026, 8, 27),
+        instruction="Lead with the customer impact.",
+    )
+
+    assert correction_id == 42
+    assert len(executor.calls) == 3
+    assert "pg_advisory_xact_lock" in str(executor.calls[0][0])
+    assert "corrections.owner_id" in str(executor.calls[1][0])
+    assert "corrections.due_date" in str(executor.calls[1][0])
+    assert "corrections.status IN" in str(executor.calls[1][0])
+    assert str(executor.calls[2][0]).startswith("INSERT INTO corrections")
+
+
+def test_correction_slot_service_rejects_third_before_insert() -> None:
+    from tamforge_backend.today.service import (
+        CorrectionSlotLimitError,
+        create_correction_with_slot_reservation,
+    )
+
+    class _Result:
+        def __init__(self, rows: list[tuple[int]] | None = None) -> None:
+            self.rows = rows or []
+
+        def all(self) -> list[tuple[int]]:
+            return self.rows
+
+    class _Executor:
+        def __init__(self) -> None:
+            self.calls: list[object] = []
+            self.results = [_Result(), _Result([(1,), (2,)])]
+
+        def execute(self, statement: object, parameters: object = None) -> _Result:
+            del parameters
+            self.calls.append(statement)
+            return self.results.pop(0)
+
+    executor = _Executor()
     with pytest.raises(CorrectionSlotLimitError, match="two active corrections"):
-        ensure_slot_available([1, 2], candidate_priority=1)
-    with pytest.raises(CorrectionSlotLimitError, match="priority slot"):
-        ensure_slot_available([1], candidate_priority=1)
+        create_correction_with_slot_reservation(
+            executor,  # type: ignore[arg-type]
+            owner_id=7,
+            source_activity_id=17,
+            source_evidence_event_id=19,
+            priority=1,
+            due_date=date(2026, 8, 27),
+            instruction="Use one explicit recommendation.",
+        )
+    assert len(executor.calls) == 2
 
 
 def test_interview_foundation_cannot_store_audio_transcript_or_interview_content() -> None:
@@ -467,6 +548,22 @@ def test_correction_source_evidence_must_belong_to_source_activity() -> None:
     with pytest.raises(CorrectionWorkflowError, match="source evidence"):
         validate_correction(None, _Connection(), correction)  # type: ignore[arg-type]
 
+    missing = Correction(
+        owner_id=1,
+        source_activity_id=1,
+        source_evidence_event_id=None,  # type: ignore[arg-type]
+        priority=1,
+        status="pending",
+        due_date=date.today(),
+        instruction="State the evidence.",
+        attempt_b_activity_id=None,
+        created_at=now,
+        updated_at=now,
+        completed_at=None,
+    )
+    with pytest.raises(CorrectionWorkflowError, match="source evidence is required"):
+        validate_correction(None, None, missing)
+
 
 def test_job_claim_retry_reclaim_heartbeat_and_terminal_guards() -> None:
     from tamforge_backend.notifications.models import JobWorkflowError, validate_background_job
@@ -487,14 +584,31 @@ def test_job_claim_retry_reclaim_heartbeat_and_terminal_guards() -> None:
     validate_background_job(None, None, job)
 
     job.updated_at = now + timedelta(seconds=3)
-    job.state = "queued"
-    job.lease_owner = None
-    job.lease_expires_at = None
-    job.available_at = now + timedelta(seconds=20)
-    validate_background_job(None, None, job)
+    with pytest.raises(JobWorkflowError, match="lease has not expired"):
+        job.state = "queued"
+
+    old = now - timedelta(minutes=2)
+    expired = _job(
+        state="running",
+        attempt_count=1,
+        lease_owner="worker-1",
+        lease_expires_at=now - timedelta(minutes=1),
+        created_at=old,
+        updated_at=old + timedelta(seconds=1),
+        started_at=old + timedelta(seconds=1),
+    )
+    _detach(expired)
+    expired.updated_at = now
+    expired.state = "queued"
+    expired.lease_owner = None
+    expired.lease_expires_at = None
+    expired.available_at = now + timedelta(seconds=20)
+    expired.last_error_category = "transient_dependency"
+    expired.last_error_details = {"schema_version": 1, "attempt": 1}
+    validate_background_job(None, None, expired)
 
     with pytest.raises(JobWorkflowError, match="attempt count"):
-        job.attempt_count = 3
+        expired.attempt_count = 3
 
     terminal = _job(
         state="succeeded",

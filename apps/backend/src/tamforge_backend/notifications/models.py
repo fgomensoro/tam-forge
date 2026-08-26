@@ -594,6 +594,10 @@ def _validate_job_state_change(
             raise JobWorkflowError("terminal background job cannot transition")
         if value not in JOB_TRANSITIONS[old_value]:
             raise JobWorkflowError("invalid background job state transition")
+        if old_value == "running" and value == "queued":
+            lease_expires_at = target.lease_expires_at
+            if lease_expires_at is None or lease_expires_at > utc_now():
+                raise JobWorkflowError("background job lease has not expired")
     return value
 
 
