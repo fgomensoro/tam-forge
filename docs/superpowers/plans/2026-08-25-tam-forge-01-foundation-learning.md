@@ -480,7 +480,7 @@ Run:
 
 ~~~bash
 uv run pytest apps/backend/tests/unit/test_config.py scripts/dev/tests/test_ensure_test_database.py -q
-uv run pytest apps/backend/tests/integration/test_migrations.py -q
+uv run pytest -m integration apps/backend/tests/integration/test_migrations.py -q
 ~~~
 
 Expected: settings/helper tests fail before implementation; integration test skips with the exact TEST_DATABASE_URL message. Docker remains stopped.
@@ -532,7 +532,7 @@ trap on_int INT
 trap on_term TERM
 docker compose -f compose.dev.yml up -d postgres
 bash scripts/dev/ensure_test_database.sh
-TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test uv run pytest apps/backend/tests/integration/test_migrations.py -q
+TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test uv run pytest -m integration apps/backend/tests/integration/test_migrations.py -q
 exit 0
 ~~~
 
@@ -574,7 +574,7 @@ Assert exact table/column names, uniqueness of github_user_id/token_hash and own
 Run only against an already approved/running PostgreSQL:
 
 ~~~bash
-TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test uv run pytest apps/backend/tests/integration/test_0001_identity_sessions.py -q
+TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test uv run pytest -m integration apps/backend/tests/integration/test_0001_identity_sessions.py -q
 ~~~
 
 Expected: FAIL because revision 0001 is absent. If no database is running, expected result is SKIP; do not start Docker implicitly.
@@ -636,7 +636,7 @@ Test duplicate import rejection, one-active-version enforcement, predecessor lin
 - [ ] **Step 2: Run the focused integration test**
 
 ~~~bash
-TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test uv run pytest apps/backend/tests/integration/test_0002_curriculum.py -q
+TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test uv run pytest -m integration apps/backend/tests/integration/test_0002_curriculum.py -q
 ~~~
 
 Expected: FAIL before migration; SKIP rather than Docker autostart when TEST_DATABASE_URL is absent.
@@ -688,7 +688,7 @@ Assert table contracts, Attempt C rejection, shared Artifact reuse, append-only 
 - [ ] **Step 2: Run the focused test**
 
 ~~~bash
-TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test uv run pytest apps/backend/tests/integration/test_0003_study_activities.py -q
+TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test uv run pytest -m integration apps/backend/tests/integration/test_0003_study_activities.py -q
 ~~~
 
 Expected: FAIL before implementation or SKIP without an explicit database.
@@ -1604,7 +1604,7 @@ Keep the write service callable by later reviewer/analyst workers without exposi
 
 ~~~bash
 uv run pytest apps/backend/tests/unit/evidence -q
-TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test uv run pytest apps/backend/tests/integration/evidence -q
+TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test uv run pytest -m integration apps/backend/tests/integration/evidence -q
 ~~~
 
 Expected: unit tests pass. Run the second command only after explicit local Docker/PostgreSQL approval; it passes against the migrated test database and never starts a container itself.
@@ -1678,7 +1678,7 @@ Use bounded database polling with cancellation-safe waits. Do not introduce Redi
 
 ~~~bash
 uv run pytest apps/backend/tests/unit/jobs apps/backend/tests/unit/notifications -q
-TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test uv run pytest apps/backend/tests/integration/jobs apps/backend/tests/integration/notifications -q
+TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test uv run pytest -m integration apps/backend/tests/integration/jobs apps/backend/tests/integration/notifications -q
 git add apps/backend/src/tamforge_backend/jobs apps/backend/src/tamforge_backend/notifications apps/backend/src/tamforge_backend/api.py apps/backend/tests/unit/jobs apps/backend/tests/unit/notifications apps/backend/tests/integration/jobs apps/backend/tests/integration/notifications
 git commit -m "feat: add durable jobs and status notifications"
 ~~~
@@ -1742,7 +1742,7 @@ Avoid N+1 queries. Calculate all date boundaries in the learner timezone and ret
 
 ~~~bash
 uv run pytest apps/backend/tests/unit/today -q
-TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test uv run pytest apps/backend/tests/integration/today -q
+TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test uv run pytest -m integration apps/backend/tests/integration/today -q
 git add apps/backend/src/tamforge_backend/today apps/backend/src/tamforge_backend/api.py apps/backend/tests/unit/today apps/backend/tests/integration/today
 git commit -m "feat: add protected today study model"
 ~~~

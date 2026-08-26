@@ -14,6 +14,7 @@ target_database="${TAMFORGE_TEST_DB_NAME:-tamforge_test}"
 password="${TAMFORGE_TEST_DB_PASSWORD-tamforge}"
 test_mode="${TAMFORGE_TEST_DB_TEST_MODE:-0}"
 test_tool_root="${TAMFORGE_TEST_DB_TOOL_ROOT:-}"
+test_platform_root="${TAMFORGE_TEST_DB_PLATFORM_ROOT:-}"
 connect_timeout="5"
 statement_options="-c statement_timeout=5000 -c lock_timeout=5000"
 
@@ -56,7 +57,9 @@ if [[ "$test_mode" == "1" ]]; then
   root_mode="$(file_mode "$test_tool_root")"
   [[ "$root_mode" == "700" || "$root_mode" == "0700" ]] \
     || fail "isolated test tool root must have mode 700"
-elif [[ "$test_mode" != "0" || -n "$test_tool_root" ]]; then
+  [[ -z "$test_platform_root" || "$test_platform_root" == "$test_tool_root" ]] \
+    || fail "isolated platform root must equal the test tool root"
+elif [[ "$test_mode" != "0" || -n "$test_tool_root" || -n "$test_platform_root" ]]; then
   fail "isolated test tool settings are invalid"
 fi
 
@@ -73,29 +76,76 @@ normalize_path() {
   printf '%s/%s' "$directory" "$basename"
 }
 
-path_is_trusted() {
+logical_tool_path() {
   local path="$1"
-  if [[ "$test_mode" == "1" ]]; then
-    [[ "$path" == "$test_tool_root"/* ]]
+  if [[ "$test_mode" == "1" && -n "$test_platform_root" ]]; then
+    [[ "$path" == "$test_platform_root"/* ]] || return 1
+    printf '%s' "${path#"$test_platform_root"}"
     return
   fi
-  [[
-    "$path" == /opt/homebrew/*
-    || "$path" == /usr/local/*
-    || "$path" == /usr/bin/*
-    || "$path" == /Applications/Postgres.app/Contents/Versions/*
-  ]]
+  printf '%s' "$path"
+}
+
+classify_tool_path() {
+  local name="$1"
+  local invocation="$2"
+  local resolved="$3"
+  local logical_invocation
+  local logical_resolved
+
+  if [[ "$test_mode" == "1" && -z "$test_platform_root" ]]; then
+    [[ "$resolved" == "$test_tool_root"/* ]] || return 1
+    printf 'isolated'
+    return
+  fi
+
+  logical_invocation="$(logical_tool_path "$invocation")" || return 1
+  logical_resolved="$(logical_tool_path "$resolved")" || return 1
+
+  if [[ "$logical_resolved" == "/usr/share/postgresql-common/pg_wrapper" ]]; then
+    [[ "$logical_invocation" == "/usr/bin/$name" ]] || return 1
+    printf 'wrapper'
+    return
+  fi
+
+  if [[ "$logical_resolved" =~ ^/usr/lib/postgresql/([1-9][0-9])/bin/(psql|createdb)$ ]]; then
+    [[ "${BASH_REMATCH[2]}" == "$name" ]] || return 1
+    printf 'binary'
+    return
+  fi
+
+  if [[ "$logical_resolved" =~ ^/Applications/Postgres[.]app/Contents/Versions/([1-9][0-9]*)/bin/(psql|createdb)$ ]]; then
+    [[ "${BASH_REMATCH[2]}" == "$name" ]] || return 1
+    printf 'binary'
+    return
+  fi
+
+  if [[ "$logical_resolved" == "/usr/bin/$name" ]]; then
+    printf 'binary'
+    return
+  fi
+
+  if [[ "$logical_resolved" == /opt/homebrew/* || "$logical_resolved" == /usr/local/* ]]; then
+    [[ "${logical_resolved##*/}" == "$name" ]] || return 1
+    printf 'binary'
+    return
+  fi
+
+  return 1
 }
 
 resolve_tool() {
   local name="$1"
+  local invocation
   local resolved
   local link_target
+  local classification
   local hops=0
   resolved="$(command -v -- "$name" 2>/dev/null)" || fail "required tool is unavailable"
   [[ "$resolved" == /* && "$resolved" != *$'\n'* ]] \
     || fail "required tool path must be absolute"
   resolved="$(normalize_path "$resolved")"
+  invocation="$resolved"
 
   while [[ -L "$resolved" ]]; do
     hops=$((hops + 1))
@@ -114,11 +164,16 @@ resolve_tool() {
 
   [[ -f "$resolved" && -x "$resolved" ]] \
     || fail "required tool must resolve to a regular executable"
-  path_is_trusted "$resolved" || fail "required tool resolved outside trusted roots"
+  classification="$(classify_tool_path "$name" "$invocation" "$resolved")" \
+    || fail "required tool resolved outside trusted client layouts"
   [[ "$test_mode" != "1" || -O "$resolved" ]] \
     || fail "isolated test tool has an invalid owner"
   assert_not_writable_by_others "$resolved"
-  printf '%s' "$resolved"
+  if [[ "$classification" == "wrapper" ]]; then
+    printf '%s' "$invocation"
+  else
+    printf '%s' "$resolved"
+  fi
 }
 
 psql_path="$(resolve_tool psql)"

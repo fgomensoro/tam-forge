@@ -85,6 +85,47 @@ def environment_blocks(env: dict[str, str]) -> list[list[str]]:
     return command_blocks(Path(env["FAKE_ENV_LOG"]))
 
 
+def fake_platform_environment(
+    tmp_path: Path,
+    *,
+    path_directory: Path,
+) -> tuple[dict[str, str], Path, Path, Path]:
+    platform_root = tmp_path / "platform-root"
+    platform_root.mkdir(mode=0o700, exist_ok=True)
+    platform_root.chmod(0o700)
+    log_path = tmp_path / "platform-commands.log"
+    env_log_path = tmp_path / "platform-command-env.log"
+    state_path = tmp_path / "platform-database-created"
+    env = {**os.environ}
+    for name in tuple(env):
+        if name.startswith("TAMFORGE_TEST_DB_"):
+            env.pop(name)
+    env.update(
+        {
+            "PATH": str(path_directory),
+            "FAKE_COMMAND_LOG": str(log_path),
+            "FAKE_ENV_LOG": str(env_log_path),
+            "FAKE_DATABASE_STATE": str(state_path),
+            "TAMFORGE_TEST_DB_TEST_MODE": "1",
+            "TAMFORGE_TEST_DB_TOOL_ROOT": str(platform_root),
+            "TAMFORGE_TEST_DB_PLATFORM_ROOT": str(platform_root),
+        }
+    )
+    return env, log_path, state_path, platform_root
+
+
+def fake_postgres_client_body() -> str:
+    return (
+        'printf "%s\\n" "$0" "$@" "--END--" >> "$FAKE_COMMAND_LOG"\n'
+        'printf "%s\\n" "${PGPASSWORD-}" "${PGCONNECT_TIMEOUT-}" "${PGOPTIONS-}" '
+        '"--END--" >> "$FAKE_ENV_LOG"\n'
+        'case " $* " in\n'
+        '  *" --maintenance-db "*) : > "$FAKE_DATABASE_STATE" ;;\n'
+        '  *) if [ -f "$FAKE_DATABASE_STATE" ]; then printf "1\\n"; fi ;;\n'
+        "esac\n"
+    )
+
+
 def test_default_target_is_created_once_and_repeated_runs_are_idempotent(
     fake_database_tools: tuple[dict[str, str], Path, Path],
 ) -> None:
@@ -200,6 +241,97 @@ def test_symlinked_tool_within_isolated_test_root_is_resolved_and_allowed(
         "createdb",
         "real-psql",
     ]
+
+
+def test_debian_pg_wrapper_symlinks_are_classified_and_invoked_by_client_name(
+    tmp_path: Path,
+) -> None:
+    platform_root = tmp_path / "platform-root"
+    bin_dir = platform_root / "usr" / "bin"
+    wrapper_dir = platform_root / "usr" / "share" / "postgresql-common"
+    bin_dir.mkdir(parents=True)
+    wrapper_dir.mkdir(parents=True)
+    wrapper = wrapper_dir / "pg_wrapper"
+    write_fake_command(wrapper, fake_postgres_client_body())
+    (bin_dir / "psql").symlink_to("../share/postgresql-common/pg_wrapper")
+    (bin_dir / "createdb").symlink_to("../share/postgresql-common/pg_wrapper")
+    env, log_path, state_path, _ = fake_platform_environment(
+        tmp_path,
+        path_directory=bin_dir,
+    )
+
+    result = run_helper(env)
+
+    assert result.returncode == 0, result.stderr
+    assert state_path.exists()
+    assert [Path(block[0]).name for block in command_blocks(log_path)] == [
+        "psql",
+        "createdb",
+        "psql",
+    ]
+
+
+def test_debian_versioned_postgresql_clients_are_allowed(
+    tmp_path: Path,
+) -> None:
+    platform_root = tmp_path / "platform-root"
+    bin_dir = platform_root / "usr" / "lib" / "postgresql" / "16" / "bin"
+    bin_dir.mkdir(parents=True)
+    write_fake_command(bin_dir / "psql", fake_postgres_client_body())
+    write_fake_command(bin_dir / "createdb", fake_postgres_client_body())
+    env, log_path, state_path, _ = fake_platform_environment(
+        tmp_path,
+        path_directory=bin_dir,
+    )
+
+    result = run_helper(env)
+
+    assert result.returncode == 0, result.stderr
+    assert state_path.exists()
+    assert [Path(block[0]).name for block in command_blocks(log_path)] == [
+        "psql",
+        "createdb",
+        "psql",
+    ]
+
+
+@pytest.mark.parametrize("near_miss", ["pg_wrapper_backup", "16.1", "sibling-binary"])
+def test_debian_client_layout_near_misses_are_rejected_without_execution(
+    tmp_path: Path,
+    near_miss: str,
+) -> None:
+    platform_root = tmp_path / "platform-root"
+    if near_miss == "pg_wrapper_backup":
+        bin_dir = platform_root / "usr" / "bin"
+        target_dir = platform_root / "usr" / "share" / "postgresql-common"
+        bin_dir.mkdir(parents=True)
+        target_dir.mkdir(parents=True)
+        target = target_dir / near_miss
+        write_fake_command(target, fake_postgres_client_body())
+        (bin_dir / "psql").symlink_to(f"../share/postgresql-common/{near_miss}")
+        (bin_dir / "createdb").symlink_to(f"../share/postgresql-common/{near_miss}")
+    elif near_miss == "16.1":
+        bin_dir = platform_root / "usr" / "lib" / "postgresql" / near_miss / "bin"
+        bin_dir.mkdir(parents=True)
+        write_fake_command(bin_dir / "psql", fake_postgres_client_body())
+        write_fake_command(bin_dir / "createdb", fake_postgres_client_body())
+    else:
+        bin_dir = platform_root / "usr" / "lib" / "postgresql" / "16" / "bin"
+        bin_dir.mkdir(parents=True)
+        sibling = bin_dir / near_miss
+        write_fake_command(sibling, fake_postgres_client_body())
+        (bin_dir / "psql").symlink_to(sibling)
+        write_fake_command(bin_dir / "createdb", fake_postgres_client_body())
+    env, log_path, state_path, _ = fake_platform_environment(
+        tmp_path,
+        path_directory=bin_dir,
+    )
+
+    result = run_helper(env)
+
+    assert result.returncode != 0
+    assert command_blocks(log_path) == []
+    assert not state_path.exists()
 
 
 def test_symlink_target_outside_isolated_root_is_rejected_without_execution(
