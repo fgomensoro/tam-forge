@@ -150,6 +150,8 @@ class Settings(BaseSettings):
         return self
 
     def _validate_production(self) -> None:
+        if not self.cors_origins:
+            raise ValueError("production requires at least one exact CORS origin")
         required_text = {
             "object store endpoint": self.object_store_endpoint,
             "object store bucket": self.object_store_bucket,

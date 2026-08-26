@@ -68,7 +68,7 @@ def test_oauth_state_expires_and_cannot_be_reused_after_consumption() -> None:
         manager.consume(state=second, state_cookie=second)
 
 
-def test_oauth_replay_cache_is_bounded_and_fails_closed() -> None:
+def test_oauth_replay_cache_evicts_oldest_state_at_capacity() -> None:
     from tamforge_backend.auth.crypto import InvalidOAuthState, OAuthStateManager
 
     now = datetime(2026, 8, 26, 12, tzinfo=UTC)
@@ -81,6 +81,9 @@ def test_oauth_replay_cache_is_bounded_and_fails_closed() -> None:
     first = manager.issue()
     second = manager.issue()
     manager.consume(state=first, state_cookie=first)
+    manager.consume(state=second, state_cookie=second)
 
     with pytest.raises(InvalidOAuthState):
         manager.consume(state=second, state_cookie=second)
+
+    manager.consume(state=first, state_cookie=first)

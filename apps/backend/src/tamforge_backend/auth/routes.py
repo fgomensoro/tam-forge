@@ -38,6 +38,7 @@ def _settings(request: Request) -> Settings:
 
 def _prevent_storage(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
 
 
 def _set_cookie(

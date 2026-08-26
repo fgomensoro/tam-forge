@@ -176,6 +176,16 @@ def test_production_rejects_wildcard_cors(monkeypatch: pytest.MonkeyPatch) -> No
         Settings()
 
 
+def test_production_requires_at_least_one_cors_origin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_production_environment(monkeypatch)
+    monkeypatch.delenv("TAMFORGE_CORS_ORIGINS")
+
+    with pytest.raises(ValidationError):
+        Settings()
+
+
 @pytest.mark.parametrize(
     "origin",
     [

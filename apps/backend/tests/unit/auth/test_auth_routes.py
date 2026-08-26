@@ -116,6 +116,7 @@ def test_login_redirects_with_short_lived_httponly_host_only_state_cookie() -> N
     assert "Path=/api/v1/auth/callback" in cookie
     assert "Max-Age=300" in cookie
     assert "Domain=" not in cookie
+    assert response.headers["referrer-policy"] == "no-referrer"
 
 
 def test_callback_sets_only_opaque_secure_httponly_host_only_cookies() -> None:
@@ -143,6 +144,7 @@ def test_callback_sets_only_opaque_secure_httponly_host_only_cookies() -> None:
     assert "Path=/api/v1" in session_cookie
     assert "Path=/api/v1/auth/session" in csrf_cookie
     assert "access_token" not in "\n".join(cookies)
+    assert response.headers["referrer-policy"] == "no-referrer"
 
 
 def test_session_returns_display_and_csrf_without_owner_id() -> None:
@@ -156,6 +158,7 @@ def test_session_returns_display_and_csrf_without_owner_id() -> None:
     assert response.json() == {"github_login": "fgomensoro", "csrf_token": "c" * 43}
     assert "owner_id" not in response.text
     assert response.headers["cache-control"] == "no-store"
+    assert response.headers["referrer-policy"] == "no-referrer"
 
 
 def test_callback_validation_never_echoes_oauth_code_or_state() -> None:
@@ -177,6 +180,7 @@ def test_callback_validation_never_echoes_oauth_code_or_state() -> None:
     assert oauth_code not in response.text
     assert "signed-oauth-state" not in response.text
     assert response.json()["code"] == "unauthenticated"
+    assert response.headers["referrer-policy"] == "no-referrer"
 
 
 def test_logout_requires_exact_origin_and_csrf_then_clears_cookies() -> None:
@@ -199,3 +203,4 @@ def test_logout_requires_exact_origin_and_csrf_then_clears_cookies() -> None:
     cleared = allowed.headers.get_list("set-cookie")
     assert any('tamforge_session=""' in value and "Max-Age=0" in value for value in cleared)
     assert any('tamforge_csrf=""' in value and "Max-Age=0" in value for value in cleared)
+    assert allowed.headers["referrer-policy"] == "no-referrer"

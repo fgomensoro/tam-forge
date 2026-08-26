@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+from collections import OrderedDict
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
@@ -54,7 +55,7 @@ class OAuthStateManager:
         self._ttl_seconds = int(ttl.total_seconds())
         self._now = now or (lambda: datetime.now(UTC))
         self._max_consumed_states = max_consumed_states
-        self._consumed_until: dict[bytes, int] = {}
+        self._consumed_until: OrderedDict[bytes, int] = OrderedDict()
 
     def issue(self) -> str:
         issued_at = int(self._utc_now().timestamp())
@@ -102,7 +103,7 @@ class OAuthStateManager:
         if state_hash in self._consumed_until:
             raise InvalidOAuthState("OAuth state is invalid")
         if len(self._consumed_until) >= self._max_consumed_states:
-            raise InvalidOAuthState("OAuth state is invalid")
+            self._consumed_until.popitem(last=False)
         self._consumed_until[state_hash] = now + self._ttl_seconds
 
     def _remove_expired(self, now: int) -> None:

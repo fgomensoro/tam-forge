@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -9,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api import register_routes
+from .auth.access_logging import UvicornAuthQueryFilter
 from .config import Settings
 from .database import create_database_resources
 
@@ -19,14 +21,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        database = create_database_resources(configured)
-        app.state.settings = configured
-        app.state.database = database
-        app.state.oauth_state_manager = None
+        access_logger = logging.getLogger("uvicorn.access")
+        access_log_filter = UvicornAuthQueryFilter()
+        access_logger.addFilter(access_log_filter)
+        database = None
         try:
+            database = create_database_resources(configured)
+            app.state.settings = configured
+            app.state.database = database
+            app.state.oauth_state_manager = None
             yield
         finally:
-            await database.dispose()
+            try:
+                if database is not None:
+                    await database.dispose()
+            finally:
+                access_logger.removeFilter(access_log_filter)
 
     app = FastAPI(title="TAM Forge API", version="0.1.0", lifespan=lifespan)
     if configured.cors_origins:
