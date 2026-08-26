@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, DecimalException
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any
@@ -125,7 +125,7 @@ def _construct_decimal(loader: _StrictLoader, node: ScalarNode) -> Decimal:
     scalar = loader.construct_scalar(node)
     try:
         value = Decimal(scalar.replace("_", ""))
-    except InvalidOperation as exc:
+    except (DecimalException, ValueError) as exc:
         raise ConstructorError(
             "while constructing a decimal",
             node.start_mark,
@@ -224,7 +224,13 @@ def _decimal_text(value: Decimal) -> str:
         raise ConfigError("<config>:1:1: configuration number must be a finite decimal")
     if value == 0:
         return "0"
-    return format(value.normalize(), "f")
+    try:
+        rendered = format(value.normalize(), "f")
+    except (DecimalException, OverflowError, ValueError) as exc:
+        raise ConfigError("<config>:1:1: configuration decimal is out of bounds") from exc
+    if len(rendered) > 128:
+        raise ConfigError("<config>:1:1: configuration decimal is out of bounds")
+    return rendered
 
 
 def _canonical(value: object) -> object:
@@ -266,10 +272,6 @@ def _canonical_payload(
         )
         item["composite_metrics"] = sorted(
             item["composite_metrics"], key=lambda metric: metric["metric_slug"]
-        )
-        item["child_exercise_type_refs"] = sorted(
-            item["child_exercise_type_refs"],
-            key=lambda child: (child["exercise_type"], child["mapping_version"]),
         )
     exercise_payload["exercise_types"] = sorted(
         exercise_payload["exercise_types"], key=lambda item: item["slug"]
@@ -413,11 +415,14 @@ def _link_tasks(
         expected_week = ((task.day - 1) // 6) + 1
         if task.week != expected_week:
             raise _at(path, source, "task week does not match Month 1 day")
-        linked = exercises.get(task.exercise_type)
-        if linked is None:
-            raise _at(path, source, f"unknown exercise type {task.exercise_type!r}")
-        if linked.mapping_version != task.mapping_version:
-            raise _at(path, source, f"unknown mapping version for {task.exercise_type!r}")
+        if task.block != "correction_warmup":
+            if task.exercise_type is None or task.mapping_version is None:
+                raise _at(path, source, "non-correction task requires exercise and mapping")
+            linked = exercises.get(task.exercise_type)
+            if linked is None:
+                raise _at(path, source, f"unknown exercise type {task.exercise_type!r}")
+            if linked.mapping_version != task.mapping_version:
+                raise _at(path, source, f"unknown mapping version for {task.exercise_type!r}")
         pure_path = PurePosixPath(task.source_path)
         if pure_path.is_absolute() or ".." in pure_path.parts or "\\" in task.source_path:
             raise _at(path, source, "source path must be a safe relative POSIX path")
@@ -438,6 +443,24 @@ def _link_tasks(
         expected = 120 if key[1] % 6 == 0 else 240
         if total != expected:
             raise _at(path, raw, f"day {key[1]} must total exactly {expected} minutes")
+
+    weekday_shape = (
+        ("sql", 45),
+        ("technical_learning", 45),
+        ("career_pipeline", 30),
+        ("correction_warmup", 10),
+        ("tam_case", 60),
+        ("communication_spoken", 35),
+        ("daily_close", 15),
+    )
+    for week, day in sorted(key for key in expected_days if key[1] % 6):
+        tasks = sorted(
+            (task for task in config.tasks if (task.week, task.day) == (week, day)),
+            key=lambda task: task.order,
+        )
+        actual_shape = tuple((task.block, task.timebox_minutes) for task in tasks)
+        if actual_shape != weekday_shape:
+            raise _at(path, raw, f"weekday {day} must use the exact block shape")
 
     task_by_id = {task.stable_id: task for task in config.tasks}
     reconciliation_items = (

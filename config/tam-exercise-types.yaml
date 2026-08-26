@@ -350,8 +350,3 @@ exercise_types:
   - slug: application_or_outreach
     evidence_mode: pipeline_only
     skill_impacts: {}
-
-  - slug: correction_warmup
-    evidence_mode: guided_practice
-    skill_impacts: {}
-    condition_note: Structural Attempt B or targeted SQL carryover; never skill-level evidence.

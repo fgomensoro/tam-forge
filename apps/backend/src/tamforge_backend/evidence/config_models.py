@@ -23,6 +23,12 @@ VersionKey = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,63}$")]
 Score = Annotated[Decimal, Field(ge=0, le=4, max_digits=4, decimal_places=3)]
 Weight = Annotated[Decimal, Field(gt=0, le=1, max_digits=7, decimal_places=6)]
 Factor = Annotated[Decimal, Field(ge=0, le=1.15, max_digits=7, decimal_places=6)]
+EffectiveWeight = Annotated[
+    Decimal, Field(ge=0, le=1000, max_digits=10, decimal_places=6)
+]
+PriorWeight = Annotated[
+    Decimal, Field(gt=0, le=1000, max_digits=10, decimal_places=6)
+]
 
 
 def _bounded_text(value: str, *, maximum_bytes: int) -> str:
@@ -227,25 +233,39 @@ class DifficultyFactors(StrictModel):
 
 
 class ConfidenceRules(StrictModel):
-    high_minimum_effective_weight: Decimal
-    high_minimum_exercise_types: Annotated[int, Field(gt=0)]
-    high_recent_assessment_days: Annotated[int, Field(gt=0)]
+    high_minimum_effective_weight: EffectiveWeight
+    high_minimum_exercise_types: Annotated[int, Field(gt=0, le=1000)]
+    high_recent_assessment_days: Annotated[int, Field(gt=0, le=3650)]
     high_requires_reviewed_artifact_or_recording: bool
-    medium_minimum_effective_weight: Decimal
-    medium_minimum_exercise_types: Annotated[int, Field(gt=0)]
+    medium_minimum_effective_weight: EffectiveWeight
+    medium_minimum_exercise_types: Annotated[int, Field(gt=0, le=1000)]
     medium_requires_independent_attempt: bool
+
+    @model_validator(mode="after")
+    def validate_threshold_order(self) -> ConfidenceRules:
+        if self.high_minimum_effective_weight < self.medium_minimum_effective_weight:
+            raise ValueError("high confidence threshold must be at least medium")
+        if self.high_minimum_exercise_types < self.medium_minimum_exercise_types:
+            raise ValueError("high confidence exercise count must be at least medium")
+        return self
 
 
 class RecencyRules(StrictModel):
-    fresh_max_days: Annotated[int, Field(ge=0)]
-    aging_max_days: Annotated[int, Field(gt=0)]
+    fresh_max_days: Annotated[int, Field(ge=0, le=3650)]
+    aging_max_days: Annotated[int, Field(gt=0, le=3650)]
+
+    @model_validator(mode="after")
+    def validate_window_order(self) -> RecencyRules:
+        if self.fresh_max_days > self.aging_max_days:
+            raise ValueError("fresh recency must not exceed aging recency")
+        return self
 
 
 class FormulaConfig(StrictModel):
     version: VersionKey
-    prior_weight: Annotated[Decimal, Field(gt=0)]
-    latest_qualifying_events: Annotated[int, Field(gt=0)]
-    full_weight_same_day_limit: Annotated[int, Field(gt=0)]
+    prior_weight: PriorWeight
+    latest_qualifying_events: Annotated[int, Field(gt=0, le=1000)]
+    full_weight_same_day_limit: Annotated[int, Field(gt=0, le=1000)]
     performance_scale_min: Decimal
     performance_scale_max: Decimal
     practice_mode_factors: PracticeModeFactors
@@ -254,16 +274,33 @@ class FormulaConfig(StrictModel):
     difficulty_factors: DifficultyFactors
     qualifying_modes: frozenset[EvidenceMode]
     qualifying_assistance: frozenset[
-        Literal["no_ai", "ai_after_committed_attempt"]
+        Literal[
+            "no_ai",
+            "ai_after_committed_attempt",
+            "ai_hints_during_attempt",
+            "ai_co_created",
+            "ai_generated",
+        ]
     ]
-    requires_rubric_score: bool
-    independent_practice_requires_attempt_a: bool
-    attempt_b_qualifies: bool
+    requires_rubric_score: Literal[True]
+    independent_practice_requires_attempt_a: Literal[True]
+    attempt_b_qualifies: Literal[False]
     confidence: ConfidenceRules
     recency: RecencyRules
 
     @model_validator(mode="after")
     def validate_scale(self) -> FormulaConfig:
+        expected_modes = {
+            "independent_practice",
+            "timed_assessment",
+            "mock_interview",
+            "real_interview",
+        }
+        if self.qualifying_modes != expected_modes:
+            raise ValueError("qualifying modes are fixed by the scoring contract")
+        expected_assistance = {"no_ai", "ai_after_committed_attempt"}
+        if self.qualifying_assistance != expected_assistance:
+            raise ValueError("qualifying assistance is fixed by the scoring contract")
         if self.performance_scale_min < 0 or self.performance_scale_max > 4:
             raise ValueError("performance scale must remain within 0 and 4")
         if self.performance_scale_max <= self.performance_scale_min:
@@ -324,8 +361,8 @@ class RoadmapTaskConfig(StrictModel):
     order: Annotated[int, Field(gt=0)]
     source_path: Text2048
     source_heading: Text512
-    exercise_type: Slug
-    mapping_version: VersionKey
+    exercise_type: Slug | None = None
+    mapping_version: VersionKey | None = None
     required: bool
     timebox_minutes: Annotated[int, Field(gt=0, le=255)]
     objective: Text4096
@@ -347,10 +384,20 @@ class RoadmapTaskConfig(StrictModel):
 
     @model_validator(mode="after")
     def validate_correction_shape(self) -> RoadmapTaskConfig:
-        if (self.block == "correction_warmup") != (self.correction_selection is not None):
+        is_correction = self.block == "correction_warmup"
+        if is_correction != (self.correction_selection is not None):
             raise ValueError(
                 "correction selection is required only for correction warm-up tasks"
             )
+        if is_correction:
+            if self.exercise_type is not None or self.mapping_version is not None:
+                raise ValueError(
+                    "correction warm-up inherits exercise and mapping from the due correction"
+                )
+            if self.required:
+                raise ValueError("correction warm-up must be conditional, not required")
+        elif self.exercise_type is None or self.mapping_version is None:
+            raise ValueError("non-correction tasks require exercise and mapping version")
         return self
 
 
@@ -366,9 +413,22 @@ class CorrectionSelectionConfig(StrictModel):
     allowed_kinds: frozenset[
         Literal["spoken_attempt_b", "written_attempt_b", "targeted_sql_correction"]
     ]
-    inherits_core_prompt: bool
-    no_attempt_c: bool
+    inherits_core_prompt: Literal[True]
+    inherits_original_exercise: Literal[True]
+    inherits_original_mapping_version: Literal[True]
+    no_attempt_c: Literal[True]
     skill_level_effect: Literal["none"]
+
+    @model_validator(mode="after")
+    def validate_allowed_kinds(self) -> CorrectionSelectionConfig:
+        expected = {
+            "spoken_attempt_b",
+            "written_attempt_b",
+            "targeted_sql_correction",
+        }
+        if self.allowed_kinds != expected:
+            raise ValueError("correction kinds are fixed by the learning contract")
+        return self
 
 
 class TaskContractConfig(StrictModel):
@@ -458,7 +518,8 @@ class RoadmapTaskMapFile(StrictModel):
                 if isinstance(task, dict):
                     task.setdefault("month", month)
                     task.setdefault("required", required)
-                    task.setdefault("mapping_version", mapping_version)
+                    if task.get("block") != "correction_warmup":
+                        task.setdefault("mapping_version", mapping_version)
                     contract_key = task.pop("contract", None)
                     if contract_key is not None:
                         if not isinstance(contract_key, str):

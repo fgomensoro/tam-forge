@@ -66,7 +66,6 @@ EXPECTED_EXERCISES = {
     "full_tam_gauntlet",
     "company_product_research",
     "application_or_outreach",
-    "correction_warmup",
 }
 EXPECTED_IMPACTS = {
     "official_reading": {},
@@ -276,7 +275,6 @@ EXPECTED_IMPACTS = {
     "full_tam_gauntlet": {},
     "company_product_research": {},
     "application_or_outreach": {},
-    "correction_warmup": {},
 }
 
 
@@ -410,8 +408,12 @@ def test_month_one_task_map_is_explicit_and_time_bounded(config_bundle) -> None:
         == 120
         for key in saturdays
     )
-    assert all(task.exercise_type in EXPECTED_EXERCISES for task in config_bundle.roadmap_tasks)
-    assert all(task.mapping_version == "seed-v1" for task in config_bundle.roadmap_tasks)
+    assert all(
+        task.exercise_type in EXPECTED_EXERCISES
+        and task.mapping_version == "seed-v1"
+        for task in config_bundle.roadmap_tasks
+        if task.block != "correction_warmup"
+    )
 
 
 def test_weekdays_expose_one_dynamic_correction_warmup(config_bundle) -> None:
@@ -432,12 +434,48 @@ def test_weekdays_expose_one_dynamic_correction_warmup(config_bundle) -> None:
             assert warmups[0].correction_selection.source == "due_corrections"
             assert warmups[0].correction_selection.maximum_items == 1
             assert warmups[0].correction_selection.no_attempt_c is True
+            assert warmups[0].correction_selection.inherits_original_exercise is True
+            assert (
+                warmups[0].correction_selection.inherits_original_mapping_version is True
+            )
+            assert warmups[0].exercise_type is None
+            assert warmups[0].mapping_version is None
             assert len(communication) == 1
             assert communication[0].timebox_minutes == 35
 
-    correction = config_bundle.exercise("correction_warmup")
-    assert correction.evidence_mode == "guided_practice"
-    assert correction.skill_impacts == {}
+    assert "correction_warmup" not in {
+        exercise.slug for exercise in config_bundle.exercise_types
+    }
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        ("exercise_type: null", "exercise_type: official_reading", "inherits exercise"),
+        (
+            "exercise_type: sql_guided_lesson",
+            "exercise_type: null",
+            "non-correction tasks require exercise",
+        ),
+        (
+            "allowed_kinds: [spoken_attempt_b, written_attempt_b, targeted_sql_correction]",
+            "allowed_kinds: [spoken_attempt_b, written_attempt_b]",
+            "correction kinds are fixed",
+        ),
+    ],
+)
+def test_correction_task_inheritance_contract_is_strict(
+    tmp_path: Path, old: str, new: str, message: str
+) -> None:
+    fixture_dir = tmp_path / "config"
+    shutil.copytree(CONFIG_DIR, fixture_dir)
+    roadmap = fixture_dir / "tam-roadmap-task-map.yaml"
+    text = roadmap.read_text(encoding="utf-8")
+    assert old in text
+    roadmap.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match=message):
+        load_config_bundle(fixture_dir)
 
 
 def test_day_23_correction_conflict_has_reviewed_reconciliation(config_bundle) -> None:
@@ -531,7 +569,6 @@ def test_hash_ignores_semantically_unordered_collections_and_decimal_spelling(
             "tags",
             "allowed_domain_competencies",
             "allowed_story_competencies",
-            "child_exercise_type_refs",
         ):
             if field in exercise:
                 exercise[field].reverse()
@@ -551,6 +588,34 @@ def test_hash_ignores_semantically_unordered_collections_and_decimal_spelling(
     assert equivalent.canonical_payload == config_bundle.canonical_payload
 
 
+def test_gauntlet_child_order_is_semantic_and_changes_hash(
+    config_bundle, tmp_path: Path
+) -> None:
+    fixture_dir = tmp_path / "config"
+    shutil.copytree(CONFIG_DIR, fixture_dir)
+    exercises_path = fixture_dir / "tam-exercise-types.yaml"
+    exercises = yaml.safe_load(exercises_path.read_text(encoding="utf-8"))
+    gauntlet = next(
+        item for item in exercises["exercise_types"] if item["slug"] == "full_tam_gauntlet"
+    )
+    assert gauntlet["child_exercise_type_refs"][0]["exercise_type"] == "portfolio_triage"
+    gauntlet["child_exercise_type_refs"][0:2] = reversed(
+        gauntlet["child_exercise_type_refs"][0:2]
+    )
+    exercises_path.write_text(
+        yaml.safe_dump(exercises, sort_keys=False), encoding="utf-8"
+    )
+
+    reordered = load_config_bundle(fixture_dir)
+    assert reordered.content_hash != config_bundle.content_hash
+    assert reordered.canonical_payload != config_bundle.canonical_payload
+    round_tripped = load_config_payload(reordered.canonical_payload)
+    assert round_tripped.canonical_payload == reordered.canonical_payload
+    assert round_tripped.exercise("full_tam_gauntlet").child_exercise_type_refs == (
+        reordered.exercise("full_tam_gauntlet").child_exercise_type_refs
+    )
+
+
 def test_hash_preserves_rubric_dimension_and_explicit_task_semantic_order(
     config_bundle, tmp_path: Path
 ) -> None:
@@ -566,8 +631,8 @@ def test_hash_preserves_rubric_dimension_and_explicit_task_semantic_order(
     shutil.copytree(CONFIG_DIR, fixture_dir)
     roadmap_path = fixture_dir / "tam-roadmap-task-map.yaml"
     roadmap = yaml.safe_load(roadmap_path.read_text(encoding="utf-8"))
-    roadmap["days"][0]["tasks"][0]["order"] = 2
-    roadmap["days"][0]["tasks"][1]["order"] = 1
+    roadmap["days"][5]["tasks"][0]["order"] = 2
+    roadmap["days"][5]["tasks"][1]["order"] = 1
     roadmap_path.write_text(yaml.safe_dump(roadmap, sort_keys=False), encoding="utf-8")
     assert load_config_bundle(fixture_dir).content_hash != config_bundle.content_hash
 
@@ -777,3 +842,122 @@ def test_dry_run_mirrors_database_text_and_scale_constraints(
     target.write_text(text.replace(old, new, 1), encoding="utf-8")
     with pytest.raises(ConfigError, match=message):
         load_config_bundle(fixture_dir)
+
+
+@pytest.mark.parametrize("mutation", ["balanced_time_change", "duplicate_block"])
+def test_weekday_shape_is_exact_even_when_total_can_remain_240(
+    tmp_path: Path, mutation: str
+) -> None:
+    fixture_dir = tmp_path / "config"
+    shutil.copytree(CONFIG_DIR, fixture_dir)
+    roadmap = fixture_dir / "tam-roadmap-task-map.yaml"
+    text = roadmap.read_text(encoding="utf-8")
+    if mutation == "balanced_time_change":
+        text = text.replace("timebox_minutes: 10", "timebox_minutes: 5", 1).replace(
+            "timebox_minutes: 35", "timebox_minutes: 40", 1
+        )
+    else:
+        text = text.replace("block: technical_learning", "block: sql", 1)
+    roadmap.write_text(text, encoding="utf-8")
+
+    with pytest.raises(ConfigError, match=r"weekday.*exact block shape"):
+        load_config_bundle(fixture_dir)
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        (
+            "    - independent_practice\n    - timed_assessment",
+            "    - guided_practice\n    - independent_practice\n    - timed_assessment",
+            "qualifying modes are fixed",
+        ),
+        (
+            "    - mock_interview\n    - real_interview",
+            "    - real_interview",
+            "qualifying modes are fixed",
+        ),
+        (
+            "    - no_ai\n    - ai_after_committed_attempt",
+            "    - no_ai\n    - ai_after_committed_attempt\n    - ai_hints_during_attempt",
+            "qualifying assistance is fixed",
+        ),
+        ("requires_rubric_score: true", "requires_rubric_score: false", "Input should be True"),
+        (
+            "independent_practice_requires_attempt_a: true",
+            "independent_practice_requires_attempt_a: false",
+            "Input should be True",
+        ),
+        ("attempt_b_qualifies: false", "attempt_b_qualifies: true", "Input should be False"),
+    ],
+)
+def test_qualification_invariants_cannot_be_configured_away(
+    tmp_path: Path, old: str, new: str, message: str
+) -> None:
+    fixture_dir = tmp_path / "config"
+    shutil.copytree(CONFIG_DIR, fixture_dir)
+    rubrics = fixture_dir / "tam-rubrics.yaml"
+    text = rubrics.read_text(encoding="utf-8")
+    assert old in text
+    rubrics.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match=message):
+        load_config_bundle(fixture_dir)
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        (
+            "prior_weight: 2.0",
+            "prior_weight: 1.0e10000000",
+            "no more than 10 digits",
+        ),
+        (
+            "high_minimum_effective_weight: 7",
+            "high_minimum_effective_weight: -1",
+            "greater than or equal",
+        ),
+        (
+            "high_minimum_effective_weight: 7",
+            "high_minimum_effective_weight: 2",
+            "high confidence threshold",
+        ),
+        (
+            "fresh_max_days: 7\n    aging_max_days: 21",
+            "fresh_max_days: 22\n    aging_max_days: 21",
+            "fresh recency must not exceed aging recency",
+        ),
+    ],
+)
+def test_formula_decimal_and_threshold_bounds_are_total_and_coherent(
+    tmp_path: Path, old: str, new: str, message: str
+) -> None:
+    fixture_dir = tmp_path / "config"
+    shutil.copytree(CONFIG_DIR, fixture_dir)
+    rubrics = fixture_dir / "tam-rubrics.yaml"
+    text = rubrics.read_text(encoding="utf-8")
+    assert old in text
+    rubrics.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match=message):
+        load_config_bundle(fixture_dir)
+
+
+def test_cli_handles_extreme_decimal_as_validation_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from tamforge_backend.cli import main
+
+    fixture_dir = tmp_path / "config"
+    shutil.copytree(CONFIG_DIR, fixture_dir)
+    rubrics = fixture_dir / "tam-rubrics.yaml"
+    rubrics.write_text(
+        rubrics.read_text(encoding="utf-8").replace(
+            "prior_weight: 2.0", "prior_weight: 1.0e10000000", 1
+        ),
+        encoding="utf-8",
+    )
+
+    assert main(["seed-config", "--config-dir", str(fixture_dir), "--dry-run"]) == 2
+    assert "no more than 10 digits" in capsys.readouterr().out

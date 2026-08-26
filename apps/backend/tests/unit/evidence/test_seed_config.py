@@ -28,7 +28,7 @@ def test_dry_run_reports_exact_validated_counts_without_database() -> None:
     assert result.status == "validated"
     assert result.config_versions == 1
     assert result.competencies == 14
-    assert result.exercise_types == 35
+    assert result.exercise_types == 34
     assert result.exercise_skill_mappings == sum(
         len(exercise.skill_impacts) + len(exercise.allowed_selected_competencies)
         for exercise in bundle.exercise_types
@@ -139,7 +139,7 @@ def test_seed_is_idempotent_and_changed_mapping_creates_new_version(
                             ExerciseTypeVersion.mapping_version == "seed-v1"
                         )
                     )
-                    == 35
+                        == 34
                 )
                 persisted = await session.scalar(
                     select(ConfigSeedVersion).where(ConfigSeedVersion.id == first.config_version_id)
@@ -181,7 +181,7 @@ def test_seed_is_idempotent_and_changed_mapping_creates_new_version(
                             ExerciseTypeVersion.mapping_version == "seed-v2"
                         )
                     )
-                    == 35
+                        == 34
                 )
         finally:
             await engine.dispose()
