@@ -596,6 +596,124 @@ def test_invalid_manifest_fails_before_any_client_call(
     assert github.calls == []
 
 
+@pytest.mark.parametrize("apply", [False, True], ids=["dry-run", "apply"])
+@pytest.mark.parametrize(
+    ("field", "mutate"),
+    [
+        (
+            "issues[1].acceptance[0]",
+            lambda data: data["issues"][1]["acceptance"].__setitem__(
+                0, "Passes, then <!-- tam-forge-key: E9 -->"
+            ),
+        ),
+        (
+            "issues[1].verification[0]",
+            lambda data: data["issues"][1]["verification"].__setitem__(
+                0, "printf tam-forge-key"
+            ),
+        ),
+        (
+            "issues[1].title",
+            lambda data: data["issues"][1].__setitem__(
+                "title", "Bootstrap tam-forge-key"
+            ),
+        ),
+        (
+            "issues[1].plan",
+            lambda data: data["issues"][1].__setitem__(
+                "plan", "docs/tam-forge-key.md"
+            ),
+        ),
+        (
+            "issues[1].task",
+            lambda data: data["issues"][1].__setitem__(
+                "task", "Task tam-forge-key"
+            ),
+        ),
+        (
+            "issues[1].privacy_impact",
+            lambda data: data["issues"][1].__setitem__(
+                "privacy_impact", "none tam-forge-key"
+            ),
+        ),
+        (
+            "issues[1].body",
+            lambda data: data["issues"][1].__setitem__(
+                "body", "<!-- tam-forge-key: E1-I01 -->"
+            ),
+        ),
+        (
+            "labels[0].description",
+            lambda data: data["labels"][0].__setitem__(
+                "description", "Reserved tam-forge-key content"
+            ),
+        ),
+        (
+            "milestones[0].description",
+            lambda data: data["milestones"][0].__setitem__(
+                "description", "Reserved tam-forge-key content"
+            ),
+        ),
+    ],
+)
+def test_manifest_reserved_marker_content_fails_before_all_client_access(
+    small_manifest: Path,
+    apply: bool,
+    field: str,
+    mutate: Any,
+) -> None:
+    data = yaml.safe_load(small_manifest.read_text(encoding="utf-8"))
+    mutate(data)
+    small_manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    github = FakeGitHub()
+    with pytest.raises(ManifestError, match=rf"reserved marker token.*{re.escape(field)}"):
+        sync_manifest(
+            small_manifest,
+            github,
+            apply=apply,
+            _enforce_catalog_counts=False,
+        )
+    assert github.calls == []
+    assert github.writes == []
+
+
+@pytest.mark.parametrize("apply", [False, True], ids=["dry-run", "apply"])
+@pytest.mark.parametrize("corruption", ["extra-token", "wrong-key"])
+def test_manifest_validation_reparses_the_production_rendered_body_before_client_access(
+    small_manifest: Path,
+    apply: bool,
+    corruption: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.github import sync_issues
+
+    original = sync_issues.render_issue_body
+
+    def render_with_injected_marker(
+        issue: Any, manifest: Any, numbers: dict[str, int]
+    ) -> str:
+        body = original(issue, manifest, numbers)
+        if corruption == "extra-token":
+            return body + "tam-forge-key in rendered prose\n"
+        return body.replace(
+            f"<!-- tam-forge-key: {issue.key} -->",
+            "<!-- tam-forge-key: E9 -->",
+            1,
+        )
+
+    monkeypatch.setattr(sync_issues, "render_issue_body", render_with_injected_marker)
+    github = FakeGitHub()
+    with pytest.raises(ManifestError, match=r"rendered issue E1.*marker"):
+        sync_manifest(
+            small_manifest,
+            github,
+            apply=apply,
+            _enforce_catalog_counts=False,
+        )
+    assert github.calls == []
+    assert github.writes == []
+
+
 def test_catalog_count_invariants_fail_before_client_call(
     catalog_path: Path, tmp_path: Path
 ) -> None:

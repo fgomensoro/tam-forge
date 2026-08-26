@@ -366,6 +366,30 @@ def _require_exact_fields(
         raise ManifestError(f"{context} has unknown fields: {', '.join(sorted(unknown))}")
 
 
+def _reject_reserved_marker_content(value: object, path: str = "manifest") -> None:
+    """Reserve the managed-marker namespace for the renderer alone."""
+
+    if isinstance(value, str):
+        if MARKER_TOKEN in value.casefold():
+            raise ManifestError(
+                f"reserved marker token {MARKER_TOKEN!r} is not allowed in {path}"
+            )
+        return
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            _reject_reserved_marker_content(item, f"{path}[{index}]")
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if isinstance(key, str) and MARKER_TOKEN in key.casefold():
+                raise ManifestError(
+                    f"reserved marker token {MARKER_TOKEN!r} is not allowed in "
+                    f"{path} field name"
+                )
+            key_path = f"{path}.{key}" if isinstance(key, str) else f"{path}[{key!r}]"
+            _reject_reserved_marker_content(item, key_path)
+
+
 def load_and_validate(path: Path, *, _enforce_catalog_counts: bool = True) -> Manifest:
     """Parse and validate every manifest invariant before client access."""
 
@@ -373,6 +397,7 @@ def load_and_validate(path: Path, *, _enforce_catalog_counts: bool = True) -> Ma
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as exc:
         raise ManifestError(f"cannot load manifest: {exc}") from exc
+    _reject_reserved_marker_content(raw)
     root = _mapping(raw, "manifest")
     _require_exact_fields(
         root,
@@ -535,6 +560,7 @@ def load_and_validate(path: Path, *, _enforce_catalog_counts: bool = True) -> Ma
                     raise ManifestError(f"issue {issue.key} cannot depend on itself")
 
     _validate_dependency_dag(manifest.children)
+    _validate_rendered_issue_bodies(manifest)
     if _enforce_catalog_counts:
         _validate_catalog_content_quality(manifest)
 
@@ -581,6 +607,24 @@ def _validate_dependency_dag(children: tuple[IssueSpec, ...]) -> None:
 
     for key in by_key:
         visit(key)
+
+
+def _validate_rendered_issue_bodies(manifest: Manifest) -> None:
+    """Render unresolved bodies and prove each owns exactly its declared key."""
+
+    unresolved_numbers: dict[str, int] = {}
+    for issue in manifest.issues:
+        body = render_issue_body(issue, manifest, unresolved_numbers)
+        try:
+            rendered_key = managed_key_from_issue({"body": body})
+        except ManifestError as exc:
+            raise ManifestError(
+                f"rendered issue {issue.key} failed managed marker validation: {exc}"
+            ) from exc
+        if rendered_key != issue.key:
+            raise ManifestError(
+                f"rendered issue {issue.key} marker identifies {rendered_key!r}"
+            )
 
 
 def _validate_catalog_content_quality(manifest: Manifest) -> None:
