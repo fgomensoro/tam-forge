@@ -17,6 +17,6 @@ Run the default unit checks (Docker is not required):
 make check
 ```
 
-The optional `compose.dev.yml` provides local PostgreSQL/pgvector and MinIO
-services for later integration work. It is never started by the default Make
-targets.
+The optional `compose.dev.yml` provides local PostgreSQL/pgvector and a pinned
+MinIO release for later local integration work. It is never started by the
+default Make targets and is not a production deployment configuration.
