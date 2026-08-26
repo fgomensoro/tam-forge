@@ -201,9 +201,9 @@ def test_study_activity_contract_and_round_trip(test_database_url: str) -> None:
             "(owner_id, object_key, content_hash, content_type, original_filename, byte_size, "
             "artifact_class, encryption_metadata, immutable_version) VALUES "
             "(:owner, 'owners/1/audio/a.wav', :hash, 'audio/wav', 'answer.wav', 100, "
-            "'original_audio', "
-            '\'{"schema_version":1,"encrypted":false,"algorithm":null,'
-            '"key_reference":null}\'::jsonb, 1) RETURNING id',
+            "'original_audio', jsonb_build_object("
+            "'schema_version', 1, 'encrypted', false, 'algorithm', NULL, "
+            "'key_reference', NULL), 1) RETURNING id",
             {"owner": owner, "hash": b"o" * 32},
         ).scalar_one()
         execute(
