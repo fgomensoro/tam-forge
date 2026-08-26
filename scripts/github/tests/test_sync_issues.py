@@ -222,9 +222,9 @@ def test_catalog_keys_and_titles_match_the_master_plan_exactly(catalog_path: Pat
 
 def test_second_apply_is_a_true_no_op(small_manifest: Path) -> None:
     github = FakeGitHub()
-    first = sync_manifest(small_manifest, github, apply=True, enforce_catalog_counts=False)
+    first = sync_manifest(small_manifest, github, apply=True, _enforce_catalog_counts=False)
     writes_after_first = len(github.writes)
-    second = sync_manifest(small_manifest, github, apply=True, enforce_catalog_counts=False)
+    second = sync_manifest(small_manifest, github, apply=True, _enforce_catalog_counts=False)
     assert first.created
     assert len(github.writes) == writes_after_first
     assert second.created == []
@@ -247,23 +247,23 @@ def test_full_catalog_second_apply_is_a_true_no_op(catalog_path: Path) -> None:
 
 def test_dry_run_performs_zero_writes(small_manifest: Path) -> None:
     github = FakeGitHub()
-    plan = sync_manifest(small_manifest, github, apply=False, enforce_catalog_counts=False)
+    plan = sync_manifest(small_manifest, github, apply=False, _enforce_catalog_counts=False)
     assert plan.created
     assert github.writes == []
 
 
 def test_hidden_marker_identifies_issue_after_title_edit(small_manifest: Path) -> None:
     github = FakeGitHub()
-    sync_manifest(small_manifest, github, apply=True, enforce_catalog_counts=False)
+    sync_manifest(small_manifest, github, apply=True, _enforce_catalog_counts=False)
     github.issues[1]["title"] = "A title edited directly on GitHub"
-    plan = sync_manifest(small_manifest, github, apply=False, enforce_catalog_counts=False)
+    plan = sync_manifest(small_manifest, github, apply=False, _enforce_catalog_counts=False)
     assert all(change.key != "E1-I01" or change.action == "update" for change in plan.changes)
     assert not any(change.key == "E1-I01" and change.action == "create" for change in plan.changes)
 
 
 def test_bodies_have_deterministic_relationship_links(small_manifest: Path) -> None:
     github = FakeGitHub()
-    first = sync_manifest(small_manifest, github, apply=True, enforce_catalog_counts=False)
+    first = sync_manifest(small_manifest, github, apply=True, _enforce_catalog_counts=False)
     assert first.created
     epic = next(issue for issue in github.issues if "tam-forge-key: E1 " in str(issue["body"]))
     child = next(
@@ -286,7 +286,7 @@ def test_labels_and_milestones_are_upserted_without_removing_unrelated(
     github.milestones = [
         {"number": 1, "title": "M0 — Safe Foundation", "description": "old", "state": "open"}
     ]
-    sync_manifest(small_manifest, github, apply=True, enforce_catalog_counts=False)
+    sync_manifest(small_manifest, github, apply=True, _enforce_catalog_counts=False)
     epic_label = next(label for label in github.labels if label["name"] == "type:epic")
     external_label = next(label for label in github.labels if label["name"] == "external")
     assert epic_label["color"] == "5319E7"
@@ -306,7 +306,7 @@ def test_stale_managed_issue_is_reported_but_never_closed(small_manifest: Path) 
             "milestone": None,
         }
     ]
-    plan = sync_manifest(small_manifest, github, apply=True, enforce_catalog_counts=False)
+    plan = sync_manifest(small_manifest, github, apply=True, _enforce_catalog_counts=False)
     assert plan.stale == ["OLD-I01"]
     assert github.issues[0]["state"] == "open"
     assert not any(call[0] == "update" and call[2] == 99 for call in github.writes)
@@ -314,12 +314,12 @@ def test_stale_managed_issue_is_reported_but_never_closed(small_manifest: Path) 
 
 def test_closed_managed_issue_is_not_recreated_or_reopened(small_manifest: Path) -> None:
     github = FakeGitHub()
-    sync_manifest(small_manifest, github, apply=True, enforce_catalog_counts=False)
+    sync_manifest(small_manifest, github, apply=True, _enforce_catalog_counts=False)
     target = github.issues[1]
     target["state"] = "closed"
     target["title"] = "Bootstrap"
     writes_before = len(github.writes)
-    plan = sync_manifest(small_manifest, github, apply=True, enforce_catalog_counts=False)
+    plan = sync_manifest(small_manifest, github, apply=True, _enforce_catalog_counts=False)
     assert len(github.issues) == 3
     assert target["state"] == "closed"
     assert len(github.writes) == writes_before
@@ -364,7 +364,7 @@ def test_invalid_manifest_fails_before_any_client_call(
     small_manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     github = FakeGitHub()
     with pytest.raises(ManifestError, match=message):
-        sync_manifest(small_manifest, github, apply=False, enforce_catalog_counts=False)
+        sync_manifest(small_manifest, github, apply=False, _enforce_catalog_counts=False)
     assert github.calls == []
 
 
@@ -382,7 +382,7 @@ def test_catalog_count_invariants_fail_before_client_call(
 
 
 def test_cli_defaults_to_dry_run_and_apply_is_explicit(
-    small_manifest: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    catalog_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     github = FakeGitHub()
     monkeypatch.setattr("scripts.github.sync_issues.GhCliClient", lambda _repo: github)
@@ -393,8 +393,7 @@ def test_cli_defaults_to_dry_run_and_apply_is_explicit(
                 "--repo",
                 "fgomensoro/tam-forge",
                 "--manifest",
-                str(small_manifest),
-                "--allow-test-catalog",
+                str(catalog_path),
             ]
         )
         == 0
@@ -403,10 +402,49 @@ def test_cli_defaults_to_dry_run_and_apply_is_explicit(
     assert "DRY RUN" in capsys.readouterr().out
 
     assert main([
-        "--repo", "fgomensoro/tam-forge", "--manifest", str(small_manifest),
-        "--apply", "--allow-test-catalog"
+        "--repo", "fgomensoro/tam-forge", "--manifest", str(catalog_path), "--apply"
     ]) == 0
     assert github.writes
+
+
+def test_cli_has_no_catalog_count_bypass(catalog_path: Path) -> None:
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "--repo",
+                "fgomensoro/tam-forge",
+                "--manifest",
+                str(catalog_path),
+                "--allow-test-catalog",
+            ]
+        )
+
+
+@pytest.mark.parametrize("apply", [False, True])
+def test_cli_rejects_wrong_catalog_counts_before_any_api_call(
+    catalog_path: Path,
+    tmp_path: Path,
+    apply: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data = yaml.safe_load(catalog_path.read_text(encoding="utf-8"))
+    data["issues"].pop()
+    invalid_path = tmp_path / "wrong-count.yml"
+    invalid_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    github = FakeGitHub()
+    monkeypatch.setattr("scripts.github.sync_issues.GhCliClient", lambda _repo: github)
+    monkeypatch.setattr("scripts.github.sync_issues.origin_matches", lambda _repo: True)
+    arguments = [
+        "--repo",
+        "fgomensoro/tam-forge",
+        "--manifest",
+        str(invalid_path),
+    ]
+    if apply:
+        arguments.append("--apply")
+    with pytest.raises(ManifestError, match="exactly 105 child issues"):
+        main(arguments)
+    assert github.calls == []
 
 
 def test_cli_rejects_repository_mismatch(small_manifest: Path) -> None:

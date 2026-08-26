@@ -294,7 +294,7 @@ def _require_exact_fields(
         raise ManifestError(f"{context} has unknown fields: {', '.join(sorted(unknown))}")
 
 
-def load_and_validate(path: Path, *, enforce_catalog_counts: bool = True) -> Manifest:
+def load_and_validate(path: Path, *, _enforce_catalog_counts: bool = True) -> Manifest:
     """Parse and validate every manifest invariant before client access."""
 
     try:
@@ -418,7 +418,7 @@ def load_and_validate(path: Path, *, enforce_catalog_counts: bool = True) -> Man
         milestones=tuple(milestones),
         issues=tuple(issues),
     )
-    if enforce_catalog_counts:
+    if _enforce_catalog_counts:
         _validate_catalog_counts(manifest)
 
     for issue in manifest.children:
@@ -758,9 +758,9 @@ def sync_manifest(
     client: GhClient,
     *,
     apply: bool,
-    enforce_catalog_counts: bool = True,
+    _enforce_catalog_counts: bool = True,
 ) -> SyncPlan:
-    manifest = load_and_validate(path, enforce_catalog_counts=enforce_catalog_counts)
+    manifest = load_and_validate(path, _enforce_catalog_counts=_enforce_catalog_counts)
     current = load_current_state(client)
     plan = build_sync_plan(manifest, current)
     if apply:
@@ -800,7 +800,6 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Use an empty remote snapshot; valid only for dry-run",
     )
-    parser.add_argument("--allow-test-catalog", action="store_true", help=argparse.SUPPRESS)
     return parser
 
 
@@ -822,7 +821,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             cast(Path, args.manifest),
             client,
             apply=apply,
-            enforce_catalog_counts=not bool(args.allow_test_catalog),
         )
     except TargetNotFoundError:
         if apply:
@@ -831,7 +829,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             cast(Path, args.manifest),
             EmptyGhClient(),
             apply=False,
-            enforce_catalog_counts=not bool(args.allow_test_catalog),
         )
         offline = True
     mode = "APPLY" if apply else "DRY RUN"
