@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import (
     BigInteger,
@@ -22,6 +22,7 @@ from sqlalchemy import (
     event,
     func,
     inspect,
+    select,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -1132,23 +1133,35 @@ def _validate_attempt_kind(
     return value
 
 
-def _validate_attempt_parent(
-    target: Attempt,
-    value: int | None,
-    old_value: int | None | LoaderCallableStatus,
-    initiator: object,
-) -> int | None:
-    del old_value, initiator
-    kind = target.__dict__.get("attempt_kind")
-    if kind == "attempt_b" and value is None:
-        raise AttemptWorkflowError("Attempt B requires an Attempt A parent")
-    if kind not in (None, "attempt_b") and value is not None:
-        raise AttemptWorkflowError("only Attempt B may reference an Attempt A parent")
-    return value
-
-
 event.listen(Attempt.attempt_kind, "set", _validate_attempt_kind, retval=True)
-event.listen(Attempt.parent_attempt_id, "set", _validate_attempt_parent, retval=True)
+
+
+def validate_attempt_workflow(
+    mapper: Mapper[Attempt] | None,
+    connection: Connection | None,
+    target: Attempt,
+) -> None:
+    """Validate final A/B shape after all constructor assignments have run."""
+    del mapper
+    if target.attempt_kind not in SAVED_ATTEMPT_KINDS:
+        raise AttemptWorkflowError("invalid attempt kind")
+    if (target.attempt_kind == "attempt_b") != (target.parent_attempt_id is not None):
+        raise AttemptWorkflowError("invalid Attempt A/B relation shape")
+    if target.attempt_kind == "attempt_b" and connection is not None:
+        parent_kind = connection.execute(
+            select(Attempt.__table__.c.attempt_kind).where(
+                Attempt.__table__.c.owner_id == target.owner_id,
+                Attempt.__table__.c.id == target.parent_attempt_id,
+            )
+        ).scalar_one_or_none()
+        if parent_kind != "attempt_a":
+            raise AttemptWorkflowError(
+                "invalid Attempt A/B relation: parent must be an owner-scoped Attempt A"
+            )
+
+
+event.listen(Attempt, "before_insert", validate_attempt_workflow)
+event.listen(Attempt, "before_update", validate_attempt_workflow)
 
 
 _APPEND_ONLY_CLASSES: tuple[type[Base], ...] = (
@@ -1242,16 +1255,102 @@ def validate_timer_workflow(
     connection: Connection | None,
     target: ActivityTimerSession,
 ) -> None:
-    del mapper, connection
+    del mapper
     state = inspect(target)
-    if not state.persistent:
+    if state.transient:
         return
-    ended_history = state.attrs.ended_at.history
-    if ended_history.deleted and ended_history.deleted[0] is not None:
+
+    timer_snapshot = _load_timer_snapshot(connection, target)
+    if timer_snapshot is None:
+        raise TimerWorkflowError("persisted timer state is unavailable")
+    (
+        old_owner_id,
+        old_activity_id,
+        old_idempotency_key,
+        old_started_at,
+        old_last_heartbeat_at,
+        old_paused_at,
+        old_ended_at,
+        old_counted_seconds,
+    ) = timer_snapshot
+
+    if old_ended_at is not None:
         raise TimerWorkflowError("ended timer is immutable")
-    counted_history = state.attrs.counted_seconds.history
-    if counted_history.deleted and target.counted_seconds < counted_history.deleted[0]:
+    if (
+        target.owner_id,
+        target.activity_instance_id,
+        target.idempotency_key,
+        target.started_at,
+    ) != (
+        old_owner_id,
+        old_activity_id,
+        old_idempotency_key,
+        old_started_at,
+    ):
+        raise TimerWorkflowError("timer provenance is immutable")
+    if target.last_heartbeat_at < old_last_heartbeat_at:
+        raise TimerWorkflowError("timer heartbeat cannot move backward")
+    if target.counted_seconds < old_counted_seconds:
         raise TimerWorkflowError("counted seconds cannot decrease")
+    if old_paused_at is not None and target.paused_at != old_paused_at:
+        raise TimerWorkflowError("paused_at is write-once")
+
+
+TimerSnapshot = tuple[
+    int,
+    int,
+    str,
+    datetime,
+    datetime,
+    datetime | None,
+    datetime | None,
+    int,
+]
+
+
+def _previous_timer_value(target: ActivityTimerSession, attribute_name: str) -> object:
+    attribute = inspect(target).attrs[attribute_name]
+    history = attribute.history
+    if history.deleted:
+        return history.deleted[0]
+    if history.unchanged:
+        return history.unchanged[0]
+    return getattr(target, attribute_name)
+
+
+def _load_timer_snapshot(
+    connection: Connection | None,
+    target: ActivityTimerSession,
+) -> TimerSnapshot | None:
+    if connection is not None:
+        table = ActivityTimerSession.__table__
+        row = connection.execute(
+            select(
+                table.c.owner_id,
+                table.c.activity_instance_id,
+                table.c.idempotency_key,
+                table.c.started_at,
+                table.c.last_heartbeat_at,
+                table.c.paused_at,
+                table.c.ended_at,
+                table.c.counted_seconds,
+            ).where(table.c.id == target.id)
+        ).one_or_none()
+        return None if row is None else cast(TimerSnapshot, tuple(row))
+
+    return cast(
+        TimerSnapshot,
+        (
+            _previous_timer_value(target, "owner_id"),
+            _previous_timer_value(target, "activity_instance_id"),
+            _previous_timer_value(target, "idempotency_key"),
+            _previous_timer_value(target, "started_at"),
+            _previous_timer_value(target, "last_heartbeat_at"),
+            _previous_timer_value(target, "paused_at"),
+            _previous_timer_value(target, "ended_at"),
+            _previous_timer_value(target, "counted_seconds"),
+        ),
+    )
 
 
 event.listen(ActivityTimerSession, "before_update", validate_timer_workflow)
@@ -1272,4 +1371,5 @@ __all__ = [
     "StudyDay",
     "StudyDayWorkflowError",
     "reject_learning_evidence_delete",
+    "validate_attempt_workflow",
 ]

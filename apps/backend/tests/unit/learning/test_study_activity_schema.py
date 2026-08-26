@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.util
 import subprocess
 import sys
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from io import StringIO
 from pathlib import Path
 
@@ -372,7 +372,11 @@ def test_partial_uniques_enforce_one_open_activity_and_timer() -> None:
 
 
 def test_attempt_c_is_unrepresentable_and_attempt_b_requires_attempt_a() -> None:
-    from tamforge_backend.learning.models import Attempt, AttemptWorkflowError
+    from tamforge_backend.learning.models import (
+        Attempt,
+        AttemptWorkflowError,
+        validate_attempt_workflow,
+    )
 
     now = datetime.now(UTC)
     with pytest.raises(AttemptWorkflowError, match="attempt kind"):
@@ -392,22 +396,83 @@ def test_attempt_c_is_unrepresentable_and_attempt_b_requires_attempt_a() -> None
             created_at=now,
         )
 
-    with pytest.raises(AttemptWorkflowError, match="Attempt B"):
-        Attempt(
-            owner_id=1,
-            activity_instance_id=1,
-            attempt_kind="attempt_b",
-            parent_attempt_id=None,
-            original_text="answer",
-            original_markdown=None,
-            original_sql=None,
-            audience="hiring_manager",
-            prompt="Explain the incident.",
-            assistance_mode="none",
-            commitment_hash=b"a" * 32,
-            committed_at=now,
-            created_at=now,
-        )
+    invalid_b = Attempt(
+        owner_id=1,
+        activity_instance_id=1,
+        attempt_kind="attempt_b",
+        parent_attempt_id=None,
+        original_text="answer",
+        original_markdown=None,
+        original_sql=None,
+        audience="hiring_manager",
+        prompt="Explain the incident.",
+        assistance_mode="none",
+        commitment_hash=b"a" * 32,
+        committed_at=now,
+        created_at=now,
+    )
+    with pytest.raises(AttemptWorkflowError, match="relation"):
+        validate_attempt_workflow(None, None, invalid_b)
+
+
+def test_attempt_shape_validation_is_independent_of_constructor_assignment_order() -> None:
+    from tamforge_backend.learning.models import (
+        Attempt,
+        AttemptWorkflowError,
+        validate_attempt_workflow,
+    )
+
+    now = datetime.now(UTC)
+    common = {
+        "owner_id": 1,
+        "activity_instance_id": 1,
+        "original_text": "answer",
+        "original_markdown": None,
+        "original_sql": None,
+        "audience": "hiring_manager",
+        "prompt": "Explain the incident.",
+        "assistance_mode": "none",
+        "commitment_hash": b"a" * 32,
+        "committed_at": now,
+        "created_at": now,
+    }
+    invalid_a_parent_first = Attempt(
+        parent_attempt_id=7,
+        attempt_kind="attempt_a",
+        **common,
+    )
+    invalid_a_kind_first = Attempt(
+        attempt_kind="attempt_a",
+        parent_attempt_id=7,
+        **common,
+    )
+    invalid_b_parent_first = Attempt(
+        parent_attempt_id=None,
+        attempt_kind="attempt_b",
+        **common,
+    )
+
+    for attempt in (invalid_a_parent_first, invalid_a_kind_first, invalid_b_parent_first):
+        with pytest.raises(AttemptWorkflowError, match="relation"):
+            validate_attempt_workflow(None, None, attempt)
+
+    valid_a = Attempt(attempt_kind="attempt_a", parent_attempt_id=None, **common)
+    valid_b_parent_first = Attempt(
+        parent_attempt_id=7,
+        attempt_kind="attempt_b",
+        **common,
+    )
+    valid_b_kind_first = Attempt(
+        attempt_kind="attempt_b",
+        parent_attempt_id=7,
+        **common,
+    )
+    validate_attempt_workflow(None, None, valid_a)
+    validate_attempt_workflow(None, None, valid_b_parent_first)
+    validate_attempt_workflow(None, None, valid_b_kind_first)
+
+    assert sa.event.contains(Attempt, "before_insert", validate_attempt_workflow)
+    assert sa.event.contains(Attempt, "before_update", validate_attempt_workflow)
 
 
 def test_committed_attempt_artifact_and_link_are_orm_append_only() -> None:
@@ -543,6 +608,53 @@ def test_study_day_orm_rejects_state_jumps_and_historical_scope_changes() -> Non
         day.status = "closed"
     with pytest.raises(StudyDayWorkflowError, match="provenance"):
         day.local_date = date(2026, 8, 26)
+
+
+def test_timer_orm_flush_guard_matches_monotonic_database_contract() -> None:
+    from tamforge_backend.learning.models import (
+        ActivityTimerSession,
+        TimerWorkflowError,
+        validate_timer_workflow,
+    )
+
+    now = datetime.now(UTC)
+
+    def timer(*, ended: bool = False, paused: bool = False) -> ActivityTimerSession:
+        item = ActivityTimerSession(
+            id=1,
+            owner_id=1,
+            activity_instance_id=1,
+            idempotency_key="timer-1",
+            started_at=now,
+            last_heartbeat_at=now,
+            paused_at=now if paused else None,
+            ended_at=now if ended else None,
+            counted_seconds=30,
+        )
+        make_transient_to_detached(item)
+        return item
+
+    heartbeat_backwards = timer()
+    heartbeat_backwards.last_heartbeat_at = now - timedelta(seconds=1)
+    with pytest.raises(TimerWorkflowError, match="heartbeat"):
+        validate_timer_workflow(None, None, heartbeat_backwards)
+
+    counted_backwards = timer()
+    counted_backwards.counted_seconds = 29
+    with pytest.raises(TimerWorkflowError, match="counted seconds"):
+        validate_timer_workflow(None, None, counted_backwards)
+
+    changed_pause = timer(paused=True)
+    changed_pause.paused_at = now + timedelta(seconds=1)
+    with pytest.raises(TimerWorkflowError, match="paused_at"):
+        validate_timer_workflow(None, None, changed_pause)
+
+    terminal = timer(ended=True)
+    terminal.counted_seconds = 31
+    with pytest.raises(TimerWorkflowError, match="ended timer"):
+        validate_timer_workflow(None, None, terminal)
+
+    assert sa.event.contains(ActivityTimerSession, "before_update", validate_timer_workflow)
 
 
 def test_offline_sql_contains_hardened_reversible_guards() -> None:
