@@ -507,19 +507,36 @@ This step can start Docker and must pause for fresh approval immediately before 
 
 ~~~bash
 set -e
-cleanup() {
+cleanup_and_verify() {
+  original_status=$1
+  set +e
   docker compose -f compose.dev.yml down --remove-orphans
+  running_ids=$(docker compose -f compose.dev.yml ps --status running --quiet)
+  ps_status=$?
+  verification_status=0
+  if [ "$ps_status" -ne 0 ] || [ -n "$running_ids" ]; then
+    docker compose -f compose.dev.yml ps --status running
+    verification_status=1
+  fi
+  trap - EXIT INT TERM
+  if [ "$verification_status" -ne 0 ]; then
+    exit 1
+  fi
+  exit "$original_status"
 }
-trap cleanup EXIT INT TERM
+on_exit() { cleanup_and_verify "$?"; }
+on_int() { cleanup_and_verify 130; }
+on_term() { cleanup_and_verify 143; }
+trap on_exit EXIT
+trap on_int INT
+trap on_term TERM
 docker compose -f compose.dev.yml up -d postgres
 bash scripts/dev/ensure_test_database.sh
 TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test uv run pytest apps/backend/tests/integration/test_migrations.py -q
-cleanup
-trap - EXIT INT TERM
-docker compose -f compose.dev.yml ps --status running
+exit 0
 ~~~
 
-Expected: PASS and an empty final `ps --status running`; the EXIT/INT/TERM trap always removes Compose services and orphans on failure. If approval is not granted, leave the integration test skipped and rely on the later CI PostgreSQL service.
+Expected: PASS and an empty final `ps --status running`. Every normal, failing, INT, and TERM exit runs `down --remove-orphans` then a fail-closed running-service check; any remaining service/container or failed check exits 1, otherwise the original failure status is preserved. Traps are removed only after that check. If approval is not granted, leave the integration test skipped and rely on the later CI PostgreSQL service.
 
 - [ ] **Step 7: Commit database foundations**
 
@@ -2007,22 +2024,39 @@ After the user explicitly approves Docker use in that execution turn, no Docker 
 
 ~~~bash
 set -e
-cleanup() {
+cleanup_and_verify() {
+  original_status=$1
+  set +e
   docker compose -f compose.dev.yml down --remove-orphans
+  running_ids=$(docker compose -f compose.dev.yml ps --status running --quiet)
+  ps_status=$?
+  verification_status=0
+  if [ "$ps_status" -ne 0 ] || [ -n "$running_ids" ]; then
+    docker compose -f compose.dev.yml ps --status running
+    verification_status=1
+  fi
+  trap - EXIT INT TERM
+  if [ "$verification_status" -ne 0 ]; then
+    exit 1
+  fi
+  exit "$original_status"
 }
-trap cleanup EXIT INT TERM
+on_exit() { cleanup_and_verify "$?"; }
+on_int() { cleanup_and_verify 130; }
+on_term() { cleanup_and_verify 143; }
+trap on_exit EXIT
+trap on_int INT
+trap on_term TERM
 docker compose -f compose.dev.yml up -d postgres minio
 bash scripts/dev/ensure_test_database.sh
 DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test \
   uv run alembic -c apps/backend/alembic.ini upgrade head
 TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test uv run pytest -m integration apps/backend/tests/integration -q
 pnpm --filter @tam-forge/web exec playwright test e2e/foundation-learning.spec.ts
-cleanup
-trap - EXIT INT TERM
-docker compose -f compose.dev.yml ps --status running
+exit 0
 ~~~
 
-When Playwright starts a backend process, it uses this same isolated `DATABASE_URL` and `TEST_DATABASE_URL`; it must never inherit the ordinary `.env` `tamforge` database. Expected: migrations, integration tests, and browser flow pass, followed by an empty final `ps --status running`; the EXIT/INT/TERM trap always removes Compose services and orphans on failure. If approval is not given, do not run these commands; rely on unit checks and the exact-head GitHub Actions result without representing skipped integration tests as green.
+When Playwright starts a backend process, it uses this same isolated `DATABASE_URL` and `TEST_DATABASE_URL`; it must never inherit the ordinary `.env` `tamforge` database. Expected: migrations, integration tests, and browser flow pass, followed by an empty final `ps --status running`. Every normal, failing, INT, and TERM exit runs `down --remove-orphans` then a fail-closed running-service check; any remaining service/container or failed check exits 1, otherwise the original failure status is preserved. Traps are removed only after that check. If approval is not given, do not run these commands; rely on unit checks and the exact-head GitHub Actions result without representing skipped integration tests as green.
 
 - [ ] **Step 7: Refresh generated API types and issue status, then make the final focused commit**
 
