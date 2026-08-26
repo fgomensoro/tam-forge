@@ -1220,6 +1220,7 @@ def _validate_snapshot_manifest(value: object) -> bool:
     events = value.get("events")
     if value.get("schema_version") != 1 or not isinstance(events, list) or len(events) > 24:
         return False
+    seen_event_ids: set[int] = set()
     for item in events:
         if not isinstance(item, dict) or set(item) != {
             "event_id",
@@ -1229,6 +1230,9 @@ def _validate_snapshot_manifest(value: object) -> bool:
             return False
         if not _is_positive_id(item["event_id"]):
             return False
+        if item["event_id"] in seen_event_ids:
+            return False
+        seen_event_ids.add(item["event_id"])
         try:
             weight = _as_decimal(item["effective_weight"])
         except EvidenceContractError:
@@ -1492,6 +1496,63 @@ def validate_skill_evidence_event(
             if target.attempt_id is not None
             else None
         )
+        stored_evaluator_kind = connection.execute(
+            select(RubricEvaluation.__table__.c.evaluator_kind).where(
+                RubricEvaluation.__table__.c.owner_id == target.owner_id,
+                RubricEvaluation.__table__.c.config_seed_version_id
+                == target.config_seed_version_id,
+                RubricEvaluation.__table__.c.activity_instance_id
+                == target.activity_instance_id,
+                RubricEvaluation.__table__.c.attempt_id.is_not_distinct_from(
+                    target.attempt_id
+                ),
+                RubricEvaluation.__table__.c.rubric_version_id
+                == target.rubric_version_id,
+                RubricEvaluation.__table__.c.id == target.rubric_evaluation_id,
+            )
+        ).scalar_one_or_none()
+        if stored_evaluator_kind != target.evaluator_kind:
+            raise EvidenceContractError("evidence evaluator must match stored evaluation")
+
+        stored_numerator = Decimal("0")
+        stored_denominator = Decimal("0")
+        for score_item in target.raw_dimension_scores["scores"]:
+            stored_dimension = connection.execute(
+                select(
+                    RubricDimensionScore.__table__.c.score,
+                    RubricDimensionScore.__table__.c.weight_used,
+                ).where(
+                    RubricDimensionScore.__table__.c.owner_id == target.owner_id,
+                    RubricDimensionScore.__table__.c.config_seed_version_id
+                    == target.config_seed_version_id,
+                    RubricDimensionScore.__table__.c.rubric_version_id
+                    == target.rubric_version_id,
+                    RubricDimensionScore.__table__.c.rubric_evaluation_id
+                    == target.rubric_evaluation_id,
+                    RubricDimensionScore.__table__.c.id
+                    == score_item["dimension_score_id"],
+                    RubricDimensionScore.__table__.c.availability == "scored",
+                )
+            ).one_or_none()
+            if stored_dimension is None:
+                raise EvidenceContractError(
+                    "raw scores must match immutable dimensions"
+                )
+            stored_score, stored_weight = map(_as_decimal, stored_dimension)
+            if (
+                stored_score != _as_decimal(score_item["score"])
+                or stored_weight != _as_decimal(score_item["weight"])
+            ):
+                raise EvidenceContractError(
+                    "raw scores must match immutable dimensions"
+                )
+            stored_numerator += stored_score * stored_weight
+            stored_denominator += stored_weight
+        if (
+            stored_numerator != target.raw_score_numerator
+            or stored_denominator != target.raw_score_denominator
+        ):
+            raise EvidenceContractError("raw scores must match immutable dimensions")
     else:
         attempt_kind = "attempt_a" if target.attempt_id is not None else None
     _validate_qualification_reason(target, attempt_kind, mapping_condition_code)

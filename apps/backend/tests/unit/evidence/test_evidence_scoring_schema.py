@@ -808,8 +808,49 @@ def test_skill_event_uses_configured_mode_and_activity_task_mapping() -> None:
             "always",
         ),
         "attempt_a",
+        "ai_rubric_reviewer",
+        (Decimal("3.000"), Decimal("1.000000")),
     )
     validate_skill_evidence_event(None, valid_lineage, _skill_event())  # type: ignore[arg-type]
+    assert valid_lineage.values == []
+
+    missing_dimension = _StubConnection(
+        (
+            "independent_practice",
+            "troubleshooting_case",
+            "seed-v1",
+            "troubleshooting_case",
+            "seed-v1",
+            Decimal("1.000000"),
+            "always",
+        ),
+        "attempt_a",
+        "ai_rubric_reviewer",
+        None,
+    )
+    with pytest.raises(EvidenceContractError, match="immutable dimensions"):
+        validate_skill_evidence_event(None, missing_dimension, _skill_event())  # type: ignore[arg-type]
+
+    mismatched_dimension = _StubConnection(
+        (
+            "independent_practice",
+            "troubleshooting_case",
+            "seed-v1",
+            "troubleshooting_case",
+            "seed-v1",
+            Decimal("1.000000"),
+            "always",
+        ),
+        "attempt_a",
+        "ai_rubric_reviewer",
+        (Decimal("2.000"), Decimal("1.000000")),
+    )
+    with pytest.raises(EvidenceContractError, match="immutable dimensions"):
+        validate_skill_evidence_event(
+            None,
+            mismatched_dimension,  # type: ignore[arg-type]
+            _skill_event(),
+        )
 
 
 def test_qualification_reasons_are_exact_and_unscored_is_unrepresentable() -> None:
@@ -1127,6 +1168,23 @@ def test_snapshot_application_guard_reconstructs_scoped_stored_events() -> None:
     )
     with pytest.raises(EvidenceContractError, match="included snapshot event weight"):
         validate_skill_snapshot(None, wrong_weight, snapshot)  # type: ignore[arg-type]
+
+    snapshot.contributing_event_manifest = {
+        "schema_version": 1,
+        "events": [
+            {"event_id": 1, "effective_weight": 0.1, "inclusion_code": "included"},
+            {"event_id": 1, "effective_weight": 0.1, "inclusion_code": "included"},
+        ],
+    }
+    snapshot.total_effective_weight = Decimal("0.200000")
+    snapshot.qualifying_event_count = 2
+    duplicate_totals = _StubConnection(
+        (Decimal("2.000"), Decimal("2.500"), Decimal("3.000")),
+        (Decimal("0.100000"), Decimal("2.000"), 7, True),
+        (Decimal("0.100000"), Decimal("2.000"), 7, True),
+    )
+    with pytest.raises(EvidenceContractError, match="structured evidence"):
+        validate_skill_snapshot(None, duplicate_totals, snapshot)  # type: ignore[arg-type]
 
 
 def test_immutable_configuration_and_history_are_rejected_by_orm() -> None:
