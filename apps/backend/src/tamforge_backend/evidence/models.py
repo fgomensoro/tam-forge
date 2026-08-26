@@ -22,6 +22,7 @@ from sqlalchemy import (
     Numeric,
     Text,
     UniqueConstraint,
+    and_,
     event,
     func,
     inspect,
@@ -32,8 +33,9 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Mapped, Mapper, mapped_column
 from sqlalchemy.orm.base import LoaderCallableStatus
 
-from ..learning.models import Attempt
+from ..learning.models import ActivityInstance, Attempt
 from ..models.base import Base, utc_now
+from ..roadmaps.models import TaskDefinition
 
 
 class AppendOnlyEvidenceError(ValueError):
@@ -92,7 +94,6 @@ CONDITION_CODES = frozenset(
 QUALIFICATION_REASON_CODES = frozenset(
     {
         "qualifies",
-        "unscored",
         "nonqualifying_mode",
         "assisted_during_attempt",
         "attempt_b",
@@ -736,7 +737,7 @@ class SkillEvidenceEvent(Base):
             name="effective_weight_reproducible",
         ),
         CheckConstraint(
-            "qualification_reason_code IN ('qualifies', 'unscored', 'nonqualifying_mode', "
+            "qualification_reason_code IN ('qualifies', 'nonqualifying_mode', "
             "'assisted_during_attempt', 'attempt_b', 'missing_committed_attempt', "
             "'mapping_condition_not_met', 'excluded_by_formula')",
             name="qualification_reason_allowed",
@@ -1267,7 +1268,50 @@ def _validate_basis(value: object) -> bool:
         and isinstance(event_ids, list)
         and len(event_ids) <= 24
         and all(map(_is_positive_id, event_ids))
+        and len(event_ids) == len(set(event_ids))
     )
+
+
+def _validate_qualification_reason(
+    target: SkillEvidenceEvent,
+    attempt_kind: str | None,
+    mapping_condition_code: str,
+) -> None:
+    """Require one exact, reproducible explanation for evidence eligibility."""
+
+    if target.attempt_id is None:
+        expected_reason = "missing_committed_attempt"
+    elif attempt_kind is None:
+        raise EvidenceContractError("skill evidence attempt provenance is invalid")
+    elif attempt_kind == "attempt_b":
+        expected_reason = "attempt_b"
+    elif target.practice_mode not in QUALIFYING_MODES:
+        expected_reason = "nonqualifying_mode"
+    elif target.assistance_code not in QUALIFYING_ASSISTANCE_CODES:
+        expected_reason = "assisted_during_attempt"
+    elif target.qualifying_for_level:
+        expected_reason = "qualifies"
+    elif (
+        target.qualification_reason_code == "mapping_condition_not_met"
+        and mapping_condition_code != "always"
+    ):
+        expected_reason = "mapping_condition_not_met"
+    else:
+        expected_reason = "excluded_by_formula"
+
+    if (
+        target.qualification_reason_code != expected_reason
+        or target.qualifying_for_level != (expected_reason == "qualifies")
+    ):
+        raise EvidenceContractError("qualification reason does not match stored evidence")
+    if (
+        expected_reason == "qualifies"
+        and target.practice_mode == "independent_practice"
+        and attempt_kind != "attempt_a"
+    ):
+        raise EvidenceContractError(
+            "qualifying independent practice requires committed Attempt A"
+        )
 
 
 def _validate_structured_payloads(
@@ -1373,35 +1417,191 @@ def validate_skill_evidence_event(
         raise EvidenceContractError("effective evidence weight is not reproducible")
     if target.performance_score != expected_performance:
         raise EvidenceContractError("performance score is not reproducible")
-    if target.qualifying_for_level:
+
+    mapping_condition_code = "always"
+    if connection is not None:
+        exercise = ExerciseTypeVersion.__table__
+        mapping = ExerciseSkillMapping.__table__
+        activity = ActivityInstance.__table__
+        task = TaskDefinition.__table__
+        lineage = connection.execute(
+            select(
+                exercise.c.evidence_mode,
+                exercise.c.exercise_type,
+                exercise.c.mapping_version,
+                task.c.exercise_type,
+                task.c.mapping_version,
+                mapping.c.impact,
+                mapping.c.condition_code,
+            )
+            .select_from(
+                exercise.join(
+                    mapping,
+                    and_(
+                        mapping.c.owner_id == exercise.c.owner_id,
+                        mapping.c.config_seed_version_id == exercise.c.config_seed_version_id,
+                        mapping.c.exercise_type_version_id == exercise.c.id,
+                    ),
+                )
+                .join(activity, activity.c.owner_id == exercise.c.owner_id)
+                .join(
+                    task,
+                    and_(
+                        task.c.owner_id == activity.c.owner_id,
+                        task.c.roadmap_version_id == activity.c.roadmap_version_id,
+                        task.c.id == activity.c.task_definition_id,
+                    ),
+                )
+            )
+            .where(
+                exercise.c.owner_id == target.owner_id,
+                exercise.c.config_seed_version_id == target.config_seed_version_id,
+                exercise.c.id == target.exercise_type_version_id,
+                mapping.c.competency_id == target.competency_id,
+                activity.c.id == target.activity_instance_id,
+            )
+        ).one_or_none()
+        if lineage is None:
+            raise EvidenceContractError("skill evidence exercise provenance is invalid")
+        (
+            configured_mode,
+            configured_exercise_type,
+            configured_mapping_version,
+            task_exercise_type,
+            task_mapping_version,
+            configured_impact,
+            mapping_condition_code,
+        ) = lineage
+        if target.practice_mode != configured_mode:
+            raise EvidenceContractError("practice mode must match configured exercise mode")
         if (
-            target.qualification_reason_code != "qualifies"
-            or target.practice_mode not in QUALIFYING_MODES
-            or target.assistance_code not in QUALIFYING_ASSISTANCE_CODES
-            or target.attempt_id is None
+            configured_exercise_type != task_exercise_type
+            or configured_mapping_version != task_mapping_version
         ):
-            raise EvidenceContractError("qualifying evidence contract is incoherent")
-        if connection is not None and target.practice_mode == "independent_practice":
-            attempt_kind = connection.execute(
+            raise EvidenceContractError("exercise version must match activity task mapping")
+        if target.exercise_skill_impact != configured_impact:
+            raise EvidenceContractError("evidence impact must match configured skill mapping")
+        attempt_kind = (
+            connection.execute(
                 select(Attempt.__table__.c.attempt_kind).where(
                     Attempt.__table__.c.owner_id == target.owner_id,
                     Attempt.__table__.c.activity_instance_id == target.activity_instance_id,
                     Attempt.__table__.c.id == target.attempt_id,
                 )
             ).scalar_one_or_none()
-            if attempt_kind != "attempt_a":
-                raise EvidenceContractError(
-                    "qualifying independent practice requires committed Attempt A"
-                )
+            if target.attempt_id is not None
+            else None
+        )
+    else:
+        attempt_kind = "attempt_a" if target.attempt_id is not None else None
+    _validate_qualification_reason(target, attempt_kind, mapping_condition_code)
+
+
+def validate_rubric_dimension_score(
+    mapper: Mapper[RubricDimensionScore] | None,
+    connection: Connection | None,
+    target: RubricDimensionScore,
+) -> None:
+    del mapper
+    _validate_structured_payloads(None, connection, target)
+    if target.availability == "scored":
+        if target.score is None or target.weight_used is None:
+            raise EvidenceContractError("scored dimension requires score and weight")
+    elif target.availability in {"not_applicable", "unavailable"}:
+        if target.score is not None or target.weight_used is not None:
+            raise EvidenceContractError("unavailable dimension cannot carry a score")
+    else:
+        raise EvidenceContractError("invalid dimension score availability")
+    if connection is None:
+        return
+    maximum = connection.execute(
+        select(RubricDimension.__table__.c.max_score).where(
+            RubricDimension.__table__.c.owner_id == target.owner_id,
+            RubricDimension.__table__.c.config_seed_version_id
+            == target.config_seed_version_id,
+            RubricDimension.__table__.c.rubric_version_id == target.rubric_version_id,
+            RubricDimension.__table__.c.id == target.rubric_dimension_id,
+        )
+    ).scalar_one_or_none()
+    if maximum is None:
+        raise EvidenceContractError("rubric dimension provenance is invalid")
+    if target.score is not None and target.score > maximum:
+        raise EvidenceContractError("score exceeds rubric dimension maximum")
+
+
+def validate_skill_snapshot(
+    mapper: Mapper[SkillSnapshot] | None,
+    connection: Connection | None,
+    target: SkillSnapshot,
+) -> None:
+    del mapper, connection
+    _validate_structured_payloads(None, None, target)
+    manifest_ids = {
+        int(item["event_id"]) for item in target.contributing_event_manifest["events"]
+    }
+    for basis in (target.confidence_basis, target.trend_basis):
+        if not set(basis.get("event_ids", [])).issubset(manifest_ids):
+            raise EvidenceContractError("snapshot basis event ids must be contributing events")
+
+    confidence_codes = {
+        "low": {"low_weight", "no_qualifying_evidence"},
+        "medium": {"medium_weight_diversity"},
+        "high": {"high_weight_diversity_recency"},
+    }
+    trend_codes = {
+        "insufficient_evidence": {"too_few_events", "no_qualifying_evidence"},
+        "improving": {"improving"},
+        "stable": {"stable"},
+        "declining": {"declining"},
+    }
+    if target.confidence_basis["basis_code"] not in confidence_codes.get(
+        target.confidence_code, set()
+    ):
+        raise EvidenceContractError("confidence basis code does not match snapshot confidence")
+    if target.trend_basis["basis_code"] not in trend_codes.get(target.trend_code, set()):
+        raise EvidenceContractError("trend basis code does not match snapshot trend")
+
+
+def validate_portfolio_judgment_score(
+    mapper: Mapper[PortfolioJudgmentScore] | None,
+    connection: Connection | None,
+    target: PortfolioJudgmentScore,
+) -> None:
+    del mapper
+    _validate_structured_payloads(None, connection, target)
+    basis_code = target.trend_basis["basis_code"]
+    event_ids = target.trend_basis.get("event_ids", [])
+    if basis_code == "first_score":
+        if event_ids:
+            raise EvidenceContractError("first portfolio score cannot have trend history")
+        return
+    if basis_code not in {"improving", "stable", "declining"} or not event_ids:
+        raise EvidenceContractError("portfolio trend requires prior score history")
+    if connection is None:
+        return
+    matching_history = connection.execute(
+        select(func.count())
+        .select_from(PortfolioJudgmentScore.__table__)
+        .where(
+            PortfolioJudgmentScore.__table__.c.id.in_(event_ids),
+            PortfolioJudgmentScore.__table__.c.owner_id == target.owner_id,
+            PortfolioJudgmentScore.__table__.c.config_seed_version_id
+            == target.config_seed_version_id,
+            PortfolioJudgmentScore.__table__.c.formula_version == target.formula_version,
+            PortfolioJudgmentScore.__table__.c.scored_at <= target.scored_at,
+        )
+    ).scalar_one()
+    if matching_history != len(event_ids):
+        raise EvidenceContractError("portfolio trend history provenance is invalid")
 
 
 for _structured_class in (
     ExerciseTypeVersion,
     RubricEvaluation,
-    RubricDimensionScore,
-    SkillSnapshot,
-    PortfolioJudgmentScore,
 ):
     event.listen(_structured_class, "before_insert", _validate_structured_payloads)
 
+event.listen(RubricDimensionScore, "before_insert", validate_rubric_dimension_score)
 event.listen(SkillEvidenceEvent, "before_insert", validate_skill_evidence_event)
+event.listen(SkillSnapshot, "before_insert", validate_skill_snapshot)
+event.listen(PortfolioJudgmentScore, "before_insert", validate_portfolio_judgment_score)

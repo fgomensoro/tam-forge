@@ -223,6 +223,21 @@ def test_evidence_scoring_contract_and_round_trip(test_database_url: str) -> Non
                 "rubric": rubric,
             },
         ).scalar_one()
+        rejects(
+            "INSERT INTO rubric_dimension_scores "
+            "(owner_id, config_seed_version_id, rubric_evaluation_id, rubric_version_id, "
+            "rubric_dimension_id, availability, score, weight_used, evidence_manifest) "
+            "VALUES (:owner, :config, :evaluation, :rubric, :dimension, 'scored', "
+            "5, 0.6, jsonb_build_object('schema_version', 1, "
+            "'artifact_ids', '[]'::jsonb))",
+            {
+                "owner": owner,
+                "config": config_seed,
+                "evaluation": evaluation,
+                "rubric": rubric,
+                "dimension": dimensions[0],
+            },
+        )
         dimension_scores = []
         for dimension, score, weight in zip(dimensions, ("3", "2"), ("0.6", "0.4"), strict=True):
             dimension_scores.append(
@@ -295,6 +310,79 @@ def test_evidence_scoring_contract_and_round_trip(test_database_url: str) -> Non
             )
         assert len(events) == 2
 
+        mismatched_exercise = execute(
+            "INSERT INTO exercise_type_versions "
+            "(owner_id, config_seed_version_id, exercise_type, mapping_version, evidence_mode, "
+            "condition_code, tags) VALUES "
+            "(:owner, :config, 'sql_production_lab', 'seed-v1', 'independent_practice', "
+            "'always', '[\"data_quality\"]'::jsonb) RETURNING id",
+            {"owner": owner, "config": config_seed},
+        ).scalar_one()
+        execute(
+            "INSERT INTO exercise_skill_mappings "
+            "(owner_id, config_seed_version_id, exercise_type_version_id, competency_id, "
+            "impact, condition_code) VALUES "
+            "(:owner, :config, :exercise, :competency, 1, 'always')",
+            {
+                "owner": owner,
+                "config": config_seed,
+                "exercise": mismatched_exercise,
+                "competency": competency_ids["structured_troubleshooting"],
+            },
+        )
+        rejects(
+            "INSERT INTO skill_evidence_events "
+            "(owner_id, config_seed_version_id, activity_instance_id, attempt_id, "
+            "rubric_evaluation_id, rubric_version_id, exercise_type_version_id, "
+            "competency_id, formula_version, practice_mode, assistance_code, evaluator_kind, "
+            "difficulty_code, raw_dimension_scores, raw_score_numerator, raw_score_denominator, "
+            "performance_score, exercise_skill_impact, practice_mode_factor, "
+            "ai_independence_factor, evaluator_confidence_factor, difficulty_factor, "
+            "effective_weight, qualifying_for_level, qualification_reason_code, explanation, "
+            f"occurred_at) VALUES (:owner, :config, :activity, :attempt, :evaluation, :rubric, "
+            f":exercise, :competency, 'skill-lineage-v1', 'independent_practice', 'no_ai', "
+            f"'ai_rubric_reviewer', 'standard', {raw_scores}, 2.6, 1, 2.6, 1, 0.65, 1, "
+            f"0.75, 1, 0.4875, true, 'qualifies', {explanation}, now())",
+            {
+                "owner": owner,
+                "config": config_seed,
+                "activity": activity,
+                "attempt": attempt,
+                "evaluation": evaluation,
+                "rubric": rubric,
+                "exercise": mismatched_exercise,
+                "competency": competency_ids["structured_troubleshooting"],
+                "score_1": dimension_scores[0],
+                "score_2": dimension_scores[1],
+            },
+        )
+        rejects(
+            "INSERT INTO skill_evidence_events "
+            "(owner_id, config_seed_version_id, activity_instance_id, attempt_id, "
+            "rubric_evaluation_id, rubric_version_id, exercise_type_version_id, "
+            "competency_id, formula_version, practice_mode, assistance_code, evaluator_kind, "
+            "difficulty_code, raw_dimension_scores, raw_score_numerator, raw_score_denominator, "
+            "performance_score, exercise_skill_impact, practice_mode_factor, "
+            "ai_independence_factor, evaluator_confidence_factor, difficulty_factor, "
+            "effective_weight, qualifying_for_level, qualification_reason_code, explanation, "
+            f"occurred_at) VALUES (:owner, :config, :activity, :attempt, :evaluation, :rubric, "
+            f":exercise, :competency, 'skill-reason-v1', 'independent_practice', 'no_ai', "
+            f"'ai_rubric_reviewer', 'standard', {raw_scores}, 2.6, 1, 2.6, 1, 0.65, 1, "
+            f"0.75, 1, 0.4875, false, 'attempt_b', {explanation}, now())",
+            {
+                "owner": owner,
+                "config": config_seed,
+                "activity": activity,
+                "attempt": attempt,
+                "evaluation": evaluation,
+                "rubric": rubric,
+                "exercise": exercise,
+                "competency": competency_ids["structured_troubleshooting"],
+                "score_1": dimension_scores[0],
+                "score_2": dimension_scores[1],
+            },
+        )
+
         execute(
             "INSERT INTO skill_snapshots "
             "(owner_id, config_seed_version_id, competency_id, formula_version, snapshot_date, "
@@ -316,6 +404,31 @@ def test_evidence_scoring_contract_and_round_trip(test_database_url: str) -> Non
                 "config": config_seed,
                 "competency": competency_ids["structured_troubleshooting"],
                 "event": events[0],
+            },
+        )
+        rejects(
+            "INSERT INTO skill_snapshots "
+            "(owner_id, config_seed_version_id, competency_id, formula_version, snapshot_date, "
+            "snapshot_sequence, estimated_level, confidence_code, trend_code, recency_code, "
+            "baseline_target_gap, month_one_target_gap, final_target_gap, "
+            "total_effective_weight, qualifying_event_count, exercise_type_count, "
+            "last_strong_evidence_date, contributing_event_manifest, confidence_basis, "
+            "trend_basis) VALUES (:owner, :config, :competency, 'skill-v1', "
+            "DATE '2026-08-26', 2, 2.118, 'low', 'insufficient_evidence', 'fresh', "
+            "-0.118, 0.382, 0.882, 0.4875, 1, 1, DATE '2026-08-26', "
+            "jsonb_build_object('schema_version', 1, 'events', jsonb_build_array("
+            "jsonb_build_object('event_id', :event, 'effective_weight', 0.4875, "
+            "'inclusion_code', 'included'))), "
+            "jsonb_build_object('schema_version', 1, 'basis_code', 'low_weight', "
+            "'event_ids', jsonb_build_array(:foreign_event)), "
+            "jsonb_build_object('schema_version', 1, 'basis_code', 'too_few_events', "
+            "'event_ids', jsonb_build_array(:event)))",
+            {
+                "owner": owner,
+                "config": config_seed,
+                "competency": competency_ids["structured_troubleshooting"],
+                "event": events[0],
+                "foreign_event": events[1],
             },
         )
 
@@ -362,6 +475,286 @@ def test_evidence_scoring_contract_and_round_trip(test_database_url: str) -> Non
                 "rubric": portfolio_rubric,
             },
         ).scalar_one()
+
+        portfolio_evaluation_history = execute(
+            "INSERT INTO rubric_evaluations "
+            "(owner_id, config_seed_version_id, activity_instance_id, attempt_id, "
+            "rubric_version_id, evaluator_kind, evaluation_schema_version, input_manifest, "
+            "evaluated_at) VALUES (:owner, :config, :activity, :attempt, :rubric, "
+            "'human_coach', 1, jsonb_build_object('schema_version', 1, "
+            "'artifact_ids', '[]'::jsonb), now()) RETURNING id",
+            {
+                "owner": owner,
+                "config": config_seed,
+                "activity": activity,
+                "attempt": attempt,
+                "rubric": portfolio_rubric,
+            },
+        ).scalar_one()
+        execute(
+            "INSERT INTO portfolio_judgment_scores "
+            "(owner_id, config_seed_version_id, activity_instance_id, attempt_id, "
+            "rubric_evaluation_id, rubric_version_id, formula_version, "
+            "impact_risk_assessment, explicit_prioritization, delegation_ownership, "
+            "communication_control, proactive_work_protection, evidence_based_reprioritization, "
+            "english_clarity, total_score, trend_basis, scored_at) VALUES "
+            "(:owner, :config, :activity, :attempt, :evaluation, :rubric, 'portfolio-v1', "
+            "3, 2, 2, 2, 1, 2, 1, 13, "
+            "jsonb_build_object('schema_version', 1, 'basis_code', 'stable', "
+            "'event_ids', jsonb_build_array(:prior)), now())",
+            {
+                "owner": owner,
+                "config": config_seed,
+                "activity": activity,
+                "attempt": attempt,
+                "evaluation": portfolio_evaluation_history,
+                "rubric": portfolio_rubric,
+                "prior": portfolio,
+            },
+        )
+        rejects(
+            "INSERT INTO portfolio_judgment_scores "
+            "(owner_id, config_seed_version_id, activity_instance_id, attempt_id, "
+            "rubric_evaluation_id, rubric_version_id, formula_version, "
+            "impact_risk_assessment, explicit_prioritization, delegation_ownership, "
+            "communication_control, proactive_work_protection, evidence_based_reprioritization, "
+            "english_clarity, total_score, trend_basis, scored_at) VALUES "
+            "(:owner, :config, :activity, :attempt, :evaluation, :rubric, 'portfolio-v2', "
+            "3, 2, 2, 2, 1, 2, 1, 13, "
+            "jsonb_build_object('schema_version', 1, 'basis_code', 'stable', "
+            "'event_ids', jsonb_build_array(:prior)), now())",
+            {
+                "owner": owner,
+                "config": config_seed,
+                "activity": activity,
+                "attempt": attempt,
+                "evaluation": portfolio_evaluation_history,
+                "rubric": portfolio_rubric,
+                "prior": portfolio,
+            },
+        )
+
+        foreign_owner = execute(
+            "INSERT INTO owners (github_user_id, github_login) "
+            "VALUES (102269370, 'foreign-owner') RETURNING id"
+        ).scalar_one()
+        foreign_source = execute(
+            "INSERT INTO roadmap_sources (owner_id, source_key, name, source_kind) "
+            "VALUES (:owner, 'main', 'Foreign roadmap', 'obsidian') RETURNING id",
+            {"owner": foreign_owner},
+        ).scalar_one()
+        foreign_version = execute(
+            "INSERT INTO roadmap_versions "
+            "(owner_id, source_id, version_key, version_number, month_number, content_hash, "
+            "object_key, manifest, raw_payload, normalized_payload, mirror_status, state) "
+            "VALUES (:owner, :source, 'month-1-v1', 1, 1, :hash, "
+            "'owners/foreign/roadmaps/month-1.json', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, "
+            "'not_required', 'draft') RETURNING id",
+            {"owner": foreign_owner, "source": foreign_source, "hash": b"f" * 32},
+        ).scalar_one()
+        foreign_node = execute(
+            "INSERT INTO curriculum_nodes "
+            "(owner_id, roadmap_version_id, stable_id, ordinal, kind, title) "
+            "VALUES (:owner, :version, 'week-1', 0, 'week', 'Week 1') RETURNING id",
+            {"owner": foreign_owner, "version": foreign_version},
+        ).scalar_one()
+        foreign_task = execute(
+            "INSERT INTO task_definitions "
+            "(owner_id, roadmap_version_id, curriculum_node_id, stable_id, exercise_type, "
+            "mapping_version, objective, timebox_minutes, block, required, output_contract, "
+            "pass_contract, evidence_contract, source_references, allowed_ai_role) VALUES "
+            "(:owner, :version, :node, 'portfolio-1', 'portfolio_case', 'seed-v1', "
+            "'Prioritize accounts', 60, 'tam_case', true, '{}'::jsonb, '{}'::jsonb, "
+            "'{}'::jsonb, '[]'::jsonb, 'interviewer') RETURNING id",
+            {"owner": foreign_owner, "version": foreign_version, "node": foreign_node},
+        ).scalar_one()
+        foreign_day = execute(
+            "INSERT INTO study_days "
+            "(owner_id, roadmap_version_id, local_date, planned_minutes, focused_minutes, "
+            "day_type, status) VALUES (:owner, :version, DATE '2026-08-25', 240, 60, "
+            "'weekday', 'planned') RETURNING id",
+            {"owner": foreign_owner, "version": foreign_version},
+        ).scalar_one()
+        foreign_activity = execute(
+            "INSERT INTO activity_instances "
+            "(owner_id, study_day_id, roadmap_version_id, task_definition_id, "
+            "task_stable_id_snapshot, task_mapping_version_snapshot, task_objective_snapshot, "
+            "task_timebox_minutes_snapshot, roadmap_version_key_snapshot, state, attempt_kind, "
+            "assistance_mode, classification, timebox_minutes, source_hidden, optimistic_version, "
+            "replacement_version) VALUES (:owner, :day, :version, :task, 'portfolio-1', "
+            "'seed-v1', 'Prioritize accounts', 60, 'month-1-v1', 'ready', 'attempt_a', "
+            "'none', 'required', 60, false, 1, 1) RETURNING id",
+            {
+                "owner": foreign_owner,
+                "day": foreign_day,
+                "version": foreign_version,
+                "task": foreign_task,
+            },
+        ).scalar_one()
+        foreign_attempt = execute(
+            "INSERT INTO attempts "
+            "(owner_id, activity_instance_id, attempt_kind, original_text, audience, prompt, "
+            "assistance_mode, commitment_hash, committed_at) VALUES "
+            "(:owner, :activity, 'attempt_a', 'Answer', 'hiring_manager', 'Prioritize', "
+            "'none', :hash, now()) RETURNING id",
+            {"owner": foreign_owner, "activity": foreign_activity, "hash": b"q" * 32},
+        ).scalar_one()
+        foreign_config = execute(
+            "INSERT INTO config_seed_versions "
+            "(owner_id, version_key, schema_version, content_hash) "
+            "VALUES (:owner, 'seed-v1', 1, :hash) RETURNING id",
+            {"owner": foreign_owner, "hash": b"c" * 32},
+        ).scalar_one()
+        foreign_rubric = execute(
+            "INSERT INTO rubric_versions "
+            "(owner_id, config_seed_version_id, rubric_key, version_key, name, scope_code, "
+            "scale_min, scale_max) VALUES "
+            "(:owner, :config, 'portfolio-judgment', 'v1', 'Portfolio judgment', "
+            "'portfolio', 0, 20) RETURNING id",
+            {"owner": foreign_owner, "config": foreign_config},
+        ).scalar_one()
+        foreign_evaluation = execute(
+            "INSERT INTO rubric_evaluations "
+            "(owner_id, config_seed_version_id, activity_instance_id, attempt_id, "
+            "rubric_version_id, evaluator_kind, evaluation_schema_version, input_manifest, "
+            "evaluated_at) VALUES (:owner, :config, :activity, :attempt, :rubric, "
+            "'ai_rubric_reviewer', 1, jsonb_build_object('schema_version', 1, "
+            "'artifact_ids', '[]'::jsonb), now()) RETURNING id",
+            {
+                "owner": foreign_owner,
+                "config": foreign_config,
+                "activity": foreign_activity,
+                "attempt": foreign_attempt,
+                "rubric": foreign_rubric,
+            },
+        ).scalar_one()
+        foreign_portfolio = execute(
+            "INSERT INTO portfolio_judgment_scores "
+            "(owner_id, config_seed_version_id, activity_instance_id, attempt_id, "
+            "rubric_evaluation_id, rubric_version_id, formula_version, "
+            "impact_risk_assessment, explicit_prioritization, delegation_ownership, "
+            "communication_control, proactive_work_protection, evidence_based_reprioritization, "
+            "english_clarity, total_score, trend_basis, scored_at) VALUES "
+            "(:owner, :config, :activity, :attempt, :evaluation, :rubric, 'portfolio-v1', "
+            "3, 2, 2, 2, 1, 2, 1, 13, "
+            "jsonb_build_object('schema_version', 1, 'basis_code', 'first_score', "
+            "'event_ids', '[]'::jsonb), now()) RETURNING id",
+            {
+                "owner": foreign_owner,
+                "config": foreign_config,
+                "activity": foreign_activity,
+                "attempt": foreign_attempt,
+                "evaluation": foreign_evaluation,
+                "rubric": foreign_rubric,
+            },
+        ).scalar_one()
+        wrong_owner_evaluation = execute(
+            "INSERT INTO rubric_evaluations "
+            "(owner_id, config_seed_version_id, activity_instance_id, attempt_id, "
+            "rubric_version_id, evaluator_kind, evaluation_schema_version, input_manifest, "
+            "evaluated_at) VALUES (:owner, :config, :activity, :attempt, :rubric, "
+            "'peer', 1, jsonb_build_object('schema_version', 1, "
+            "'artifact_ids', '[]'::jsonb), now()) RETURNING id",
+            {
+                "owner": owner,
+                "config": config_seed,
+                "activity": activity,
+                "attempt": attempt,
+                "rubric": portfolio_rubric,
+            },
+        ).scalar_one()
+        rejects(
+            "INSERT INTO portfolio_judgment_scores "
+            "(owner_id, config_seed_version_id, activity_instance_id, attempt_id, "
+            "rubric_evaluation_id, rubric_version_id, formula_version, "
+            "impact_risk_assessment, explicit_prioritization, delegation_ownership, "
+            "communication_control, proactive_work_protection, evidence_based_reprioritization, "
+            "english_clarity, total_score, trend_basis, scored_at) VALUES "
+            "(:owner, :config, :activity, :attempt, :evaluation, :rubric, 'portfolio-v1', "
+            "3, 2, 2, 2, 1, 2, 1, 13, "
+            "jsonb_build_object('schema_version', 1, 'basis_code', 'stable', "
+            "'event_ids', jsonb_build_array(:prior)), now())",
+            {
+                "owner": owner,
+                "config": config_seed,
+                "activity": activity,
+                "attempt": attempt,
+                "evaluation": wrong_owner_evaluation,
+                "rubric": portfolio_rubric,
+                "prior": foreign_portfolio,
+            },
+        )
+        rejects(
+            "INSERT INTO portfolio_judgment_scores "
+            "(owner_id, config_seed_version_id, activity_instance_id, attempt_id, "
+            "rubric_evaluation_id, rubric_version_id, formula_version, "
+            "impact_risk_assessment, explicit_prioritization, delegation_ownership, "
+            "communication_control, proactive_work_protection, evidence_based_reprioritization, "
+            "english_clarity, total_score, trend_basis, scored_at) VALUES "
+            "(:owner, :config, :activity, :attempt, :evaluation, :rubric, 'portfolio-v3', "
+            "3, 2, 2, 2, 1, 2, 1, 13, "
+            "jsonb_build_object('schema_version', 1, 'basis_code', 'stable', "
+            "'event_ids', jsonb_build_array(9223372036854775807)), now())",
+            {
+                "owner": owner,
+                "config": config_seed,
+                "activity": activity,
+                "attempt": attempt,
+                "evaluation": portfolio_evaluation_history,
+                "rubric": portfolio_rubric,
+            },
+        )
+
+        alternate_config = execute(
+            "INSERT INTO config_seed_versions "
+            "(owner_id, version_key, schema_version, content_hash) "
+            "VALUES (:owner, 'seed-v2', 1, :hash) RETURNING id",
+            {"owner": owner, "hash": b"t" * 32},
+        ).scalar_one()
+        alternate_portfolio_rubric = execute(
+            "INSERT INTO rubric_versions "
+            "(owner_id, config_seed_version_id, rubric_key, version_key, name, scope_code, "
+            "scale_min, scale_max) VALUES "
+            "(:owner, :config, 'portfolio-judgment', 'v2', 'Portfolio judgment v2', "
+            "'portfolio', 0, 20) RETURNING id",
+            {"owner": owner, "config": alternate_config},
+        ).scalar_one()
+        alternate_config_evaluation = execute(
+            "INSERT INTO rubric_evaluations "
+            "(owner_id, config_seed_version_id, activity_instance_id, attempt_id, "
+            "rubric_version_id, evaluator_kind, evaluation_schema_version, input_manifest, "
+            "evaluated_at) VALUES (:owner, :config, :activity, :attempt, :rubric, "
+            "'ai_rubric_reviewer', 1, jsonb_build_object('schema_version', 1, "
+            "'artifact_ids', '[]'::jsonb), now()) RETURNING id",
+            {
+                "owner": owner,
+                "config": alternate_config,
+                "activity": activity,
+                "attempt": attempt,
+                "rubric": alternate_portfolio_rubric,
+            },
+        ).scalar_one()
+        rejects(
+            "INSERT INTO portfolio_judgment_scores "
+            "(owner_id, config_seed_version_id, activity_instance_id, attempt_id, "
+            "rubric_evaluation_id, rubric_version_id, formula_version, "
+            "impact_risk_assessment, explicit_prioritization, delegation_ownership, "
+            "communication_control, proactive_work_protection, evidence_based_reprioritization, "
+            "english_clarity, total_score, trend_basis, scored_at) VALUES "
+            "(:owner, :config, :activity, :attempt, :evaluation, :rubric, 'portfolio-v1', "
+            "3, 2, 2, 2, 1, 2, 1, 13, "
+            "jsonb_build_object('schema_version', 1, 'basis_code', 'stable', "
+            "'event_ids', jsonb_build_array(:prior)), now())",
+            {
+                "owner": owner,
+                "config": alternate_config,
+                "activity": activity,
+                "attempt": attempt,
+                "evaluation": alternate_config_evaluation,
+                "rubric": alternate_portfolio_rubric,
+                "prior": portfolio,
+            },
+        )
         rejects(
             "INSERT INTO portfolio_judgment_scores "
             "(owner_id, config_seed_version_id, activity_instance_id, attempt_id, "

@@ -293,6 +293,7 @@ def _create_validation_functions() -> None:
         AS $$
         DECLARE payload_key text;
         DECLARE item jsonb;
+        DECLARE seen_ids bigint[] := ARRAY[]::bigint[];
         BEGIN
             IF payload IS NULL OR jsonb_typeof(payload) <> 'object'
                 OR octet_length(payload::text) > 8192
@@ -322,6 +323,10 @@ def _create_validation_functions() -> None:
                         OR item::text !~ '^[1-9][0-9]{0,18}$' THEN
                         RETURN false;
                     END IF;
+                    IF item::text::bigint = ANY(seen_ids) THEN
+                        RETURN false;
+                    END IF;
+                    seen_ids := array_append(seen_ids, item::text::bigint);
                 END LOOP;
             END IF;
             RETURN true;
@@ -885,7 +890,7 @@ def upgrade() -> None:
             name="effective_weight_reproducible",
         ),
         sa.CheckConstraint(
-            "qualification_reason_code IN ('qualifies', 'unscored', 'nonqualifying_mode', "
+            "qualification_reason_code IN ('qualifies', 'nonqualifying_mode', "
             "'assisted_during_attempt', 'attempt_b', 'missing_committed_attempt', "
             "'mapping_condition_not_met', 'excluded_by_formula')",
             name="qualification_reason_allowed",
@@ -1205,6 +1210,40 @@ def upgrade() -> None:
 
     op.execute(
         """
+        CREATE FUNCTION public.tamforge_guard_dimension_score_insert()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        SET search_path = pg_catalog
+        AS $$
+        DECLARE configured_maximum numeric;
+        BEGIN
+            SELECT max_score INTO configured_maximum
+            FROM public.rubric_dimensions
+            WHERE owner_id = NEW.owner_id
+                AND config_seed_version_id = NEW.config_seed_version_id
+                AND rubric_version_id = NEW.rubric_version_id
+                AND id = NEW.rubric_dimension_id;
+            IF configured_maximum IS NULL THEN
+                RAISE EXCEPTION 'rubric dimension provenance is invalid';
+            END IF;
+            IF NEW.availability = 'scored' AND NEW.score > configured_maximum THEN
+                RAISE EXCEPTION 'score exceeds rubric dimension maximum';
+            END IF;
+            RETURN NEW;
+        END;
+        $$
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER trg_rubric_dimension_scores_guard_insert
+        BEFORE INSERT ON rubric_dimension_scores
+        FOR EACH ROW EXECUTE FUNCTION public.tamforge_guard_dimension_score_insert()
+        """
+    )
+
+    op.execute(
+        """
         CREATE FUNCTION public.tamforge_guard_skill_evidence_insert()
         RETURNS trigger
         LANGUAGE plpgsql
@@ -1212,6 +1251,12 @@ def upgrade() -> None:
         AS $$
         DECLARE stored_attempt_kind text;
         DECLARE stored_mapping_impact numeric;
+        DECLARE stored_mapping_condition text;
+        DECLARE stored_evidence_mode text;
+        DECLARE stored_exercise_type text;
+        DECLARE stored_mapping_version text;
+        DECLARE task_exercise_type text;
+        DECLARE task_mapping_version text;
         DECLARE stored_evaluator_kind text;
         DECLARE score_item jsonb;
         DECLARE stored_dimension_score numeric;
@@ -1219,6 +1264,7 @@ def upgrade() -> None:
         DECLARE stored_score_numerator numeric := 0;
         DECLARE stored_score_denominator numeric := 0;
         DECLARE seen_score_ids bigint[] := ARRAY[]::bigint[];
+        DECLARE expected_qualification_reason text;
         BEGIN
             SELECT attempt_kind INTO stored_attempt_kind
             FROM public.attempts
@@ -1226,15 +1272,38 @@ def upgrade() -> None:
                 AND activity_instance_id = NEW.activity_instance_id
                 AND id = NEW.attempt_id;
 
-            SELECT impact INTO stored_mapping_impact
-            FROM public.exercise_skill_mappings
-            WHERE owner_id = NEW.owner_id
-                AND config_seed_version_id = NEW.config_seed_version_id
-                AND exercise_type_version_id = NEW.exercise_type_version_id
-                AND competency_id = NEW.competency_id;
+            SELECT etv.evidence_mode, etv.exercise_type, etv.mapping_version,
+                mapping.impact, mapping.condition_code,
+                task.exercise_type, task.mapping_version
+            INTO stored_evidence_mode, stored_exercise_type, stored_mapping_version,
+                stored_mapping_impact, stored_mapping_condition,
+                task_exercise_type, task_mapping_version
+            FROM public.exercise_type_versions AS etv
+            JOIN public.exercise_skill_mappings AS mapping
+                ON mapping.owner_id = etv.owner_id
+                AND mapping.config_seed_version_id = etv.config_seed_version_id
+                AND mapping.exercise_type_version_id = etv.id
+            JOIN public.activity_instances AS activity
+                ON activity.owner_id = etv.owner_id
+                AND activity.id = NEW.activity_instance_id
+            JOIN public.task_definitions AS task
+                ON task.owner_id = activity.owner_id
+                AND task.roadmap_version_id = activity.roadmap_version_id
+                AND task.id = activity.task_definition_id
+            WHERE etv.owner_id = NEW.owner_id
+                AND etv.config_seed_version_id = NEW.config_seed_version_id
+                AND etv.id = NEW.exercise_type_version_id
+                AND mapping.competency_id = NEW.competency_id;
             IF stored_mapping_impact IS NULL
                 OR stored_mapping_impact IS DISTINCT FROM NEW.exercise_skill_impact THEN
                 RAISE EXCEPTION 'skill evidence must use the immutable configured mapping';
+            END IF;
+            IF NEW.practice_mode IS DISTINCT FROM stored_evidence_mode THEN
+                RAISE EXCEPTION 'practice mode must match configured exercise mode';
+            END IF;
+            IF stored_exercise_type IS DISTINCT FROM task_exercise_type
+                OR stored_mapping_version IS DISTINCT FROM task_mapping_version THEN
+                RAISE EXCEPTION 'exercise version must match activity task mapping';
             END IF;
 
             SELECT evaluator_kind INTO stored_evaluator_kind
@@ -1283,7 +1352,35 @@ def upgrade() -> None:
                 RAISE EXCEPTION 'skill evidence score terms are not reproducible';
             END IF;
 
-            IF NEW.qualifying_for_level
+            IF NEW.attempt_id IS NULL THEN
+                expected_qualification_reason := 'missing_committed_attempt';
+            ELSIF stored_attempt_kind IS NULL THEN
+                RAISE EXCEPTION 'skill evidence attempt provenance is invalid';
+            ELSIF stored_attempt_kind = 'attempt_b' THEN
+                expected_qualification_reason := 'attempt_b';
+            ELSIF NEW.practice_mode NOT IN (
+                'independent_practice', 'timed_assessment', 'mock_interview', 'real_interview'
+            ) THEN
+                expected_qualification_reason := 'nonqualifying_mode';
+            ELSIF NEW.assistance_code NOT IN (
+                'no_ai', 'ai_after_committed_attempt', 'ai_interviewer_only'
+            ) THEN
+                expected_qualification_reason := 'assisted_during_attempt';
+            ELSIF NEW.qualifying_for_level THEN
+                expected_qualification_reason := 'qualifies';
+            ELSIF NEW.qualification_reason_code = 'mapping_condition_not_met'
+                AND stored_mapping_condition <> 'always' THEN
+                expected_qualification_reason := 'mapping_condition_not_met';
+            ELSE
+                expected_qualification_reason := 'excluded_by_formula';
+            END IF;
+            IF NEW.qualification_reason_code IS DISTINCT FROM expected_qualification_reason
+                OR NEW.qualifying_for_level IS DISTINCT FROM (
+                    expected_qualification_reason = 'qualifies'
+                ) THEN
+                RAISE EXCEPTION 'qualification reason does not match stored evidence';
+            END IF;
+            IF expected_qualification_reason = 'qualifies'
                 AND NEW.practice_mode = 'independent_practice'
                 AND stored_attempt_kind IS DISTINCT FROM 'attempt_a' THEN
                 RAISE EXCEPTION 'qualifying independent practice requires Attempt A';
@@ -1323,6 +1420,7 @@ def upgrade() -> None:
         DECLARE inclusion_code text;
         DECLARE manifest_weight numeric;
         DECLARE expected_estimate numeric;
+        DECLARE basis_event_id bigint;
         BEGIN
             SELECT baseline_level, month_one_target, final_target
             INTO stored_baseline, stored_month_target, stored_final_target
@@ -1388,6 +1486,44 @@ def upgrade() -> None:
                 END IF;
             END LOOP;
 
+            FOR basis_event_id IN
+                SELECT value::text::bigint
+                FROM jsonb_array_elements(
+                    COALESCE(NEW.confidence_basis->'event_ids', '[]'::jsonb)
+                )
+                UNION ALL
+                SELECT value::text::bigint
+                FROM jsonb_array_elements(
+                    COALESCE(NEW.trend_basis->'event_ids', '[]'::jsonb)
+                )
+            LOOP
+                IF NOT basis_event_id = ANY(seen_event_ids) THEN
+                    RAISE EXCEPTION 'snapshot basis event ids must be contributing events';
+                END IF;
+            END LOOP;
+            IF (NEW.confidence_code = 'low' AND NEW.confidence_basis->>'basis_code' NOT IN (
+                    'low_weight', 'no_qualifying_evidence'
+                ))
+                OR (NEW.confidence_code = 'medium'
+                    AND NEW.confidence_basis->>'basis_code' <> 'medium_weight_diversity')
+                OR (NEW.confidence_code = 'high'
+                    AND NEW.confidence_basis->>'basis_code'
+                        <> 'high_weight_diversity_recency') THEN
+                RAISE EXCEPTION 'snapshot confidence basis code is invalid';
+            END IF;
+            IF (NEW.trend_code = 'insufficient_evidence'
+                    AND NEW.trend_basis->>'basis_code' NOT IN (
+                        'too_few_events', 'no_qualifying_evidence'
+                    ))
+                OR (NEW.trend_code = 'improving'
+                    AND NEW.trend_basis->>'basis_code' <> 'improving')
+                OR (NEW.trend_code = 'stable'
+                    AND NEW.trend_basis->>'basis_code' <> 'stable')
+                OR (NEW.trend_code = 'declining'
+                    AND NEW.trend_basis->>'basis_code' <> 'declining') THEN
+                RAISE EXCEPTION 'snapshot trend basis code is invalid';
+            END IF;
+
             expected_estimate := round(
                 (stored_baseline * 2 + reconstructed_weighted_sum)
                 / (2 + reconstructed_weight),
@@ -1418,6 +1554,62 @@ def upgrade() -> None:
         CREATE TRIGGER trg_skill_snapshots_guard_insert
         BEFORE INSERT ON skill_snapshots
         FOR EACH ROW EXECUTE FUNCTION public.tamforge_guard_skill_snapshot_insert()
+        """
+    )
+    op.execute(
+        """
+        CREATE FUNCTION public.tamforge_guard_portfolio_score_insert()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        SET search_path = pg_catalog
+        AS $$
+        DECLARE basis_code text := NEW.trend_basis->>'basis_code';
+        DECLARE basis_event_id bigint;
+        DECLARE valid_history_count integer := 0;
+        DECLARE requested_history_count integer := jsonb_array_length(
+            COALESCE(NEW.trend_basis->'event_ids', '[]'::jsonb)
+        );
+        BEGIN
+            IF basis_code = 'first_score' THEN
+                IF requested_history_count <> 0 THEN
+                    RAISE EXCEPTION 'first portfolio score cannot have trend history';
+                END IF;
+                RETURN NEW;
+            END IF;
+            IF basis_code NOT IN ('improving', 'stable', 'declining')
+                OR requested_history_count = 0 THEN
+                RAISE EXCEPTION 'portfolio trend requires prior score history';
+            END IF;
+
+            FOR basis_event_id IN
+                SELECT value::text::bigint
+                FROM jsonb_array_elements(NEW.trend_basis->'event_ids')
+            LOOP
+                IF EXISTS (
+                    SELECT 1
+                    FROM public.portfolio_judgment_scores AS prior
+                    WHERE prior.id = basis_event_id
+                        AND prior.owner_id = NEW.owner_id
+                        AND prior.config_seed_version_id = NEW.config_seed_version_id
+                        AND prior.formula_version = NEW.formula_version
+                        AND prior.scored_at <= NEW.scored_at
+                ) THEN
+                    valid_history_count := valid_history_count + 1;
+                END IF;
+            END LOOP;
+            IF valid_history_count <> requested_history_count THEN
+                RAISE EXCEPTION 'portfolio trend history provenance is invalid';
+            END IF;
+            RETURN NEW;
+        END;
+        $$
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER trg_portfolio_judgment_scores_guard_insert
+        BEFORE INSERT ON portfolio_judgment_scores
+        FOR EACH ROW EXECUTE FUNCTION public.tamforge_guard_portfolio_score_insert()
         """
     )
     op.execute(
@@ -1473,6 +1665,11 @@ def downgrade() -> None:
     for table_name in immutable_tables:
         op.execute(f"DROP TRIGGER IF EXISTS trg_{table_name}_immutable ON {table_name}")
     op.execute("DROP FUNCTION IF EXISTS public.tamforge_reject_evidence_mutation()")
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_portfolio_judgment_scores_guard_insert "
+        "ON portfolio_judgment_scores"
+    )
+    op.execute("DROP FUNCTION IF EXISTS public.tamforge_guard_portfolio_score_insert()")
     op.execute("DROP TRIGGER IF EXISTS trg_skill_snapshots_guard_insert ON skill_snapshots")
     op.execute("DROP FUNCTION IF EXISTS public.tamforge_guard_skill_snapshot_insert()")
     op.execute(
@@ -1480,6 +1677,11 @@ def downgrade() -> None:
         "ON skill_evidence_events"
     )
     op.execute("DROP FUNCTION IF EXISTS public.tamforge_guard_skill_evidence_insert()")
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_rubric_dimension_scores_guard_insert "
+        "ON rubric_dimension_scores"
+    )
+    op.execute("DROP FUNCTION IF EXISTS public.tamforge_guard_dimension_score_insert()")
 
     for table_name in immutable_tables:
         op.drop_table(table_name)

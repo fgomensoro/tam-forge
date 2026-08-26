@@ -99,6 +99,77 @@ def _indexed_prefixes(table: sa.Table) -> set[tuple[str, ...]]:
     return result
 
 
+class _StubResult:
+    def __init__(self, value: object) -> None:
+        self.value = value
+
+    def one_or_none(self) -> object:
+        return self.value
+
+    def scalar_one_or_none(self) -> object:
+        return self.value
+
+    def scalar_one(self) -> object:
+        return self.value
+
+
+class _StubConnection:
+    def __init__(self, *values: object) -> None:
+        self.values = list(values)
+        self.statements: list[object] = []
+
+    def execute(self, statement: object) -> _StubResult:
+        self.statements.append(statement)
+        assert self.values, "stub connection received an unexpected query"
+        return _StubResult(self.values.pop(0))
+
+
+def _skill_event(**overrides: object) -> object:
+    from tamforge_backend.evidence.models import SkillEvidenceEvent
+
+    now = datetime.now(UTC)
+    values: dict[str, object] = {
+        "owner_id": 1,
+        "config_seed_version_id": 1,
+        "activity_instance_id": 1,
+        "attempt_id": 1,
+        "rubric_evaluation_id": 1,
+        "rubric_version_id": 1,
+        "exercise_type_version_id": 1,
+        "competency_id": 1,
+        "formula_version": "skill-v1",
+        "practice_mode": "independent_practice",
+        "assistance_code": "no_ai",
+        "evaluator_kind": "ai_rubric_reviewer",
+        "difficulty_code": "standard",
+        "raw_dimension_scores": {
+            "schema_version": 1,
+            "scores": [{"dimension_score_id": 1, "score": 3, "weight": 1}],
+        },
+        "raw_score_numerator": Decimal("3.000000"),
+        "raw_score_denominator": Decimal("1.000000"),
+        "performance_score": Decimal("3.000"),
+        "exercise_skill_impact": Decimal("1.000000"),
+        "practice_mode_factor": Decimal("0.650000"),
+        "ai_independence_factor": Decimal("1.000000"),
+        "evaluator_confidence_factor": Decimal("0.750000"),
+        "difficulty_factor": Decimal("1.000000"),
+        "effective_weight": Decimal("0.487500"),
+        "qualifying_for_level": True,
+        "qualification_reason_code": "qualifies",
+        "explanation": {
+            "schema_version": 1,
+            "summary_code": "independent_scored_evidence",
+            "dimension_score_ids": [1],
+            "discount_codes": [],
+        },
+        "occurred_at": now,
+        "created_at": now,
+    }
+    values.update(overrides)
+    return SkillEvidenceEvent(**values)
+
+
 def test_revision_contract_is_exact_and_linear() -> None:
     migration = _load_migration()
 
@@ -687,6 +758,313 @@ def test_application_boundary_rejects_unstructured_manifests_and_nonreproducible
     validate_skill_evidence_event(None, None, event_record)
 
 
+def test_skill_event_uses_configured_mode_and_activity_task_mapping() -> None:
+    from tamforge_backend.evidence.models import (
+        EvidenceContractError,
+        validate_skill_evidence_event,
+    )
+
+    for configured_mode in ("guided_practice", "exposure_only"):
+        configured_nonqualifying = _StubConnection(
+            (
+                configured_mode,
+                "troubleshooting_case",
+                "seed-v1",
+                "troubleshooting_case",
+                "seed-v1",
+                Decimal("1.000000"),
+                "always",
+            )
+        )
+        with pytest.raises(EvidenceContractError, match="configured exercise mode"):
+            validate_skill_evidence_event(
+                None,
+                configured_nonqualifying,  # type: ignore[arg-type]
+                _skill_event(),
+            )
+
+    wrong_task_mapping = _StubConnection(
+        (
+            "independent_practice",
+            "troubleshooting_case",
+            "seed-v1",
+            "sql_production_lab",
+            "seed-v1",
+            Decimal("1.000000"),
+            "always",
+        )
+    )
+    with pytest.raises(EvidenceContractError, match="activity task mapping"):
+        validate_skill_evidence_event(None, wrong_task_mapping, _skill_event())  # type: ignore[arg-type]
+
+    valid_lineage = _StubConnection(
+        (
+            "independent_practice",
+            "troubleshooting_case",
+            "seed-v1",
+            "troubleshooting_case",
+            "seed-v1",
+            Decimal("1.000000"),
+            "always",
+        ),
+        "attempt_a",
+    )
+    validate_skill_evidence_event(None, valid_lineage, _skill_event())  # type: ignore[arg-type]
+
+
+def test_qualification_reasons_are_exact_and_unscored_is_unrepresentable() -> None:
+    from tamforge_backend.evidence.models import (
+        QUALIFICATION_REASON_CODES,
+        EvidenceContractError,
+        _validate_qualification_reason,
+    )
+
+    assert "unscored" not in QUALIFICATION_REASON_CODES
+    invalid_cases = (
+        (
+            _skill_event(
+                qualifying_for_level=False,
+                qualification_reason_code="nonqualifying_mode",
+            ),
+            "attempt_a",
+            "always",
+        ),
+        (
+            _skill_event(
+                qualifying_for_level=False,
+                qualification_reason_code="assisted_during_attempt",
+            ),
+            "attempt_a",
+            "always",
+        ),
+        (
+            _skill_event(
+                qualifying_for_level=False,
+                qualification_reason_code="missing_committed_attempt",
+            ),
+            "attempt_a",
+            "always",
+        ),
+        (
+            _skill_event(qualifying_for_level=False, qualification_reason_code="attempt_b"),
+            "attempt_a",
+            "always",
+        ),
+        (
+            _skill_event(
+                qualifying_for_level=False,
+                qualification_reason_code="mapping_condition_not_met",
+            ),
+            "attempt_a",
+            "always",
+        ),
+    )
+    for record, attempt_kind, condition_code in invalid_cases:
+        with pytest.raises(EvidenceContractError, match="qualification reason"):
+            _validate_qualification_reason(record, attempt_kind, condition_code)  # type: ignore[arg-type]
+
+    _validate_qualification_reason(
+        _skill_event(
+            qualifying_for_level=False,
+            qualification_reason_code="nonqualifying_mode",
+            practice_mode="guided_practice",
+            practice_mode_factor=Decimal("0.350000"),
+            effective_weight=Decimal("0.262500"),
+        ),
+        "attempt_a",
+        "always",
+    )
+    _validate_qualification_reason(
+        _skill_event(
+            qualifying_for_level=False,
+            qualification_reason_code="assisted_during_attempt",
+            assistance_code="ai_hints_during_attempt",
+        ),
+        "attempt_a",
+        "always",
+    )
+    _validate_qualification_reason(
+        _skill_event(
+            qualifying_for_level=False,
+            qualification_reason_code="attempt_b",
+        ),
+        "attempt_b",
+        "always",
+    )
+    _validate_qualification_reason(
+        _skill_event(
+            attempt_id=None,
+            qualifying_for_level=False,
+            qualification_reason_code="missing_committed_attempt",
+        ),
+        None,
+        "always",
+    )
+    _validate_qualification_reason(
+        _skill_event(
+            qualifying_for_level=False,
+            qualification_reason_code="mapping_condition_not_met",
+        ),
+        "attempt_a",
+        "spoken_or_written_english",
+    )
+    _validate_qualification_reason(
+        _skill_event(
+            qualifying_for_level=False,
+            qualification_reason_code="excluded_by_formula",
+        ),
+        "attempt_a",
+        "always",
+    )
+
+
+def test_dimension_score_application_guard_enforces_dimension_maximum() -> None:
+    from tamforge_backend.evidence.models import (
+        EvidenceContractError,
+        RubricDimensionScore,
+        validate_rubric_dimension_score,
+    )
+
+    score = RubricDimensionScore(
+        owner_id=1,
+        config_seed_version_id=1,
+        rubric_evaluation_id=1,
+        rubric_version_id=1,
+        rubric_dimension_id=1,
+        availability="scored",
+        score=Decimal("4.000"),
+        weight_used=Decimal("1.000000"),
+        evidence_manifest={"schema_version": 1, "artifact_ids": []},
+        created_at=datetime.now(UTC),
+    )
+    with pytest.raises(EvidenceContractError, match="dimension maximum"):
+        validate_rubric_dimension_score(None, _StubConnection(Decimal("3.000")), score)  # type: ignore[arg-type]
+
+    unavailable = RubricDimensionScore(
+        owner_id=1,
+        config_seed_version_id=1,
+        rubric_evaluation_id=1,
+        rubric_version_id=1,
+        rubric_dimension_id=1,
+        availability="not_applicable",
+        score=None,
+        weight_used=None,
+        evidence_manifest={"schema_version": 1, "artifact_ids": []},
+        created_at=datetime.now(UTC),
+    )
+    validate_rubric_dimension_score(
+        None,
+        _StubConnection(Decimal("3.000")),
+        unavailable,  # type: ignore[arg-type]
+    )
+    unavailable.score = Decimal("1.000")
+    with pytest.raises(EvidenceContractError, match="cannot carry a score"):
+        validate_rubric_dimension_score(None, None, unavailable)
+
+
+def test_basis_ids_are_unique_scoped_and_context_specific() -> None:
+    from tamforge_backend.evidence.models import (
+        EvidenceContractError,
+        PortfolioJudgmentScore,
+        SkillSnapshot,
+        _validate_basis,
+        validate_portfolio_judgment_score,
+        validate_skill_snapshot,
+    )
+
+    assert not _validate_basis(
+        {"schema_version": 1, "basis_code": "stable", "event_ids": [1, 1]}
+    )
+    snapshot = SkillSnapshot(
+        owner_id=1,
+        config_seed_version_id=1,
+        competency_id=1,
+        formula_version="skill-v1",
+        snapshot_date=date.today(),
+        snapshot_sequence=1,
+        estimated_level=Decimal("2.000"),
+        confidence_code="low",
+        trend_code="insufficient_evidence",
+        recency_code="fresh",
+        baseline_target_gap=Decimal("0.000"),
+        month_one_target_gap=Decimal("0.500"),
+        final_target_gap=Decimal("1.000"),
+        total_effective_weight=Decimal("0.100000"),
+        qualifying_event_count=1,
+        exercise_type_count=1,
+        last_strong_evidence_date=date.today(),
+        contributing_event_manifest={
+            "schema_version": 1,
+            "events": [
+                {"event_id": 1, "effective_weight": 0.1, "inclusion_code": "included"}
+            ],
+        },
+        confidence_basis={"schema_version": 1, "basis_code": "low_weight", "event_ids": [2]},
+        trend_basis={"schema_version": 1, "basis_code": "too_few_events", "event_ids": [1]},
+        created_at=datetime.now(UTC),
+    )
+    with pytest.raises(EvidenceContractError, match="basis event ids"):
+        validate_skill_snapshot(None, None, snapshot)
+
+    snapshot.confidence_basis = {
+        "schema_version": 1,
+        "basis_code": "stable",
+        "event_ids": [1],
+    }
+    with pytest.raises(EvidenceContractError, match="confidence basis code"):
+        validate_skill_snapshot(None, None, snapshot)
+
+    snapshot.confidence_basis = {
+        "schema_version": 1,
+        "basis_code": "low_weight",
+        "event_ids": [1],
+    }
+    snapshot.trend_basis = {
+        "schema_version": 1,
+        "basis_code": "stable",
+        "event_ids": [1],
+    }
+    with pytest.raises(EvidenceContractError, match="trend basis code"):
+        validate_skill_snapshot(None, None, snapshot)
+
+    portfolio = PortfolioJudgmentScore(
+        owner_id=1,
+        config_seed_version_id=1,
+        activity_instance_id=1,
+        attempt_id=1,
+        rubric_evaluation_id=1,
+        rubric_version_id=1,
+        formula_version="portfolio-v1",
+        impact_risk_assessment=Decimal("3"),
+        explicit_prioritization=Decimal("2"),
+        delegation_ownership=Decimal("2"),
+        communication_control=Decimal("2"),
+        proactive_work_protection=Decimal("1"),
+        evidence_based_reprioritization=Decimal("2"),
+        english_clarity=Decimal("1"),
+        total_score=Decimal("13"),
+        trend_basis={"schema_version": 1, "basis_code": "first_score", "event_ids": [9]},
+        scored_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+    )
+    with pytest.raises(EvidenceContractError, match="first portfolio score"):
+        validate_portfolio_judgment_score(None, None, portfolio)
+
+    portfolio.trend_basis = {
+        "schema_version": 1,
+        "basis_code": "stable",
+        "event_ids": [9],
+    }
+    with pytest.raises(EvidenceContractError, match="portfolio trend history"):
+        validate_portfolio_judgment_score(None, _StubConnection(0), portfolio)  # type: ignore[arg-type]
+
+    validate_portfolio_judgment_score(
+        None,
+        _StubConnection(1),
+        portfolio,  # type: ignore[arg-type]
+    )
+
+
 def test_immutable_configuration_and_history_are_rejected_by_orm() -> None:
     from tamforge_backend.evidence.models import (
         AppendOnlyEvidenceError,
@@ -842,6 +1220,8 @@ def test_offline_upgrade_and_downgrade_include_guards_and_full_reversal() -> Non
         "tamforge_validate_basis_v1",
         "tamforge_reject_evidence_mutation",
         "tamforge_guard_skill_evidence_insert",
+        "tamforge_guard_dimension_score_insert",
+        "tamforge_guard_portfolio_score_insert",
     }:
         assert function_name in upgrade_sql
         assert function_name in downgrade_sql
@@ -861,4 +1241,12 @@ def test_offline_guards_reconcile_dimension_rows_mappings_and_snapshot_inputs() 
     assert "tamforge_guard_skill_snapshot_insert" in upgrade_sql
     assert "seen_event_ids" in upgrade_sql
     assert "snapshot estimate is not reproducible" in upgrade_sql
+    assert "practice mode must match configured exercise mode" in upgrade_sql
+    assert "activity task mapping" in upgrade_sql
+    assert "score exceeds rubric dimension maximum" in upgrade_sql
+    assert "snapshot basis event ids must be contributing events" in upgrade_sql
+    assert "portfolio trend history provenance is invalid" in upgrade_sql
+    assert "tamforge_guard_dimension_score_insert" in downgrade_sql
     assert "tamforge_guard_skill_snapshot_insert" in downgrade_sql
+    assert "tamforge_guard_portfolio_score_insert" in downgrade_sql
+    assert "'unscored'" not in upgrade_sql
