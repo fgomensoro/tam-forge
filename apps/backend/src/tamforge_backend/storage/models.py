@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from base64 import b64encode
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -10,6 +11,7 @@ from typing import Final
 
 MAX_OBJECT_KEY_BYTES: Final = 1024
 MAX_PRESIGN_EXPIRY_SECONDS: Final = 900
+MAX_METADATA_BYTES: Final = 2 * 1024
 READ_CHUNK_BYTES: Final = 64 * 1024
 SHA256_METADATA_KEY: Final = "sha256"
 BYTE_LENGTH_METADATA_KEY: Final = "byte-length"
@@ -56,6 +58,11 @@ def validate_sha256(value: str) -> str:
     if not _SHA256.fullmatch(value):
         raise ObjectIntegrityError("SHA-256 must be 64 lowercase hexadecimal characters")
     return value
+
+
+def provider_sha256_checksum(value: str) -> str:
+    """Return the S3-native base64 checksum for one canonical hex digest."""
+    return b64encode(bytes.fromhex(validate_sha256(value))).decode("ascii")
 
 
 def _validate_key_segment(value: str) -> str:
@@ -132,12 +139,13 @@ def normalize_metadata(metadata: Mapping[str, str]) -> Mapping[str, str]:
             not _METADATA_KEY.fullmatch(key)
             or key in _RESERVED_METADATA
             or not isinstance(value, str)
+            or not value.isascii()
             or len(value) > 1024
             or any(ord(character) < 32 or ord(character) == 127 for character in value)
         ):
             raise InvalidObjectMetadata("object metadata is invalid")
         total_bytes += len(key.encode("utf-8")) + len(value.encode("utf-8"))
-        if total_bytes > 8 * 1024:
+        if total_bytes > MAX_METADATA_BYTES:
             raise InvalidObjectMetadata("object metadata is too large")
         normalized[key] = value
     return MappingProxyType(normalized)
@@ -155,6 +163,12 @@ def integrity_metadata(
     merged = dict(normalize_metadata(metadata))
     merged[SHA256_METADATA_KEY] = digest
     merged[BYTE_LENGTH_METADATA_KEY] = str(byte_length)
+    total_bytes = sum(
+        len(key.encode("ascii")) + len(value.encode("ascii"))
+        for key, value in merged.items()
+    )
+    if total_bytes > MAX_METADATA_BYTES:
+        raise InvalidObjectMetadata("object metadata is too large")
     return MappingProxyType(merged)
 
 
@@ -205,13 +219,19 @@ class PresignPutRequest:
         if self.byte_length < 0:
             raise ObjectIntegrityError("byte length cannot be negative")
         validate_content_type(self.content_type)
-        object.__setattr__(self, "metadata", normalize_metadata(self.metadata))
+        normalized_metadata = normalize_metadata(self.metadata)
+        integrity_metadata(
+            sha256=self.sha256,
+            byte_length=self.byte_length,
+            metadata=normalized_metadata,
+        )
+        object.__setattr__(self, "metadata", normalized_metadata)
         validate_presign_expiry(self.expires_seconds)
 
 
 @dataclass(frozen=True, slots=True)
 class PresignedRequest:
-    url: str
+    url: str = field(repr=False)
     method: str
     headers: Mapping[str, str]
     expires_seconds: int

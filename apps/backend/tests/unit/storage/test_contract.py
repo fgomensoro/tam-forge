@@ -24,28 +24,17 @@ def object_store_factory(request: pytest.FixtureRequest) -> Iterator[Callable[[]
         yield InMemoryObjectStore
         return
 
-    import boto3
-    from botocore.client import Config
-    from moto import mock_aws
     from tamforge_backend.storage.s3 import S3ObjectStore
 
-    with mock_aws():
-        client = boto3.client(
-            "s3",
-            region_name="us-east-1",
-            aws_access_key_id="test-access",
-            aws_secret_access_key="test-secret",
-            config=Config(signature_version="s3v4"),
-        )
-        client.create_bucket(Bucket="tam-forge-test")
-        yield lambda: S3ObjectStore(
-            endpoint_url=None,
-            region="us-east-1",
-            bucket="tam-forge-test",
-            access_key="test-access",
-            secret_key="test-secret",
-            client=client,
-        )
+    client = request.getfixturevalue("moto_s3_client")
+    yield lambda: S3ObjectStore(
+        endpoint_url=None,
+        region="us-east-1",
+        bucket="tam-forge-test",
+        access_key="test-access",
+        secret_key="test-secret",
+        client=client,
+    )
 
 
 def test_server_generated_key_is_scoped_and_rejects_unsafe_inputs() -> None:
@@ -300,6 +289,34 @@ def test_presign_request_binds_key_terminal_hash_to_declared_digest() -> None:
             byte_length=17,
             content_type="text/plain",
             metadata={},
+        )
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    (
+        {"language": "español"},
+        {"first": "x" * 1000, "second": "y" * 1000},
+    ),
+)
+def test_metadata_is_ascii_and_two_kibibytes_including_integrity_fields(
+    metadata: dict[str, str],
+) -> None:
+    from tamforge_backend.storage.models import InvalidObjectMetadata, PresignPutRequest
+
+    digest = hashlib.sha256(b"metadata").hexdigest()
+    key = (
+        "written-artifact/0191af17-cc6e-7da1-a9d0-b0e542bc7460/attempt-a/"
+        f"{digest}"
+    )
+
+    with pytest.raises(InvalidObjectMetadata):
+        PresignPutRequest(
+            key=key,
+            sha256=digest,
+            byte_length=8,
+            content_type="text/plain",
+            metadata=metadata,
         )
 
 

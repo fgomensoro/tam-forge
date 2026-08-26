@@ -24,6 +24,7 @@ def get_object_store(request: Request) -> ObjectStore:
         secret_key=settings.object_store_secret_key.get_secret_value(),
         max_upload_bytes=settings.object_store_max_upload_bytes,
         memory_spool_bytes=settings.object_store_memory_spool_bytes,
+        max_concurrent_uploads=settings.object_store_max_concurrent_uploads,
     )
     request.app.state.object_store = store
     return store

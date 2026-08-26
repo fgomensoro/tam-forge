@@ -19,6 +19,7 @@ from .models import (
     PresignPutRequest,
     StoredObject,
     integrity_metadata,
+    provider_sha256_checksum,
     validate_content_type,
     validate_key_sha256,
     validate_object_key,
@@ -112,6 +113,8 @@ class InMemoryObjectStore:
         headers = {
             "content-type": request.content_type,
             "if-none-match": "*",
+            "x-amz-acl": "private",
+            "x-amz-checksum-sha256": provider_sha256_checksum(request.sha256),
             **{f"x-amz-meta-{key}": value for key, value in metadata.items()},
         }
         return PresignedRequest(

@@ -141,12 +141,14 @@ def test_object_store_resource_limits_are_bounded_and_consistent() -> None:
         environment="test",
         object_store_max_upload_bytes=1024,
         object_store_memory_spool_bytes=512,
+        object_store_max_concurrent_uploads=1,
         _env_file=None,
     )
 
     assert settings.object_store_region == "us-east-1"
     assert settings.object_store_max_upload_bytes == 1024
     assert settings.object_store_memory_spool_bytes == 512
+    assert settings.object_store_max_concurrent_uploads == 1
 
     with pytest.raises(ValidationError):
         Settings(
@@ -162,6 +164,33 @@ def test_object_store_resource_limits_are_bounded_and_consistent() -> None:
             object_store_memory_spool_bytes=0,
             _env_file=None,
         )
+
+    with pytest.raises(ValidationError):
+        Settings(
+            environment="test",
+            object_store_max_concurrent_uploads=0,
+            _env_file=None,
+        )
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    (
+        "https://objects.example.test/",
+        "https://objects.example.test/bucket",
+        "https://objects.example.test?tenant=private",
+        "https://objects.example.test#fragment",
+    ),
+)
+def test_production_object_store_endpoint_must_be_an_exact_https_origin(
+    monkeypatch: pytest.MonkeyPatch,
+    endpoint: str,
+) -> None:
+    set_production_environment(monkeypatch)
+    monkeypatch.setenv("TAMFORGE_OBJECT_STORE_ENDPOINT", endpoint)
+
+    with pytest.raises(ValidationError):
+        Settings()
 
 
 def test_invalid_secret_input_is_redacted_from_validation_error(

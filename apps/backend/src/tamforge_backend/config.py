@@ -38,6 +38,9 @@ class Settings(BaseSettings):
         "object_store_secret_key": "TAMFORGE_OBJECT_STORE_SECRET_KEY",
         "object_store_max_upload_bytes": "TAMFORGE_OBJECT_STORE_MAX_UPLOAD_BYTES",
         "object_store_memory_spool_bytes": "TAMFORGE_OBJECT_STORE_MEMORY_SPOOL_BYTES",
+        "object_store_max_concurrent_uploads": (
+            "TAMFORGE_OBJECT_STORE_MAX_CONCURRENT_UPLOADS"
+        ),
         "github_client_id": "TAMFORGE_GITHUB_CLIENT_ID",
         "github_client_secret": "TAMFORGE_GITHUB_CLIENT_SECRET",
         "session_signing_secret": "TAMFORGE_SESSION_SIGNING_SECRET",
@@ -103,6 +106,12 @@ class Settings(BaseSettings):
         ge=1,
         le=64 * 1024 * 1024,
         validation_alias="TAMFORGE_OBJECT_STORE_MEMORY_SPOOL_BYTES",
+    )
+    object_store_max_concurrent_uploads: int = Field(
+        default=1,
+        ge=1,
+        le=8,
+        validation_alias="TAMFORGE_OBJECT_STORE_MAX_CONCURRENT_UPLOADS",
     )
     github_client_id: str = Field(default="", validation_alias="TAMFORGE_GITHUB_CLIENT_ID")
     github_client_secret: SecretStr = Field(
@@ -311,6 +320,9 @@ class Settings(BaseSettings):
             or parsed.hostname.lower() in _LOCAL_HOSTS
             or parsed.username is not None
             or parsed.password is not None
+            or parsed.path
+            or parsed.query
+            or parsed.fragment
         ):
             raise ValueError("production requires a secure nonlocal object store endpoint")
         if not _BUCKET_PATTERN.fullmatch(self.object_store_bucket):
