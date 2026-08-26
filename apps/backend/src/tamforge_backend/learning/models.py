@@ -19,6 +19,7 @@ from sqlalchemy import (
     LargeBinary,
     Text,
     UniqueConstraint,
+    and_,
     event,
     func,
     inspect,
@@ -627,14 +628,6 @@ class ActivityArtifactLink(Base):
             name="fk_activity_artifact_links_owner_artifact_artifacts",
             ondelete="RESTRICT",
         ),
-        UniqueConstraint(
-            "owner_id",
-            "activity_instance_id",
-            "attempt_id",
-            "artifact_id",
-            "link_role",
-            name="uq_activity_artifact_links_binding",
-        ),
         CheckConstraint(
             "link_role IN ('original_output', 'presentation_audio', 'transcript', "
             "'analysis', 'supporting', 'correction')",
@@ -652,6 +645,25 @@ class ActivityArtifactLink(Base):
             "attempt_id",
         ),
         Index("ix_activity_artifact_links_owner_artifact", "owner_id", "artifact_id"),
+        Index(
+            "uq_activity_artifact_links_without_attempt",
+            "owner_id",
+            "activity_instance_id",
+            "artifact_id",
+            "link_role",
+            unique=True,
+            postgresql_where=text("attempt_id IS NULL"),
+        ),
+        Index(
+            "uq_activity_artifact_links_with_attempt",
+            "owner_id",
+            "activity_instance_id",
+            "attempt_id",
+            "artifact_id",
+            "link_role",
+            unique=True,
+            postgresql_where=text("attempt_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
@@ -961,7 +973,12 @@ def validate_study_day_workflow(
 ) -> None:
     del mapper, connection
     state = inspect(target)
-    if state.persistent:
+    if state.persistent or state.detached:
+        status_history = state.attrs.status.history
+        previous_status = status_history.deleted[0] if status_history.deleted else target.status
+        has_changes = any(attribute.history.has_changes() for attribute in state.attrs)
+        if has_changes and previous_status == target.status and target.status != "in_progress":
+            raise StudyDayWorkflowError("same-status study day updates are limited to in_progress")
         focused_history = state.attrs.focused_minutes.history
         if focused_history.deleted and target.focused_minutes < focused_history.deleted[0]:
             raise StudyDayWorkflowError("focused minutes cannot decrease")
@@ -1141,17 +1158,62 @@ def validate_attempt_workflow(
         raise AttemptWorkflowError("invalid attempt kind")
     if (target.attempt_kind == "attempt_b") != (target.parent_attempt_id is not None):
         raise AttemptWorkflowError("invalid Attempt A/B relation shape")
-    if target.attempt_kind == "attempt_b" and connection is not None:
-        parent_kind = connection.execute(
-            select(Attempt.__table__.c.attempt_kind).where(
-                Attempt.__table__.c.owner_id == target.owner_id,
-                Attempt.__table__.c.id == target.parent_attempt_id,
+    if connection is None:
+        return
+
+    activity_table = ActivityInstance.__table__
+    activity_kind = connection.execute(
+        select(activity_table.c.attempt_kind)
+        .where(
+            activity_table.c.owner_id == target.owner_id,
+            activity_table.c.id == target.activity_instance_id,
+        )
+        .with_for_update(read=True, key_share=True)
+    ).scalar_one_or_none()
+    if activity_kind != target.attempt_kind:
+        raise AttemptWorkflowError("attempt kind must match child activity kind")
+
+    if target.attempt_kind == "attempt_b":
+        parent_attempt = Attempt.__table__.alias("parent_attempt")
+        parent_activity = ActivityInstance.__table__.alias("parent_activity")
+        parent = connection.execute(
+            select(
+                parent_attempt.c.attempt_kind,
+                parent_activity.c.attempt_kind,
+                parent_attempt.c.prompt,
             )
-        ).scalar_one_or_none()
+            .select_from(
+                parent_attempt.join(
+                    parent_activity,
+                    and_(
+                        parent_activity.c.owner_id == parent_attempt.c.owner_id,
+                        parent_activity.c.id == parent_attempt.c.activity_instance_id,
+                    ),
+                )
+            )
+            .where(
+                parent_attempt.c.owner_id == target.owner_id,
+                parent_attempt.c.id == target.parent_attempt_id,
+            )
+            .with_for_update(
+                of=(parent_attempt, parent_activity),
+                read=True,
+                key_share=True,
+            )
+        ).one_or_none()
+        if parent is None:
+            raise AttemptWorkflowError(
+                "invalid Attempt A/B relation: parent must be an owner-scoped Attempt A"
+            )
+        parent_kind, parent_activity_kind, parent_prompt = parent
         if parent_kind != "attempt_a":
             raise AttemptWorkflowError(
                 "invalid Attempt A/B relation: parent must be an owner-scoped Attempt A"
             )
+        if parent_activity_kind != "attempt_a":
+            raise AttemptWorkflowError("Attempt A parent activity kind must be attempt_a")
+        if parent_prompt != target.prompt:
+            raise AttemptWorkflowError("Attempt B must use the same prompt as Attempt A")
 
 
 event.listen(Attempt, "before_insert", validate_attempt_workflow)

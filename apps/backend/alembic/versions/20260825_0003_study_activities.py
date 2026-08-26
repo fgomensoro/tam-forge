@@ -641,14 +641,6 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id", name="pk_activity_artifact_links"),
-        sa.UniqueConstraint(
-            "owner_id",
-            "activity_instance_id",
-            "attempt_id",
-            "artifact_id",
-            "link_role",
-            name="uq_activity_artifact_links_binding",
-        ),
     )
     op.create_index(
         "ix_activity_artifact_links_owner_activity",
@@ -664,6 +656,20 @@ def upgrade() -> None:
         "ix_activity_artifact_links_owner_artifact",
         "activity_artifact_links",
         ["owner_id", "artifact_id"],
+    )
+    op.create_index(
+        "uq_activity_artifact_links_without_attempt",
+        "activity_artifact_links",
+        ["owner_id", "activity_instance_id", "artifact_id", "link_role"],
+        unique=True,
+        postgresql_where=sa.text("attempt_id IS NULL"),
+    )
+    op.create_index(
+        "uq_activity_artifact_links_with_attempt",
+        "activity_artifact_links",
+        ["owner_id", "activity_instance_id", "attempt_id", "artifact_id", "link_role"],
+        unique=True,
+        postgresql_where=sa.text("attempt_id IS NOT NULL"),
     )
 
     op.create_table(
@@ -887,6 +893,7 @@ def upgrade() -> None:
             END IF;
             IF NOT (
                 (OLD.status = 'planned' AND NEW.status IN ('in_progress', 'skipped'))
+                OR (OLD.status = 'in_progress' AND NEW.status = 'in_progress')
                 OR (OLD.status = 'in_progress' AND NEW.status IN ('closed', 'incomplete'))
             ) THEN
                 RAISE EXCEPTION 'invalid study day status transition';
@@ -1065,15 +1072,38 @@ def upgrade() -> None:
         LANGUAGE plpgsql
         SET search_path = pg_catalog
         AS $$
+        DECLARE activity_kind text;
         DECLARE parent_kind text;
+        DECLARE parent_activity_kind text;
+        DECLARE parent_prompt text;
         BEGIN
+            SELECT attempt_kind INTO activity_kind
+            FROM public.activity_instances
+            WHERE owner_id = NEW.owner_id AND id = NEW.activity_instance_id
+            FOR KEY SHARE;
+            IF activity_kind IS DISTINCT FROM NEW.attempt_kind THEN
+                RAISE EXCEPTION 'attempt kind must match child activity kind';
+            END IF;
             IF NEW.attempt_kind = 'attempt_b' THEN
-                SELECT attempt_kind INTO parent_kind
-                FROM public.attempts
-                WHERE owner_id = NEW.owner_id AND id = NEW.parent_attempt_id
-                FOR KEY SHARE;
+                SELECT parent_attempt.attempt_kind,
+                    parent_activity.attempt_kind,
+                    parent_attempt.prompt
+                INTO parent_kind, parent_activity_kind, parent_prompt
+                FROM public.attempts AS parent_attempt
+                JOIN public.activity_instances AS parent_activity
+                    ON parent_activity.owner_id = parent_attempt.owner_id
+                    AND parent_activity.id = parent_attempt.activity_instance_id
+                WHERE parent_attempt.owner_id = NEW.owner_id
+                    AND parent_attempt.id = NEW.parent_attempt_id
+                FOR KEY SHARE OF parent_attempt, parent_activity;
                 IF parent_kind IS DISTINCT FROM 'attempt_a' THEN
                     RAISE EXCEPTION 'Attempt B requires an owner-scoped Attempt A parent';
+                END IF;
+                IF parent_activity_kind IS DISTINCT FROM 'attempt_a' THEN
+                    RAISE EXCEPTION 'Attempt A parent activity kind must be attempt_a';
+                END IF;
+                IF parent_prompt IS DISTINCT FROM NEW.prompt THEN
+                    RAISE EXCEPTION 'Attempt B must use the same prompt as Attempt A';
                 END IF;
             END IF;
             RETURN NEW;
@@ -1144,6 +1174,15 @@ def downgrade() -> None:
     op.execute("DROP TRIGGER IF EXISTS trg_study_days_guard_mutation ON study_days")
     op.execute("DROP TRIGGER IF EXISTS trg_study_days_guard_insert ON study_days")
     op.execute("DROP FUNCTION IF EXISTS public.tamforge_guard_study_day_mutation()")
+
+    op.drop_index(
+        "uq_activity_artifact_links_with_attempt",
+        table_name="activity_artifact_links",
+    )
+    op.drop_index(
+        "uq_activity_artifact_links_without_attempt",
+        table_name="activity_artifact_links",
+    )
 
     for table_name in (
         "daily_closes",

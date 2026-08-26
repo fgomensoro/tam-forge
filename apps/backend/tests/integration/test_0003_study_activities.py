@@ -91,6 +91,19 @@ def test_study_activity_contract_and_round_trip(test_database_url: str) -> None:
             "'weekday', 'planned') RETURNING id",
             {"owner": owner, "version": version},
         ).scalar_one()
+        execute(
+            "UPDATE study_days SET status = 'in_progress', started_at = now(), "
+            "focused_minutes = 10 WHERE id = :day",
+            {"day": day},
+        )
+        execute(
+            "UPDATE study_days SET focused_minutes = 20 WHERE id = :day",
+            {"day": day},
+        )
+        rejects(
+            "UPDATE study_days SET focused_minutes = 19 WHERE id = :day",
+            {"day": day},
+        )
         activity = execute(
             "INSERT INTO activity_instances "
             "(owner_id, study_day_id, roadmap_version_id, task_definition_id, "
@@ -199,6 +212,24 @@ def test_study_activity_contract_and_round_trip(test_database_url: str) -> None:
             "(:owner, :activity, :attempt, :artifact, 'presentation_audio')",
             {"owner": owner, "activity": activity, "attempt": attempt_a, "artifact": artifact},
         )
+        rejects(
+            "INSERT INTO activity_artifact_links "
+            "(owner_id, activity_instance_id, attempt_id, artifact_id, link_role) VALUES "
+            "(:owner, :activity, :attempt, :artifact, 'presentation_audio')",
+            {"owner": owner, "activity": activity, "attempt": attempt_a, "artifact": artifact},
+        )
+        execute(
+            "INSERT INTO activity_artifact_links "
+            "(owner_id, activity_instance_id, attempt_id, artifact_id, link_role) VALUES "
+            "(:owner, :activity, NULL, :artifact, 'supporting')",
+            {"owner": owner, "activity": activity, "artifact": artifact},
+        )
+        rejects(
+            "INSERT INTO activity_artifact_links "
+            "(owner_id, activity_instance_id, attempt_id, artifact_id, link_role) VALUES "
+            "(:owner, :activity, NULL, :artifact, 'supporting')",
+            {"owner": owner, "activity": activity, "artifact": artifact},
+        )
         second_day = execute(
             "INSERT INTO study_days "
             "(owner_id, roadmap_version_id, local_date, planned_minutes, focused_minutes, "
@@ -217,6 +248,22 @@ def test_study_activity_contract_and_round_trip(test_database_url: str) -> None:
             "10, false, 1, 1) RETURNING id",
             {"owner": owner, "day": second_day, "version": version, "task": task},
         ).scalar_one()
+        rejects(
+            "INSERT INTO attempts "
+            "(owner_id, activity_instance_id, attempt_kind, original_text, audience, prompt, "
+            "assistance_mode, commitment_hash, committed_at) VALUES "
+            "(:owner, :activity, 'attempt_a', 'Wrong activity kind', 'hiring_manager', "
+            "'Explain the incident', 'none', :hash, now())",
+            {"owner": owner, "activity": replacement, "hash": b"m" * 32},
+        )
+        rejects(
+            "INSERT INTO attempts "
+            "(owner_id, activity_instance_id, attempt_kind, parent_attempt_id, original_text, "
+            "audience, prompt, assistance_mode, commitment_hash, committed_at) VALUES "
+            "(:owner, :activity, 'attempt_b', :parent, 'Different prompt', 'hiring_manager', "
+            "'A different prompt', 'none', :hash, now())",
+            {"owner": owner, "activity": replacement, "parent": attempt_a, "hash": b"d" * 32},
+        )
         attempt_b = execute(
             "INSERT INTO attempts "
             "(owner_id, activity_instance_id, attempt_kind, parent_attempt_id, original_text, "

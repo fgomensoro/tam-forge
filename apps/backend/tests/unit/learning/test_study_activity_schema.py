@@ -314,7 +314,6 @@ def test_named_constraints_restrict_history_and_index_every_foreign_key() -> Non
             "ck_artifacts_encryption_metadata_object",
         },
         "activity_artifact_links": {
-            "uq_activity_artifact_links_binding",
             "ck_activity_artifact_links_role_allowed",
         },
         "self_reviews": {
@@ -364,6 +363,37 @@ def test_partial_unique_enforces_one_open_timer_without_owner_global_activity_lo
     assert open_timer.unique is True
     assert [column.name for column in open_timer.columns] == ["activity_instance_id"]
     assert str(open_timer.dialect_options["postgresql"]["where"]) == "ended_at IS NULL"
+
+
+def test_artifact_link_uniqueness_handles_null_and_nonnull_attempts() -> None:
+    from tamforge_backend.models import Base, load_all_models
+
+    load_all_models()
+    links = Base.metadata.tables["activity_artifact_links"]
+    null_attempt = next(
+        item for item in links.indexes if item.name == "uq_activity_artifact_links_without_attempt"
+    )
+    with_attempt = next(
+        item for item in links.indexes if item.name == "uq_activity_artifact_links_with_attempt"
+    )
+
+    assert null_attempt.unique is True
+    assert [column.name for column in null_attempt.columns] == [
+        "owner_id",
+        "activity_instance_id",
+        "artifact_id",
+        "link_role",
+    ]
+    assert str(null_attempt.dialect_options["postgresql"]["where"]) == "attempt_id IS NULL"
+    assert with_attempt.unique is True
+    assert [column.name for column in with_attempt.columns] == [
+        "owner_id",
+        "activity_instance_id",
+        "attempt_id",
+        "artifact_id",
+        "link_role",
+    ]
+    assert str(with_attempt.dialect_options["postgresql"]["where"]) == ("attempt_id IS NOT NULL")
 
 
 def test_attempt_c_is_unrepresentable_and_attempt_b_requires_attempt_a() -> None:
@@ -468,6 +498,89 @@ def test_attempt_shape_validation_is_independent_of_constructor_assignment_order
 
     assert sa.event.contains(Attempt, "before_insert", validate_attempt_workflow)
     assert sa.event.contains(Attempt, "before_update", validate_attempt_workflow)
+
+
+def test_attempt_orm_boundary_requires_matching_activity_parent_and_prompt() -> None:
+    from tamforge_backend.learning.models import (
+        Attempt,
+        AttemptWorkflowError,
+        validate_attempt_workflow,
+    )
+
+    class ScalarResult:
+        def __init__(self, value: object) -> None:
+            self.value = value
+
+        def scalar_one_or_none(self) -> object:
+            return self.value
+
+    class RowResult:
+        def __init__(self, value: object) -> None:
+            self.value = value
+
+        def one_or_none(self) -> object:
+            return self.value
+
+    class StubConnection:
+        def __init__(self, *results: object) -> None:
+            self.results = list(results)
+            self.statements: list[object] = []
+
+        def execute(self, statement: object) -> object:
+            self.statements.append(statement)
+            return self.results.pop(0)
+
+    now = datetime.now(UTC)
+
+    def attempt(kind: str, *, parent_id: int | None, prompt: str = "same prompt") -> Attempt:
+        return Attempt(
+            owner_id=1,
+            activity_instance_id=2,
+            attempt_kind=kind,
+            parent_attempt_id=parent_id,
+            original_text="answer",
+            original_markdown=None,
+            original_sql=None,
+            audience="hiring_manager",
+            prompt=prompt,
+            assistance_mode="none",
+            commitment_hash=b"a" * 32,
+            committed_at=now,
+            created_at=now,
+        )
+
+    mismatched_activity = StubConnection(ScalarResult("no_ai_assessment"))
+    with pytest.raises(AttemptWorkflowError, match="activity kind"):
+        validate_attempt_workflow(None, mismatched_activity, attempt("attempt_a", parent_id=None))
+
+    wrong_parent_activity = StubConnection(
+        ScalarResult("attempt_b"),
+        RowResult(("attempt_a", "no_ai_assessment", "same prompt")),
+    )
+    with pytest.raises(AttemptWorkflowError, match="parent activity"):
+        validate_attempt_workflow(
+            None,
+            wrong_parent_activity,
+            attempt("attempt_b", parent_id=7),
+        )
+
+    changed_prompt = StubConnection(
+        ScalarResult("attempt_b"),
+        RowResult(("attempt_a", "attempt_a", "original prompt")),
+    )
+    with pytest.raises(AttemptWorkflowError, match="same prompt"):
+        validate_attempt_workflow(
+            None,
+            changed_prompt,
+            attempt("attempt_b", parent_id=7, prompt="different prompt"),
+        )
+
+    valid = StubConnection(
+        ScalarResult("attempt_b"),
+        RowResult(("attempt_a", "attempt_a", "same prompt")),
+    )
+    validate_attempt_workflow(None, valid, attempt("attempt_b", parent_id=7))
+    assert len(valid.statements) == 2
 
 
 def test_committed_attempt_artifact_and_link_are_orm_append_only() -> None:
@@ -605,6 +718,47 @@ def test_study_day_orm_rejects_state_jumps_and_historical_scope_changes() -> Non
         day.local_date = date(2026, 8, 26)
 
 
+def test_in_progress_study_day_allows_only_monotonic_same_status_progress() -> None:
+    from tamforge_backend.learning.models import (
+        StudyDay,
+        StudyDayWorkflowError,
+        validate_study_day_workflow,
+    )
+
+    now = datetime.now(UTC)
+
+    def day(status: str, focused_minutes: int) -> StudyDay:
+        item = StudyDay(
+            id=1,
+            owner_id=1,
+            roadmap_version_id=1,
+            local_date=date(2026, 8, 25),
+            planned_minutes=240,
+            focused_minutes=focused_minutes,
+            day_type="weekday",
+            status=status,
+            created_at=now,
+            started_at=now if status != "planned" else None,
+            closed_at=now if status in {"closed", "incomplete"} else None,
+        )
+        make_transient_to_detached(item)
+        return item
+
+    active = day("in_progress", 10)
+    active.focused_minutes = 11
+    validate_study_day_workflow(None, None, active)
+
+    planned = day("planned", 0)
+    planned.focused_minutes = 1
+    with pytest.raises(StudyDayWorkflowError, match="same-status"):
+        validate_study_day_workflow(None, None, planned)
+
+    closed = day("closed", 10)
+    closed.focused_minutes = 11
+    with pytest.raises(StudyDayWorkflowError, match="same-status"):
+        validate_study_day_workflow(None, None, closed)
+
+
 def test_timer_orm_flush_guard_matches_monotonic_database_contract() -> None:
     from tamforge_backend.learning.models import (
         ActivityTimerSession,
@@ -664,9 +818,20 @@ def test_offline_sql_contains_hardened_reversible_guards() -> None:
     assert "tamforge_guard_attempt_insert" in upgrade_sql
     assert "tamforge_guard_activity_mutation" in upgrade_sql
     assert "FOR UPDATE" in upgrade_sql
+    assert "CREATE UNIQUE INDEX uq_activity_artifact_links_without_attempt" in upgrade_sql
+    assert "WHERE attempt_id IS NULL" in upgrade_sql
+    assert "CREATE UNIQUE INDEX uq_activity_artifact_links_with_attempt" in upgrade_sql
+    assert "WHERE attempt_id IS NOT NULL" in upgrade_sql
+    assert "OLD.status = 'in_progress' AND NEW.status = 'in_progress'" in upgrade_sql
+    assert "activity_kind IS DISTINCT FROM NEW.attempt_kind" in upgrade_sql
+    assert "parent_activity.attempt_kind" in upgrade_sql
+    assert "parent_prompt IS DISTINCT FROM NEW.prompt" in upgrade_sql
+    assert "FOR KEY SHARE OF parent_attempt, parent_activity" in upgrade_sql
     assert "DROP FUNCTION IF EXISTS public.tamforge_reject_learning_evidence_mutation()" in (
         downgrade_sql
     )
+    assert "DROP INDEX uq_activity_artifact_links_with_attempt" in downgrade_sql
+    assert "DROP INDEX uq_activity_artifact_links_without_attempt" in downgrade_sql
     for table_name in EXPECTED_TABLES:
         assert f"DROP TABLE {table_name}" in downgrade_sql
 
