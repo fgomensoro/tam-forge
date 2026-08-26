@@ -1002,4 +1002,4 @@ def test_alembic_has_exactly_one_linear_head() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "20260825_0003_study_activities (head)"
+    assert result.stdout.strip() == "20260825_0004_evidence_scoring (head)"

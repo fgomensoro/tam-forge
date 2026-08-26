@@ -8,6 +8,7 @@ _MODEL_MODULES = (
     "tamforge_backend.auth.models",
     "tamforge_backend.roadmaps.models",
     "tamforge_backend.learning.models",
+    "tamforge_backend.evidence.models",
 )
 
 
