@@ -1087,6 +1087,22 @@ def reject_roadmap_import_delete(
     raise RoadmapImportWorkflowError("roadmap import history is immutable")
 
 
+def validate_roadmap_import_initial_insert(
+    mapper: Mapper[RoadmapImport] | None,
+    connection: Connection | None,
+    target: RoadmapImport,
+) -> None:
+    del mapper, connection
+    if (
+        target.status != "staged"
+        or target.started_at is not None
+        or target.completed_at is not None
+        or target.failure_code is not None
+    ):
+        raise RoadmapImportWorkflowError("new roadmap imports require the initial staged lifecycle")
+
+
+event.listen(RoadmapImport, "before_insert", validate_roadmap_import_initial_insert)
 event.listen(RoadmapImport, "before_insert", validate_roadmap_import_workflow)
 event.listen(RoadmapImport, "before_update", validate_roadmap_import_workflow)
 event.listen(RoadmapImport, "before_delete", reject_roadmap_import_delete)
@@ -1345,6 +1361,30 @@ def validate_roadmap_version_workflow(
         raise RoadmapVersionWorkflowError("roadmap mirror fields are not coherent")
 
 
+def validate_roadmap_version_initial_insert(
+    mapper: Mapper[RoadmapVersion] | None,
+    connection: Connection | None,
+    target: RoadmapVersion,
+) -> None:
+    del mapper, connection
+    if (
+        target.state != "draft"
+        or target.approved_at is not None
+        or target.activated_at is not None
+        or target.superseded_at is not None
+    ):
+        raise RoadmapVersionWorkflowError(
+            "new roadmap versions require the initial draft lifecycle"
+        )
+    if (
+        target.mirror_status not in {"pending", "not_required"}
+        or target.mirror_ref is not None
+        or target.mirror_error_code is not None
+    ):
+        raise RoadmapVersionWorkflowError("new roadmap versions require an initial mirror state")
+
+
+event.listen(RoadmapVersion, "before_insert", validate_roadmap_version_initial_insert)
 event.listen(RoadmapVersion, "before_insert", validate_roadmap_version_workflow)
 event.listen(RoadmapVersion, "before_update", validate_roadmap_version_workflow)
 
@@ -1404,5 +1444,7 @@ __all__ = [
     "reject_curriculum_content_delete",
     "reject_curriculum_content_update",
     "validate_roadmap_import_workflow",
+    "validate_roadmap_import_initial_insert",
+    "validate_roadmap_version_initial_insert",
     "validate_roadmap_version_workflow",
 ]

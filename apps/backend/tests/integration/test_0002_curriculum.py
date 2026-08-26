@@ -89,6 +89,14 @@ def test_curriculum_schema_contract_invariants_and_round_trip(
             "hash": b"p" * 32,
             "key": "import-1",
         }
+        rejects_integrity(
+            "INSERT INTO roadmap_imports "
+            "(owner_id, source_id, package_hash, object_key, status, "
+            "validation_report, semantic_diff, idempotency_key, started_at, completed_at) "
+            "VALUES (:owner, :source, :hash, 'private/roadmaps/noninitial.tar', "
+            "'imported', '{}'::jsonb, '{}'::jsonb, 'noninitial-import', now(), now())",
+            {"owner": owner_1, "source": source_1, "hash": b"n" * 32},
+        )
         import_id = execute(
             "INSERT INTO roadmap_imports "
             "(owner_id, source_id, package_hash, object_key, status, "
@@ -188,6 +196,26 @@ def test_curriculum_schema_contract_invariants_and_round_trip(
             {"import_id": failed_import_id},
         )
 
+        rejects_integrity(
+            "INSERT INTO roadmap_versions "
+            "(owner_id, source_id, version_key, version_number, month_number, "
+            "content_hash, object_key, manifest, raw_payload, normalized_payload, "
+            "approved_at, activated_at, mirror_status, state) "
+            "VALUES (:owner, :source, 'noninitial-active', 90, 90, :hash, "
+            "'private/roadmaps/noninitial-active.json', '{}'::jsonb, '{}'::jsonb, "
+            "'{}'::jsonb, now(), now(), 'pending', 'active')",
+            {"owner": owner_1, "source": source_1, "hash": b"o" * 32},
+        )
+        rejects_integrity(
+            "INSERT INTO roadmap_versions "
+            "(owner_id, source_id, version_key, version_number, month_number, "
+            "content_hash, object_key, manifest, raw_payload, normalized_payload, "
+            "mirror_status, mirror_ref, state) "
+            "VALUES (:owner, :source, 'noninitial-mirror', 91, 91, :hash, "
+            "'private/roadmaps/noninitial-mirror.json', '{}'::jsonb, '{}'::jsonb, "
+            "'{}'::jsonb, 'synced', 'commit-1', 'draft')",
+            {"owner": owner_1, "source": source_1, "hash": b"m" * 32},
+        )
         version_1 = execute(
             "INSERT INTO roadmap_versions "
             "(owner_id, source_id, version_key, version_number, month_number, "
@@ -224,6 +252,16 @@ def test_curriculum_schema_contract_invariants_and_round_trip(
                 "hash": b"b" * 32,
             },
         ).scalar_one()
+        execute(
+            "INSERT INTO roadmap_versions "
+            "(owner_id, source_id, version_key, version_number, month_number, "
+            "content_hash, object_key, manifest, raw_payload, normalized_payload, "
+            "mirror_status, state) "
+            "VALUES (:owner, :source, 'no-mirror-v1', 10, 10, :hash, "
+            "'private/roadmaps/no-mirror-v1.json', '{}'::jsonb, '{}'::jsonb, "
+            "'{}'::jsonb, 'not_required', 'draft')",
+            {"owner": owner_1, "source": source_1, "hash": b"r" * 32},
+        )
         rejects_integrity(
             "UPDATE roadmap_versions SET mirror_status = 'failed', "
             "mirror_error_code = 'postgresql://user:password@host/db' "

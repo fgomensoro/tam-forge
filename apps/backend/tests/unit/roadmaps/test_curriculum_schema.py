@@ -506,6 +506,83 @@ def test_persisted_errors_are_closed_machine_codes_without_free_text() -> None:
         assert code in mirror_expression
 
 
+def test_orm_insert_guards_require_initial_roadmap_lifecycle_states() -> None:
+    from tamforge_backend.roadmaps.models import (
+        RoadmapImport,
+        RoadmapImportWorkflowError,
+        RoadmapVersion,
+        RoadmapVersionWorkflowError,
+        validate_roadmap_import_initial_insert,
+        validate_roadmap_version_initial_insert,
+    )
+
+    now = datetime.now(UTC)
+    valid_import = RoadmapImport(
+        owner_id=1,
+        source_id=1,
+        package_hash=b"i" * 32,
+        object_key="owners/1/imports/initial.tar",
+        status="staged",
+        validation_report={},
+        semantic_diff={},
+        idempotency_key="initial-import",
+        failure_code=None,
+        created_at=now,
+        started_at=None,
+        completed_at=None,
+    )
+    assert sa.event.contains(RoadmapImport, "before_insert", validate_roadmap_import_initial_insert)
+    validate_roadmap_import_initial_insert(None, None, valid_import)
+
+    valid_import.status = "imported"
+    valid_import.started_at = now
+    valid_import.completed_at = now
+    with pytest.raises(RoadmapImportWorkflowError, match="initial staged"):
+        validate_roadmap_import_initial_insert(None, None, valid_import)
+
+    valid_version = RoadmapVersion(
+        owner_id=1,
+        source_id=1,
+        version_key="month-1-v1",
+        version_number=1,
+        month_number=1,
+        predecessor_id=None,
+        content_hash=b"v" * 32,
+        object_key="owners/1/roadmaps/month-1-v1.json",
+        manifest={},
+        raw_payload={},
+        normalized_payload={},
+        created_at=now,
+        approved_at=None,
+        activated_at=None,
+        superseded_at=None,
+        mirror_status="pending",
+        mirror_ref=None,
+        mirror_error_code=None,
+        state="draft",
+    )
+    assert sa.event.contains(
+        RoadmapVersion, "before_insert", validate_roadmap_version_initial_insert
+    )
+    validate_roadmap_version_initial_insert(None, None, valid_version)
+    valid_version.mirror_status = "not_required"
+    validate_roadmap_version_initial_insert(None, None, valid_version)
+
+    valid_version.state = "active"
+    valid_version.approved_at = now
+    valid_version.activated_at = now
+    with pytest.raises(RoadmapVersionWorkflowError, match="initial draft"):
+        validate_roadmap_version_initial_insert(None, None, valid_version)
+
+    valid_version.state = "draft"
+    valid_version.approved_at = None
+    valid_version.activated_at = None
+    valid_version.mirror_status = "synced"
+    valid_version.mirror_ref = "commit-1"
+    with pytest.raises(RoadmapVersionWorkflowError, match="initial mirror"):
+        validate_roadmap_version_initial_insert(None, None, valid_version)
+
+
 def test_roadmap_source_provenance_and_history_are_orm_immutable() -> None:
     from tamforge_backend.roadmaps.models import (
         RoadmapSource,
@@ -874,12 +951,16 @@ def test_migration_compiles_upgrade_and_exact_downgrade_without_credentials() ->
         assert f"DROP TABLE {table_name}" in downgrade_sql
     assert "WHERE state = 'active'" in upgrade_sql
     assert "tamforge_guard_roadmap_version_update" in upgrade_sql
+    assert "tamforge_guard_roadmap_version_insert" in upgrade_sql
     assert "tamforge_guard_roadmap_import_mutation" in upgrade_sql
+    assert "tamforge_guard_roadmap_import_insert" in upgrade_sql
     assert "tamforge_reject_roadmap_source_mutation" in upgrade_sql
     assert "tamforge_reject_curriculum_mutation" in upgrade_sql
     assert "failure_message" not in upgrade_sql
     assert re.search(r"\bmirror_error\b", upgrade_sql) is None
     assert "DROP TABLE owners" not in downgrade_sql
+    assert "DROP FUNCTION IF EXISTS public.tamforge_guard_roadmap_version_insert()" in downgrade_sql
+    assert "DROP FUNCTION IF EXISTS public.tamforge_guard_roadmap_import_insert()" in downgrade_sql
     assert "offline-curriculum-contract-password" not in upgrade_sql
     assert "offline-curriculum-contract-password" not in downgrade_sql
     assert "%(" not in upgrade_sql

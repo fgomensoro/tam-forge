@@ -804,6 +804,36 @@ def upgrade() -> None:
 
     op.execute(
         """
+        CREATE FUNCTION public.tamforge_guard_roadmap_import_insert()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        SET search_path = pg_catalog
+        AS $$
+        BEGIN
+            IF NEW.status <> 'staged'
+                OR NEW.started_at IS NOT NULL
+                OR NEW.completed_at IS NOT NULL
+                OR NEW.failure_code IS NOT NULL
+            THEN
+                RAISE EXCEPTION 'new roadmap import must use initial lifecycle'
+                    USING ERRCODE = 'integrity_constraint_violation';
+            END IF;
+            RETURN NEW;
+        END;
+        $$
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER trg_roadmap_imports_guard_insert
+        BEFORE INSERT ON roadmap_imports
+        FOR EACH ROW
+        EXECUTE FUNCTION public.tamforge_guard_roadmap_import_insert()
+        """
+    )
+
+    op.execute(
+        """
         CREATE FUNCTION public.tamforge_guard_roadmap_import_mutation()
         RETURNS trigger
         LANGUAGE plpgsql
@@ -860,6 +890,43 @@ def upgrade() -> None:
         BEFORE UPDATE OR DELETE ON roadmap_imports
         FOR EACH ROW
         EXECUTE FUNCTION public.tamforge_guard_roadmap_import_mutation()
+        """
+    )
+
+    op.execute(
+        """
+        CREATE FUNCTION public.tamforge_guard_roadmap_version_insert()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        SET search_path = pg_catalog
+        AS $$
+        BEGIN
+            IF NEW.state <> 'draft'
+                OR NEW.approved_at IS NOT NULL
+                OR NEW.activated_at IS NOT NULL
+                OR NEW.superseded_at IS NOT NULL
+            THEN
+                RAISE EXCEPTION 'new roadmap version must use initial lifecycle'
+                    USING ERRCODE = 'integrity_constraint_violation';
+            END IF;
+            IF NEW.mirror_status NOT IN ('pending', 'not_required')
+                OR NEW.mirror_ref IS NOT NULL
+                OR NEW.mirror_error_code IS NOT NULL
+            THEN
+                RAISE EXCEPTION 'new roadmap version must use initial mirror state'
+                    USING ERRCODE = 'integrity_constraint_violation';
+            END IF;
+            RETURN NEW;
+        END;
+        $$
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER trg_roadmap_versions_guard_insert
+        BEFORE INSERT ON roadmap_versions
+        FOR EACH ROW
+        EXECUTE FUNCTION public.tamforge_guard_roadmap_version_insert()
         """
     )
 
@@ -1043,8 +1110,12 @@ def downgrade() -> None:
 
     op.execute("DROP TRIGGER IF EXISTS trg_roadmap_versions_guard_update ON roadmap_versions")
     op.execute("DROP FUNCTION IF EXISTS public.tamforge_guard_roadmap_version_update()")
+    op.execute("DROP TRIGGER IF EXISTS trg_roadmap_versions_guard_insert ON roadmap_versions")
+    op.execute("DROP FUNCTION IF EXISTS public.tamforge_guard_roadmap_version_insert()")
     op.execute("DROP TRIGGER IF EXISTS trg_roadmap_imports_guard_mutation ON roadmap_imports")
     op.execute("DROP FUNCTION IF EXISTS public.tamforge_guard_roadmap_import_mutation()")
+    op.execute("DROP TRIGGER IF EXISTS trg_roadmap_imports_guard_insert ON roadmap_imports")
+    op.execute("DROP FUNCTION IF EXISTS public.tamforge_guard_roadmap_import_insert()")
     op.execute("DROP TRIGGER IF EXISTS trg_roadmap_sources_immutable ON roadmap_sources")
     op.execute("DROP FUNCTION IF EXISTS public.tamforge_reject_roadmap_source_mutation()")
 
