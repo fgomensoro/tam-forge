@@ -1,0 +1,351 @@
+schema_version: 1
+mapping_version: seed-v1
+supporting_tags:
+  - observability
+  - oauth_api_security
+  - webhooks
+  - idempotency
+  - retries_backoff
+  - payment_operations
+  - ledger_reconciliation
+  - customer_expectation_management
+  - qbr_health_review
+  - behavioral_interview
+  - launch_readiness
+  - data_quality
+  - portfolio_prioritization
+exercise_types:
+  - slug: official_reading
+    evidence_mode: exposure_only
+    skill_impacts: {}
+
+  - slug: sql_guided_lesson
+    evidence_mode: guided_practice
+    skill_impacts:
+      sql_reconciliation: {weight: 0.35}
+
+  - slug: sql_production_lab
+    evidence_mode: independent_practice
+    skill_impacts:
+      sql_reconciliation: {weight: 1.00}
+      structured_troubleshooting: {weight: 0.25}
+      business_value_framing: {weight: 0.10}
+
+  - slug: sql_no_ai_timed_assessment
+    evidence_mode: timed_assessment
+    skill_impacts:
+      sql_reconciliation: {weight: 1.00}
+      tam_english: {weight: 0.15, condition: explained_aloud_in_english}
+    condition_note: TAM English applies only when the query is explained aloud in English.
+
+  - slug: integration_diagram_and_explanation
+    evidence_mode: independent_practice
+    skill_impacts:
+      api_integration_architecture: {weight: 1.00}
+      distributed_systems_reliability: {weight: 0.50}
+      technical_discovery: {weight: 0.40}
+      business_value_framing: {weight: 0.40}
+      tam_english: {weight: 0.40, condition: spoken_or_written_english}
+
+  - slug: architecture_design_case
+    evidence_mode: independent_practice
+    skill_impacts:
+      api_integration_architecture: {weight: 1.00}
+      distributed_systems_reliability: {weight: 0.80}
+      technical_discovery: {weight: 0.60}
+      business_value_framing: {weight: 0.40}
+      implementation_project_management: {weight: 0.30}
+      executive_communication: {weight: 0.30}
+      tam_english: {weight: 0.40, condition: spoken_or_written_english}
+
+  - slug: api_failure_mode_analysis
+    evidence_mode: independent_practice
+    skill_impacts:
+      distributed_systems_reliability: {weight: 1.00}
+      api_integration_architecture: {weight: 0.80}
+      structured_troubleshooting: {weight: 0.60}
+      technical_writing: {weight: 0.20}
+      sql_reconciliation: {weight: 0.20}
+
+  - slug: webhook_reliability_design
+    evidence_mode: independent_practice
+    skill_impacts:
+      api_integration_architecture: {weight: 1.00}
+      distributed_systems_reliability: {weight: 1.00}
+      structured_troubleshooting: {weight: 0.40}
+      incident_escalation_management: {weight: 0.30}
+      sql_reconciliation: {weight: 0.20}
+    tags: [webhooks, idempotency, retries_backoff]
+
+  - slug: troubleshooting_case
+    evidence_mode: independent_practice
+    skill_impacts:
+      structured_troubleshooting: {weight: 1.00}
+      distributed_systems_reliability: {weight: 0.50}
+      api_integration_architecture: {weight: 0.50}
+      incident_escalation_management: {weight: 0.40}
+      business_value_framing: {weight: 0.30}
+      tam_english: {weight: 0.40, condition: spoken_or_written_english}
+
+  - slug: oauth_security_troubleshooting
+    evidence_mode: independent_practice
+    skill_impacts:
+      structured_troubleshooting: {weight: 1.00}
+      api_integration_architecture: {weight: 0.80}
+      distributed_systems_reliability: {weight: 0.30}
+      incident_escalation_management: {weight: 0.30}
+      executive_communication: {weight: 0.30}
+      tam_english: {weight: 0.30, condition: spoken_or_written_english}
+    tags: [oauth_api_security]
+
+  - slug: technical_discovery_roleplay
+    evidence_mode: mock_interview
+    skill_impacts:
+      technical_discovery: {weight: 1.00}
+      business_value_framing: {weight: 0.70}
+      api_integration_architecture: {weight: 0.50}
+      executive_communication: {weight: 0.40}
+      tam_english: {weight: 0.70, condition: spoken_or_written_english}
+
+  - slug: payment_lifecycle_case
+    evidence_mode: independent_practice
+    skill_impacts:
+      payments_fintech_systems: {weight: 1.00}
+      distributed_systems_reliability: {weight: 0.50}
+      business_value_framing: {weight: 0.50}
+      sql_reconciliation: {weight: 0.30}
+      tam_english: {weight: 0.40, condition: spoken_or_written_english}
+    tags: [payment_operations]
+
+  - slug: payment_reconciliation_case
+    evidence_mode: independent_practice
+    skill_impacts:
+      payments_fintech_systems: {weight: 1.00}
+      sql_reconciliation: {weight: 1.00}
+      structured_troubleshooting: {weight: 0.50}
+      business_value_framing: {weight: 0.60}
+      technical_writing: {weight: 0.30}
+    tags: [payment_operations, ledger_reconciliation]
+
+  - slug: incident_simulation
+    evidence_mode: mock_interview
+    skill_impacts:
+      incident_escalation_management: {weight: 1.00}
+      structured_troubleshooting: {weight: 0.80}
+      executive_communication: {weight: 0.70}
+      cross_functional_influence: {weight: 0.60}
+      business_value_framing: {weight: 0.60}
+      tam_english: {weight: 0.70, condition: spoken_or_written_english}
+
+  - slug: customer_incident_update
+    evidence_mode: independent_practice
+    skill_impacts:
+      technical_writing: {weight: 1.00}
+      incident_escalation_management: {weight: 0.80}
+      executive_communication: {weight: 0.60}
+      business_value_framing: {weight: 0.50}
+      tam_english: {weight: 0.60, condition: spoken_or_written_english}
+
+  - slug: internal_engineering_escalation
+    evidence_mode: independent_practice
+    skill_impacts:
+      technical_writing: {weight: 1.00}
+      incident_escalation_management: {weight: 0.80}
+      cross_functional_influence: {weight: 0.80}
+      business_value_framing: {weight: 0.50}
+      structured_troubleshooting: {weight: 0.40}
+
+  - slug: postmortem_rca
+    evidence_mode: independent_practice
+    skill_impacts:
+      incident_escalation_management: {weight: 1.00}
+      technical_writing: {weight: 1.00}
+      structured_troubleshooting: {weight: 0.60}
+      distributed_systems_reliability: {weight: 0.60}
+      business_value_framing: {weight: 0.50}
+      implementation_project_management: {weight: 0.30}
+
+  - slug: observability_health_dashboard
+    evidence_mode: independent_practice
+    skill_impacts:
+      proactive_account_strategy: {weight: 0.80}
+      structured_troubleshooting: {weight: 0.70}
+      business_value_framing: {weight: 0.70}
+      distributed_systems_reliability: {weight: 0.60}
+      incident_escalation_management: {weight: 0.60}
+      executive_communication: {weight: 0.50}
+    tags: [observability, qbr_health_review]
+
+  - slug: implementation_plan
+    evidence_mode: independent_practice
+    skill_impacts:
+      implementation_project_management: {weight: 1.00}
+      technical_writing: {weight: 0.70}
+      technical_discovery: {weight: 0.60}
+      cross_functional_influence: {weight: 0.50}
+      business_value_framing: {weight: 0.40}
+      proactive_account_strategy: {weight: 0.30}
+
+  - slug: project_kickoff_followup
+    evidence_mode: independent_practice
+    skill_impacts:
+      technical_writing: {weight: 1.00}
+      implementation_project_management: {weight: 0.80}
+      cross_functional_influence: {weight: 0.40}
+      technical_discovery: {weight: 0.30}
+      tam_english: {weight: 0.50, condition: spoken_or_written_english}
+
+  - slug: launch_readiness_decision
+    evidence_mode: mock_interview
+    skill_impacts:
+      implementation_project_management: {weight: 1.00}
+      incident_escalation_management: {weight: 0.80}
+      cross_functional_influence: {weight: 0.80}
+      executive_communication: {weight: 0.80}
+      business_value_framing: {weight: 0.80}
+      tam_english: {weight: 0.60, condition: spoken_or_written_english}
+      proactive_account_strategy: {weight: 0.40}
+    tags: [launch_readiness, customer_expectation_management]
+
+  - slug: account_plan_90_day
+    evidence_mode: independent_practice
+    skill_impacts:
+      proactive_account_strategy: {weight: 1.00}
+      business_value_framing: {weight: 0.90}
+      technical_writing: {weight: 0.70}
+      executive_communication: {weight: 0.60}
+      cross_functional_influence: {weight: 0.50}
+      implementation_project_management: {weight: 0.40}
+
+  - slug: technical_health_review_qbr
+    evidence_mode: mock_interview
+    skill_impacts:
+      proactive_account_strategy: {weight: 1.00}
+      executive_communication: {weight: 1.00}
+      business_value_framing: {weight: 1.00}
+      tam_english: {weight: 0.80, condition: spoken_or_written_english}
+      technical_writing: {weight: 0.60}
+      incident_escalation_management: {weight: 0.30}
+    tags: [qbr_health_review]
+
+  - slug: audience_switching_explanation
+    evidence_mode: mock_interview
+    skill_impacts:
+      executive_communication: {weight: 1.00}
+      tam_english: {weight: 0.90, condition: spoken_or_written_english}
+      business_value_framing: {weight: 0.80}
+    required_precommit_field: domain_competency_slug
+    allowed_domain_competencies:
+      - api_integration_architecture
+      - structured_troubleshooting
+      - sql_reconciliation
+      - distributed_systems_reliability
+      - payments_fintech_systems
+      - technical_discovery
+      - incident_escalation_management
+      - implementation_project_management
+      - proactive_account_strategy
+    selected_impact: 0.30
+
+  - slug: architecture_presentation
+    evidence_mode: mock_interview
+    skill_impacts:
+      executive_communication: {weight: 0.70}
+      tam_english: {weight: 0.80, condition: spoken_or_written_english}
+      api_integration_architecture: {weight: 0.60}
+      business_value_framing: {weight: 0.50}
+
+  - slug: customer_pushback_or_bad_news
+    evidence_mode: mock_interview
+    skill_impacts:
+      cross_functional_influence: {weight: 0.80}
+      tam_english: {weight: 0.80, condition: spoken_or_written_english}
+      executive_communication: {weight: 0.70}
+      incident_escalation_management: {weight: 0.50}
+      business_value_framing: {weight: 0.40}
+    tags: [customer_expectation_management]
+
+  - slug: cross_functional_conflict_case
+    evidence_mode: mock_interview
+    skill_impacts:
+      cross_functional_influence: {weight: 1.00}
+      business_value_framing: {weight: 0.80}
+      tam_english: {weight: 0.70, condition: spoken_or_written_english}
+      executive_communication: {weight: 0.60}
+      proactive_account_strategy: {weight: 0.50}
+      incident_escalation_management: {weight: 0.30}
+
+  - slug: behavioral_story_practice
+    evidence_mode: mock_interview
+    skill_impacts:
+      tam_english: {weight: 0.70, condition: spoken_or_written_english}
+      executive_communication: {weight: 0.40}
+      business_value_framing: {weight: 0.30}
+    required_precommit_field: story_competency_slug
+    allowed_story_competencies:
+      - incident_escalation_management
+      - cross_functional_influence
+      - structured_troubleshooting
+    selected_impact: 0.40
+
+  - slug: tell_me_about_yourself
+    evidence_mode: mock_interview
+    skill_impacts:
+      tam_english: {weight: 1.00, condition: spoken_or_written_english}
+      executive_communication: {weight: 0.50}
+      business_value_framing: {weight: 0.50}
+
+  - slug: portfolio_triage
+    evidence_mode: mock_interview
+    skill_impacts:
+      proactive_account_strategy: {weight: 0.90}
+      cross_functional_influence: {weight: 0.90}
+      incident_escalation_management: {weight: 0.80}
+      business_value_framing: {weight: 0.80}
+      executive_communication: {weight: 0.60}
+      tam_english: {weight: 0.60, condition: spoken_or_written_english}
+      structured_troubleshooting: {weight: 0.40}
+    tags: [portfolio_prioritization]
+
+  - slug: technical_writing_timed
+    evidence_mode: timed_assessment
+    skill_impacts:
+      technical_writing: {weight: 1.00}
+      executive_communication: {weight: 0.50}
+      business_value_framing: {weight: 0.50}
+      tam_english: {weight: 0.50, condition: spoken_or_written_english}
+    required_precommit_field: domain_competency_slug
+    allowed_domain_competencies:
+      - api_integration_architecture
+      - structured_troubleshooting
+      - sql_reconciliation
+      - distributed_systems_reliability
+      - payments_fintech_systems
+      - technical_discovery
+      - incident_escalation_management
+      - implementation_project_management
+      - proactive_account_strategy
+    selected_impact: 0.30
+
+  - slug: full_tam_gauntlet
+    evidence_mode: mock_interview
+    skill_impacts: {}
+    component_scoring_required: true
+    child_exercise_type_refs:
+      - {exercise_type: portfolio_triage, mapping_version: seed-v1}
+      - {exercise_type: technical_discovery_roleplay, mapping_version: seed-v1}
+      - {exercise_type: architecture_design_case, mapping_version: seed-v1}
+      - {exercise_type: troubleshooting_case, mapping_version: seed-v1}
+      - {exercise_type: sql_no_ai_timed_assessment, mapping_version: seed-v1}
+      - {exercise_type: incident_simulation, mapping_version: seed-v1}
+      - {exercise_type: audience_switching_explanation, mapping_version: seed-v1}
+      - {exercise_type: technical_writing_timed, mapping_version: seed-v1}
+      - {exercise_type: account_plan_90_day, mapping_version: seed-v1}
+
+  - slug: company_product_research
+    evidence_mode: exposure_only
+    skill_impacts: {}
+
+  - slug: application_or_outreach
+    evidence_mode: pipeline_only
+    skill_impacts: {}

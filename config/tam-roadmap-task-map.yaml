@@ -1,0 +1,342 @@
+schema_version: 1
+roadmap_version: month-1-v2
+mapping_version: seed-v1
+month: 1
+default_required: true
+
+contracts:
+  sql:
+    required_output: [Saved query, result, business explanation, timing, and assistance record.]
+    pass_criteria: [Complete the assigned work independently before any review or hint.]
+    evidence_requirements: [Original query and result, self-review, elapsed time, assistance mode.]
+  technical:
+    required_output: [Committed active-recall or application artifact named in the objective.]
+    pass_criteria: [Explain the concept accurately after using only the assigned source.]
+    evidence_requirements: [Assigned source reference, original notes or artifact, unresolved question.]
+  pipeline:
+    required_output: [Concrete saved career action or artifact named in the objective.]
+    pass_criteria: [Finish with a usable application, research, outreach, follow-up, or mapping artifact.]
+    evidence_requirements: [Company and role context, completed action, current stage, next action.]
+  case:
+    required_output: [Discovery and assumptions, working analysis, final recommendation or artifact, presentation.]
+    pass_criteria: [Commit an independent answer that addresses the scenario and audience before feedback.]
+    evidence_requirements: [Prompt facts, questions, assumptions, final artifact, Attempt A, self-review.]
+  communication:
+    required_output: [Saved independent spoken or written response named in the objective.]
+    pass_criteria: [Meet the audience, purpose, and time or length limit without mid-attempt coaching.]
+    evidence_requirements: [Prompt, audience, original output, duration or length, self-review.]
+  close:
+    required_output: [Completed daily scorecard and unfinished-work classification.]
+    pass_criteria: [Record strongest evidence, repeated mistake, and no more than two corrections.]
+    evidence_requirements: [Scorecard, evidence links, correction selections, unfinished requirement.]
+  saturday_sql:
+    required_output: [No-AI SQL answers and results completed within 30 minutes.]
+    pass_criteria: [Stop at 30 minutes and score only independently completed answers.]
+    evidence_requirements: [Queries, results, correctness, elapsed time, no-AI attestation.]
+  saturday_case:
+    required_output: [Independent case artifact, presentation, and self-review.]
+    pass_criteria: [Complete the stated case stages within the fixed assessment time.]
+    evidence_requirements: [Prompt, facts, assumptions, artifact, Attempt A, self-review.]
+  saturday_portfolio:
+    required_output: [Ranked portfolio, ownership, delegation, communication, and reversal conditions.]
+    pass_criteria: [Prioritize explicitly, cover every customer, and adapt after new evidence.]
+    evidence_requirements: [Initial ranking, rationale, allocation, communications, revised ranking.]
+  saturday_writing:
+    required_output: [Timed customer and executive writing named in the objective.]
+    pass_criteria: [Complete both audience-specific artifacts within the fixed time.]
+    evidence_requirements: [Original drafts, audience, time limit, elapsed time, self-review.]
+  saturday_behavioral:
+    required_output: [Independent behavioral answers and follow-up responses.]
+    pass_criteria: [Answer each prompt with concrete personal evidence and within the fixed time.]
+    evidence_requirements: [Prompts, Attempt A recordings or text, follow-ups, self-review.]
+  saturday_gauntlet:
+    required_output: [Independently scored child artifacts for every gauntlet component.]
+    pass_criteria: [Complete portfolio-to-depth work in English without copying one score across children.]
+    evidence_requirements: [Each child prompt, output, score, timing, and final self-review.]
+  saturday_scoring:
+    required_output: [Completed weekly or month assessment with evidence-linked priorities.]
+    pass_criteria: [Use demonstrated evidence rather than confidence and select only stated priorities.]
+    evidence_requirements: [Assessment scores, evidence links, mistakes, next priorities.]
+
+days:
+  - week: 1
+    day: 1
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 1 — Baseline and HTTP
+    tasks:
+      - {stable_id: m1-w1-d01-sql, block: sql, order: 1, exercise_type: sql_guided_lesson, timebox_minutes: 45, objective: 'Complete SQLBolt lessons 1–4 without copying.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w1-d01-technical, block: technical_learning, order: 2, exercise_type: integration_diagram_and_explanation, timebox_minutes: 45, objective: 'Read A1–A3; produce a request/response map and error matrix for the assigned HTTP status codes.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w1-d01-pipeline, block: career_pipeline, order: 3, exercise_type: company_product_research, timebox_minutes: 30, objective: 'Save five current API or fintech TAM jobs and extract ten repeated requirements.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w1-d01-case, block: tam_case, order: 4, exercise_type: integration_diagram_and_explanation, timebox_minutes: 60, objective: 'Diagram an anonymized prior integration, including objective, systems, source of truth, exchanged data, five failure modes, reconciliation, and a ten-minute English explanation.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w1-d01-communication, block: communication_spoken, order: 5, exercise_type: tell_me_about_yourself, timebox_minutes: 45, objective: 'Read H1 and H5; record a 90-second Tell Me About Yourself, with the second attempt unscripted.', contract: communication, allowed_ai_role: interviewer}
+      - {stable_id: m1-w1-d01-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Complete the daily scorecard.', contract: close, allowed_ai_role: analyst}
+
+  - week: 1
+    day: 2
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 2 — Joins and diagnostic questions
+    tasks:
+      - {stable_id: m1-w1-d02-sql, block: sql, order: 1, exercise_type: sql_guided_lesson, timebox_minutes: 45, objective: 'Complete SQLBolt lessons 6–8 on joins, outer joins, and NULLs.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w1-d02-technical, block: technical_learning, order: 2, exercise_type: troubleshooting_case, timebox_minutes: 45, objective: 'Read A4 and review A3; create a diagnostic checklist for 401, 403, 404, 409, 429, and 5xx responses.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w1-d02-pipeline, block: career_pipeline, order: 3, exercise_type: application_or_outreach, timebox_minutes: 30, objective: 'Match the five strongest stories to the repeated job requirements from Day 1.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w1-d02-case, block: tam_case, order: 4, exercise_type: troubleshooting_case, timebox_minutes: 60, objective: 'For an API-down report with green monitoring, produce 15 clarifying questions, three falsifiable hypotheses, supporting evidence, and a first mitigation.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w1-d02-communication, block: communication_spoken, order: 5, exercise_type: behavioral_story_practice, timebox_minutes: 45, objective: 'Read H2 and H3; complete ten story-catalog rows mapped to ownership, conflict, ambiguity, customer judgment, technical depth, and impact.', contract: communication, allowed_ai_role: coach}
+      - {stable_id: m1-w1-d02-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Score whether questions came before proposed fixes.', contract: close, allowed_ai_role: analyst}
+
+  - week: 1
+    day: 3
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 3 — Aggregation, idempotency, and audience switching
+    tasks:
+      - {stable_id: m1-w1-d03-sql, block: sql, order: 1, exercise_type: sql_guided_lesson, timebox_minutes: 45, objective: 'Complete SQLBolt lessons 9–12.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w1-d03-technical, block: technical_learning, order: 2, exercise_type: api_failure_mode_analysis, timebox_minutes: 45, objective: 'Read A5 and A6; write the event sequence that can create a duplicate after a committed request loses its response.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w1-d03-pipeline, block: career_pipeline, order: 3, exercise_type: application_or_outreach, timebox_minutes: 30, objective: 'Rewrite three résumé bullets as scope, action, and measurable outcome.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w1-d03-case, block: tam_case, order: 4, exercise_type: api_failure_mode_analysis, timebox_minutes: 60, objective: 'Analyze a timed-out ERP order retry that creates a duplicate; separate mitigation, root cause, durable prevention, and reconciliation.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w1-d03-communication, block: communication_spoken, order: 5, exercise_type: audience_switching_explanation, timebox_minutes: 45, objective: 'Explain the same incident to an integration engineer, VP Engineering, and CFO in no more than 90 seconds each.', contract: communication, allowed_ai_role: interviewer}
+      - {stable_id: m1-w1-d03-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Remove details that do not serve each audience.', contract: close, allowed_ai_role: analyst}
+
+  - week: 1
+    day: 4
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 4 — Webhooks, rate limits, and incident writing
+    tasks:
+      - {stable_id: m1-w1-d04-sql, block: sql, order: 1, exercise_type: sql_production_lab, timebox_minutes: 45, objective: 'Complete SQLBolt subqueries and unions, then Northstar SQL tasks 1–4.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w1-d04-technical, block: technical_learning, order: 2, exercise_type: webhook_reliability_design, timebox_minutes: 45, objective: 'Read A7 and A12; define behavior for duplicate and out-of-order delivery, non-2xx responses, and provider retries.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w1-d04-pipeline, block: career_pipeline, order: 3, exercise_type: company_product_research, timebox_minutes: 30, objective: 'Research two target-company products and write a three-sentence reason for each role.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w1-d04-case, block: tam_case, order: 4, exercise_type: webhook_reliability_design, timebox_minutes: 60, objective: 'Design Northstar webhook verification, acknowledgement, queueing, idempotency, retries, dead-letter handling, replay, and reconciliation.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w1-d04-communication, block: communication_spoken, order: 5, exercise_type: customer_incident_update, timebox_minutes: 45, objective: 'Write a customer incident update of no more than 150 words with impact, facts, unknowns, actions, and next update.', contract: communication, allowed_ai_role: reviewer}
+      - {stable_id: m1-w1-d04-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Delete sentences that do not change a decision or reduce uncertainty.', contract: close, allowed_ai_role: analyst}
+
+  - week: 1
+    day: 5
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 5 — Discovery and first complete behavioral story
+    tasks:
+      - {stable_id: m1-w1-d05-sql, block: sql, order: 1, exercise_type: sql_production_lab, timebox_minutes: 45, objective: 'Complete S3, S4, and S5 without solutions and explain each query aloud.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w1-d05-technical, block: technical_learning, order: 2, exercise_type: integration_diagram_and_explanation, timebox_minutes: 45, objective: 'Read H10; compare REST, webhooks, and polling for one Northstar event flow.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w1-d05-pipeline, block: career_pipeline, order: 3, exercise_type: application_or_outreach, timebox_minutes: 30, objective: 'Submit two targeted applications or complete two company-specific résumé versions.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w1-d05-case, block: tam_case, order: 4, exercise_type: technical_discovery_roleplay, timebox_minutes: 60, objective: 'Run discovery for real-time inventory, then produce requirements, unknowns, risks, success metrics, and a recommendation.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w1-d05-communication, block: communication_spoken, order: 5, exercise_type: behavioral_story_practice, timebox_minutes: 45, objective: 'Read H4; deliver the strongest production incident as a three-minute CARL story and answer two follow-ups.', contract: communication, allowed_ai_role: interviewer}
+      - {stable_id: m1-w1-d05-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Mark each jump to implementation before understanding the goal.', contract: close, allowed_ai_role: analyst}
+
+  - week: 1
+    day: 6
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 6 — Week 1 assessment — 2 hours
+    tasks:
+      - {stable_id: m1-w1-d06-sql, block: saturday_assessment, order: 1, exercise_type: sql_no_ai_timed_assessment, timebox_minutes: 30, objective: 'Complete Northstar SQL tasks 5–8 without AI and stop after 30 minutes.', contract: saturday_sql, allowed_ai_role: none}
+      - {stable_id: m1-w1-d06-case, block: saturday_assessment, order: 2, exercise_type: troubleshooting_case, timebox_minutes: 50, objective: 'Solve the integrated missing-orders case through discovery, troubleshooting, architecture, communication, impact, and self-review.', contract: saturday_case, allowed_ai_role: none}
+      - {stable_id: m1-w1-d06-behavioral, block: saturday_assessment, order: 3, exercise_type: behavioral_story_practice, timebox_minutes: 25, objective: 'Answer two unpredictable behavioral questions with follow-ups and redo the weaker answer once.', contract: saturday_behavioral, allowed_ai_role: none}
+      - {stable_id: m1-w1-d06-scoring, block: saturday_assessment, order: 4, exercise_type: official_reading, timebox_minutes: 15, objective: 'Complete the Week 1 assessment and identify two mistakes for next week.', contract: saturday_scoring, allowed_ai_role: none}
+
+  - week: 2
+    day: 7
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 7 — Timeouts, retries, and indeterminate outcomes
+    tasks:
+      - {stable_id: m1-w2-d07-sql, block: sql, order: 1, exercise_type: sql_production_lab, timebox_minutes: 45, objective: 'Complete Northstar SQL tasks 7–9 and 13.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w2-d07-technical, block: technical_learning, order: 2, exercise_type: api_failure_mode_analysis, timebox_minutes: 45, objective: 'Read A8 and A9; build a retry decision table for assigned HTTP errors, timeouts, and 5xx responses.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w2-d07-pipeline, block: career_pipeline, order: 3, exercise_type: application_or_outreach, timebox_minutes: 30, objective: 'Complete one targeted application and one outreach to a TAM or hiring manager.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w2-d07-case, block: tam_case, order: 4, exercise_type: api_failure_mode_analysis, timebox_minutes: 60, objective: 'Design safe client behavior after a destination processes a request but loses the response and lacks idempotency keys.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w2-d07-communication, block: communication_spoken, order: 5, exercise_type: audience_switching_explanation, timebox_minutes: 45, objective: 'Explain an indeterminate outcome to an engineer and CFO, then write the first customer update.', contract: communication, allowed_ai_role: interviewer}
+      - {stable_id: m1-w2-d07-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Check whether each retry decision considered side effects.', contract: close, allowed_ai_role: analyst}
+
+  - week: 2
+    day: 8
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 8 — Circuit breakers, DLQs, and backlog control
+    tasks:
+      - {stable_id: m1-w2-d08-sql, block: sql, order: 1, exercise_type: sql_production_lab, timebox_minutes: 45, objective: 'Complete Northstar SQL tasks 14–17.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w2-d08-technical, block: technical_learning, order: 2, exercise_type: api_failure_mode_analysis, timebox_minutes: 45, objective: 'Read A10 and A11; explain what retries, circuit breakers, and dead-letter queues solve and do not solve.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w2-d08-pipeline, block: career_pipeline, order: 3, exercise_type: company_product_research, timebox_minutes: 30, objective: 'Analyze one target company API and identify three likely customer failure modes.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w2-d08-case, block: tam_case, order: 4, exercise_type: webhook_reliability_design, timebox_minutes: 60, objective: 'Control a growing webhook backlog with metrics, backpressure, retry limits, dead-letter policy, safe replay, and impact.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w2-d08-communication, block: communication_spoken, order: 5, exercise_type: internal_engineering_escalation, timebox_minutes: 45, objective: 'Write an engineering escalation with evidence, severity, requested decision, owner, and deadline.', contract: communication, allowed_ai_role: reviewer}
+      - {stable_id: m1-w2-d08-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Replace vague system-performance phrases with measurable statements.', contract: close, allowed_ai_role: analyst}
+
+  - week: 2
+    day: 9
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 9 — Payment lifecycle
+    tasks:
+      - {stable_id: m1-w2-d09-sql, block: sql, order: 1, exercise_type: sql_production_lab, timebox_minutes: 45, objective: 'Complete Northstar SQL tasks 10–12.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w2-d09-technical, block: technical_learning, order: 2, exercise_type: payment_lifecycle_case, timebox_minutes: 45, objective: 'Read P1–P3; diagram authorization, required action, capture, failure, cancellation, refund, and settlement as distinct states.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w2-d09-pipeline, block: career_pipeline, order: 3, exercise_type: application_or_outreach, timebox_minutes: 30, objective: 'Rewrite one prior finance or integration story to emphasize payment or reconciliation relevance without inventing evidence.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w2-d09-case, block: tam_case, order: 4, exercise_type: payment_lifecycle_case, timebox_minutes: 60, objective: 'Analyze cancellation before capture and successful capture with a missing webhook.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w2-d09-communication, block: communication_spoken, order: 5, exercise_type: audience_switching_explanation, timebox_minutes: 45, objective: 'Explain both payment cases to Engineering, Operations, and Finance, separating API facts from external reconciliation.', contract: communication, allowed_ai_role: interviewer}
+      - {stable_id: m1-w2-d09-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Remove imprecise uses of payment succeeded as a final state.', contract: close, allowed_ai_role: analyst}
+
+  - week: 2
+    day: 10
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 10 — Incident command
+    tasks:
+      - {stable_id: m1-w2-d10-sql, block: sql, order: 1, exercise_type: sql_production_lab, timebox_minutes: 45, objective: 'Complete Northstar SQL tasks 16–18.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w2-d10-technical, block: technical_learning, order: 2, exercise_type: incident_simulation, timebox_minutes: 45, objective: 'Read I1 and I2; note incident roles, command structure, handoffs, and communication duties.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w2-d10-pipeline, block: career_pipeline, order: 3, exercise_type: application_or_outreach, timebox_minutes: 30, objective: 'Submit two targeted applications.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w2-d10-case, block: tam_case, order: 4, exercise_type: incident_simulation, timebox_minutes: 60, objective: 'Command a launch incident with ten-percent payment failures: severity, impact, roles, cadence, mitigation, facts, and unknowns.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w2-d10-communication, block: communication_spoken, order: 5, exercise_type: customer_pushback_or_bad_news, timebox_minutes: 45, objective: 'Reject a guaranteed-ETA demand without fabricated certainty, then deliver a two-minute VP Engineering update.', contract: communication, allowed_ai_role: interviewer}
+      - {stable_id: m1-w2-d10-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Verify mitigation, diagnosis, and permanent resolution remained separate.', contract: close, allowed_ai_role: analyst}
+
+  - week: 2
+    day: 11
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 11 — Postmortem and business value
+    tasks:
+      - {stable_id: m1-w2-d11-sql, block: sql, order: 1, exercise_type: sql_production_lab, timebox_minutes: 45, objective: 'Build a query summarizing failed-attempt and retry-success rates by customer.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w2-d11-technical, block: technical_learning, order: 2, exercise_type: postmortem_rca, timebox_minutes: 45, objective: 'Read I3–I5 and extract the postmortem structure and communication rules.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w2-d11-pipeline, block: career_pipeline, order: 3, exercise_type: application_or_outreach, timebox_minutes: 30, objective: 'Complete one application and two follow-ups.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w2-d11-case, block: tam_case, order: 4, exercise_type: postmortem_rca, timebox_minutes: 60, objective: 'Write a blameless Day 10 postmortem with impact, timeline, causes, detection, mitigation, corrective actions, owners, and dates.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w2-d11-communication, block: communication_spoken, order: 5, exercise_type: customer_incident_update, timebox_minutes: 45, objective: 'Translate three corrective actions into measurable operational and business outcomes.', contract: communication, allowed_ai_role: reviewer}
+      - {stable_id: m1-w2-d11-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Confirm each action has an owner and observable completion criterion.', contract: close, allowed_ai_role: analyst}
+
+  - week: 2
+    day: 12
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 12 — Week 2 assessment — 2 hours
+    tasks:
+      - {stable_id: m1-w2-d12-sql, block: saturday_assessment, order: 1, exercise_type: sql_no_ai_timed_assessment, timebox_minutes: 30, objective: 'Complete four selected Northstar tasks from 11–18 without AI, prioritizing weekly weaknesses.', contract: saturday_sql, allowed_ai_role: none}
+      - {stable_id: m1-w2-d12-case, block: saturday_assessment, order: 2, exercise_type: incident_simulation, timebox_minutes: 35, objective: 'Solve the timeout, duplicate order, escalation, mitigation, reconciliation, and postmortem case.', contract: saturday_case, allowed_ai_role: none}
+      - {stable_id: m1-w2-d12-portfolio, block: saturday_assessment, order: 3, exercise_type: portfolio_triage, timebox_minutes: 20, objective: 'Rank two competing incidents, delegate, communicate, and reprioritize after new evidence.', contract: saturday_portfolio, allowed_ai_role: none}
+      - {stable_id: m1-w2-d12-writing, block: saturday_assessment, order: 4, exercise_type: technical_writing_timed, timebox_minutes: 20, objective: 'Write one customer update and one executive summary from the incident.', contract: saturday_writing, allowed_ai_role: none}
+      - {stable_id: m1-w2-d12-scoring, block: saturday_assessment, order: 5, exercise_type: official_reading, timebox_minutes: 15, objective: 'Score SQL, incident control, portfolio judgment, payment precision, English clarity, and business framing.', contract: saturday_scoring, allowed_ai_role: none}
+
+  - week: 3
+    day: 13
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 13 — OAuth fundamentals
+    tasks:
+      - {stable_id: m1-w3-d13-sql, block: sql, order: 1, exercise_type: sql_production_lab, timebox_minutes: 45, objective: 'Review joins and CTEs with Northstar tasks 7, 13, and 16; improve readability.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w3-d13-technical, block: technical_learning, order: 2, exercise_type: integration_diagram_and_explanation, timebox_minutes: 45, objective: 'Read A14 and relevant A15 sections; diagram authorization code, token exchange, access, refresh, and revocation.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w3-d13-pipeline, block: career_pipeline, order: 3, exercise_type: company_product_research, timebox_minutes: 30, objective: 'Analyze authentication in one target company public API.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w3-d13-case, block: tam_case, order: 4, exercise_type: oauth_security_troubleshooting, timebox_minutes: 60, objective: 'Troubleshoot account-specific 401s after token expiry across authentication, authorization, scope, expiry, and refresh hypotheses.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w3-d13-communication, block: communication_spoken, order: 5, exercise_type: audience_switching_explanation, timebox_minutes: 45, objective: 'Explain OAuth differently to an integration engineer and CFO.', contract: communication, allowed_ai_role: interviewer}
+      - {stable_id: m1-w3-d13-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Check that access and authorization remained distinct.', contract: close, allowed_ai_role: analyst}
+
+  - week: 3
+    day: 14
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 14 — PKCE, webhook verification, and security failures
+    tasks:
+      - {stable_id: m1-w3-d14-sql, block: sql, order: 1, exercise_type: sql_guided_lesson, timebox_minutes: 45, objective: 'Read S6 through ROW_NUMBER and reproduce its example.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w3-d14-technical, block: technical_learning, order: 2, exercise_type: oauth_security_troubleshooting, timebox_minutes: 45, objective: 'Read A13, A16, and A17 summaries; create the assigned OAuth and webhook threat/failure checklist.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w3-d14-pipeline, block: career_pipeline, order: 3, exercise_type: application_or_outreach, timebox_minutes: 30, objective: 'Complete one application and one networking outreach.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w3-d14-case, block: tam_case, order: 4, exercise_type: oauth_security_troubleshooting, timebox_minutes: 60, objective: 'Build evidence-first paths for invalid webhook signatures after deployment and invalid_grant during refresh.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w3-d14-communication, block: communication_spoken, order: 5, exercise_type: customer_pushback_or_bad_news, timebox_minutes: 45, objective: 'Tell the customer accounts must reconnect after refresh-token revocation, including impact, action, and prevention.', contract: communication, allowed_ai_role: interviewer}
+      - {stable_id: m1-w3-d14-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Remove security claims unsupported by evidence.', contract: close, allowed_ai_role: analyst}
+
+  - week: 3
+    day: 15
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 15 — Logs, metrics, traces, and SLOs
+    tasks:
+      - {stable_id: m1-w3-d15-sql, block: sql, order: 1, exercise_type: sql_production_lab, timebox_minutes: 45, objective: 'Use ROW_NUMBER for Northstar task 19.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w3-d15-technical, block: technical_learning, order: 2, exercise_type: observability_health_dashboard, timebox_minutes: 45, objective: 'Read O1 and O2; define logs, metrics, traces, SLI, SLO, and SLA in your own words.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w3-d15-pipeline, block: career_pipeline, order: 3, exercise_type: application_or_outreach, timebox_minutes: 30, objective: 'Convert three technical metrics into customer or business outcomes for résumé or story use.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w3-d15-case, block: tam_case, order: 4, exercise_type: observability_health_dashboard, timebox_minutes: 60, objective: 'Design an integration-health dashboard with assigned metrics, one SLO, and an alert threshold.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w3-d15-communication, block: communication_spoken, order: 5, exercise_type: technical_health_review_qbr, timebox_minutes: 45, objective: 'Present a three-minute monthly technical health review with one recommendation.', contract: communication, allowed_ai_role: interviewer}
+      - {stable_id: m1-w3-d15-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Reject vanity metrics that do not support a decision.', contract: close, allowed_ai_role: analyst}
+
+  - week: 3
+    day: 16
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 16 — Implementation planning
+    tasks:
+      - {stable_id: m1-w3-d16-sql, block: sql, order: 1, exercise_type: sql_production_lab, timebox_minutes: 45, objective: 'Complete Northstar task 20 using LAG, consulting S6 as needed.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w3-d16-technical, block: technical_learning, order: 2, exercise_type: implementation_plan, timebox_minutes: 45, objective: 'Review H9 and read C2 and C3; extract project kickoff, ownership, and delivery controls.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w3-d16-pipeline, block: career_pipeline, order: 3, exercise_type: application_or_outreach, timebox_minutes: 30, objective: 'Submit two targeted applications.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w3-d16-case, block: tam_case, order: 4, exercise_type: implementation_plan, timebox_minutes: 60, objective: 'Build a six-week implementation plan with phases, owners, dependencies, risks, exit criteria, and rollback.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w3-d16-communication, block: communication_spoken, order: 5, exercise_type: project_kickoff_followup, timebox_minutes: 45, objective: 'Write a post-kickoff customer follow-up with decisions, owners, deadlines, questions, and risks.', contract: communication, allowed_ai_role: reviewer}
+      - {stable_id: m1-w3-d16-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Verify each milestone has an exit criterion, not only a date.', contract: close, allowed_ai_role: analyst}
+
+  - week: 3
+    day: 17
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 17 — Technical account strategy
+    tasks:
+      - {stable_id: m1-w3-d17-sql, block: sql, order: 1, exercise_type: sql_production_lab, timebox_minutes: 45, objective: 'Complete Northstar SQL tasks 21–22.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w3-d17-technical, block: technical_learning, order: 2, exercise_type: account_plan_90_day, timebox_minutes: 45, objective: 'Read C1; extract outcomes, current and desired state, milestones, metrics, stakeholders, and cadence.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w3-d17-pipeline, block: career_pipeline, order: 3, exercise_type: application_or_outreach, timebox_minutes: 30, objective: 'Complete one application and two follow-ups.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w3-d17-case, block: tam_case, order: 4, exercise_type: account_plan_90_day, timebox_minutes: 60, objective: 'Complete a Northstar 90-day account plan with only three priorities.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w3-d17-communication, block: communication_spoken, order: 5, exercise_type: technical_health_review_qbr, timebox_minutes: 45, objective: 'Present the plan to VP Engineering in five minutes and defend the three selected priorities.', contract: communication, allowed_ai_role: interviewer}
+      - {stable_id: m1-w3-d17-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Check that the plan is proactive rather than an incident list.', contract: close, allowed_ai_role: analyst}
+
+  - week: 3
+    day: 18
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 18 — Week 3 assessment — 2 hours
+    tasks:
+      - {stable_id: m1-w3-d18-sql, block: saturday_assessment, order: 1, exercise_type: sql_no_ai_timed_assessment, timebox_minutes: 30, objective: 'Complete four no-AI tasks selected from Northstar 19–22 and earlier weak areas.', contract: saturday_sql, allowed_ai_role: none}
+      - {stable_id: m1-w3-d18-case, block: saturday_assessment, order: 2, exercise_type: oauth_security_troubleshooting, timebox_minutes: 35, objective: 'Solve an OAuth implementation failure through discovery, diagnosis, metrics, update, launch decision, and prevention.', contract: saturday_case, allowed_ai_role: none}
+      - {stable_id: m1-w3-d18-portfolio, block: saturday_assessment, order: 3, exercise_type: portfolio_triage, timebox_minutes: 20, objective: 'Rank five accounts, allocate eight hours, protect proactive work, and rebuild the plan after new evidence.', contract: saturday_portfolio, allowed_ai_role: none}
+      - {stable_id: m1-w3-d18-executive, block: saturday_assessment, order: 4, exercise_type: audience_switching_explanation, timebox_minutes: 20, objective: 'Deliver a three-minute executive risk update and answer one ambiguity or influence question with follow-ups.', contract: saturday_behavioral, allowed_ai_role: none}
+      - {stable_id: m1-w3-d18-scoring, block: saturday_assessment, order: 5, exercise_type: official_reading, timebox_minutes: 15, objective: 'Score structure, precision, audience adaptation, portfolio judgment, and business-outcome linkage.', contract: saturday_scoring, allowed_ai_role: none}
+
+  - week: 4
+    day: 19
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 19 — TAM-adapted payment-system design
+    tasks:
+      - {stable_id: m1-w4-d19-sql, block: sql, order: 1, exercise_type: sql_production_lab, timebox_minutes: 45, objective: 'Complete Northstar SQL task 23.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w4-d19-technical, block: technical_learning, order: 2, exercise_type: payment_lifecycle_case, timebox_minutes: 45, objective: 'Read H11 without memorizing; extract entities, states, durability, async updates, security, and reconciliation.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w4-d19-pipeline, block: career_pipeline, order: 3, exercise_type: company_product_research, timebox_minutes: 30, objective: 'Deep-research one target company and write ten product-specific interview questions.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w4-d19-case, block: tam_case, order: 4, exercise_type: architecture_design_case, timebox_minutes: 60, objective: 'Turn payment-system design into a TAM case covering discovery, integration, failures, launch, observability, and responsibilities.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w4-d19-communication, block: communication_spoken, order: 5, exercise_type: architecture_presentation, timebox_minutes: 45, objective: 'Present a five-minute architecture recommendation with one rejected alternative and trade-off.', contract: communication, allowed_ai_role: interviewer}
+      - {stable_id: m1-w4-d19-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Check that customer requirements preceded components.', contract: close, allowed_ai_role: analyst}
+
+  - week: 4
+    day: 20
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 20 — Launch judgment under pressure
+    tasks:
+      - {stable_id: m1-w4-d20-sql, block: sql, order: 1, exercise_type: sql_no_ai_timed_assessment, timebox_minutes: 45, objective: 'Complete timed reconciliation with Northstar tasks 9, 10, 14, and 19.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w4-d20-technical, block: technical_learning, order: 2, exercise_type: api_failure_mode_analysis, timebox_minutes: 45, objective: 'Review H9 and A8–A10.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w4-d20-pipeline, block: career_pipeline, order: 3, exercise_type: application_or_outreach, timebox_minutes: 30, objective: 'Submit two targeted applications.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w4-d20-case, block: tam_case, order: 4, exercise_type: launch_readiness_decision, timebox_minutes: 60, objective: 'Decide launch, reduced scope, workaround, or stop after ten-percent payment failures; define criteria, risks, owners, and escalation.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w4-d20-communication, block: communication_spoken, order: 5, exercise_type: customer_pushback_or_bad_news, timebox_minutes: 45, objective: 'Deliver the launch decision to the CTO and push back on an aggressive customer without defensiveness.', contract: communication, allowed_ai_role: interviewer}
+      - {stable_id: m1-w4-d20-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Check that safety and business outcome outweighed approval seeking.', contract: close, allowed_ai_role: analyst}
+
+  - week: 4
+    day: 21
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 21 — QBR-lite and executive narrative
+    tasks:
+      - {stable_id: m1-w4-d21-sql, block: sql, order: 1, exercise_type: sql_production_lab, timebox_minutes: 45, objective: 'Complete Northstar SQL task 24.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w4-d21-technical, block: technical_learning, order: 2, exercise_type: technical_health_review_qbr, timebox_minutes: 45, objective: 'Review C1 and O2.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w4-d21-pipeline, block: career_pipeline, order: 3, exercise_type: application_or_outreach, timebox_minutes: 30, objective: 'Complete one application and two follow-ups.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w4-d21-case, block: tam_case, order: 4, exercise_type: technical_health_review_qbr, timebox_minutes: 60, objective: 'Build an eight-minute technical business review covering outcomes, health, incident, adoption, risks, and three priorities.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w4-d21-communication, block: communication_spoken, order: 5, exercise_type: technical_health_review_qbr, timebox_minutes: 45, objective: 'Present the review, compress it to 90 seconds, and answer two hostile questions.', contract: communication, allowed_ai_role: interviewer}
+      - {stable_id: m1-w4-d21-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Remove ticket narration and retain decisions and trends.', contract: close, allowed_ai_role: analyst}
+
+  - week: 4
+    day: 22
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 22 — Cross-functional conflict
+    tasks:
+      - {stable_id: m1-w4-d22-sql, block: sql, order: 1, exercise_type: sql_production_lab, timebox_minutes: 45, objective: 'Redo the three weakest SQL tasks without notes.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w4-d22-technical, block: technical_learning, order: 2, exercise_type: behavioral_story_practice, timebox_minutes: 45, objective: 'Read H7 and review H2–H4.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w4-d22-pipeline, block: career_pipeline, order: 3, exercise_type: application_or_outreach, timebox_minutes: 30, objective: 'Map one job description requirement-by-requirement to evidence or a gap.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w4-d22-case, block: tam_case, order: 4, exercise_type: cross_functional_conflict_case, timebox_minutes: 60, objective: 'Resolve a promised but unavailable launch feature through customer objective, alternatives, value, cost, owner, and recommendation.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w4-d22-communication, block: communication_spoken, order: 5, exercise_type: behavioral_story_practice, timebox_minutes: 45, objective: 'Deliver a CARL conflict story that makes personal decisions and influence explicit.', contract: communication, allowed_ai_role: interviewer}
+      - {stable_id: m1-w4-d22-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Check that escalation enabled a decision rather than avoiding judgment.', contract: close, allowed_ai_role: analyst}
+
+  - week: 4
+    day: 23
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 23 — Dress rehearsal and final behavioral assessment
+    tasks:
+      - {stable_id: m1-w4-d23-sql, block: sql, order: 1, exercise_type: sql_no_ai_timed_assessment, timebox_minutes: 45, objective: 'Complete a no-AI weak-area SQL set.', contract: sql, allowed_ai_role: tutor}
+      - {stable_id: m1-w4-d23-technical, block: technical_learning, order: 2, exercise_type: official_reading, timebox_minutes: 45, objective: 'Review only the weakest concept; introduce no new reading.', contract: technical, allowed_ai_role: tutor}
+      - {stable_id: m1-w4-d23-pipeline, block: career_pipeline, order: 3, exercise_type: application_or_outreach, timebox_minutes: 30, objective: 'Submit or follow up on five high-priority opportunities.', contract: pipeline, allowed_ai_role: planner}
+      - {stable_id: m1-w4-d23-case, block: tam_case, order: 4, exercise_type: full_tam_gauntlet, timebox_minutes: 60, objective: 'Triage five customers for 15 minutes, then take the top customer through discovery, architecture, incident, SQL, executive update, and strategy.', contract: case, allowed_ai_role: interviewer}
+      - {stable_id: m1-w4-d23-communication, block: communication_spoken, order: 5, exercise_type: behavioral_story_practice, timebox_minutes: 45, objective: 'Complete final behavioral assessment: TMAY, incident, conflict, and failure or learning with live follow-ups.', contract: communication, allowed_ai_role: interviewer}
+      - {stable_id: m1-w4-d23-close, block: daily_close, order: 6, exercise_type: official_reading, timebox_minutes: 15, objective: 'Select exactly three corrections for the final Saturday assessment.', contract: close, allowed_ai_role: analyst}
+
+  - week: 4
+    day: 24
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 24 — Month 1 final assessment — 2 hours
+    tasks:
+      - {stable_id: m1-w4-d24-sql, block: saturday_assessment, order: 1, exercise_type: sql_no_ai_timed_assessment, timebox_minutes: 30, objective: 'Complete five no-AI SQL tasks across joins, aggregates, NULLs, reconciliation, CTEs, and windows; pass with four correct.', contract: saturday_sql, allowed_ai_role: none}
+      - {stable_id: m1-w4-d24-gauntlet, block: saturday_assessment, order: 2, exercise_type: full_tam_gauntlet, timebox_minutes: 55, objective: 'Complete the English portfolio-to-depth TAM gauntlet, scoring each child independently.', contract: saturday_gauntlet, allowed_ai_role: none}
+      - {stable_id: m1-w4-d24-writing, block: saturday_assessment, order: 3, exercise_type: technical_writing_timed, timebox_minutes: 20, objective: 'Write one customer incident update and one executive summary from the gauntlet.', contract: saturday_writing, allowed_ai_role: none}
+      - {stable_id: m1-w4-d24-scoring, block: saturday_assessment, order: 4, exercise_type: official_reading, timebox_minutes: 15, objective: 'Complete the Month 1 assessment from evidence and set Month 2 priorities.', contract: saturday_scoring, allowed_ai_role: none}
