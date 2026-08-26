@@ -6,7 +6,7 @@ import hashlib
 from collections.abc import Collection
 from datetime import date
 
-from sqlalchemy import Connection, insert, select, text
+from sqlalchemy import Connection, func, insert, select, text
 from sqlalchemy.orm import Session
 
 from .models import Correction
@@ -92,6 +92,8 @@ def create_correction_with_slot_reservation(
             due_date=due_date,
             instruction=instruction,
             attempt_b_activity_id=None,
+            created_at=func.current_timestamp(),
+            updated_at=func.current_timestamp(),
             completed_at=None,
         )
         .returning(Correction.id)

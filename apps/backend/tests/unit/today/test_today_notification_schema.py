@@ -377,7 +377,14 @@ def test_correction_slot_service_locks_queries_and_inserts_in_one_transaction() 
     assert "corrections.owner_id" in str(executor.calls[1][0])
     assert "corrections.due_date" in str(executor.calls[1][0])
     assert "corrections.status IN" in str(executor.calls[1][0])
-    assert str(executor.calls[2][0]).startswith("INSERT INTO corrections")
+    insert_statement = executor.calls[2][0]
+    insert_sql = str(
+        insert_statement.compile(dialect=postgresql.dialect())  # type: ignore[union-attr]
+    )
+    assert insert_sql.startswith("INSERT INTO corrections")
+    assert insert_sql.count("CURRENT_TIMESTAMP") == 2
+    assert "created_at" in insert_sql
+    assert "updated_at" in insert_sql
 
 
 def test_correction_slot_service_rejects_third_before_insert() -> None:
