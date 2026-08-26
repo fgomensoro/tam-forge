@@ -160,3 +160,92 @@ def test_test_database_url_validation_rejects_unsafe_targets_without_echoing_url
         database.validate_test_database_url(url)
 
     assert url not in str(exc_info.value)
+
+
+def test_migration_url_resolution_rejects_absent_explicit_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    with pytest.raises(ValueError, match="explicit migration database URL"):
+        database.resolve_migration_url(None)
+
+
+def test_migration_url_resolution_rejects_blank_explicit_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql+asyncpg://tamforge:ignored@db.internal:5432/tamforge_test",
+    )
+
+    with pytest.raises(ValueError, match="explicit migration database URL"):
+        database.resolve_migration_url("   ")
+
+
+def test_migration_url_resolution_ignores_ambient_application_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ambient_secret = "ambient-application-secret"
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv(
+        "TAMFORGE_DATABASE_URL",
+        f"postgresql+asyncpg://tamforge:{ambient_secret}@db.internal:5432/tamforge",
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        database.resolve_migration_url(None)
+
+    assert ambient_secret not in str(exc_info.value)
+
+
+def test_migration_url_resolution_converts_explicit_asyncpg_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    resolved = database.resolve_migration_url(
+        "postgresql+asyncpg://tamforge:p%40ss@db.internal:5432/tamforge_test"
+    )
+
+    assert resolved == "postgresql+psycopg://tamforge:p%40ss@db.internal:5432/tamforge_test"
+
+
+def test_migration_url_resolution_accepts_explicit_alembic_config_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    resolved = database.resolve_migration_url(
+        None,
+        configured_url=(
+            "postgresql+asyncpg://tamforge:secret@db.internal:5432/tamforge_test"
+        ),
+    )
+
+    assert resolved == "postgresql+psycopg://tamforge:secret@db.internal:5432/tamforge_test"
+
+
+def test_migration_url_resolution_uses_database_url_environment_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql+asyncpg://tamforge:secret@db.internal:5432/tamforge_test",
+    )
+
+    resolved = database.resolve_migration_url(None)
+
+    assert resolved == "postgresql+psycopg://tamforge:secret@db.internal:5432/tamforge_test"
+
+
+def test_migration_url_resolution_never_echoes_invalid_explicit_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    secret = "migration-secret-that-must-not-leak"
+
+    with pytest.raises(ValueError) as exc_info:
+        database.resolve_migration_url(f"not-postgres://user:{secret}@host.invalid/database")
+
+    assert secret not in str(exc_info.value)

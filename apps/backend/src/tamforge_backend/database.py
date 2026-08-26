@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -96,6 +97,29 @@ def database_url_to_sync(raw_url: str) -> str:
         raise ValueError("a complete PostgreSQL database URL is required")
 
     return url.set(drivername="postgresql+psycopg").render_as_string(hide_password=False)
+
+
+def resolve_migration_url(
+    injected_url: str | None,
+    *,
+    configured_url: str | None = None,
+) -> str:
+    """Resolve only an explicit Alembic source, never application settings."""
+    raw_url: str | None
+    if injected_url is not None:
+        raw_url = injected_url
+    elif configured_url is not None and configured_url.strip():
+        raw_url = configured_url
+    else:
+        raw_url = os.getenv("DATABASE_URL")
+    if raw_url is None or not raw_url.strip():
+        raise ValueError("an explicit migration database URL is required")
+    try:
+        return database_url_to_sync(raw_url)
+    except ValueError:
+        raise ValueError(
+            "the explicit migration database URL must be complete PostgreSQL"
+        ) from None
 
 
 def validate_test_database_url(raw_url: str) -> str:
