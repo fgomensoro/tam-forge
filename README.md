@@ -25,6 +25,18 @@ Database schemas are created, upgraded, downgraded, and removed only through
 Alembic migrations. Direct `Base.metadata.create_all()` and `drop_all()` calls
 are guarded so tests and application code cannot emit a partial parallel schema.
 
+## Production object-storage gates
+
+Before enabling production traffic, create a known canary object through the
+authenticated application path, then use an independent client with no object-store
+credentials to issue both `HEAD` and `GET` requests for it. Deployment remains blocked
+unless both requests return `403` and the Hetzner control plane confirms that the
+bucket has no public policy or ACL. This is a live provider check; the Moto contract
+test covers the same access expectation locally but cannot prove production policy.
+
+At-rest encryption and recovery-key ownership require a separate approved
+architecture decision and are not configured by the local object-store adapter.
+
 ## GitHub planning catalog
 
 The approved milestones, labels, epics, and child issues are declared in

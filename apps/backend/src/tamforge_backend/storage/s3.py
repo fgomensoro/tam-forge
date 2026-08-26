@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from functools import partial
 from tempfile import SpooledTemporaryFile
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import anyio
 import boto3
@@ -54,6 +54,7 @@ class S3ObjectStore:
         bucket: str,
         access_key: str,
         secret_key: str,
+        addressing_style: Literal["path", "virtual"] = "path",
         max_upload_bytes: int = 1024 * 1024 * 1024,
         memory_spool_bytes: int = 1024 * 1024,
         max_concurrent_uploads: int = 1,
@@ -61,6 +62,8 @@ class S3ObjectStore:
     ) -> None:
         if not region or not bucket:
             raise ValueError("object-store region and bucket are required")
+        if addressing_style not in {"path", "virtual"}:
+            raise ValueError("object-store addressing style is invalid")
         if max_upload_bytes < 1 or not 1 <= memory_spool_bytes <= max_upload_bytes:
             raise ValueError("object-store spool bounds are invalid")
         if not 1 <= max_concurrent_uploads <= 8:
@@ -77,7 +80,10 @@ class S3ObjectStore:
             region_name=region,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
-            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+            config=Config(
+                signature_version="s3v4",
+                s3={"addressing_style": addressing_style},
+            ),
         )
 
     def __repr__(self) -> str:
@@ -163,7 +169,7 @@ class S3ObjectStore:
                         ChecksumSHA256=provider_checksum,
                     )
                 )
-                return candidate
+                return await self._confirm_stored(candidate)
             except ClientError as exc:
                 error_code = self._error_code(exc)
                 if error_code not in (
@@ -204,7 +210,7 @@ class S3ObjectStore:
             if self._error_code(exc) in _NOT_FOUND_CODES:
                 return None
             raise ObjectStoreError("object-store stat failed") from None
-        except BotoCoreError:
+        except (BotoCoreError, OSError):
             raise ObjectStoreError("object-store stat failed") from None
 
         metadata = dict(response.get("Metadata", {}))
@@ -239,7 +245,7 @@ class S3ObjectStore:
             if self._error_code(exc) in _NOT_FOUND_CODES:
                 raise ObjectNotFound("private object was not found") from None
             raise ObjectStoreError("object-store read failed") from None
-        except BotoCoreError:
+        except (BotoCoreError, OSError):
             raise ObjectStoreError("object-store read failed") from None
         provider_body = response["Body"]
 
@@ -249,7 +255,7 @@ class S3ObjectStore:
                     chunk = await anyio.to_thread.run_sync(
                         provider_body.read, READ_CHUNK_BYTES
                     )
-                except OSError:
+                except (BotoCoreError, OSError):
                     raise ObjectStoreError("object-store read failed") from None
                 if not chunk:
                     return
@@ -264,7 +270,7 @@ class S3ObjectStore:
         finally:
             try:
                 await anyio.to_thread.run_sync(provider_body.close)
-            except OSError:
+            except (BotoCoreError, OSError):
                 if primary_error is None:
                     raise ObjectStoreError("object-store read failed") from None
 
@@ -296,7 +302,7 @@ class S3ObjectStore:
                     HttpMethod="PUT",
                 )
             )
-        except (BotoCoreError, ClientError, ValueError):
+        except (BotoCoreError, ClientError, OSError, ValueError):
             raise ObjectStoreError("object-store signing failed") from None
         headers = {
             "content-length": str(request.byte_length),
@@ -326,12 +332,18 @@ class S3ObjectStore:
                     HttpMethod="GET",
                 )
             )
-        except (BotoCoreError, ClientError, ValueError):
+        except (BotoCoreError, ClientError, OSError, ValueError):
             raise ObjectStoreError("object-store signing failed") from None
 
     @staticmethod
     def _error_code(exc: ClientError) -> str:
         return str(exc.response.get("Error", {}).get("Code", ""))
+
+    async def _confirm_stored(self, candidate: StoredObject) -> StoredObject:
+        stored = await self.stat(candidate.key)
+        if stored != candidate:
+            raise ObjectIntegrityError("stored object does not match confirmed provider state")
+        return stored
 
     @asynccontextmanager
     async def _temporary_spool(self) -> AsyncIterator[SpooledTemporaryFile[bytes]]:

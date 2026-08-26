@@ -20,6 +20,7 @@ class ChecksumAwareMotoClient:
         self.checksums: dict[tuple[str, str], str] = {}
         self.last_put_kwargs: dict[str, Any] | None = None
         self.last_head_kwargs: dict[str, Any] | None = None
+        self.head_calls = 0
 
     def put_object(self, **kwargs: Any) -> Any:
         self.last_put_kwargs = dict(kwargs)
@@ -44,6 +45,7 @@ class ChecksumAwareMotoClient:
         return response
 
     def head_object(self, **kwargs: Any) -> Any:
+        self.head_calls += 1
         self.last_head_kwargs = dict(kwargs)
         response = self._client.head_object(**kwargs)
         if kwargs.get("ChecksumMode") == "ENABLED":

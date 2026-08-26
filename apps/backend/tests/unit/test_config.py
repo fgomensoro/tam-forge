@@ -18,6 +18,7 @@ PRODUCTION_ENV = {
     "TAMFORGE_OBJECT_STORE_ENDPOINT": "https://objects.example.test",
     "TAMFORGE_OBJECT_STORE_BUCKET": "tam-forge",
     "TAMFORGE_OBJECT_STORE_REGION": "eu-central-1",
+    "TAMFORGE_OBJECT_STORE_ADDRESSING_STYLE": "virtual",
     "TAMFORGE_OBJECT_STORE_ACCESS_KEY": "object-access-secret",
     "TAMFORGE_OBJECT_STORE_SECRET_KEY": "object-secret-value",
     "TAMFORGE_GITHUB_CLIENT_ID": "github-client-id",
@@ -62,6 +63,7 @@ def set_production_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "TAMFORGE_DATABASE_URL",
         "TAMFORGE_OBJECT_STORE_ENDPOINT",
         "TAMFORGE_OBJECT_STORE_BUCKET",
+        "TAMFORGE_OBJECT_STORE_ADDRESSING_STYLE",
         "TAMFORGE_OBJECT_STORE_ACCESS_KEY",
         "TAMFORGE_OBJECT_STORE_SECRET_KEY",
         "TAMFORGE_GITHUB_CLIENT_ID",
@@ -146,6 +148,7 @@ def test_object_store_resource_limits_are_bounded_and_consistent() -> None:
     )
 
     assert settings.object_store_region == "us-east-1"
+    assert settings.object_store_addressing_style == "path"
     assert settings.object_store_max_upload_bytes == 1024
     assert settings.object_store_memory_spool_bytes == 512
     assert settings.object_store_max_concurrent_uploads == 1
@@ -188,6 +191,16 @@ def test_production_object_store_endpoint_must_be_an_exact_https_origin(
 ) -> None:
     set_production_environment(monkeypatch)
     monkeypatch.setenv("TAMFORGE_OBJECT_STORE_ENDPOINT", endpoint)
+
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_production_object_store_requires_virtual_host_addressing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_production_environment(monkeypatch)
+    monkeypatch.setenv("TAMFORGE_OBJECT_STORE_ADDRESSING_STYLE", "path")
 
     with pytest.raises(ValidationError):
         Settings()

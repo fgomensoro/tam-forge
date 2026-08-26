@@ -19,6 +19,7 @@ def get_object_store(request: Request) -> ObjectStore:
     store = S3ObjectStore(
         endpoint_url=settings.object_store_endpoint,
         region=settings.object_store_region,
+        addressing_style=settings.object_store_addressing_style,
         bucket=settings.object_store_bucket,
         access_key=settings.object_store_access_key.get_secret_value(),
         secret_key=settings.object_store_secret_key.get_secret_value(),

@@ -16,7 +16,7 @@ import boto3
 import pytest
 from botocore import UNSIGNED
 from botocore.client import Config
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, ResponseStreamingError
 from moto import mock_aws
 
 
@@ -72,6 +72,55 @@ class FailingSpool:
         self._delegate.close()
         if self._fail_operation == "close":
             raise OSError("sensitive close path")
+
+
+class StreamingFailureBody:
+    def __init__(self, *, fail_read: bool, fail_close: bool) -> None:
+        self._fail_read = fail_read
+        self._fail_close = fail_close
+
+    def read(self, size: int) -> bytes:
+        if self._fail_read:
+            raise ResponseStreamingError(error="https://secret.example/key?signature=leak")
+        return b""
+
+    def close(self) -> None:
+        if self._fail_close:
+            raise ResponseStreamingError(error="https://secret.example/key?signature=leak")
+
+
+class StreamingFailureClient:
+    def __init__(self, body: StreamingFailureBody) -> None:
+        self._body = body
+
+    def get_object(self, **kwargs: object) -> dict[str, object]:
+        return {"Body": self._body}
+
+
+class SigningFailureClient:
+    def generate_presigned_url(self, *args: object, **kwargs: object) -> str:
+        raise ClientError(
+            {
+                "Error": {
+                    "Code": "AccessDenied",
+                    "Message": "https://secret.example/key?signature=leak",
+                }
+            },
+            "GeneratePresignedUrl",
+        )
+
+
+class CorruptHeadClient:
+    def __init__(self, client: Any) -> None:
+        self._client = client
+
+    def head_object(self, **kwargs: Any) -> Any:
+        response = self._client.head_object(**kwargs)
+        response["ContentType"] = "application/x-corrupt"
+        return response
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._client, name)
 
 
 @pytest.fixture
@@ -231,47 +280,40 @@ async def test_s3_upload_rejects_body_larger_than_disk_spool_bound() -> None:
 
 
 @pytest.mark.anyio
-async def test_s3_retries_conditional_race_without_overwriting() -> None:
+async def test_s3_retries_conditional_race_without_overwriting(
+    moto_s3_client: Any,
+) -> None:
     from tamforge_backend.storage.models import build_object_key
     from tamforge_backend.storage.s3 import S3ObjectStore
 
-    with mock_aws():
-        client = boto3.client(
-            "s3",
-            region_name="us-east-1",
-            aws_access_key_id="test-access",
-            aws_secret_access_key="test-secret",
-            config=Config(signature_version="s3v4"),
-        )
-        client.create_bucket(Bucket="tam-forge-test")
-        racing_client = ConflictOnceClient(client)
-        store = S3ObjectStore(
-            endpoint_url=None,
-            region="us-east-1",
-            bucket="tam-forge-test",
-            access_key="test-access",
-            secret_key="test-secret",
-            client=racing_client,  # type: ignore[arg-type]
-        )
-        payload = b"race-safe"
-        digest = hashlib.sha256(payload).hexdigest()
-        key = build_object_key(
-            artifact_class="recording-segment",
-            owner_id="0191af17-cc6e-7da1-a9d0-b0e542bc7460",
-            logical_id="track-1-seq-0-49",
-            sha256=digest,
-        )
+    racing_client = ConflictOnceClient(moto_s3_client)
+    store = S3ObjectStore(
+        endpoint_url=None,
+        region="us-east-1",
+        bucket="tam-forge-test",
+        access_key="test-access",
+        secret_key="test-secret",
+        client=racing_client,  # type: ignore[arg-type]
+    )
+    payload = b"race-safe"
+    digest = hashlib.sha256(payload).hexdigest()
+    key = build_object_key(
+        artifact_class="recording-segment",
+        owner_id="0191af17-cc6e-7da1-a9d0-b0e542bc7460",
+        logical_id="track-1-seq-0-49",
+        sha256=digest,
+    )
 
-        stored = await store.put_immutable(
-            key=key,
-            body=chunks(payload),
-            sha256=digest,
-            content_type="application/octet-stream",
-            metadata={},
-        )
+    stored = await store.put_immutable(
+        key=key,
+        body=chunks(payload),
+        sha256=digest,
+        content_type="application/octet-stream",
+        metadata={},
+    )
 
-        assert stored.sha256 == digest
-        assert racing_client.put_calls == 2
+    assert stored.sha256 == digest
+    assert racing_client.put_calls == 2
 
 
 def test_adapter_repr_never_contains_credentials_or_signed_urls() -> None:
@@ -354,13 +396,15 @@ async def test_s3_put_and_stat_use_provider_validated_sha256(
         sha256=digest,
     )
 
-    await store.put_immutable(
+    returned = await store.put_immutable(
         key=key,
         body=chunks(payload),
         sha256=digest,
         content_type="text/plain",
         metadata={},
     )
+    assert moto_s3_client.head_calls == 1
+    assert returned.sha256 == digest
     stored = await store.stat(key)
 
     assert stored is not None
@@ -368,6 +412,200 @@ async def test_s3_put_and_stat_use_provider_validated_sha256(
     assert moto_s3_client.last_put_kwargs["ChecksumSHA256"] == expected_checksum
     assert moto_s3_client.last_head_kwargs is not None
     assert moto_s3_client.last_head_kwargs["ChecksumMode"] == "ENABLED"
+
+
+@pytest.mark.anyio
+async def test_put_rejects_provider_state_that_does_not_match_candidate(
+    moto_s3_client: Any,
+) -> None:
+    from tamforge_backend.storage.models import ObjectIntegrityError, build_object_key
+    from tamforge_backend.storage.s3 import S3ObjectStore
+
+    payload = b"confirm-after-put"
+    digest = hashlib.sha256(payload).hexdigest()
+    store = S3ObjectStore(
+        endpoint_url=None,
+        region="us-east-1",
+        bucket="tam-forge-test",
+        access_key="test-access",
+        secret_key="test-secret",
+        client=CorruptHeadClient(moto_s3_client),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ObjectIntegrityError):
+        await store.put_immutable(
+            key=build_object_key(
+                artifact_class="archive",
+                owner_id="0191af17-cc6e-7da1-a9d0-b0e542bc7460",
+                logical_id="confirm",
+                sha256=digest,
+            ),
+            body=chunks(payload),
+            sha256=digest,
+            content_type="application/octet-stream",
+            metadata={},
+        )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("addressing_style", "endpoint", "region", "expected_host", "path_prefix"),
+    (
+        (
+            "virtual",
+            "https://nbg1.your-objectstorage.com",
+            "nbg1",
+            "tam-forge.nbg1.your-objectstorage.com",
+            "/archive/",
+        ),
+        (
+            "path",
+            "http://127.0.0.1:9000",
+            "us-east-1",
+            "127.0.0.1",
+            "/tam-forge/archive/",
+        ),
+    ),
+)
+async def test_presigned_hosts_follow_validated_addressing_style(
+    addressing_style: str,
+    endpoint: str,
+    region: str,
+    expected_host: str,
+    path_prefix: str,
+) -> None:
+    from tamforge_backend.storage.models import build_object_key
+    from tamforge_backend.storage.s3 import S3ObjectStore
+
+    digest = hashlib.sha256(b"addressing").hexdigest()
+    key = build_object_key(
+        artifact_class="archive",
+        owner_id="0191af17-cc6e-7da1-a9d0-b0e542bc7460",
+        logical_id="addressing",
+        sha256=digest,
+    )
+    store = S3ObjectStore(
+        endpoint_url=endpoint,
+        region=region,
+        bucket="tam-forge",
+        access_key="test-access",
+        secret_key="test-secret",
+        addressing_style=addressing_style,
+    )
+
+    parsed = urlsplit(await store.presign_get(key, expires_seconds=60))
+
+    assert parsed.hostname == expected_host
+    assert parsed.path.startswith(path_prefix)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("fail_read", "fail_close"), ((True, False), (False, True)))
+async def test_streaming_sdk_errors_are_redacted(
+    fail_read: bool,
+    fail_close: bool,
+) -> None:
+    from tamforge_backend.storage.models import ObjectStoreError, build_object_key
+    from tamforge_backend.storage.s3 import S3ObjectStore
+
+    digest = hashlib.sha256(b"stream").hexdigest()
+    key = build_object_key(
+        artifact_class="archive",
+        owner_id="0191af17-cc6e-7da1-a9d0-b0e542bc7460",
+        logical_id="stream-errors",
+        sha256=digest,
+    )
+    store = S3ObjectStore(
+        endpoint_url=None,
+        region="us-east-1",
+        bucket="tam-forge-test",
+        access_key="test-access",
+        secret_key="test-secret",
+        client=StreamingFailureClient(
+            StreamingFailureBody(fail_read=fail_read, fail_close=fail_close)
+        ),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ObjectStoreError, match="object-store read failed") as exc_info:
+        async with store.open(key) as stream:
+            async for _chunk in stream:
+                pass
+
+    assert "secret.example" not in str(exc_info.value)
+    assert "signature" not in str(exc_info.value)
+
+
+@pytest.mark.anyio
+async def test_stream_close_sdk_error_does_not_mask_primary_integrity_error() -> None:
+    from tamforge_backend.storage.models import ObjectIntegrityError, build_object_key
+    from tamforge_backend.storage.s3 import S3ObjectStore
+
+    digest = hashlib.sha256(b"stream").hexdigest()
+    key = build_object_key(
+        artifact_class="archive",
+        owner_id="0191af17-cc6e-7da1-a9d0-b0e542bc7460",
+        logical_id="stream-primary",
+        sha256=digest,
+    )
+    store = S3ObjectStore(
+        endpoint_url=None,
+        region="us-east-1",
+        bucket="tam-forge-test",
+        access_key="test-access",
+        secret_key="test-secret",
+        client=StreamingFailureClient(
+            StreamingFailureBody(fail_read=False, fail_close=True)
+        ),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ObjectIntegrityError):
+        async with store.open(key):
+            raise ObjectIntegrityError("primary integrity failure")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("operation", ("get", "put"))
+async def test_signing_client_errors_are_redacted(operation: str) -> None:
+    from tamforge_backend.storage.models import (
+        ObjectStoreError,
+        PresignPutRequest,
+        build_object_key,
+    )
+    from tamforge_backend.storage.s3 import S3ObjectStore
+
+    payload = b"sign"
+    digest = hashlib.sha256(payload).hexdigest()
+    key = build_object_key(
+        artifact_class="archive",
+        owner_id="0191af17-cc6e-7da1-a9d0-b0e542bc7460",
+        logical_id="signing-errors",
+        sha256=digest,
+    )
+    store = S3ObjectStore(
+        endpoint_url=None,
+        region="us-east-1",
+        bucket="tam-forge-test",
+        access_key="test-access",
+        secret_key="test-secret",
+        client=SigningFailureClient(),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ObjectStoreError, match="object-store signing failed") as exc_info:
+        if operation == "get":
+            await store.presign_get(key, expires_seconds=60)
+        else:
+            await store.presign_put(
+                PresignPutRequest(
+                    key=key,
+                    sha256=digest,
+                    byte_length=len(payload),
+                    content_type="application/octet-stream",
+                    expires_seconds=60,
+                )
+            )
+
+    assert "secret.example" not in str(exc_info.value)
+    assert "signature" not in str(exc_info.value)
 
 
 @pytest.mark.anyio
