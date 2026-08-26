@@ -17,6 +17,10 @@ test_tool_root="${TAMFORGE_TEST_DB_TOOL_ROOT:-}"
 test_platform_root="${TAMFORGE_TEST_DB_PLATFORM_ROOT:-}"
 connect_timeout="5"
 statement_options="-c statement_timeout=5000 -c lock_timeout=5000"
+ready_attempts="30"
+ready_delay_seconds="1"
+ready_attempts_override_set="${TAMFORGE_TEST_DB_READY_ATTEMPTS+set}"
+ready_delay_override_set="${TAMFORGE_TEST_DB_READY_DELAY_SECONDS+set}"
 
 [[ "$host" == "127.0.0.1" ]] || fail "host must be exactly 127.0.0.1"
 [[ "$port" =~ ^[1-9][0-9]{0,4}$ ]] || fail "port must contain only 1 to 5 digits"
@@ -28,6 +32,23 @@ port_number=$((10#$port))
 [[ -n "$password" && ${#password} -le 128 ]] || fail "database password is invalid"
 [[ "$password" != *[[:space:]]* && "$password" != *[[:cntrl:]]* ]] \
   || fail "database password is invalid"
+
+if [[ "$test_mode" == "1" ]]; then
+  if [[ -n "$ready_attempts_override_set" ]]; then
+    ready_attempts="${TAMFORGE_TEST_DB_READY_ATTEMPTS-}"
+  fi
+  if [[ -n "$ready_delay_override_set" ]]; then
+    ready_delay_seconds="${TAMFORGE_TEST_DB_READY_DELAY_SECONDS-}"
+  fi
+  [[ "$ready_attempts" =~ ^[1-9][0-9]?$ ]] \
+    || fail "test readiness attempts must be an integer from 1 to 60"
+  (( 10#$ready_attempts <= 60 )) \
+    || fail "test readiness attempts must be an integer from 1 to 60"
+  [[ "$ready_delay_seconds" =~ ^[0-5]$ ]] \
+    || fail "test readiness delay must be an integer from 0 to 5 seconds"
+elif [[ -n "$ready_attempts_override_set" || -n "$ready_delay_override_set" ]]; then
+  fail "readiness overrides require isolated test mode"
+fi
 
 file_mode() {
   local path="$1"
@@ -178,6 +199,39 @@ resolve_tool() {
 
 psql_path="$(resolve_tool psql)"
 createdb_path="$(resolve_tool createdb)"
+
+postgres_is_ready() {
+  local output
+  output="$(
+    PGPASSWORD="$password" \
+    PGCONNECT_TIMEOUT="$connect_timeout" \
+    PGOPTIONS="$statement_options" \
+    "$psql_path" \
+      --no-psqlrc \
+      --no-password \
+      --host "$host" \
+      --port "$port" \
+      --username "$admin_user" \
+      --dbname "$admin_database" \
+      --tuples-only \
+      --no-align \
+      --set=ON_ERROR_STOP=1 \
+      --command "SELECT 1" \
+      2>/dev/null
+  )" || return 1
+  [[ "$output" =~ ^[[:space:]]*1[[:space:]]*$ ]]
+}
+
+ready_attempt=1
+while ! postgres_is_ready; do
+  if (( ready_attempt >= ready_attempts )); then
+    fail "PostgreSQL did not become ready within the bounded wait"
+  fi
+  if (( ready_delay_seconds > 0 )); then
+    /bin/sleep "$ready_delay_seconds"
+  fi
+  ready_attempt=$((ready_attempt + 1))
+done
 
 database_exists() {
   local output

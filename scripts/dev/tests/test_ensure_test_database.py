@@ -22,6 +22,7 @@ def fake_database_tools(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:
     log_path = tmp_path / "commands.log"
     env_log_path = tmp_path / "command-env.log"
     state_path = tmp_path / "database-created"
+    ready_state_path = tmp_path / "readiness-attempts"
     shared_log = (
         'printf "%s\\n" "$0" "$@" "--END--" >> "$FAKE_COMMAND_LOG"\n'
         'printf "%s\\n" "${PGPASSWORD-}" "${PGCONNECT_TIMEOUT-}" "${PGOPTIONS-}" '
@@ -30,6 +31,23 @@ def fake_database_tools(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:
     write_fake_command(
         bin_dir / "psql",
         shared_log
+        + 'previous=""\n'
+        + 'is_readiness=0\n'
+        + 'for argument in "$@"; do\n'
+        + '  if [ "$previous" = "--command" ] && [ "$argument" = "SELECT 1" ]; then\n'
+        + '    is_readiness=1\n'
+        + "  fi\n"
+        + '  previous="$argument"\n'
+        + "done\n"
+        + 'if [ "$is_readiness" = "1" ]; then\n'
+        + '  ready_count=0\n'
+        + '  if [ -f "$FAKE_READY_STATE" ]; then read -r ready_count < "$FAKE_READY_STATE"; fi\n'
+        + '  ready_count=$((ready_count + 1))\n'
+        + '  printf "%s\\n" "$ready_count" > "$FAKE_READY_STATE"\n'
+        + '  if [ "$ready_count" -le "${FAKE_READY_FAILURES:-0}" ]; then exit 16; fi\n'
+        + '  printf "1\\n"\n'
+        + "  exit 0\n"
+        + "fi\n"
         + 'if [ "${FAKE_PSQL_FAIL:-0}" = "1" ]; then exit 17; fi\n'
         + 'if [ -f "$FAKE_DATABASE_STATE" ]; then printf "1\\n"; fi\n',
     )
@@ -49,6 +67,7 @@ def fake_database_tools(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:
             "FAKE_COMMAND_LOG": str(log_path),
             "FAKE_ENV_LOG": str(env_log_path),
             "FAKE_DATABASE_STATE": str(state_path),
+            "FAKE_READY_STATE": str(ready_state_path),
             "TAMFORGE_TEST_DB_TEST_MODE": "1",
             "TAMFORGE_TEST_DB_TOOL_ROOT": str(bin_dir),
         }
@@ -119,6 +138,14 @@ def fake_postgres_client_body() -> str:
         'printf "%s\\n" "$0" "$@" "--END--" >> "$FAKE_COMMAND_LOG"\n'
         'printf "%s\\n" "${PGPASSWORD-}" "${PGCONNECT_TIMEOUT-}" "${PGOPTIONS-}" '
         '"--END--" >> "$FAKE_ENV_LOG"\n'
+        'previous=""\n'
+        'for argument in "$@"; do\n'
+        '  if [ "$previous" = "--command" ] && [ "$argument" = "SELECT 1" ]; then\n'
+        '    printf "1\\n"\n'
+        '    exit 0\n'
+        '  fi\n'
+        '  previous="$argument"\n'
+        'done\n'
         'case " $* " in\n'
         '  *" --maintenance-db "*) : > "$FAKE_DATABASE_STATE" ;;\n'
         '  *) if [ -f "$FAKE_DATABASE_STATE" ]; then printf "1\\n"; fi ;;\n'
@@ -140,8 +167,32 @@ def test_default_target_is_created_once_and_repeated_runs_are_idempotent(
     assert "tamforge" not in second.stderr
     assert state_path.exists()
     blocks = command_blocks(log_path)
-    assert [Path(block[0]).name for block in blocks] == ["psql", "createdb", "psql", "psql"]
+    assert [Path(block[0]).name for block in blocks] == [
+        "psql",
+        "psql",
+        "createdb",
+        "psql",
+        "psql",
+        "psql",
+    ]
     assert blocks[0][1:] == [
+        "--no-psqlrc",
+        "--no-password",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "54329",
+        "--username",
+        "tamforge",
+        "--dbname",
+        "postgres",
+        "--tuples-only",
+        "--no-align",
+        "--set=ON_ERROR_STOP=1",
+        "--command",
+        "SELECT 1",
+    ]
+    assert blocks[1][1:] == [
         "--no-psqlrc",
         "--no-password",
         "--host",
@@ -158,7 +209,7 @@ def test_default_target_is_created_once_and_repeated_runs_are_idempotent(
         "--command",
         "SELECT 1 FROM pg_database WHERE datname = 'tamforge_test'",
     ]
-    assert blocks[1][1:] == [
+    assert blocks[2][1:] == [
         "--no-password",
         "--host",
         "127.0.0.1",
@@ -175,7 +226,107 @@ def test_default_target_is_created_once_and_repeated_runs_are_idempotent(
         ["tamforge", "5", "-c statement_timeout=5000 -c lock_timeout=5000"],
         ["tamforge", "5", "-c statement_timeout=5000 -c lock_timeout=5000"],
         ["tamforge", "5", "-c statement_timeout=5000 -c lock_timeout=5000"],
+        ["tamforge", "5", "-c statement_timeout=5000 -c lock_timeout=5000"],
+        ["tamforge", "5", "-c statement_timeout=5000 -c lock_timeout=5000"],
     ]
+
+
+@pytest.mark.parametrize("database_exists", [True, False])
+def test_readiness_retries_fail_fail_success_before_existing_or_creation_flow(
+    fake_database_tools: tuple[dict[str, str], Path, Path],
+    database_exists: bool,
+) -> None:
+    env, log_path, state_path = fake_database_tools
+    if database_exists:
+        state_path.touch()
+    env.update(
+        {
+            "FAKE_READY_FAILURES": "2",
+            "TAMFORGE_TEST_DB_READY_ATTEMPTS": "3",
+            "TAMFORGE_TEST_DB_READY_DELAY_SECONDS": "0",
+        }
+    )
+
+    result = run_helper(env)
+
+    assert result.returncode == 0, result.stderr
+    names = [Path(block[0]).name for block in command_blocks(log_path)]
+    assert names[:3] == ["psql", "psql", "psql"]
+    assert names[3:] == (["psql"] if database_exists else ["psql", "createdb", "psql"])
+    assert state_path.exists()
+
+
+def test_readiness_permanent_failure_exhausts_exact_attempts_without_createdb(
+    fake_database_tools: tuple[dict[str, str], Path, Path],
+) -> None:
+    env, log_path, state_path = fake_database_tools
+    password = "readiness-password-must-not-leak"
+    env.update(
+        {
+            "FAKE_READY_FAILURES": "99",
+            "TAMFORGE_TEST_DB_PASSWORD": password,
+            "TAMFORGE_TEST_DB_READY_ATTEMPTS": "3",
+            "TAMFORGE_TEST_DB_READY_DELAY_SECONDS": "0",
+        }
+    )
+
+    result = run_helper(env)
+
+    assert result.returncode != 0
+    assert [Path(block[0]).name for block in command_blocks(log_path)] == [
+        "psql",
+        "psql",
+        "psql",
+    ]
+    assert not state_path.exists()
+    assert "PostgreSQL did not become ready within the bounded wait" in result.stderr
+    assert password not in result.stdout
+    assert password not in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("TAMFORGE_TEST_DB_READY_ATTEMPTS", "0"),
+        ("TAMFORGE_TEST_DB_READY_ATTEMPTS", "61"),
+        ("TAMFORGE_TEST_DB_READY_ATTEMPTS", "not-a-number"),
+        ("TAMFORGE_TEST_DB_READY_DELAY_SECONDS", "-1"),
+        ("TAMFORGE_TEST_DB_READY_DELAY_SECONDS", "6"),
+        ("TAMFORGE_TEST_DB_READY_DELAY_SECONDS", "0.1"),
+    ],
+)
+def test_malformed_test_readiness_knobs_fail_before_tool_invocation(
+    fake_database_tools: tuple[dict[str, str], Path, Path],
+    name: str,
+    value: str,
+) -> None:
+    env, log_path, _ = fake_database_tools
+    env[name] = value
+
+    result = run_helper(env)
+
+    assert result.returncode != 0
+    assert command_blocks(log_path) == []
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["TAMFORGE_TEST_DB_READY_ATTEMPTS", "TAMFORGE_TEST_DB_READY_DELAY_SECONDS"],
+)
+def test_readiness_knobs_are_rejected_outside_isolated_test_mode(
+    fake_database_tools: tuple[dict[str, str], Path, Path],
+    name: str,
+) -> None:
+    env, log_path, _ = fake_database_tools
+    env.pop("TAMFORGE_TEST_DB_TEST_MODE")
+    env.pop("TAMFORGE_TEST_DB_TOOL_ROOT")
+    env[name] = "1"
+
+    result = run_helper(env)
+
+    assert result.returncode != 0
+    assert command_blocks(log_path) == []
+    assert "readiness overrides require isolated test mode" in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -238,6 +389,7 @@ def test_symlinked_tool_within_isolated_test_root_is_resolved_and_allowed(
     assert state_path.exists()
     assert [Path(block[0]).name for block in command_blocks(log_path)] == [
         "real-psql",
+        "real-psql",
         "createdb",
         "real-psql",
     ]
@@ -266,6 +418,7 @@ def test_debian_pg_wrapper_symlinks_are_classified_and_invoked_by_client_name(
     assert state_path.exists()
     assert [Path(block[0]).name for block in command_blocks(log_path)] == [
         "psql",
+        "psql",
         "createdb",
         "psql",
     ]
@@ -289,6 +442,7 @@ def test_debian_versioned_postgresql_clients_are_allowed(
     assert result.returncode == 0, result.stderr
     assert state_path.exists()
     assert [Path(block[0]).name for block in command_blocks(log_path)] == [
+        "psql",
         "psql",
         "createdb",
         "psql",
@@ -418,7 +572,7 @@ def test_psql_failure_stops_before_createdb(
     result = run_helper(env)
 
     assert result.returncode != 0
-    assert [Path(block[0]).name for block in command_blocks(log_path)] == ["psql"]
+    assert [Path(block[0]).name for block in command_blocks(log_path)] == ["psql", "psql"]
 
 
 def test_createdb_failure_is_rechecked_and_fails_when_database_is_still_absent(
@@ -431,6 +585,7 @@ def test_createdb_failure_is_rechecked_and_fails_when_database_is_still_absent(
 
     assert result.returncode != 0
     assert [Path(block[0]).name for block in command_blocks(log_path)] == [
+        "psql",
         "psql",
         "createdb",
         "psql",
