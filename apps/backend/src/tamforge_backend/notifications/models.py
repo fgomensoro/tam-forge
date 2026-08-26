@@ -750,9 +750,13 @@ def validate_background_job_update(
     """Validate one update against a locked persisted row, independent of assignment order."""
     del mapper
     validate_background_job(None, None, target)
+    job_table = BackgroundJob.__table__
+    lease_expired = (
+        job_table.c.lease_expires_at <= func.current_timestamp()
+    ).label("_lease_expired")
     old = connection.execute(
-        select(*BackgroundJob.__table__.c)
-        .where(BackgroundJob.__table__.c.id == target.id)
+        select(*job_table.c, lease_expired)
+        .where(job_table.c.id == target.id)
         .with_for_update()
     ).mappings().one_or_none()
     if old is None:
@@ -804,8 +808,7 @@ def validate_background_job_update(
             raise JobWorkflowError("running heartbeat cannot shorten its lease")
 
     if old_state == "running" and target.state == "queued":
-        old_expiry = old["lease_expires_at"]
-        if not isinstance(old_expiry, datetime) or old_expiry > utc_now():
+        if old["_lease_expired"] is not True:
             raise JobWorkflowError("background job lease has not expired")
         if target.lease_owner is not None or target.lease_expires_at is not None:
             raise JobWorkflowError("reclaimed background job must clear its lease")

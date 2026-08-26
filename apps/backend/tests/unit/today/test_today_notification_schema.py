@@ -663,8 +663,16 @@ def test_correction_requires_committed_attempt_a_source_and_exact_attempt_b_line
         validate_correction(None, None, missing)
 
 
-def test_job_updates_use_persisted_snapshot_and_are_assignment_order_independent() -> None:
+def test_job_updates_use_persisted_snapshot_and_are_assignment_order_independent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tamforge_backend.notifications.models as notification_models
     from tamforge_backend.notifications.models import validate_background_job_update
+
+    def reject_app_clock() -> datetime:
+        raise AssertionError("job reclaim must not consult the application clock")
+
+    monkeypatch.setattr(notification_models, "utc_now", reject_app_clock)
 
     class _MappingResult:
         def __init__(self, value: dict[str, object]) -> None:
@@ -679,19 +687,26 @@ def test_job_updates_use_persisted_snapshot_and_are_assignment_order_independent
     class _Connection:
         def __init__(self, value: dict[str, object]) -> None:
             self.value = value
+            self.statement: object | None = None
 
         def execute(self, statement: object) -> _MappingResult:
-            del statement
+            self.statement = statement
             return _MappingResult(self.value)
 
-    def snapshot(job: object) -> dict[str, object]:
+    def snapshot(
+        job: object,
+        *,
+        lease_expired: bool | None = None,
+    ) -> dict[str, object]:
         from tamforge_backend.notifications.models import BackgroundJob
 
         assert isinstance(job, BackgroundJob)
-        return {
+        values = {
             column.name: getattr(job, column.name)
             for column in BackgroundJob.__table__.columns
         }
+        values["_lease_expired"] = lease_expired
+        return values
 
     now = datetime.now(UTC)
     for state_first in (True, False):
@@ -716,12 +731,12 @@ def test_job_updates_use_persisted_snapshot_and_are_assignment_order_independent
             state="running",
             attempt_count=1,
             lease_owner="worker-1",
-            lease_expires_at=now - timedelta(minutes=1),
+            lease_expires_at=now + timedelta(minutes=1),
             created_at=old_time,
             updated_at=old_time + timedelta(seconds=1),
             started_at=old_time + timedelta(seconds=1),
         )
-        old = snapshot(running)
+        old = snapshot(running, lease_expired=True)
         _detach(running)
         running.updated_at = now
         if state_first:
@@ -733,7 +748,10 @@ def test_job_updates_use_persisted_snapshot_and_are_assignment_order_independent
         running.last_error_details = {"schema_version": 1, "attempt": 1}
         if not state_first:
             running.state = "queued"
-        validate_background_job_update(None, _Connection(old), running)  # type: ignore[arg-type]
+        connection = _Connection(old)
+        validate_background_job_update(None, connection, running)  # type: ignore[arg-type]
+        assert "CURRENT_TIMESTAMP" in str(connection.statement)
+        assert "FOR UPDATE" in str(connection.statement)
 
     for state_first in (True, False):
         running = _job(
@@ -800,12 +818,18 @@ def test_job_update_final_rows_reject_invalid_claim_heartbeat_reclaim_and_termin
             del statement
             return _Result(self.value)
 
-    def snapshot(job: object) -> dict[str, object]:
+    def snapshot(
+        job: object,
+        *,
+        lease_expired: bool | None = None,
+    ) -> dict[str, object]:
         assert isinstance(job, BackgroundJob)
-        return {
+        values = {
             column.name: getattr(job, column.name)
             for column in BackgroundJob.__table__.columns
         }
+        values["_lease_expired"] = lease_expired
+        return values
 
     now = datetime.now(UTC)
     created_at = now - timedelta(seconds=1)
@@ -858,20 +882,22 @@ def test_job_update_final_rows_reject_invalid_claim_heartbeat_reclaim_and_termin
         state="running",
         attempt_count=1,
         lease_owner="worker-1",
-        lease_expires_at=now + timedelta(minutes=1),
-        created_at=created_at,
-        updated_at=now,
-        started_at=now,
+        lease_expires_at=now - timedelta(minutes=1),
+        created_at=now - timedelta(minutes=3),
+        updated_at=now - timedelta(minutes=2),
+        started_at=now - timedelta(minutes=2),
     )
     reclaim = _job(
         id=3,
         state="queued",
         attempt_count=1,
-        created_at=created_at,
-        started_at=now,
+        created_at=now - timedelta(minutes=3),
+        started_at=now - timedelta(minutes=2),
         updated_at=now + timedelta(seconds=1),
     )
-    invalid_rows.append((reclaim, snapshot(future_old), "lease has not expired"))
+    invalid_rows.append(
+        (reclaim, snapshot(future_old, lease_expired=False), "lease has not expired")
+    )
 
     terminal_old = _job(
         id=4,
