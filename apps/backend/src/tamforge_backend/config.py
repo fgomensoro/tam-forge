@@ -2,20 +2,46 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import re
-from typing import Literal, Self
+from typing import Any, ClassVar, Literal, Self
 from urllib.parse import urlsplit
 
-from pydantic import AliasChoices, Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 APPROVED_GITHUB_USER_ID = 102269369
 _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _BUCKET_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
+_SESSION_SECRET_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
+_SESSION_SECRET_PLACEHOLDERS = (
+    "changeme",
+    "example",
+    "placeholder",
+    "tamforge",
+    "password",
+    "secret",
+)
 
 
 class Settings(BaseSettings):
     """One immutable settings snapshot for one application lifespan."""
+
+    _FIELD_ENV_ALIASES: ClassVar[dict[str, str]] = {
+        "environment": "TAMFORGE_ENV",
+        "database_url": "TAMFORGE_DATABASE_URL",
+        "object_store_endpoint": "TAMFORGE_OBJECT_STORE_ENDPOINT",
+        "object_store_bucket": "TAMFORGE_OBJECT_STORE_BUCKET",
+        "object_store_access_key": "TAMFORGE_OBJECT_STORE_ACCESS_KEY",
+        "object_store_secret_key": "TAMFORGE_OBJECT_STORE_SECRET_KEY",
+        "github_client_id": "TAMFORGE_GITHUB_CLIENT_ID",
+        "github_client_secret": "TAMFORGE_GITHUB_CLIENT_SECRET",
+        "session_signing_secret": "TAMFORGE_SESSION_SIGNING_SECRET",
+        "github_user_id": "TAMFORGE_GITHUB_USER_ID",
+        "cors_origins": "TAMFORGE_CORS_ORIGINS",
+        "secure_cookies": "TAMFORGE_SECURE_COOKIES",
+    }
 
     model_config = SettingsConfigDict(
         env_prefix="TAMFORGE_",
@@ -23,26 +49,68 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         frozen=True,
-        case_sensitive=False,
+        case_sensitive=True,
+        populate_by_name=False,
     )
 
     environment: Literal["development", "test", "production"] = Field(
         default="development",
-        validation_alias=AliasChoices("environment", "TAMFORGE_ENV"),
+        validation_alias="TAMFORGE_ENV",
     )
-    database_url: SecretStr = SecretStr(
-        "postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge"
+    database_url: SecretStr = Field(
+        default=SecretStr(
+            "postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge"
+        ),
+        validation_alias="TAMFORGE_DATABASE_URL",
     )
-    object_store_endpoint: str = "http://127.0.0.1:9000"
-    object_store_bucket: str = "tam-forge-local"
-    object_store_access_key: SecretStr = SecretStr("")
-    object_store_secret_key: SecretStr = SecretStr("")
-    github_client_id: str = ""
-    github_client_secret: SecretStr = SecretStr("")
-    session_signing_secret: SecretStr = SecretStr("")
-    github_user_id: int | None = None
-    cors_origins: list[str] = Field(default_factory=list)
-    secure_cookies: bool | None = None
+    object_store_endpoint: str = Field(
+        default="http://127.0.0.1:9000",
+        validation_alias="TAMFORGE_OBJECT_STORE_ENDPOINT",
+    )
+    object_store_bucket: str = Field(
+        default="tam-forge-local",
+        validation_alias="TAMFORGE_OBJECT_STORE_BUCKET",
+    )
+    object_store_access_key: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias="TAMFORGE_OBJECT_STORE_ACCESS_KEY",
+    )
+    object_store_secret_key: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias="TAMFORGE_OBJECT_STORE_SECRET_KEY",
+    )
+    github_client_id: str = Field(default="", validation_alias="TAMFORGE_GITHUB_CLIENT_ID")
+    github_client_secret: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias="TAMFORGE_GITHUB_CLIENT_SECRET",
+    )
+    session_signing_secret: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias="TAMFORGE_SESSION_SIGNING_SECRET",
+    )
+    github_user_id: int | None = Field(
+        default=None,
+        validation_alias="TAMFORGE_GITHUB_USER_ID",
+    )
+    cors_origins: list[str] = Field(
+        default_factory=list,
+        validation_alias="TAMFORGE_CORS_ORIGINS",
+    )
+    secure_cookies: bool | None = Field(
+        default=None,
+        validation_alias="TAMFORGE_SECURE_COOKIES",
+    )
+
+    def __init__(self, **values: Any) -> None:
+        """Allow typed field-name injection without creating unprefixed env aliases."""
+        mapped = dict(values)
+        for field_name, env_alias in self._FIELD_ENV_ALIASES.items():
+            if field_name not in mapped:
+                continue
+            if env_alias in mapped:
+                raise TypeError(f"provide only {field_name}, not both constructor aliases")
+            mapped[env_alias] = mapped.pop(field_name)
+        super().__init__(**mapped)
 
     @model_validator(mode="after")
     def validate_runtime_policy(self) -> Self:
@@ -82,11 +150,37 @@ class Settings(BaseSettings):
 
         if self.github_user_id != APPROVED_GITHUB_USER_ID:
             raise ValueError("production requires the approved immutable GitHub user ID")
-        if len(self.session_signing_secret.get_secret_value()) < 32:
-            raise ValueError("production session signing secret is too short")
+        self._validate_production_session_secret()
 
         self._validate_production_database_url()
         self._validate_production_object_store()
+
+    def _validate_production_session_secret(self) -> None:
+        token = self.session_signing_secret.get_secret_value()
+        lowered = token.lower()
+        if (
+            not _SESSION_SECRET_PATTERN.fullmatch(token)
+            or any(placeholder in lowered for placeholder in _SESSION_SECRET_PLACEHOLDERS)
+        ):
+            raise ValueError("production session signing secret must use token_urlsafe(32)")
+
+        padding = "=" * (-len(token) % 4)
+        try:
+            decoded = base64.b64decode(
+                (token + padding).encode("ascii"),
+                altchars=b"-_",
+                validate=True,
+            )
+        except (UnicodeEncodeError, binascii.Error, ValueError):
+            raise ValueError(
+                "production session signing secret must use token_urlsafe(32)"
+            ) from None
+
+        canonical = base64.urlsafe_b64encode(decoded).rstrip(b"=").decode("ascii")
+        midpoint = len(decoded) // 2
+        repeated_half = len(decoded) % 2 == 0 and decoded[:midpoint] == decoded[midpoint:]
+        if len(decoded) < 32 or len(set(decoded)) < 16 or repeated_half or canonical != token:
+            raise ValueError("production session signing secret must use token_urlsafe(32)")
 
     def _validate_production_database_url(self) -> None:
         try:

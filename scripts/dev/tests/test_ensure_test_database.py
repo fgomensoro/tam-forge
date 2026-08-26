@@ -17,10 +17,16 @@ def write_fake_command(path: Path, body: str) -> None:
 @pytest.fixture
 def fake_database_tools(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:
     bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
+    bin_dir.mkdir(mode=0o700)
+    bin_dir.chmod(0o700)
     log_path = tmp_path / "commands.log"
+    env_log_path = tmp_path / "command-env.log"
     state_path = tmp_path / "database-created"
-    shared_log = 'printf "%s\\n" "$0" "$@" "--END--" >> "$FAKE_COMMAND_LOG"\n'
+    shared_log = (
+        'printf "%s\\n" "$0" "$@" "--END--" >> "$FAKE_COMMAND_LOG"\n'
+        'printf "%s\\n" "${PGPASSWORD-}" "${PGCONNECT_TIMEOUT-}" "${PGOPTIONS-}" '
+        '"--END--" >> "$FAKE_ENV_LOG"\n'
+    )
     write_fake_command(
         bin_dir / "psql",
         shared_log
@@ -33,12 +39,20 @@ def fake_database_tools(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:
         + 'if [ "${FAKE_CREATEDB_FAIL:-0}" = "1" ]; then exit 19; fi\n'
         + ': > "$FAKE_DATABASE_STATE"\n',
     )
-    env = {
-        **os.environ,
-        "PATH": str(bin_dir),
-        "FAKE_COMMAND_LOG": str(log_path),
-        "FAKE_DATABASE_STATE": str(state_path),
-    }
+    env = {**os.environ}
+    for name in tuple(env):
+        if name.startswith("TAMFORGE_TEST_DB_"):
+            env.pop(name)
+    env.update(
+        {
+            "PATH": str(bin_dir),
+            "FAKE_COMMAND_LOG": str(log_path),
+            "FAKE_ENV_LOG": str(env_log_path),
+            "FAKE_DATABASE_STATE": str(state_path),
+            "TAMFORGE_TEST_DB_TEST_MODE": "1",
+            "TAMFORGE_TEST_DB_TOOL_ROOT": str(bin_dir),
+        }
+    )
     return env, log_path, state_path
 
 
@@ -67,6 +81,10 @@ def command_blocks(log_path: Path) -> list[list[str]]:
     return blocks
 
 
+def environment_blocks(env: dict[str, str]) -> list[list[str]]:
+    return command_blocks(Path(env["FAKE_ENV_LOG"]))
+
+
 def test_default_target_is_created_once_and_repeated_runs_are_idempotent(
     fake_database_tools: tuple[dict[str, str], Path, Path],
 ) -> None:
@@ -77,11 +95,14 @@ def test_default_target_is_created_once_and_repeated_runs_are_idempotent(
 
     assert first.returncode == 0, first.stderr
     assert second.returncode == 0, second.stderr
+    assert "tamforge" not in first.stderr
+    assert "tamforge" not in second.stderr
     assert state_path.exists()
     blocks = command_blocks(log_path)
     assert [Path(block[0]).name for block in blocks] == ["psql", "createdb", "psql", "psql"]
     assert blocks[0][1:] == [
         "--no-psqlrc",
+        "--no-password",
         "--host",
         "127.0.0.1",
         "--port",
@@ -92,12 +113,12 @@ def test_default_target_is_created_once_and_repeated_runs_are_idempotent(
         "postgres",
         "--tuples-only",
         "--no-align",
-        "--set",
-        "ON_ERROR_STOP=1",
+        "--set=ON_ERROR_STOP=1",
         "--command",
         "SELECT 1 FROM pg_database WHERE datname = 'tamforge_test'",
     ]
     assert blocks[1][1:] == [
+        "--no-password",
         "--host",
         "127.0.0.1",
         "--port",
@@ -107,6 +128,12 @@ def test_default_target_is_created_once_and_repeated_runs_are_idempotent(
         "--maintenance-db",
         "postgres",
         "tamforge_test",
+    ]
+    assert environment_blocks(env) == [
+        ["tamforge", "5", "-c statement_timeout=5000 -c lock_timeout=5000"],
+        ["tamforge", "5", "-c statement_timeout=5000 -c lock_timeout=5000"],
+        ["tamforge", "5", "-c statement_timeout=5000 -c lock_timeout=5000"],
+        ["tamforge", "5", "-c statement_timeout=5000 -c lock_timeout=5000"],
     ]
 
 
@@ -124,6 +151,9 @@ def test_default_target_is_created_once_and_repeated_runs_are_idempotent(
         ("TAMFORGE_TEST_DB_ADMIN_DATABASE", "tamforge"),
         ("TAMFORGE_TEST_DB_NAME", "tamforge"),
         ("TAMFORGE_TEST_DB_NAME", "tamforge_test;id"),
+        ("TAMFORGE_TEST_DB_PASSWORD", ""),
+        ("TAMFORGE_TEST_DB_PASSWORD", "contains space"),
+        ("TAMFORGE_TEST_DB_PASSWORD", "line1\nline2"),
     ],
 )
 def test_invalid_configuration_is_rejected_before_any_command_runs(
@@ -152,10 +182,10 @@ def test_missing_tool_is_rejected_without_running_the_other_tool(
     assert command_blocks(log_path) == []
 
 
-def test_symlinked_tool_is_rejected_without_execution(
+def test_symlinked_tool_within_isolated_test_root_is_resolved_and_allowed(
     fake_database_tools: tuple[dict[str, str], Path, Path],
 ) -> None:
-    env, log_path, _ = fake_database_tools
+    env, log_path, state_path = fake_database_tools
     bin_dir = Path(env["PATH"])
     real_psql = bin_dir / "real-psql"
     (bin_dir / "psql").rename(real_psql)
@@ -163,8 +193,88 @@ def test_symlinked_tool_is_rejected_without_execution(
 
     result = run_helper(env)
 
+    assert result.returncode == 0, result.stderr
+    assert state_path.exists()
+    assert [Path(block[0]).name for block in command_blocks(log_path)] == [
+        "real-psql",
+        "createdb",
+        "real-psql",
+    ]
+
+
+def test_symlink_target_outside_isolated_root_is_rejected_without_execution(
+    fake_database_tools: tuple[dict[str, str], Path, Path],
+) -> None:
+    env, log_path, state_path = fake_database_tools
+    bin_dir = Path(env["PATH"])
+    outside_dir = state_path.parent / "outside"
+    outside_dir.mkdir(mode=0o700)
+    outside_tool = outside_dir / "psql"
+    write_fake_command(outside_tool, ': > "$FAKE_DATABASE_STATE"\n')
+    (bin_dir / "psql").unlink()
+    (bin_dir / "psql").symlink_to(outside_tool)
+
+    result = run_helper(env)
+
     assert result.returncode != 0
     assert command_blocks(log_path) == []
+    assert not state_path.exists()
+
+
+def test_broken_or_looping_symlink_is_rejected_without_execution(
+    fake_database_tools: tuple[dict[str, str], Path, Path],
+) -> None:
+    env, log_path, _ = fake_database_tools
+    bin_dir = Path(env["PATH"])
+    (bin_dir / "psql").unlink()
+    (bin_dir / "psql").symlink_to(bin_dir / "missing-psql")
+
+    broken = run_helper(env)
+
+    assert broken.returncode != 0
+    assert command_blocks(log_path) == []
+
+    (bin_dir / "psql").unlink()
+    (bin_dir / "psql").symlink_to(bin_dir / "psql")
+    loop = run_helper(env)
+
+    assert loop.returncode != 0
+    assert command_blocks(log_path) == []
+
+
+def test_insecure_test_root_or_writable_target_is_rejected_before_execution(
+    fake_database_tools: tuple[dict[str, str], Path, Path],
+) -> None:
+    env, log_path, _ = fake_database_tools
+    bin_dir = Path(env["PATH"])
+    bin_dir.chmod(0o755)
+
+    insecure_root = run_helper(env)
+
+    assert insecure_root.returncode != 0
+    assert command_blocks(log_path) == []
+
+    bin_dir.chmod(0o700)
+    (bin_dir / "psql").chmod(0o722)
+    writable_target = run_helper(env)
+
+    assert writable_target.returncode != 0
+    assert command_blocks(log_path) == []
+
+
+def test_password_override_is_child_only_and_never_appears_in_output(
+    fake_database_tools: tuple[dict[str, str], Path, Path],
+) -> None:
+    env, _, _ = fake_database_tools
+    password = "local-test-password-123"
+    env["TAMFORGE_TEST_DB_PASSWORD"] = password
+
+    result = run_helper(env)
+
+    assert result.returncode == 0, result.stderr
+    assert password not in result.stdout
+    assert password not in result.stderr
+    assert all(block[0] == password for block in environment_blocks(env))
 
 
 def test_psql_failure_stops_before_createdb(

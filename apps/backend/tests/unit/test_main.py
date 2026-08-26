@@ -16,7 +16,7 @@ class FakeDatabaseResources:
 def test_app_lifespan_stores_one_settings_instance_and_disposes_database(
     monkeypatch,
 ) -> None:
-    settings = Settings()
+    settings = Settings(_env_file=None)
     resources = FakeDatabaseResources()
     monkeypatch.setattr(
         "tamforge_backend.main.create_database_resources",

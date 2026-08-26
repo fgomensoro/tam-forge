@@ -64,20 +64,31 @@ def create_database_resources(settings: Settings) -> DatabaseResources:
 async def session_scope(
     factory: Callable[[], AsyncSession],
 ) -> AsyncIterator[AsyncSession]:
-    """Commit successful database work and roll back failed work."""
+    """Yield a request session that never commits during dependency teardown.
+
+    Route and service code must use :func:`transaction_scope` for writes. That
+    keeps commit failures inside the request handler, before a response can be
+    returned, rather than discovering them after the response has started.
+    """
     session = factory()
     try:
         yield session
-        await session.commit()
-    except BaseException:
-        await session.rollback()
-        raise
     finally:
-        await session.close()
+        try:
+            await session.rollback()
+        finally:
+            await session.close()
+
+
+@asynccontextmanager
+async def transaction_scope(session: AsyncSession) -> AsyncIterator[AsyncSession]:
+    """Own an explicit unit of work and commit before the context returns."""
+    async with session.begin():
+        yield session
 
 
 async def get_db_session(request: Request) -> AsyncIterator[AsyncSession]:
-    """FastAPI dependency using the lifespan-scoped session factory."""
+    """Provide a rollback-only session from the lifespan-scoped factory."""
     resources = cast(DatabaseResources, request.app.state.database)
     async with session_scope(resources.session_factory) as session:
         yield session
@@ -126,16 +137,20 @@ def validate_test_database_url(raw_url: str) -> str:
     """Fail closed before a destructive migration test targets the wrong database."""
     try:
         url = make_url(raw_url)
-    except Exception as exc:
-        raise ValueError("TEST_DATABASE_URL must target PostgreSQL tamforge_test") from exc
+        port = url.port
+    except Exception:
+        raise ValueError("TEST_DATABASE_URL must target local PostgreSQL tamforge_test") from None
 
     allowed_drivers = {"postgresql", "postgresql+asyncpg", "postgresql+psycopg"}
     if (
         url.drivername not in allowed_drivers
-        or not url.host
+        or url.host != "127.0.0.1"
         or not url.username
         or not url.password
         or url.database != "tamforge_test"
+        or port is None
+        or not 1 <= port <= 65535
+        or bool(url.query)
     ):
-        raise ValueError("TEST_DATABASE_URL must target PostgreSQL tamforge_test")
+        raise ValueError("TEST_DATABASE_URL must target local PostgreSQL tamforge_test")
     return raw_url

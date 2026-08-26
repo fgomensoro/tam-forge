@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import base64
+import secrets
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from pydantic import SecretStr, ValidationError
 from tamforge_backend.config import Settings
 
+VALID_SESSION_SECRET = secrets.token_urlsafe(32)
 PRODUCTION_ENV = {
     "TAMFORGE_ENV": "production",
     "TAMFORGE_DATABASE_URL": (
@@ -17,15 +21,25 @@ PRODUCTION_ENV = {
     "TAMFORGE_OBJECT_STORE_SECRET_KEY": "object-secret-value",
     "TAMFORGE_GITHUB_CLIENT_ID": "github-client-id",
     "TAMFORGE_GITHUB_CLIENT_SECRET": "github-client-secret",
-    "TAMFORGE_SESSION_SIGNING_SECRET": "session-signing-secret-at-least-32-chars",
+    "TAMFORGE_SESSION_SIGNING_SECRET": VALID_SESSION_SECRET,
     "TAMFORGE_GITHUB_USER_ID": "102269369",
 }
 
 
 @pytest.fixture(autouse=True)
-def isolate_tamforge_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+def isolate_tamforge_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> Iterator[None]:
+    monkeypatch.chdir(tmp_path)
     for name in tuple(PRODUCTION_ENV) + (
         "TAM_FORGE_ENV",
+        "ENVIRONMENT",
+        "environment",
+        "tamforge_env",
+        "Tamforge_ENV",
+        "TAMFORGE_env",
+        "TAMFORGE_environment",
         "TAMFORGE_CORS_ORIGINS",
         "TAMFORGE_SECURE_COOKIES",
     ):
@@ -101,7 +115,7 @@ def test_sensitive_settings_are_secret_str_and_never_appear_in_repr(
         "object-access-secret",
         "object-secret-value",
         "github-client-secret",
-        "session-signing-secret-at-least-32-chars",
+        VALID_SESSION_SECRET,
     }
     secret_fields = (
         settings.database_url,
@@ -160,6 +174,58 @@ def test_exact_env_prefix_ignores_bootstrap_legacy_namespace(
     assert settings.environment == "development"
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        "ENVIRONMENT",
+        "environment",
+        "tamforge_env",
+        "Tamforge_ENV",
+        "TAMFORGE_env",
+        "TAMFORGE_environment",
+    ],
+)
+def test_environment_ignores_unprefixed_and_wrong_case_variants(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+) -> None:
+    monkeypatch.setenv(name, "test")
+
+    settings = Settings()
+
+    assert settings.environment == "development"
+    assert settings.secure_cookies is True
+
+
+def test_ambient_generic_environment_cannot_downgrade_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_production_environment(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "test")
+
+    settings = Settings()
+
+    assert settings.environment == "production"
+    assert settings.secure_cookies is True
+
+
+def test_field_name_constructor_injection_remains_available() -> None:
+    settings = Settings(environment="test", _env_file=None)
+
+    assert settings.environment == "test"
+    assert settings.secure_cookies is False
+
+
+def test_explicit_dotenv_source_uses_only_canonical_environment_name(tmp_path: Path) -> None:
+    env_file = tmp_path / "settings.env"
+    env_file.write_text("TAMFORGE_ENV=test\nENVIRONMENT=production\n", encoding="utf-8")
+
+    settings = Settings(_env_file=env_file)
+
+    assert settings.environment == "test"
+    assert settings.secure_cookies is False
+
+
 def test_settings_instances_are_isolated_and_not_cached(monkeypatch: pytest.MonkeyPatch) -> None:
     first = Settings()
     monkeypatch.setenv("TAMFORGE_ENV", "test")
@@ -190,3 +256,43 @@ def test_production_rejects_local_or_insecure_endpoints(
 
     with pytest.raises(ValidationError):
         Settings()
+
+
+@pytest.mark.parametrize(
+    "weak_secret",
+    [
+        "x" * 32,
+        "x" * 43,
+        "a" * 41,
+        "changeme-please-use-a-real-secret-value",
+        "tamforge-example-session-signing-secret",
+        "not_base64url!not_base64url!not_base64url!",
+        base64.urlsafe_b64encode(b"A" * 32).rstrip(b"=").decode("ascii"),
+        base64.urlsafe_b64encode(b"0123456789abcdef" * 2).rstrip(b"=").decode("ascii"),
+        base64.urlsafe_b64encode(secrets.token_bytes(31)).rstrip(b"=").decode("ascii"),
+    ],
+)
+def test_production_rejects_weak_or_malformed_session_signing_secret(
+    monkeypatch: pytest.MonkeyPatch,
+    weak_secret: str,
+) -> None:
+    set_production_environment(monkeypatch)
+    monkeypatch.setenv("TAMFORGE_SESSION_SIGNING_SECRET", weak_secret)
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings()
+
+    assert weak_secret not in str(exc_info.value)
+
+
+def test_production_accepts_token_urlsafe_32_session_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_production_environment(monkeypatch)
+    generated = secrets.token_urlsafe(32)
+    monkeypatch.setenv("TAMFORGE_SESSION_SIGNING_SECRET", generated)
+
+    settings = Settings()
+
+    assert settings.session_signing_secret.get_secret_value() == generated
+    assert generated not in repr(settings)
