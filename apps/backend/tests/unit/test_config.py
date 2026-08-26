@@ -23,6 +23,8 @@ PRODUCTION_ENV = {
     "TAMFORGE_GITHUB_CLIENT_SECRET": "github-client-secret",
     "TAMFORGE_SESSION_SIGNING_SECRET": VALID_SESSION_SECRET,
     "TAMFORGE_GITHUB_USER_ID": "102269369",
+    "TAMFORGE_GITHUB_CALLBACK_URL": "https://tam.example.test/api/v1/auth/callback",
+    "TAMFORGE_CORS_ORIGINS": '["https://tam.example.test"]',
 }
 
 
@@ -41,6 +43,7 @@ def isolate_tamforge_environment(
         "TAMFORGE_env",
         "TAMFORGE_environment",
         "TAMFORGE_CORS_ORIGINS",
+        "TAMFORGE_GITHUB_CALLBACK_URL",
         "TAMFORGE_SECURE_COOKIES",
     ):
         monkeypatch.delenv(name, raising=False)
@@ -64,6 +67,7 @@ def set_production_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "TAMFORGE_GITHUB_CLIENT_SECRET",
         "TAMFORGE_SESSION_SIGNING_SECRET",
         "TAMFORGE_GITHUB_USER_ID",
+        "TAMFORGE_GITHUB_CALLBACK_URL",
     ],
 )
 @pytest.mark.parametrize("replacement", [None, "", "   "])
@@ -162,6 +166,28 @@ def test_production_rejects_insecure_cookie_override(monkeypatch: pytest.MonkeyP
 
     with pytest.raises(ValidationError):
         Settings()
+
+
+def test_production_rejects_wildcard_cors(monkeypatch: pytest.MonkeyPatch) -> None:
+    set_production_environment(monkeypatch)
+    monkeypatch.setenv("TAMFORGE_CORS_ORIGINS", '["*"]')
+
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://tam.example.test/path",
+        "https://user@tam.example.test",
+        "https://*.example.test",
+        "null",
+    ],
+)
+def test_cors_origins_must_be_exact_web_origins(origin: str) -> None:
+    with pytest.raises(ValidationError):
+        Settings(cors_origins=[origin], _env_file=None)
 
 
 def test_exact_env_prefix_ignores_bootstrap_legacy_namespace(

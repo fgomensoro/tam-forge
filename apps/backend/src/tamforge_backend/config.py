@@ -39,8 +39,11 @@ class Settings(BaseSettings):
         "github_client_secret": "TAMFORGE_GITHUB_CLIENT_SECRET",
         "session_signing_secret": "TAMFORGE_SESSION_SIGNING_SECRET",
         "github_user_id": "TAMFORGE_GITHUB_USER_ID",
+        "github_callback_url": "TAMFORGE_GITHUB_CALLBACK_URL",
         "cors_origins": "TAMFORGE_CORS_ORIGINS",
         "secure_cookies": "TAMFORGE_SECURE_COOKIES",
+        "session_ttl_seconds": "TAMFORGE_SESSION_TTL_SECONDS",
+        "oauth_state_ttl_seconds": "TAMFORGE_OAUTH_STATE_TTL_SECONDS",
     }
 
     model_config = SettingsConfigDict(
@@ -92,6 +95,10 @@ class Settings(BaseSettings):
         default=None,
         validation_alias="TAMFORGE_GITHUB_USER_ID",
     )
+    github_callback_url: str = Field(
+        default="http://127.0.0.1:8000/api/v1/auth/callback",
+        validation_alias="TAMFORGE_GITHUB_CALLBACK_URL",
+    )
     cors_origins: list[str] = Field(
         default_factory=list,
         validation_alias="TAMFORGE_CORS_ORIGINS",
@@ -99,6 +106,18 @@ class Settings(BaseSettings):
     secure_cookies: bool | None = Field(
         default=None,
         validation_alias="TAMFORGE_SECURE_COOKIES",
+    )
+    session_ttl_seconds: int = Field(
+        default=43_200,
+        ge=300,
+        le=86_400,
+        validation_alias="TAMFORGE_SESSION_TTL_SECONDS",
+    )
+    oauth_state_ttl_seconds: int = Field(
+        default=300,
+        ge=60,
+        le=600,
+        validation_alias="TAMFORGE_OAUTH_STATE_TTL_SECONDS",
     )
 
     def __init__(self, **values: Any) -> None:
@@ -123,6 +142,9 @@ class Settings(BaseSettings):
         if self.github_user_id not in (None, APPROVED_GITHUB_USER_ID):
             raise ValueError("GitHub user ID does not match the approved immutable owner")
 
+        self._validate_cors_origins()
+        self._validate_github_callback_url()
+
         if self.environment == "production":
             self._validate_production()
         return self
@@ -132,6 +154,7 @@ class Settings(BaseSettings):
             "object store endpoint": self.object_store_endpoint,
             "object store bucket": self.object_store_bucket,
             "GitHub client ID": self.github_client_id,
+            "GitHub callback URL": self.github_callback_url,
         }
         for label, value in required_text.items():
             if not value.strip():
@@ -154,6 +177,56 @@ class Settings(BaseSettings):
 
         self._validate_production_database_url()
         self._validate_production_object_store()
+
+    def _validate_cors_origins(self) -> None:
+        for origin in self.cors_origins:
+            if origin == "*" or not origin or len(origin) > 2048:
+                raise ValueError("CORS origins must be exact web origins")
+            try:
+                parsed = urlsplit(origin)
+                port = parsed.port
+            except ValueError as exc:
+                raise ValueError("CORS origins must be exact web origins") from exc
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.hostname
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.path
+                or parsed.query
+                or parsed.fragment
+                or "*" in parsed.hostname
+            ):
+                raise ValueError("CORS origins must be exact web origins")
+            host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+            expected = f"{parsed.scheme}://{host}"
+            if port is not None:
+                expected = f"{expected}:{port}"
+            if origin != expected:
+                raise ValueError("CORS origins must be exact web origins")
+            if self.environment == "production" and parsed.scheme != "https":
+                raise ValueError("production CORS origins must use HTTPS")
+
+    def _validate_github_callback_url(self) -> None:
+        try:
+            parsed = urlsplit(self.github_callback_url)
+            parsed.port
+        except ValueError as exc:
+            raise ValueError("GitHub callback URL is invalid") from exc
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path != "/api/v1/auth/callback"
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("GitHub callback URL is invalid")
+        if self.environment == "production" and (
+            parsed.scheme != "https" or parsed.hostname.lower() in _LOCAL_HOSTS
+        ):
+            raise ValueError("production GitHub callback URL must use public HTTPS")
 
     def _validate_production_session_secret(self) -> None:
         token = self.session_signing_secret.get_secret_value()
