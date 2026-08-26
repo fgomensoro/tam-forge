@@ -33,8 +33,11 @@ class Settings(BaseSettings):
         "database_url": "TAMFORGE_DATABASE_URL",
         "object_store_endpoint": "TAMFORGE_OBJECT_STORE_ENDPOINT",
         "object_store_bucket": "TAMFORGE_OBJECT_STORE_BUCKET",
+        "object_store_region": "TAMFORGE_OBJECT_STORE_REGION",
         "object_store_access_key": "TAMFORGE_OBJECT_STORE_ACCESS_KEY",
         "object_store_secret_key": "TAMFORGE_OBJECT_STORE_SECRET_KEY",
+        "object_store_max_upload_bytes": "TAMFORGE_OBJECT_STORE_MAX_UPLOAD_BYTES",
+        "object_store_memory_spool_bytes": "TAMFORGE_OBJECT_STORE_MEMORY_SPOOL_BYTES",
         "github_client_id": "TAMFORGE_GITHUB_CLIENT_ID",
         "github_client_secret": "TAMFORGE_GITHUB_CLIENT_SECRET",
         "session_signing_secret": "TAMFORGE_SESSION_SIGNING_SECRET",
@@ -74,6 +77,13 @@ class Settings(BaseSettings):
         default="tam-forge-local",
         validation_alias="TAMFORGE_OBJECT_STORE_BUCKET",
     )
+    object_store_region: str = Field(
+        default="us-east-1",
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9-]+$",
+        validation_alias="TAMFORGE_OBJECT_STORE_REGION",
+    )
     object_store_access_key: SecretStr = Field(
         default=SecretStr(""),
         validation_alias="TAMFORGE_OBJECT_STORE_ACCESS_KEY",
@@ -81,6 +91,18 @@ class Settings(BaseSettings):
     object_store_secret_key: SecretStr = Field(
         default=SecretStr(""),
         validation_alias="TAMFORGE_OBJECT_STORE_SECRET_KEY",
+    )
+    object_store_max_upload_bytes: int = Field(
+        default=1024 * 1024 * 1024,
+        ge=1,
+        le=5 * 1024 * 1024 * 1024,
+        validation_alias="TAMFORGE_OBJECT_STORE_MAX_UPLOAD_BYTES",
+    )
+    object_store_memory_spool_bytes: int = Field(
+        default=1024 * 1024,
+        ge=1,
+        le=64 * 1024 * 1024,
+        validation_alias="TAMFORGE_OBJECT_STORE_MEMORY_SPOOL_BYTES",
     )
     github_client_id: str = Field(default="", validation_alias="TAMFORGE_GITHUB_CLIENT_ID")
     github_client_secret: SecretStr = Field(
@@ -144,6 +166,8 @@ class Settings(BaseSettings):
 
         self._validate_cors_origins()
         self._validate_github_callback_url()
+        if self.object_store_memory_spool_bytes > self.object_store_max_upload_bytes:
+            raise ValueError("object-store memory spool cannot exceed upload limit")
 
         if self.environment == "production":
             self._validate_production()
@@ -155,6 +179,7 @@ class Settings(BaseSettings):
         required_text = {
             "object store endpoint": self.object_store_endpoint,
             "object store bucket": self.object_store_bucket,
+            "object store region": self.object_store_region,
             "GitHub client ID": self.github_client_id,
             "GitHub callback URL": self.github_callback_url,
         }

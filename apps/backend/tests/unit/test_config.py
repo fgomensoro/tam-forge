@@ -17,6 +17,7 @@ PRODUCTION_ENV = {
     ),
     "TAMFORGE_OBJECT_STORE_ENDPOINT": "https://objects.example.test",
     "TAMFORGE_OBJECT_STORE_BUCKET": "tam-forge",
+    "TAMFORGE_OBJECT_STORE_REGION": "eu-central-1",
     "TAMFORGE_OBJECT_STORE_ACCESS_KEY": "object-access-secret",
     "TAMFORGE_OBJECT_STORE_SECRET_KEY": "object-secret-value",
     "TAMFORGE_GITHUB_CLIENT_ID": "github-client-id",
@@ -133,6 +134,34 @@ def test_sensitive_settings_are_secret_str_and_never_appear_in_repr(
     rendered = repr(settings)
     assert "**********" in rendered
     assert all(secret not in rendered for secret in sensitive_values)
+
+
+def test_object_store_resource_limits_are_bounded_and_consistent() -> None:
+    settings = Settings(
+        environment="test",
+        object_store_max_upload_bytes=1024,
+        object_store_memory_spool_bytes=512,
+        _env_file=None,
+    )
+
+    assert settings.object_store_region == "us-east-1"
+    assert settings.object_store_max_upload_bytes == 1024
+    assert settings.object_store_memory_spool_bytes == 512
+
+    with pytest.raises(ValidationError):
+        Settings(
+            environment="test",
+            object_store_max_upload_bytes=512,
+            object_store_memory_spool_bytes=1024,
+            _env_file=None,
+        )
+
+    with pytest.raises(ValidationError):
+        Settings(
+            environment="test",
+            object_store_memory_spool_bytes=0,
+            _env_file=None,
+        )
 
 
 def test_invalid_secret_input_is_redacted_from_validation_error(
