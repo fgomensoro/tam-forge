@@ -1,14 +1,16 @@
-"""Shared ORM model registry."""
+"""Cycle-free shared ORM registry loaded explicitly by Alembic and tooling."""
 
-from ..auth.models import AuditEvent, AuthSession, CommandReceipt, Owner
-from .base import Base, TimestampMixin, utc_now
+from importlib import import_module
 
-__all__ = [
-    "AuditEvent",
-    "AuthSession",
-    "Base",
-    "CommandReceipt",
-    "Owner",
-    "TimestampMixin",
-    "utc_now",
-]
+from .base import Base
+
+_MODEL_MODULES = ("tamforge_backend.auth.models",)
+
+
+def load_all_models() -> None:
+    """Import every domain model module so it registers with shared metadata."""
+    for module_name in _MODEL_MODULES:
+        import_module(module_name)
+
+
+__all__ = ["Base", "load_all_models"]

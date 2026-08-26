@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import subprocess
+import sys
 from io import StringIO
 from pathlib import Path
 
@@ -30,9 +33,77 @@ def _constraint_names(table: sa.Table) -> set[str]:
     return {constraint.name for constraint in table.constraints if constraint.name is not None}
 
 
-def test_identity_models_register_exact_tables_and_postgresql_types() -> None:
-    from tamforge_backend.models import Base
+def _run_fresh_python(source: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-c", source],
+        cwd=Path.cwd(),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
 
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "from tamforge_backend.auth.models import Owner",
+        "from tamforge_backend.auth import Owner",
+    ],
+)
+def test_auth_owner_imports_in_a_fresh_process(statement: str) -> None:
+    result = _run_fresh_python(f"{statement}; assert Owner.__tablename__ == 'owners'")
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_model_registry_is_lazy_cycle_free_and_explicit_in_a_fresh_process() -> None:
+    result = _run_fresh_python(
+        "from tamforge_backend.models import Base, load_all_models; "
+        "assert not Base.metadata.tables; "
+        "load_all_models(); "
+        f"assert {EXPECTED_TABLES!r} <= set(Base.metadata.tables)"
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_alembic_registers_models_in_a_fresh_process() -> None:
+    environment = os.environ.copy()
+    environment["DATABASE_URL"] = URL.create(
+        "postgresql+psycopg",
+        username="tamforge",
+        password="offline-registry-contract",
+        host="127.0.0.1",
+        port=54329,
+        database="tamforge_test",
+    ).render_as_string(hide_password=False)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "alembic",
+            "-c",
+            "apps/backend/alembic.ini",
+            "upgrade",
+            "head",
+            "--sql",
+        ],
+        cwd=Path.cwd(),
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "CREATE TABLE owners" in result.stdout
+    assert "offline-registry-contract" not in result.stdout
+
+
+def test_identity_models_register_exact_tables_and_postgresql_types() -> None:
+    from tamforge_backend.models import Base, load_all_models
+
+    load_all_models()
     assert EXPECTED_TABLES <= set(Base.metadata.tables)
 
     owners = Base.metadata.tables["owners"]
@@ -65,14 +136,19 @@ def test_identity_models_register_exact_tables_and_postgresql_types() -> None:
     events = Base.metadata.tables["audit_events"]
     assert isinstance(events.c.actor_subject_hash.type, sa.LargeBinary)
     assert events.c.actor_subject_hash.type.length == 32
+    assert isinstance(events.c.request_correlation_hash.type, sa.LargeBinary)
+    assert events.c.request_correlation_hash.type.length == 32
+    assert isinstance(events.c.idempotency_correlation_hash.type, sa.LargeBinary)
+    assert events.c.idempotency_correlation_hash.type.length == 32
     assert isinstance(events.c.redacted_metadata.type, postgresql.JSONB)
     assert events.c.occurred_at.type.timezone is True
     assert events.c.owner_id.nullable is True
 
 
 def test_identity_models_expose_named_constraints_and_fk_indexes() -> None:
-    from tamforge_backend.models import Base
+    from tamforge_backend.models import Base, load_all_models
 
+    load_all_models()
     expected_constraints = {
         "owners": {
             "pk_owners",
@@ -109,9 +185,13 @@ def test_identity_models_expose_named_constraints_and_fk_indexes() -> None:
             "ck_audit_events_action_nonblank",
             "ck_audit_events_aggregate_type_nonblank",
             "ck_audit_events_aggregate_id_nonblank",
-            "ck_audit_events_request_id_nonblank",
-            "ck_audit_events_idempotency_key_nonblank",
-            "ck_audit_events_redacted_metadata_object",
+            "ck_audit_events_request_correlation_hash_length",
+            "ck_audit_events_idempotency_correlation_hash_length",
+            "ck_audit_events_actor_kind_safe",
+            "ck_audit_events_action_safe",
+            "ck_audit_events_aggregate_type_safe",
+            "ck_audit_events_aggregate_id_safe",
+            "ck_audit_events_redacted_metadata_v1",
         },
     }
     expected_indexes = {
@@ -125,8 +205,8 @@ def test_identity_models_expose_named_constraints_and_fk_indexes() -> None:
         "audit_events": {
             "ix_audit_events_owner_id_occurred_at",
             "ix_audit_events_aggregate_occurred_at",
-            "ix_audit_events_request_id",
-            "ix_audit_events_idempotency_key",
+            "ix_audit_events_request_correlation_hash",
+            "ix_audit_events_idempotency_correlation_hash",
         },
     }
 
@@ -154,6 +234,7 @@ def test_persisted_owner_github_id_is_immutable_but_login_can_change() -> None:
 
 
 def test_audit_events_reject_orm_update_and_delete() -> None:
+    from tamforge_backend.auth.audit import default_audit_metadata
     from tamforge_backend.auth.models import (
         AppendOnlyAuditEventError,
         AuditEvent,
@@ -167,7 +248,7 @@ def test_audit_events_reject_orm_update_and_delete() -> None:
         action="session.created",
         aggregate_type="auth_session",
         aggregate_id="1",
-        redacted_metadata={},
+        redacted_metadata=default_audit_metadata(),
     )
 
     with pytest.raises(AppendOnlyAuditEventError, match="append-only"):
@@ -187,6 +268,10 @@ def test_revision_contract_and_cluster_safe_extension_downgrade() -> None:
     assert "DROP EXTENSION" not in source.upper()
     assert "trg_owners_immutable_github_user_id" in source
     assert "trg_audit_events_append_only" in source
+    assert "BEFORE TRUNCATE ON audit_events" in source
+    assert "tamforge_validate_audit_metadata_v1" in source
+    assert "tamforge_is_safe_audit_machine_value" in source
+    assert "trg_audit_events_validate_insert" in source
 
 
 def test_revision_renders_complete_offline_sql_without_url_leakage() -> None:
@@ -213,6 +298,8 @@ def test_revision_renders_complete_offline_sql_without_url_leakage() -> None:
     assert 'CREATE TABLE audit_events' in sql
     assert 'CREATE TRIGGER trg_owners_immutable_github_user_id' in sql
     assert 'CREATE TRIGGER trg_audit_events_append_only' in sql
+    assert 'CREATE TRIGGER trg_audit_events_append_only_truncate' in sql
+    assert 'CREATE TRIGGER trg_audit_events_validate_insert' in sql
 
     downgrade_output = StringIO()
     downgrade_config = Config("apps/backend/alembic.ini", output_buffer=downgrade_output)
@@ -225,17 +312,38 @@ def test_revision_renders_complete_offline_sql_without_url_leakage() -> None:
 
     downgrade_sql = downgrade_output.getvalue()
     assert secret not in downgrade_sql
-    audit_trigger = downgrade_sql.index("DROP TRIGGER IF EXISTS trg_audit_events_append_only")
+    audit_truncate_trigger = downgrade_sql.index(
+        "DROP TRIGGER IF EXISTS trg_audit_events_append_only_truncate"
+    )
+    audit_row_trigger = downgrade_sql.index(
+        "DROP TRIGGER IF EXISTS trg_audit_events_append_only ON"
+    )
     audit_function = downgrade_sql.index(
-        "DROP FUNCTION IF EXISTS tamforge_reject_audit_event_mutation"
+        "DROP FUNCTION IF EXISTS public.tamforge_reject_audit_event_mutation"
+    )
+    audit_insert_trigger = downgrade_sql.index(
+        "DROP TRIGGER IF EXISTS trg_audit_events_validate_insert"
+    )
+    audit_insert_function = downgrade_sql.index(
+        "DROP FUNCTION IF EXISTS public.tamforge_validate_audit_event_insert"
     )
     audit_table = downgrade_sql.index("DROP TABLE audit_events")
+    metadata_function = downgrade_sql.index(
+        "DROP FUNCTION IF EXISTS public.tamforge_validate_audit_metadata_v1"
+    )
+    machine_function = downgrade_sql.index(
+        "DROP FUNCTION IF EXISTS public.tamforge_is_safe_audit_machine_value"
+    )
     owner_trigger = downgrade_sql.index(
         "DROP TRIGGER IF EXISTS trg_owners_immutable_github_user_id"
     )
     owner_function = downgrade_sql.index(
-        "DROP FUNCTION IF EXISTS tamforge_reject_owner_github_id_change"
+        "DROP FUNCTION IF EXISTS public.tamforge_reject_owner_github_id_change"
     )
     owner_table = downgrade_sql.index("DROP TABLE owners")
-    assert audit_trigger < audit_function < audit_table
+    assert audit_truncate_trigger < audit_function
+    assert audit_row_trigger < audit_function < audit_table
+    assert audit_insert_trigger < audit_insert_function < audit_table
+    assert audit_table < metadata_function
+    assert audit_table < machine_function
     assert owner_trigger < owner_function < owner_table

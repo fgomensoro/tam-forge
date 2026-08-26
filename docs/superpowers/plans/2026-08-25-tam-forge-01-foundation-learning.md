@@ -560,7 +560,7 @@ The revision must create:
 - owners: id, immutable github_user_id unique, current github_login, created_at, updated_at;
 - auth_sessions: id, owner_id, token_hash unique, csrf_hash, expires_at, revoked_at, last_seen_at, created_at;
 - command_receipts: owner, command scope, idempotency key, request hash, result/status payload, created_at, and expiry with unique owner/scope/key;
-- audit_events: optional owner, actor kind/subject hash, action, aggregate type/ID, request/idempotency correlation, redacted metadata, and occurred_at; append-only at the application boundary;
+- audit_events: optional owner, actor kind/subject hash, action, aggregate type/ID, fixed 32-byte request/idempotency correlation hashes, versioned bounded machine-only redacted metadata, and occurred_at; append-only at both the application and database boundaries, including TRUNCATE rejection;
 - pgcrypto and vector extensions when available;
 - indexes for session lookup/expiry;
 - restrictive foreign keys and no cascade that could erase owner evidence later.

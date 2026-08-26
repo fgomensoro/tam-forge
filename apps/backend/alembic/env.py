@@ -7,12 +7,13 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 from tamforge_backend.database import resolve_migration_url
-from tamforge_backend.models import Base
+from tamforge_backend.models import Base, load_all_models
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+load_all_models()
 target_metadata = Base.metadata
 
 

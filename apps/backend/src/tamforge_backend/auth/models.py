@@ -27,6 +27,14 @@ from sqlalchemy.orm.base import LoaderCallableStatus
 from sqlalchemy.orm.state import InstanceState
 
 from ..models.base import Base, TimestampMixin, utc_now
+from .audit import (
+    DEFAULT_AUDIT_METADATA_JSON,
+    AuditContractError,
+    default_audit_metadata,
+    validate_audit_hash,
+    validate_audit_machine_value,
+    validate_audit_metadata,
+)
 
 
 class ImmutableOwnerIdentityError(ValueError):
@@ -181,16 +189,34 @@ class AuditEvent(Base):
         CheckConstraint("btrim(aggregate_type) <> ''", name="aggregate_type_nonblank"),
         CheckConstraint("btrim(aggregate_id) <> ''", name="aggregate_id_nonblank"),
         CheckConstraint(
-            "request_id IS NULL OR btrim(request_id) <> ''",
-            name="request_id_nonblank",
+            "request_correlation_hash IS NULL OR "
+            "octet_length(request_correlation_hash) = 32",
+            name="request_correlation_hash_length",
         ),
         CheckConstraint(
-            "idempotency_key IS NULL OR btrim(idempotency_key) <> ''",
-            name="idempotency_key_nonblank",
+            "idempotency_correlation_hash IS NULL OR "
+            "octet_length(idempotency_correlation_hash) = 32",
+            name="idempotency_correlation_hash_length",
         ),
         CheckConstraint(
-            "jsonb_typeof(redacted_metadata) = 'object'",
-            name="redacted_metadata_object",
+            "public.tamforge_is_safe_audit_machine_value(actor_kind, 32)",
+            name="actor_kind_safe",
+        ),
+        CheckConstraint(
+            "public.tamforge_is_safe_audit_machine_value(action, 64)",
+            name="action_safe",
+        ),
+        CheckConstraint(
+            "public.tamforge_is_safe_audit_machine_value(aggregate_type, 64)",
+            name="aggregate_type_safe",
+        ),
+        CheckConstraint(
+            "public.tamforge_is_safe_audit_machine_value(aggregate_id, 128)",
+            name="aggregate_id_safe",
+        ),
+        CheckConstraint(
+            "public.tamforge_validate_audit_metadata_v1(redacted_metadata)",
+            name="redacted_metadata_v1",
         ),
         Index("ix_audit_events_owner_id_occurred_at", "owner_id", "occurred_at"),
         Index(
@@ -200,14 +226,14 @@ class AuditEvent(Base):
             "occurred_at",
         ),
         Index(
-            "ix_audit_events_request_id",
-            "request_id",
-            postgresql_where=text("request_id IS NOT NULL"),
+            "ix_audit_events_request_correlation_hash",
+            "request_correlation_hash",
+            postgresql_where=text("request_correlation_hash IS NOT NULL"),
         ),
         Index(
-            "ix_audit_events_idempotency_key",
-            "idempotency_key",
-            postgresql_where=text("idempotency_key IS NOT NULL"),
+            "ix_audit_events_idempotency_correlation_hash",
+            "idempotency_correlation_hash",
+            postgresql_where=text("idempotency_correlation_hash IS NOT NULL"),
         ),
     )
 
@@ -229,12 +255,12 @@ class AuditEvent(Base):
     action: Mapped[str] = mapped_column(Text, nullable=False)
     aggregate_type: Mapped[str] = mapped_column(Text, nullable=False)
     aggregate_id: Mapped[str] = mapped_column(Text, nullable=False)
-    request_id: Mapped[str | None] = mapped_column(Text)
-    idempotency_key: Mapped[str | None] = mapped_column(Text)
-    redacted_metadata: Mapped[dict[str, Any]] = mapped_column(
+    request_correlation_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
+    idempotency_correlation_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
+    redacted_metadata: Mapped[dict[str, object]] = mapped_column(
         JSONB,
-        default=dict,
-        server_default=text("'{}'::jsonb"),
+        default=default_audit_metadata,
+        server_default=text(f"'{DEFAULT_AUDIT_METADATA_JSON}'::jsonb"),
         nullable=False,
     )
     occurred_at: Mapped[datetime] = mapped_column(
@@ -297,8 +323,32 @@ event.listen(AuditEvent, "before_update", reject_audit_event_update)
 event.listen(AuditEvent, "before_delete", reject_audit_event_delete)
 
 
+def validate_audit_event_insert(
+    mapper: Mapper[AuditEvent] | None,
+    connection: Connection | None,
+    target: AuditEvent,
+) -> None:
+    """Canonicalize and validate an audit row before ORM insertion."""
+    del mapper, connection
+    validate_audit_hash(target.actor_subject_hash)
+    validate_audit_hash(target.request_correlation_hash, nullable=True)
+    validate_audit_hash(target.idempotency_correlation_hash, nullable=True)
+    validate_audit_machine_value(target.actor_kind, max_bytes=32)
+    validate_audit_machine_value(target.action, max_bytes=64)
+    validate_audit_machine_value(target.aggregate_type, max_bytes=64)
+    validate_audit_machine_value(target.aggregate_id, max_bytes=128)
+    metadata = target.redacted_metadata
+    if metadata is None:
+        metadata = default_audit_metadata()
+    target.redacted_metadata = validate_audit_metadata(metadata)
+
+
+event.listen(AuditEvent, "before_insert", validate_audit_event_insert)
+
+
 __all__ = [
     "AppendOnlyAuditEventError",
+    "AuditContractError",
     "AuditEvent",
     "AuthSession",
     "CommandReceipt",
@@ -306,4 +356,5 @@ __all__ = [
     "Owner",
     "reject_audit_event_delete",
     "reject_audit_event_update",
+    "validate_audit_event_insert",
 ]

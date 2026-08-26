@@ -12,6 +12,7 @@ def test_identity_session_schema_contract_and_round_trip(test_database_url: str)
     from alembic import command
     from alembic.config import Config
     from sqlalchemy import create_engine, inspect, text
+    from sqlalchemy.dialects.postgresql import BYTEA, JSONB
     from sqlalchemy.exc import DBAPIError, IntegrityError
     from tamforge_backend.database import database_url_to_sync
 
@@ -19,6 +20,10 @@ def test_identity_session_schema_contract_and_round_trip(test_database_url: str)
     config.attributes["database_url"] = test_database_url
     engine = create_engine(database_url_to_sync(test_database_url))
     revision_tables = {"owners", "auth_sessions", "command_receipts", "audit_events"}
+    valid_audit_metadata = (
+        '{"schema_version":1,"outcome":"succeeded","reason_code":"none",'
+        '"changed_fields":[],"counts":{},"flags":{}}'
+    )
 
     def execute(statement: str, parameters: Mapping[str, Any] | None = None) -> Any:
         with engine.begin() as connection:
@@ -71,8 +76,8 @@ def test_identity_session_schema_contract_and_round_trip(test_database_url: str)
                 "action",
                 "aggregate_type",
                 "aggregate_id",
-                "request_id",
-                "idempotency_key",
+                "request_correlation_hash",
+                "idempotency_correlation_hash",
                 "redacted_metadata",
                 "occurred_at",
             },
@@ -123,8 +128,8 @@ def test_identity_session_schema_contract_and_round_trip(test_database_url: str)
                 "action": False,
                 "aggregate_type": False,
                 "aggregate_id": False,
-                "request_id": True,
-                "idempotency_key": True,
+                "request_correlation_hash": True,
+                "idempotency_correlation_hash": True,
                 "redacted_metadata": False,
                 "occurred_at": False,
             },
@@ -136,6 +141,18 @@ def test_identity_session_schema_contract_and_round_trip(test_database_url: str)
             }
             assert actual == expected
 
+        audit_columns = {
+            column["name"]: column for column in inspector.get_columns("audit_events")
+        }
+        assert isinstance(audit_columns["actor_subject_hash"]["type"], BYTEA)
+        assert isinstance(audit_columns["request_correlation_hash"]["type"], BYTEA)
+        assert isinstance(
+            audit_columns["idempotency_correlation_hash"]["type"],
+            BYTEA,
+        )
+        assert isinstance(audit_columns["redacted_metadata"]["type"], JSONB)
+        assert audit_columns["redacted_metadata"]["default"] is not None
+
         for table_name in revision_tables:
             primary_key = inspector.get_pk_constraint(table_name)
             assert primary_key["name"] == f"pk_{table_name}"
@@ -145,6 +162,13 @@ def test_identity_session_schema_contract_and_round_trip(test_database_url: str)
         assert "token" not in auth_column_names
         assert "csrf_token" not in auth_column_names
         assert all("raw" not in name for names in expected_columns.values() for name in names)
+        audit_column_names = expected_columns["audit_events"]
+        assert "request_id" not in audit_column_names
+        assert "idempotency_key" not in audit_column_names
+        assert all(
+            not name.endswith("token") and not name.endswith("credential")
+            for name in audit_column_names
+        )
 
         expected_unique = {
             "owners": {"uq_owners_github_user_id"},
@@ -182,9 +206,13 @@ def test_identity_session_schema_contract_and_round_trip(test_database_url: str)
                 "ck_audit_events_action_nonblank",
                 "ck_audit_events_aggregate_type_nonblank",
                 "ck_audit_events_aggregate_id_nonblank",
-                "ck_audit_events_request_id_nonblank",
-                "ck_audit_events_idempotency_key_nonblank",
-                "ck_audit_events_redacted_metadata_object",
+                "ck_audit_events_request_correlation_hash_length",
+                "ck_audit_events_idempotency_correlation_hash_length",
+                "ck_audit_events_actor_kind_safe",
+                "ck_audit_events_action_safe",
+                "ck_audit_events_aggregate_type_safe",
+                "ck_audit_events_aggregate_id_safe",
+                "ck_audit_events_redacted_metadata_v1",
             },
         }
         for table_name, names in expected_checks.items():
@@ -204,8 +232,8 @@ def test_identity_session_schema_contract_and_round_trip(test_database_url: str)
             "audit_events": {
                 "ix_audit_events_owner_id_occurred_at",
                 "ix_audit_events_aggregate_occurred_at",
-                "ix_audit_events_request_id",
-                "ix_audit_events_idempotency_key",
+                "ix_audit_events_request_correlation_hash",
+                "ix_audit_events_idempotency_correlation_hash",
             },
         }
         for table_name, names in expected_indexes.items():
@@ -315,17 +343,78 @@ def test_identity_session_schema_contract_and_round_trip(test_database_url: str)
         audit_id = execute(
             "INSERT INTO audit_events "
             "(owner_id, actor_kind, actor_subject_hash, action, aggregate_type, "
-            "aggregate_id, redacted_metadata) VALUES "
+            "aggregate_id, request_correlation_hash, idempotency_correlation_hash, "
+            "redacted_metadata) VALUES "
             "(:owner_id, 'owner', :subject_hash, 'session.created', 'auth_session', "
-            "'1', '{}'::jsonb) RETURNING id",
-            {"owner_id": owner_id, "subject_hash": b"a" * 32},
+            "'1', :request_hash, :idempotency_hash, CAST(:metadata AS jsonb)) RETURNING id",
+            {
+                "owner_id": owner_id,
+                "subject_hash": b"a" * 32,
+                "request_hash": b"r" * 32,
+                "idempotency_hash": b"i" * 32,
+                "metadata": valid_audit_metadata,
+            },
         ).scalar_one()
+        default_metadata = execute(
+            "INSERT INTO audit_events "
+            "(owner_id, actor_kind, actor_subject_hash, action, aggregate_type, "
+            "aggregate_id) VALUES "
+            "(:owner_id, 'owner', :subject_hash, 'session.observed', 'auth_session', "
+            "'2') RETURNING redacted_metadata",
+            {"owner_id": owner_id, "subject_hash": b"d" * 32},
+        ).scalar_one()
+        assert default_metadata == {
+            "schema_version": 1,
+            "outcome": "succeeded",
+            "reason_code": "none",
+            "changed_fields": [],
+            "counts": {},
+            "flags": {},
+        }
+        secret_candidate = "raw-customer-secret-candidate"
+        with pytest.raises(IntegrityError) as invalid_metadata_error:
+            execute(
+                "INSERT INTO audit_events "
+                "(owner_id, actor_kind, actor_subject_hash, action, aggregate_type, "
+                "aggregate_id, redacted_metadata) VALUES "
+                "(:owner_id, 'owner', :subject_hash, 'invalid', 'owner', '1', "
+                "CAST(:metadata AS jsonb))",
+                {
+                    "owner_id": owner_id,
+                    "subject_hash": b"b" * 32,
+                    "metadata": (
+                        '{"schema_version":1,"notes":"'
+                        f"{secret_candidate}"
+                        '"}'
+                    ),
+                },
+            )
+        assert secret_candidate not in str(invalid_metadata_error.value.orig)
+        rejects_integrity(
+            "INSERT INTO audit_events "
+            "(owner_id, actor_kind, actor_subject_hash, action, aggregate_type, "
+            "aggregate_id, request_correlation_hash, redacted_metadata) VALUES "
+            "(:owner_id, 'owner', :subject_hash, 'invalid', 'owner', '2', "
+            ":request_hash, CAST(:metadata AS jsonb))",
+            {
+                "owner_id": owner_id,
+                "subject_hash": b"b" * 32,
+                "request_hash": b"short",
+                "metadata": valid_audit_metadata,
+            },
+        )
         rejects_integrity(
             "INSERT INTO audit_events "
             "(owner_id, actor_kind, actor_subject_hash, action, aggregate_type, "
             "aggregate_id, redacted_metadata) VALUES "
-            "(:owner_id, 'owner', :subject_hash, 'invalid', 'owner', '1', '[]'::jsonb)",
-            {"owner_id": owner_id, "subject_hash": b"b" * 32},
+            "(:owner_id, 'owner', :subject_hash, :action, 'owner', '3', "
+            "CAST(:metadata AS jsonb))",
+            {
+                "owner_id": owner_id,
+                "subject_hash": b"b" * 32,
+                "action": "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "metadata": valid_audit_metadata,
+            },
         )
         with pytest.raises(DBAPIError):
             execute(
@@ -339,6 +428,9 @@ def test_identity_session_schema_contract_and_round_trip(test_database_url: str)
             )
         with pytest.raises(DBAPIError):
             execute("DELETE FROM audit_events WHERE id = :audit_id", {"audit_id": audit_id})
+        with pytest.raises(DBAPIError):
+            execute("TRUNCATE audit_events")
+        assert execute("SELECT count(*) FROM audit_events").scalar_one() == 2
         with pytest.raises(IntegrityError):
             execute("DELETE FROM owners WHERE id = :owner_id", {"owner_id": owner_id})
 
@@ -347,7 +439,11 @@ def test_identity_session_schema_contract_and_round_trip(test_database_url: str)
         assert revision_tables.isdisjoint(inspector.get_table_names())
         remaining_functions = execute(
             "SELECT proname FROM pg_proc WHERE proname IN "
-            "('tamforge_reject_owner_github_id_change', 'tamforge_reject_audit_event_mutation')"
+            "('tamforge_reject_owner_github_id_change', "
+            "'tamforge_reject_audit_event_mutation', "
+            "'tamforge_validate_audit_event_insert', "
+            "'tamforge_validate_audit_metadata_v1', "
+            "'tamforge_is_safe_audit_machine_value')"
         ).scalars()
         assert list(remaining_functions) == []
         command.upgrade(config, "head")
