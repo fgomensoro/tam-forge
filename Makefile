@@ -10,6 +10,7 @@ test:
 
 check:
 	pnpm run test:bootstrap
+	pnpm run verify:bootstrap
 	uv run ruff check .
 	uv run mypy apps/backend/src packages/protocol/src
 	uv run pytest -m "not integration"

@@ -7,5 +7,8 @@
     "verify:bootstrap": "node scripts/verify_bootstrap.mjs",
     "test": "pnpm --filter @tam-forge/web test -- --run",
     "check": "pnpm --filter @tam-forge/web lint && pnpm --filter @tam-forge/web typecheck && pnpm --filter @tam-forge/web test -- --run"
+  },
+  "devDependencies": {
+    "yaml": "2.9.0"
   }
 }
