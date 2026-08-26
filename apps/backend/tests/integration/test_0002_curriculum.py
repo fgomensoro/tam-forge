@@ -168,7 +168,8 @@ def test_curriculum_schema_contract_invariants_and_round_trip(
             {"import_id": import_id},
         )
         rejects_integrity(
-            "UPDATE roadmap_imports SET semantic_diff = '{\"changed\":true}'::jsonb "
+            "UPDATE roadmap_imports "
+            "SET semantic_diff = jsonb_build_object('changed', true) "
             "WHERE id = :import_id",
             {"import_id": import_id},
         )
@@ -191,7 +192,8 @@ def test_curriculum_schema_contract_invariants_and_round_trip(
             {"import_id": failed_import_id},
         )
         rejects_integrity(
-            "UPDATE roadmap_imports SET validation_report = '{\"retry\":true}'::jsonb "
+            "UPDATE roadmap_imports "
+            "SET validation_report = jsonb_build_object('retry', true) "
             "WHERE id = :import_id",
             {"import_id": failed_import_id},
         )
@@ -398,12 +400,14 @@ def test_curriculum_schema_contract_invariants_and_round_trip(
             {"hash": b"z" * 32, "version": version_1},
         )
         rejects_integrity(
-            "UPDATE roadmap_versions SET raw_payload = '{\"changed\":true}'::jsonb "
+            "UPDATE roadmap_versions "
+            "SET raw_payload = jsonb_build_object('changed', true) "
             "WHERE id = :version",
             {"version": version_1},
         )
         rejects_integrity(
-            "UPDATE roadmap_versions SET normalized_payload = '{\"changed\":true}'::jsonb "
+            "UPDATE roadmap_versions "
+            "SET normalized_payload = jsonb_build_object('changed', true) "
             "WHERE id = :version",
             {"version": version_1},
         )
