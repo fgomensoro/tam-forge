@@ -7,6 +7,7 @@ from .base import Base
 _MODEL_MODULES = (
     "tamforge_backend.auth.models",
     "tamforge_backend.roadmaps.models",
+    "tamforge_backend.learning.models",
 )
 
 

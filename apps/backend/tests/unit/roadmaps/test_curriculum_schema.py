@@ -989,7 +989,7 @@ def test_canonical_path_is_provenance_only() -> None:
     assert all("canonical_path" not in path.read_text() for path in runtime_files)
 
 
-def test_alembic_has_exactly_one_curriculum_head() -> None:
+def test_alembic_has_exactly_one_linear_head() -> None:
     environment = os.environ.copy()
     environment.pop("DATABASE_URL", None)
     result = subprocess.run(
@@ -1002,4 +1002,4 @@ def test_alembic_has_exactly_one_curriculum_head() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "20260825_0002_curriculum (head)"
+    assert result.stdout.strip() == "20260825_0003_study_activities (head)"
