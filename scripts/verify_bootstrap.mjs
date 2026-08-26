@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
+import { verifyComposeText } from "./verify_compose.mjs";
+
 const packageManifest = JSON.parse(readFileSync("package.json", "utf8"));
 const declaredPackageManager = packageManifest.packageManager;
 const [declaredName, declaredVersion] = declaredPackageManager.split("@");
@@ -21,16 +23,6 @@ if (allowBuilds?.esbuild !== true || Object.keys(allowBuilds).length !== 1) {
 }
 
 const compose = readFileSync("compose.dev.yml", "utf8");
-const publishedPorts = [
-  ...compose.matchAll(/^\s*-\s+["']?((?:[\d.]+:)?\d{1,5}:\d{1,5})["']?\s*$/gm),
-].map((match) => match[1]);
-
-if (publishedPorts.length === 0 || publishedPorts.some((port) => !port.startsWith("127.0.0.1:"))) {
-  throw new Error(`every published development port must bind to 127.0.0.1: ${publishedPorts.join(", ")}`);
-}
-
-if (compose.includes("minio/minio:latest")) {
-  throw new Error("the local MinIO image must use an immutable release tag");
-}
+const { publishedPorts } = verifyComposeText(compose);
 
 console.log(`Bootstrap tooling verified: pnpm@${runningVersion}; ports=${publishedPorts.join(", ")}`);
