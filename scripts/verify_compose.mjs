@@ -10,7 +10,7 @@ const APPROVED_COMPOSE = {
         POSTGRES_USER: "tamforge",
         POSTGRES_PASSWORD: "tamforge",
       },
-      ports: ["127.0.0.1:5432:5432"],
+      ports: ["127.0.0.1:54329:5432"],
       volumes: ["tamforge-postgres:/var/lib/postgresql/data"],
     },
     minio: {
