@@ -9,6 +9,8 @@ _MODEL_MODULES = (
     "tamforge_backend.roadmaps.models",
     "tamforge_backend.learning.models",
     "tamforge_backend.evidence.models",
+    "tamforge_backend.notifications.models",
+    "tamforge_backend.today.models",
 )
 
 

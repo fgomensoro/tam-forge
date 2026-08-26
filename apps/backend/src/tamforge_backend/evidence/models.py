@@ -630,6 +630,9 @@ class SkillEvidenceEvent(Base):
 
     __tablename__ = "skill_evidence_events"
     __table_args__ = (
+        UniqueConstraint(
+            "owner_id", "id", name="uq_skill_evidence_events_owner_id_id"
+        ),
         ForeignKeyConstraint(
             ["owner_id", "activity_instance_id"],
             ["activity_instances.owner_id", "activity_instances.id"],
