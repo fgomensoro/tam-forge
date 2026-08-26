@@ -278,13 +278,19 @@ def test_study_activity_contract_and_round_trip(test_database_url: str) -> None:
             "(:owner, :activity, :attempt, :artifact, 'presentation_audio')",
             {"owner": owner, "activity": replacement, "attempt": attempt_b, "artifact": artifact},
         )
-        assert (
-            execute(
-                "SELECT count(*) FROM activity_artifact_links WHERE artifact_id = :artifact",
-                {"artifact": artifact},
-            ).scalar_one()
-            == 2
-        )
+        artifact_links = execute(
+            "SELECT activity_instance_id, attempt_id, link_role "
+            "FROM activity_artifact_links WHERE artifact_id = :artifact",
+            {"artifact": artifact},
+        ).all()
+        assert len(artifact_links) == 3
+        assert {
+            (row.activity_instance_id, row.attempt_id, row.link_role) for row in artifact_links
+        } == {
+            (activity, attempt_a, "presentation_audio"),
+            (activity, None, "supporting"),
+            (replacement, attempt_b, "presentation_audio"),
+        }
         rejects("UPDATE artifacts SET byte_size = 101 WHERE id = :artifact", {"artifact": artifact})
 
         command.downgrade(config, "20260825_0002_curriculum")
