@@ -11,7 +11,6 @@ from .audit import (
     AuditMetadataV1,
     AuditOutcome,
     AuditReasonCode,
-    default_audit_metadata,
     validate_audit_metadata,
 )
 from .models import (
@@ -34,7 +33,6 @@ __all__ = [
     "AuthSession",
     "CommandReceipt",
     "Owner",
-    "default_audit_metadata",
     "validate_audit_event_insert",
     "validate_audit_metadata",
 ]

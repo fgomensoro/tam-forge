@@ -1,10 +1,11 @@
-"""Shared deterministic SQLAlchemy metadata and UTC timestamp fields."""
+"""Shared metadata and UTC fields; schema lifecycle is Alembic-only."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, MetaData, func
+from sqlalchemy import DateTime, MetaData, event, func
+from sqlalchemy.engine import Connection
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 NAMING_CONVENTION = {
@@ -25,6 +26,24 @@ class Base(DeclarativeBase):
     """Declarative base imported by both application models and Alembic."""
 
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
+
+
+class SchemaLifecycleError(RuntimeError):
+    """Raised when code bypasses Alembic for schema creation or destruction."""
+
+
+def reject_direct_schema_lifecycle(
+    metadata: MetaData,
+    connection: Connection,
+    **kwargs: object,
+) -> None:
+    """Fail before create_all/drop_all can emit partial schema DDL."""
+    del metadata, connection, kwargs
+    raise SchemaLifecycleError("schema lifecycle must use Alembic migrations")
+
+
+event.listen(Base.metadata, "before_create", reject_direct_schema_lifecycle)
+event.listen(Base.metadata, "before_drop", reject_direct_schema_lifecycle)
 
 
 class TimestampMixin:

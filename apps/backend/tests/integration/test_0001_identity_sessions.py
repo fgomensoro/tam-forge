@@ -355,22 +355,16 @@ def test_identity_session_schema_contract_and_round_trip(test_database_url: str)
                 "metadata": valid_audit_metadata,
             },
         ).scalar_one()
-        default_metadata = execute(
-            "INSERT INTO audit_events "
-            "(owner_id, actor_kind, actor_subject_hash, action, aggregate_type, "
-            "aggregate_id) VALUES "
-            "(:owner_id, 'owner', :subject_hash, 'session.observed', 'auth_session', "
-            "'2') RETURNING redacted_metadata",
-            {"owner_id": owner_id, "subject_hash": b"d" * 32},
-        ).scalar_one()
-        assert default_metadata == {
-            "schema_version": 1,
-            "outcome": "succeeded",
-            "reason_code": "none",
-            "changed_fields": [],
-            "counts": {},
-            "flags": {},
-        }
+        with pytest.raises(IntegrityError) as missing_metadata_error:
+            execute(
+                "INSERT INTO audit_events "
+                "(owner_id, actor_kind, actor_subject_hash, action, aggregate_type, "
+                "aggregate_id) VALUES "
+                "(:owner_id, 'owner', :subject_hash, 'session.observed', "
+                "'auth_session', '2')",
+                {"owner_id": owner_id, "subject_hash": b"d" * 32},
+            )
+        assert missing_metadata_error.value.orig.sqlstate == "23502"
         secret_candidate = "raw-customer-secret-candidate"
         with pytest.raises(IntegrityError) as invalid_metadata_error:
             execute(
@@ -430,7 +424,7 @@ def test_identity_session_schema_contract_and_round_trip(test_database_url: str)
             execute("DELETE FROM audit_events WHERE id = :audit_id", {"audit_id": audit_id})
         with pytest.raises(DBAPIError):
             execute("TRUNCATE audit_events")
-        assert execute("SELECT count(*) FROM audit_events").scalar_one() == 2
+        assert execute("SELECT count(*) FROM audit_events").scalar_one() == 1
         with pytest.raises(IntegrityError):
             execute("DELETE FROM owners WHERE id = :owner_id", {"owner_id": owner_id})
 

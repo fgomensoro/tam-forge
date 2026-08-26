@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
+import re
 import subprocess
 import sys
 from io import StringIO
@@ -31,6 +33,21 @@ def _load_migration() -> object:
 
 def _constraint_names(table: sa.Table) -> set[str]:
     return {constraint.name for constraint in table.constraints if constraint.name is not None}
+
+
+def _offline_upgrade_sql() -> str:
+    output = StringIO()
+    config = Config("apps/backend/alembic.ini", output_buffer=output)
+    config.attributes["database_url"] = URL.create(
+        "postgresql+psycopg",
+        username="tamforge",
+        password="offline-contract-password",
+        host="127.0.0.1",
+        port=54329,
+        database="tamforge_test",
+    ).render_as_string(hide_password=False)
+    command.upgrade(config, "head", sql=True)
+    return output.getvalue()
 
 
 def _run_fresh_python(source: str) -> subprocess.CompletedProcess[str]:
@@ -141,6 +158,8 @@ def test_identity_models_register_exact_tables_and_postgresql_types() -> None:
     assert isinstance(events.c.idempotency_correlation_hash.type, sa.LargeBinary)
     assert events.c.idempotency_correlation_hash.type.length == 32
     assert isinstance(events.c.redacted_metadata.type, postgresql.JSONB)
+    assert events.c.redacted_metadata.default is None
+    assert events.c.redacted_metadata.server_default is None
     assert events.c.occurred_at.type.timezone is True
     assert events.c.owner_id.nullable is True
 
@@ -234,7 +253,7 @@ def test_persisted_owner_github_id_is_immutable_but_login_can_change() -> None:
 
 
 def test_audit_events_reject_orm_update_and_delete() -> None:
-    from tamforge_backend.auth.audit import default_audit_metadata
+    from tamforge_backend.auth.audit import AuditMetadataV1, AuditOutcome, AuditReasonCode
     from tamforge_backend.auth.models import (
         AppendOnlyAuditEventError,
         AuditEvent,
@@ -248,7 +267,10 @@ def test_audit_events_reject_orm_update_and_delete() -> None:
         action="session.created",
         aggregate_type="auth_session",
         aggregate_id="1",
-        redacted_metadata=default_audit_metadata(),
+        redacted_metadata=AuditMetadataV1(
+            outcome=AuditOutcome.SUCCEEDED,
+            reason_code=AuditReasonCode.NONE,
+        ).to_payload(),
     )
 
     with pytest.raises(AppendOnlyAuditEventError, match="append-only"):
@@ -272,6 +294,60 @@ def test_revision_contract_and_cluster_safe_extension_downgrade() -> None:
     assert "tamforge_validate_audit_metadata_v1" in source
     assert "tamforge_is_safe_audit_machine_value" in source
     assert "trg_audit_events_validate_insert" in source
+
+
+def test_offline_ddl_has_valid_json_defaults_and_requires_explicit_audit_metadata() -> None:
+    sql = _offline_upgrade_sql()
+
+    assert "NULL}'" not in sql
+    assert "%(" not in sql
+    assert ":schema_version" not in sql
+    assert "result_payload JSONB DEFAULT '{}'::jsonb NOT NULL" in sql
+    for raw_default in re.findall(r"DEFAULT '([^']*)'::jsonb", sql):
+        json.loads(raw_default)
+    audit_column = next(
+        line.strip() for line in sql.splitlines() if line.strip().startswith("redacted_metadata ")
+    )
+    assert audit_column == "redacted_metadata JSONB NOT NULL,"
+
+
+def test_offline_ddl_names_match_orm_metadata_exactly() -> None:
+    from tamforge_backend.models import Base, load_all_models
+
+    load_all_models()
+    sql = _offline_upgrade_sql()
+    table_blocks = {
+        table_name: body
+        for table_name, body in re.findall(
+            r"CREATE TABLE ([a-z0-9_]+) \((.*?)\n\);",
+            sql,
+            flags=re.DOTALL,
+        )
+        if table_name != "alembic_version"
+    }
+    assert set(table_blocks) == EXPECTED_TABLES
+    assert re.search(r"ck_[a-z0-9_]+_ck_[a-z0-9_]+", sql) is None
+
+    for table_name in EXPECTED_TABLES:
+        table = Base.metadata.tables[table_name]
+        orm_constraints = {
+            constraint.name
+            for constraint in table.constraints
+            if constraint.name is not None
+        }
+        ddl_constraints = set(
+            re.findall(r"CONSTRAINT ([a-z0-9_]+)", table_blocks[table_name])
+        )
+        assert ddl_constraints == orm_constraints
+
+        orm_indexes = {index.name for index in table.indexes if index.name is not None}
+        ddl_indexes = set(
+            re.findall(
+                rf"CREATE (?:UNIQUE )?INDEX ([a-z0-9_]+) ON {table_name}",
+                sql,
+            )
+        )
+        assert ddl_indexes == orm_indexes
 
 
 def test_revision_renders_complete_offline_sql_without_url_leakage() -> None:

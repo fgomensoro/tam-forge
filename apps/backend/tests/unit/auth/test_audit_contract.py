@@ -59,11 +59,20 @@ def test_typed_audit_metadata_builds_a_canonical_round_trip_payload() -> None:
     assert validate_audit_metadata(json.loads(json.dumps(payload))) == payload
 
 
-def test_default_audit_metadata_is_fresh_and_canonical() -> None:
-    from tamforge_backend.auth import default_audit_metadata
+def test_audit_metadata_requires_explicit_outcome_and_reason() -> None:
+    from tamforge_backend.auth import AuditMetadataV1, AuditOutcome, AuditReasonCode
 
-    first = default_audit_metadata()
-    second = default_audit_metadata()
+    with pytest.raises(TypeError):
+        AuditMetadataV1()  # type: ignore[call-arg]
+
+    first = AuditMetadataV1(
+        outcome=AuditOutcome.SUCCEEDED,
+        reason_code=AuditReasonCode.NONE,
+    ).to_payload()
+    second = AuditMetadataV1(
+        outcome=AuditOutcome.SUCCEEDED,
+        reason_code=AuditReasonCode.NONE,
+    ).to_payload()
 
     assert first == {
         "schema_version": 1,

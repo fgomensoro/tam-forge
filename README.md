@@ -21,6 +21,10 @@ The optional `compose.dev.yml` provides local PostgreSQL/pgvector and a pinned
 MinIO release for later local integration work. It is never started by the
 default Make targets and is not a production deployment configuration.
 
+Database schemas are created, upgraded, downgraded, and removed only through
+Alembic migrations. Direct `Base.metadata.create_all()` and `drop_all()` calls
+are guarded so tests and application code cannot emit a partial parallel schema.
+
 ## GitHub planning catalog
 
 The approved milestones, labels, epics, and child issues are declared in

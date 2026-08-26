@@ -182,11 +182,11 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "github_user_id > 0",
-            name="ck_owners_github_user_id_positive",
+            name="github_user_id_positive",
         ),
         sa.CheckConstraint(
             "btrim(github_login) <> ''",
-            name="ck_owners_github_login_nonblank",
+            name="github_login_nonblank",
         ),
         sa.PrimaryKeyConstraint("id", name="pk_owners"),
         sa.UniqueConstraint("github_user_id", name="uq_owners_github_user_id"),
@@ -210,24 +210,24 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "octet_length(token_hash) = 32",
-            name="ck_auth_sessions_token_hash_length",
+            name="token_hash_length",
         ),
         sa.CheckConstraint(
             "octet_length(csrf_hash) = 32",
-            name="ck_auth_sessions_csrf_hash_length",
+            name="csrf_hash_length",
         ),
         sa.CheckConstraint(
             "expires_at > created_at",
-            name="ck_auth_sessions_expires_after_creation",
+            name="expires_after_creation",
         ),
         sa.CheckConstraint(
             "revoked_at IS NULL OR revoked_at >= created_at",
-            name="ck_auth_sessions_revoked_after_creation",
+            name="revoked_after_creation",
         ),
         sa.CheckConstraint(
             "last_seen_at IS NULL OR "
             "(last_seen_at >= created_at AND last_seen_at <= expires_at)",
-            name="ck_auth_sessions_last_seen_window",
+            name="last_seen_window",
         ),
         sa.ForeignKeyConstraint(
             ["owner_id"],
@@ -270,27 +270,27 @@ def upgrade() -> None:
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
             "btrim(command_scope) <> ''",
-            name="ck_command_receipts_command_scope_nonblank",
+            name="command_scope_nonblank",
         ),
         sa.CheckConstraint(
             "btrim(idempotency_key) <> ''",
-            name="ck_command_receipts_idempotency_key_nonblank",
+            name="idempotency_key_nonblank",
         ),
         sa.CheckConstraint(
             "octet_length(request_hash) = 32",
-            name="ck_command_receipts_request_hash_length",
+            name="request_hash_length",
         ),
         sa.CheckConstraint(
             "btrim(status) <> ''",
-            name="ck_command_receipts_status_nonblank",
+            name="status_nonblank",
         ),
         sa.CheckConstraint(
             "jsonb_typeof(result_payload) = 'object'",
-            name="ck_command_receipts_result_payload_object",
+            name="result_payload_object",
         ),
         sa.CheckConstraint(
             "expires_at > created_at",
-            name="ck_command_receipts_expires_after_creation",
+            name="expires_after_creation",
         ),
         sa.ForeignKeyConstraint(
             ["owner_id"],
@@ -330,11 +330,6 @@ def upgrade() -> None:
         sa.Column(
             "redacted_metadata",
             postgresql.JSONB(astext_type=sa.Text()),
-            server_default=sa.text(
-                "'{\"changed_fields\":[],\"counts\":{},\"flags\":{},"
-                "\"outcome\":\"succeeded\",\"reason_code\":\"none\","
-                "\"schema_version\":1}'::jsonb"
-            ),
             nullable=False,
         ),
         sa.Column(
@@ -345,53 +340,53 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "btrim(actor_kind) <> ''",
-            name="ck_audit_events_actor_kind_nonblank",
+            name="actor_kind_nonblank",
         ),
         sa.CheckConstraint(
             "octet_length(actor_subject_hash) = 32",
-            name="ck_audit_events_actor_subject_hash_length",
+            name="actor_subject_hash_length",
         ),
         sa.CheckConstraint(
             "btrim(action) <> ''",
-            name="ck_audit_events_action_nonblank",
+            name="action_nonblank",
         ),
         sa.CheckConstraint(
             "btrim(aggregate_type) <> ''",
-            name="ck_audit_events_aggregate_type_nonblank",
+            name="aggregate_type_nonblank",
         ),
         sa.CheckConstraint(
             "btrim(aggregate_id) <> ''",
-            name="ck_audit_events_aggregate_id_nonblank",
+            name="aggregate_id_nonblank",
         ),
         sa.CheckConstraint(
             "request_correlation_hash IS NULL OR "
             "octet_length(request_correlation_hash) = 32",
-            name="ck_audit_events_request_correlation_hash_length",
+            name="request_correlation_hash_length",
         ),
         sa.CheckConstraint(
             "idempotency_correlation_hash IS NULL OR "
             "octet_length(idempotency_correlation_hash) = 32",
-            name="ck_audit_events_idempotency_correlation_hash_length",
+            name="idempotency_correlation_hash_length",
         ),
         sa.CheckConstraint(
             "public.tamforge_is_safe_audit_machine_value(actor_kind, 32)",
-            name="ck_audit_events_actor_kind_safe",
+            name="actor_kind_safe",
         ),
         sa.CheckConstraint(
             "public.tamforge_is_safe_audit_machine_value(action, 64)",
-            name="ck_audit_events_action_safe",
+            name="action_safe",
         ),
         sa.CheckConstraint(
             "public.tamforge_is_safe_audit_machine_value(aggregate_type, 64)",
-            name="ck_audit_events_aggregate_type_safe",
+            name="aggregate_type_safe",
         ),
         sa.CheckConstraint(
             "public.tamforge_is_safe_audit_machine_value(aggregate_id, 128)",
-            name="ck_audit_events_aggregate_id_safe",
+            name="aggregate_id_safe",
         ),
         sa.CheckConstraint(
             "public.tamforge_validate_audit_metadata_v1(redacted_metadata)",
-            name="ck_audit_events_redacted_metadata_v1",
+            name="redacted_metadata_v1",
         ),
         sa.ForeignKeyConstraint(
             ["owner_id"],
@@ -449,8 +444,12 @@ def upgrade() -> None:
                     64
                 )
                 OR NOT public.tamforge_is_safe_audit_machine_value(NEW.aggregate_id, 128)
-                OR NEW.redacted_metadata IS NULL
-                OR NOT public.tamforge_validate_audit_metadata_v1(NEW.redacted_metadata)
+                OR (
+                    NEW.redacted_metadata IS NOT NULL
+                    AND NOT public.tamforge_validate_audit_metadata_v1(
+                        NEW.redacted_metadata
+                    )
+                )
             THEN
                 RAISE EXCEPTION 'audit event violates storage contract'
                     USING ERRCODE = '23514';

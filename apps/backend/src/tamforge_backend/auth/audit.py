@@ -106,25 +106,6 @@ def _event_error() -> AuditContractError:
     return AuditContractError("audit event violates storage contract")
 
 
-def default_audit_metadata() -> dict[str, object]:
-    """Return a fresh canonical success payload for metadata version 1."""
-    return {
-        "schema_version": 1,
-        "outcome": AuditOutcome.SUCCEEDED.value,
-        "reason_code": AuditReasonCode.NONE.value,
-        "changed_fields": [],
-        "counts": {},
-        "flags": {},
-    }
-
-
-DEFAULT_AUDIT_METADATA_JSON = json.dumps(
-    default_audit_metadata(),
-    sort_keys=True,
-    separators=(",", ":"),
-)
-
-
 def validate_audit_metadata(value: Mapping[str, object]) -> dict[str, object]:
     """Validate and return a detached canonical JSON-compatible payload."""
     if set(value) != AUDIT_METADATA_KEYS:
@@ -207,8 +188,8 @@ def validate_audit_machine_value(value: object, *, max_bytes: int) -> None:
 class AuditMetadataV1:
     """Typed builder for the exact audit metadata version 1 payload."""
 
-    outcome: AuditOutcome = AuditOutcome.SUCCEEDED
-    reason_code: AuditReasonCode = AuditReasonCode.NONE
+    outcome: AuditOutcome
+    reason_code: AuditReasonCode
     changed_fields: tuple[AuditChangedField, ...] = ()
     counts: Mapping[AuditCountKey, int] = field(default_factory=dict)
     flags: Mapping[AuditFlagKey, bool] = field(default_factory=dict)
@@ -240,8 +221,6 @@ __all__ = [
     "AuditMetadataV1",
     "AuditOutcome",
     "AuditReasonCode",
-    "DEFAULT_AUDIT_METADATA_JSON",
-    "default_audit_metadata",
     "validate_audit_hash",
     "validate_audit_machine_value",
     "validate_audit_metadata",

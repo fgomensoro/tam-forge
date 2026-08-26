@@ -28,9 +28,7 @@ from sqlalchemy.orm.state import InstanceState
 
 from ..models.base import Base, TimestampMixin, utc_now
 from .audit import (
-    DEFAULT_AUDIT_METADATA_JSON,
     AuditContractError,
-    default_audit_metadata,
     validate_audit_hash,
     validate_audit_machine_value,
     validate_audit_metadata,
@@ -259,8 +257,6 @@ class AuditEvent(Base):
     idempotency_correlation_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
     redacted_metadata: Mapped[dict[str, object]] = mapped_column(
         JSONB,
-        default=default_audit_metadata,
-        server_default=text(f"'{DEFAULT_AUDIT_METADATA_JSON}'::jsonb"),
         nullable=False,
     )
     occurred_at: Mapped[datetime] = mapped_column(
@@ -339,7 +335,7 @@ def validate_audit_event_insert(
     validate_audit_machine_value(target.aggregate_id, max_bytes=128)
     metadata = target.redacted_metadata
     if metadata is None:
-        metadata = default_audit_metadata()
+        raise AuditContractError("audit event violates storage contract")
     target.redacted_metadata = validate_audit_metadata(metadata)
 
 
