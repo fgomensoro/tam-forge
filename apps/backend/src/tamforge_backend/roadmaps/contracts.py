@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 
 JsonValue = str | int | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
 
@@ -196,6 +196,9 @@ class FieldChange:
     before: JsonValue
     after: JsonValue
 
+    def to_dict(self) -> dict[str, JsonValue]:
+        return {"name": self.name, "before": self.before, "after": self.after}
+
 
 @dataclass(frozen=True, slots=True)
 class EntityChange:
@@ -204,6 +207,15 @@ class EntityChange:
     fields: tuple[FieldChange, ...]
     before: dict[str, JsonValue] | None
     after: dict[str, JsonValue] | None
+
+    def to_dict(self) -> dict[str, JsonValue]:
+        return {
+            "key": self.key,
+            "status": self.status,
+            "fields": [item.to_dict() for item in self.fields],
+            "before": self.before,
+            "after": self.after,
+        }
 
     def field(self, name: str) -> FieldChange:
         for item in self.fields:
@@ -215,6 +227,9 @@ class EntityChange:
 @dataclass(frozen=True, slots=True)
 class DiffSection:
     entries: tuple[EntityChange, ...]
+
+    def to_dict(self) -> dict[str, JsonValue]:
+        return {"entries": [item.to_dict() for item in self.entries]}
 
     def by_key(self, key: str) -> EntityChange:
         for item in self.entries:
@@ -229,6 +244,15 @@ class SemanticRoadmapDiff:
     pass_contracts: DiffSection
     resources: DiffSection
     exit_criteria: DiffSection
+
+    def to_dict(self) -> dict[str, JsonValue]:
+        return {
+            "summary": cast(JsonValue, self.summary),
+            "tasks": self.tasks.to_dict(),
+            "pass_contracts": self.pass_contracts.to_dict(),
+            "resources": self.resources.to_dict(),
+            "exit_criteria": self.exit_criteria.to_dict(),
+        }
 
     @property
     def summary(self) -> dict[str, int]:

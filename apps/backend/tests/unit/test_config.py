@@ -23,6 +23,8 @@ PRODUCTION_ENV = {
     "TAMFORGE_OBJECT_STORE_SECRET_KEY": "object-secret-value",
     "TAMFORGE_GITHUB_CLIENT_ID": "github-client-id",
     "TAMFORGE_GITHUB_CLIENT_SECRET": "github-client-secret",
+    "TAMFORGE_GITHUB_ROADMAP_MIRROR_TOKEN": "github-roadmap-mirror-token",
+    "TAMFORGE_GITHUB_ROADMAP_MIRROR_REPOSITORY": "fgomensoro/tam-forge",
     "TAMFORGE_SESSION_SIGNING_SECRET": VALID_SESSION_SECRET,
     "TAMFORGE_GITHUB_USER_ID": "102269369",
     "TAMFORGE_GITHUB_CALLBACK_URL": "https://tam.example.test/api/v1/auth/callback",
@@ -68,6 +70,8 @@ def set_production_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "TAMFORGE_OBJECT_STORE_SECRET_KEY",
         "TAMFORGE_GITHUB_CLIENT_ID",
         "TAMFORGE_GITHUB_CLIENT_SECRET",
+        "TAMFORGE_GITHUB_ROADMAP_MIRROR_TOKEN",
+        "TAMFORGE_GITHUB_ROADMAP_MIRROR_REPOSITORY",
         "TAMFORGE_SESSION_SIGNING_SECRET",
         "TAMFORGE_GITHUB_USER_ID",
         "TAMFORGE_GITHUB_CALLBACK_URL",
@@ -122,6 +126,7 @@ def test_sensitive_settings_are_secret_str_and_never_appear_in_repr(
         "object-access-secret",
         "object-secret-value",
         "github-client-secret",
+        "github-roadmap-mirror-token",
         VALID_SESSION_SECRET,
     }
     secret_fields = (
@@ -129,6 +134,7 @@ def test_sensitive_settings_are_secret_str_and_never_appear_in_repr(
         settings.object_store_access_key,
         settings.object_store_secret_key,
         settings.github_client_secret,
+        settings.github_roadmap_mirror_token,
         settings.session_signing_secret,
     )
 
@@ -136,6 +142,36 @@ def test_sensitive_settings_are_secret_str_and_never_appear_in_repr(
     rendered = repr(settings)
     assert "**********" in rendered
     assert all(secret not in rendered for secret in sensitive_values)
+
+
+@pytest.mark.parametrize(
+    ("token", "repository"),
+    [
+        ("mirror-token", ""),
+        ("", "fgomensoro/tam-forge"),
+    ],
+)
+def test_roadmap_mirror_token_and_repository_are_an_independent_pair(
+    token: str,
+    repository: str,
+) -> None:
+    with pytest.raises(ValidationError, match="configured together"):
+        Settings(
+            environment="test",
+            github_roadmap_mirror_token=token,
+            github_roadmap_mirror_repository=repository,
+            _env_file=None,
+        )
+
+
+@pytest.mark.parametrize("branch", ["../main", "refs//main", "branch@{1}", "branch."])
+def test_roadmap_mirror_rejects_unsafe_branch_names(branch: str) -> None:
+    with pytest.raises(ValidationError, match="branch"):
+        Settings(
+            environment="test",
+            github_roadmap_mirror_branch=branch,
+            _env_file=None,
+        )
 
 
 def test_object_store_resource_limits_are_bounded_and_consistent() -> None:

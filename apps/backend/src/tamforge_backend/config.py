@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import re
+from pathlib import Path
 from typing import Any, ClassVar, Literal, Self
 from urllib.parse import urlsplit
 
@@ -15,6 +16,9 @@ APPROVED_GITHUB_USER_ID = 102269369
 _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _BUCKET_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
 _SESSION_SECRET_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
+_GITHUB_BRANCH_PATTERN = re.compile(
+    r"^(?!/)(?!.*(?:\.\.|//|@\{|\\))[A-Za-z0-9._/-]{1,200}(?<![/.])$"
+)
 _SESSION_SECRET_PLACEHOLDERS = (
     "changeme",
     "example",
@@ -44,6 +48,15 @@ class Settings(BaseSettings):
         ),
         "github_client_id": "TAMFORGE_GITHUB_CLIENT_ID",
         "github_client_secret": "TAMFORGE_GITHUB_CLIENT_SECRET",
+        "github_roadmap_mirror_token": "TAMFORGE_GITHUB_ROADMAP_MIRROR_TOKEN",
+        "github_roadmap_mirror_repository": (
+            "TAMFORGE_GITHUB_ROADMAP_MIRROR_REPOSITORY"
+        ),
+        "github_roadmap_mirror_branch": "TAMFORGE_GITHUB_ROADMAP_MIRROR_BRANCH",
+        "github_roadmap_mirror_base_branch": (
+            "TAMFORGE_GITHUB_ROADMAP_MIRROR_BASE_BRANCH"
+        ),
+        "roadmap_config_dir": "TAMFORGE_ROADMAP_CONFIG_DIR",
         "session_signing_secret": "TAMFORGE_SESSION_SIGNING_SECRET",
         "github_user_id": "TAMFORGE_GITHUB_USER_ID",
         "github_callback_url": "TAMFORGE_GITHUB_CALLBACK_URL",
@@ -123,6 +136,34 @@ class Settings(BaseSettings):
         default=SecretStr(""),
         validation_alias="TAMFORGE_GITHUB_CLIENT_SECRET",
     )
+    github_roadmap_mirror_token: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias="TAMFORGE_GITHUB_ROADMAP_MIRROR_TOKEN",
+    )
+    github_roadmap_mirror_repository: str = Field(
+        default="",
+        max_length=201,
+        pattern=r"^$|^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$",
+        validation_alias="TAMFORGE_GITHUB_ROADMAP_MIRROR_REPOSITORY",
+    )
+    github_roadmap_mirror_branch: str = Field(
+        default="roadmap-snapshots",
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9._/-]+$",
+        validation_alias="TAMFORGE_GITHUB_ROADMAP_MIRROR_BRANCH",
+    )
+    github_roadmap_mirror_base_branch: str = Field(
+        default="main",
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9._/-]+$",
+        validation_alias="TAMFORGE_GITHUB_ROADMAP_MIRROR_BASE_BRANCH",
+    )
+    roadmap_config_dir: Path = Field(
+        default=Path("config"),
+        validation_alias="TAMFORGE_ROADMAP_CONFIG_DIR",
+    )
     session_signing_secret: SecretStr = Field(
         default=SecretStr(""),
         validation_alias="TAMFORGE_SESSION_SIGNING_SECRET",
@@ -182,6 +223,14 @@ class Settings(BaseSettings):
         self._validate_github_callback_url()
         if self.object_store_memory_spool_bytes > self.object_store_max_upload_bytes:
             raise ValueError("object-store memory spool cannot exceed upload limit")
+        mirror_token = self.github_roadmap_mirror_token.get_secret_value().strip()
+        mirror_repository = self.github_roadmap_mirror_repository.strip()
+        if bool(mirror_token) != bool(mirror_repository):
+            raise ValueError("roadmap mirror token and repository must be configured together")
+        if not _GITHUB_BRANCH_PATTERN.fullmatch(self.github_roadmap_mirror_branch):
+            raise ValueError("roadmap mirror branch is invalid")
+        if not _GITHUB_BRANCH_PATTERN.fullmatch(self.github_roadmap_mirror_base_branch):
+            raise ValueError("roadmap mirror base branch is invalid")
 
         if self.environment == "production":
             self._validate_production()
@@ -196,6 +245,7 @@ class Settings(BaseSettings):
             "object store region": self.object_store_region,
             "GitHub client ID": self.github_client_id,
             "GitHub callback URL": self.github_callback_url,
+            "GitHub roadmap mirror repository": self.github_roadmap_mirror_repository,
         }
         for label, value in required_text.items():
             if not value.strip():
@@ -206,6 +256,7 @@ class Settings(BaseSettings):
             "object store access key": self.object_store_access_key,
             "object store secret key": self.object_store_secret_key,
             "GitHub client secret": self.github_client_secret,
+            "GitHub roadmap mirror token": self.github_roadmap_mirror_token,
             "session signing secret": self.session_signing_secret,
         }
         for label, secret_value in required_secrets.items():
