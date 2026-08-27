@@ -25,6 +25,8 @@ def _parser() -> argparse.ArgumentParser:
     mode = seed.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true")
     mode.add_argument("--apply", action="store_true")
+    validate_roadmap = commands.add_parser("validate-roadmap-map")
+    validate_roadmap.add_argument("--config", type=Path, required=True)
     return parser
 
 
@@ -49,9 +51,25 @@ async def _apply(config_dir: Path, raw_url: str) -> SeedResult:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        if args.command == "seed-config" and not args.apply:
+        if args.command == "validate-roadmap-map":
+            bundle = load_config_bundle(
+                args.config.parent,
+                roadmap_tasks_path=args.config,
+            )
+            study_days = {task.day for task in bundle.roadmap_tasks}
+            payload = {
+                "roadmap_version": bundle.roadmap_version,
+                "mapping_version": bundle.exercise_types[0].mapping_version,
+                "tasks": len(bundle.roadmap_tasks),
+                "study_days": len(study_days),
+                "weekday_days": sum(day % 6 != 0 for day in study_days),
+                "saturdays": sum(day % 6 == 0 for day in study_days),
+                "total_minutes": sum(task.timebox_minutes for task in bundle.roadmap_tasks),
+            }
+        elif args.command == "seed-config" and not args.apply:
             bundle = load_config_bundle(args.config_dir)
             result = asyncio.run(seed_config(bundle, owner_id=None, session=None, apply=False))
+            payload = asdict(result)
         elif args.command == "seed-config":
             test_url = os.getenv("TEST_DATABASE_URL")
             runtime_url = os.getenv("TAMFORGE_DATABASE_URL")
@@ -64,12 +82,13 @@ def main(argv: list[str] | None = None) -> int:
                     "seed apply requires explicit TEST_DATABASE_URL or TAMFORGE_DATABASE_URL"
                 )
             result = asyncio.run(_apply(args.config_dir, raw_url))
+            payload = asdict(result)
         else:  # pragma: no cover - argparse rejects this path
             raise SeedConfigError("unsupported command")
     except (ConfigError, SeedConfigError, ValueError) as exc:
         print(str(exc))
         return 2
-    print(json.dumps(asdict(result), sort_keys=True))
+    print(json.dumps(payload, sort_keys=True))
     return 0
 
 
