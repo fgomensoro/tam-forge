@@ -134,6 +134,58 @@ final class NativeAPITransportTests: XCTestCase {
         )
     }
 
+    func testOversizedSuccessfulResponseMapsToNativeError() async throws {
+        let fixture = URLProtocolFixture()
+        fixture.enqueue(.response(statusCode: 200, body: Data(repeating: 0x61, count: 2 * 1024 * 1024 + 1)))
+        let transport = NativeAPITransport(baseURL: URL(string: "https://api.example.test")!, session: fixture.session())
+
+        do {
+            _ = try await transport.send(NativeAPIRequest(method: .get, path: "/large-response"))
+            XCTFail("Expected oversized response error")
+        } catch let error as NativeAPIError {
+            XCTAssertEqual(error, .responseTooLarge)
+        }
+    }
+
+    func testMutationsWithoutIdempotencyKeyDoNotRetry() async throws {
+        for method: HTTPRequest.Method in [.post, .put, .patch, .delete] {
+            let fixture = URLProtocolFixture()
+            fixture.enqueue(.error(URLError(.timedOut)))
+            fixture.enqueue(.response(statusCode: 204, body: nil))
+            let transport = NativeAPITransport(
+                baseURL: URL(string: "https://api.example.test")!,
+                retryPolicy: RetryPolicy(maximumAttempts: 2),
+                session: fixture.session()
+            )
+
+            do {
+                _ = try await transport.send(NativeAPIRequest(method: method, path: "/mutation"))
+                XCTFail("Expected one timed-out \(method.rawValue) attempt")
+            } catch let error as URLError {
+                XCTAssertEqual(error.code, .timedOut)
+            }
+            XCTAssertEqual(fixture.requests.count, 1, "\(method.rawValue) must not retry without a key")
+        }
+    }
+
+    func testSafeMethodsRetryWithoutIdempotencyKey() async throws {
+        for method: HTTPRequest.Method in [.get, .head, .options, .trace] {
+            let fixture = URLProtocolFixture()
+            fixture.enqueue(.error(URLError(.timedOut)))
+            fixture.enqueue(.response(statusCode: 204, body: nil))
+            let transport = NativeAPITransport(
+                baseURL: URL(string: "https://api.example.test")!,
+                retryPolicy: RetryPolicy(maximumAttempts: 2),
+                session: fixture.session()
+            )
+
+            let response = try await transport.send(NativeAPIRequest(method: method, path: "/safe"))
+
+            XCTAssertEqual(response.statusCode, 204)
+            XCTAssertEqual(fixture.requests.count, 2, "\(method.rawValue) should retry once")
+        }
+    }
+
     func testCancellationPropagates() async throws {
         let fixture = URLProtocolFixture()
         fixture.enqueue(.pending)

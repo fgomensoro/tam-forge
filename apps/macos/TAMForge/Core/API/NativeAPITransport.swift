@@ -20,6 +20,18 @@ struct NativeAPIRequest: Sendable {
         self.body = body
         self.idempotencyKey = idempotencyKey
     }
+
+    fileprivate var allowsRetry: Bool {
+        if idempotencyKey != nil {
+            return true
+        }
+        switch method.rawValue {
+        case "GET", "HEAD", "OPTIONS", "TRACE":
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 struct NativeAPIResponse: Sendable {
@@ -150,7 +162,7 @@ struct NativeAPITransport: Sendable {
                 throw CancellationError()
             } catch let error as URLError where Task.isCancelled || error.code == .cancelled {
                 throw CancellationError()
-            } catch let error as URLError where retryPolicy.shouldRetry(error) && attempt < retryPolicy.maximumAttempts {
+            } catch let error as URLError where request.allowsRetry && retryPolicy.shouldRetry(error) && attempt < retryPolicy.maximumAttempts {
                 attempt += 1
             }
         }
@@ -201,10 +213,14 @@ struct NativeAPITransport: Sendable {
             if statusCode == 204 {
                 return NativeAPIResponse(statusCode: statusCode, body: nil)
             }
-            return NativeAPIResponse(
-                statusCode: statusCode,
-                body: try await Self.collect(responseBody, upTo: Self.maximumResponseBytes)
-            )
+            do {
+                return NativeAPIResponse(
+                    statusCode: statusCode,
+                    body: try await Self.collect(responseBody, upTo: Self.maximumResponseBytes)
+                )
+            } catch is ResponseLimitError {
+                throw NativeAPIError.responseTooLarge
+            }
         }
 
         let problemData: Data?
@@ -223,7 +239,14 @@ struct NativeAPITransport: Sendable {
 
     private static func collect(_ body: HTTPBody?, upTo maximumBytes: Int) async throws -> Data? {
         guard let body else { return nil }
-        return try await Data(collecting: body, upTo: maximumBytes)
+        var result = Data()
+        for try await chunk in body {
+            guard chunk.count <= maximumBytes - result.count else {
+                throw ResponseLimitError()
+            }
+            result.append(contentsOf: chunk)
+        }
+        return result
     }
 
     private static func makeSession(timeoutPolicy: TimeoutPolicy) -> URLSession {
@@ -239,6 +262,8 @@ struct NativeAPITransport: Sendable {
         String(path.prefix { $0 != "?" })
     }
 }
+
+private struct ResponseLimitError: Error {}
 
 struct NativeMultipartFile: Sendable {
     static let defaultMaximumBytes = 50 * 1024 * 1024
