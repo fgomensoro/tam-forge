@@ -18,8 +18,12 @@ const allowBuilds = JSON.parse(
   execFileSync("pnpm", ["config", "get", "allowBuilds"], { encoding: "utf8" }),
 );
 
-if (allowBuilds?.esbuild !== true || Object.keys(allowBuilds).length !== 1) {
-  throw new Error("pnpm must recognize the explicit esbuild build allowlist");
+if (
+  allowBuilds?.esbuild !== true ||
+  allowBuilds?.msw !== false ||
+  Object.keys(allowBuilds).length !== 2
+) {
+  throw new Error("pnpm must allow only esbuild and explicitly deny the optional MSW script");
 }
 
 const compose = readFileSync("compose.dev.yml", "utf8");
