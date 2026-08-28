@@ -283,7 +283,9 @@ class ActivityProcessingStatus(Base):
     state: Mapped[str] = mapped_column(Text, nullable=False)
     progress_label: Mapped[str] = mapped_column(Text, nullable=False)
     last_error_category: Mapped[str | None] = mapped_column(Text)
-    last_error_details: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    last_error_details: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True)
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, server_default=func.now(), nullable=False
     )

@@ -19,6 +19,9 @@ from .roadmaps.ports import RoadmapWorkflowError
 from .roadmaps.routes import roadmap_exception_handler
 from .roadmaps.routes import router as roadmap_router
 from .storage.models import ObjectStoreError
+from .today.routes import router as today_router
+from .today.routes import today_exception_handler
+from .today.service import TodayError
 
 
 def register_routes(app: FastAPI) -> None:
@@ -28,6 +31,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(evidence_router)
     app.include_router(notification_router)
     app.include_router(roadmap_router)
+    app.include_router(today_router)
     app.add_exception_handler(AuthError, auth_exception_handler)
     app.add_exception_handler(InvalidOAuthState, auth_exception_handler)
     app.add_exception_handler(ActivityCommandError, activity_exception_handler)
@@ -35,3 +39,4 @@ def register_routes(app: FastAPI) -> None:
     app.add_exception_handler(NotificationError, notification_exception_handler)
     app.add_exception_handler(RoadmapWorkflowError, roadmap_exception_handler)
     app.add_exception_handler(ObjectStoreError, roadmap_exception_handler)
+    app.add_exception_handler(TodayError, today_exception_handler)
