@@ -69,12 +69,13 @@ ERROR_CATEGORIES = {
     "processing_failure",
     "internal_error",
 }
-JOB_STATES = {"queued", "running", "succeeded", "failed"}
+JOB_STATES = {"queued", "running", "succeeded", "failed", "canceled"}
 JOB_TRANSITIONS = {
-    "queued": frozenset({"running"}),
-    "running": frozenset({"queued", "succeeded", "failed"}),
+    "queued": frozenset({"running", "canceled"}),
+    "running": frozenset({"queued", "succeeded", "failed", "canceled"}),
     "succeeded": frozenset(),
     "failed": frozenset(),
+    "canceled": frozenset(),
 }
 
 
@@ -269,7 +270,7 @@ class BackgroundJob(Base):
         ),
         CheckConstraint("priority BETWEEN 0 AND 100", name="priority_bounded"),
         CheckConstraint(
-            "state IN ('queued', 'running', 'succeeded', 'failed')",
+            "state IN ('queued', 'running', 'succeeded', 'failed', 'canceled')",
             name="state_allowed",
         ),
         CheckConstraint(
@@ -304,7 +305,9 @@ class BackgroundJob(Base):
             "AND completed_at IS NULL) OR "
             "(state IN ('succeeded', 'failed') AND attempt_count > 0 "
             "AND lease_owner IS NULL AND lease_expires_at IS NULL "
-            "AND started_at IS NOT NULL AND completed_at IS NOT NULL)",
+            "AND started_at IS NOT NULL AND completed_at IS NOT NULL) OR "
+            "(state = 'canceled' AND lease_owner IS NULL "
+            "AND lease_expires_at IS NULL AND completed_at IS NOT NULL)",
             name="lifecycle_coherent",
         ),
         CheckConstraint(
@@ -325,6 +328,10 @@ class BackgroundJob(Base):
         CheckConstraint(
             "state <> 'failed' OR last_error_category IS NOT NULL",
             name="failure_has_error",
+        ),
+        CheckConstraint(
+            "state <> 'canceled' OR last_error_category IS NULL",
+            name="cancellation_without_error",
         ),
         Index(
             "ix_background_jobs_claimable",
@@ -362,7 +369,9 @@ class BackgroundJob(Base):
     lease_owner: Mapped[str | None] = mapped_column(Text)
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error_category: Mapped[str | None] = mapped_column(Text)
-    last_error_details: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    last_error_details: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True)
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, server_default=func.now(), nullable=False
     )
@@ -705,10 +714,14 @@ def validate_background_job(
         raise JobWorkflowError("background job start is required after a claim")
     if target.started_at is not None and target.started_at < target.created_at:
         raise JobWorkflowError("background job start precedes creation")
-    if target.completed_at is not None and (
-        target.started_at is None or target.completed_at < target.started_at
-    ):
-        raise JobWorkflowError("background job completion is incoherent")
+    if target.completed_at is not None:
+        if target.started_at is None and target.state != "canceled":
+            raise JobWorkflowError("background job completion is incoherent")
+        if (
+            target.started_at is not None
+            and target.completed_at < target.started_at
+        ):
+            raise JobWorkflowError("background job completion is incoherent")
     if target.state == "queued":
         if target.lease_owner is not None or target.lease_expires_at is not None:
             raise JobWorkflowError("queued background job cannot retain a lease")
@@ -725,7 +738,7 @@ def validate_background_job(
             raise JobWorkflowError("running background job lease is incoherent")
         if target.last_error_category is not None:
             raise JobWorkflowError("running background job must clear the prior error")
-    else:
+    elif target.state in {"succeeded", "failed"}:
         if (
             target.attempt_count == 0
             or target.lease_owner is not None
@@ -737,6 +750,14 @@ def validate_background_job(
             raise JobWorkflowError("successful background job cannot retain an error")
         if target.state == "failed" and target.last_error_category is None:
             raise JobWorkflowError("failed background job requires a typed error")
+    else:
+        if (
+            target.lease_owner is not None
+            or target.lease_expires_at is not None
+            or target.completed_at is None
+            or target.last_error_category is not None
+        ):
+            raise JobWorkflowError("canceled background job lifecycle is incoherent")
 
 
 event.listen(BackgroundJob, "before_insert", validate_background_job)
@@ -764,7 +785,7 @@ def validate_background_job_update(
 
     old_state = old["state"]
     assert isinstance(old_state, str)
-    if old_state in {"succeeded", "failed"}:
+    if old_state in {"succeeded", "failed", "canceled"}:
         raise JobWorkflowError("terminal background job is immutable")
 
     for attribute_name in _JOB_PROVENANCE_ATTRIBUTES:
@@ -808,7 +829,13 @@ def validate_background_job_update(
             raise JobWorkflowError("running heartbeat cannot shorten its lease")
 
     if old_state == "running" and target.state == "queued":
-        if old["_lease_expired"] is not True:
+        voluntary_retry = (
+            target.last_error_category
+            in {"transient_dependency", "resource_exhausted"}
+            and target.last_error_details is not None
+            and target.available_at >= target.updated_at
+        )
+        if old["_lease_expired"] is not True and not voluntary_retry:
             raise JobWorkflowError("background job lease has not expired")
         if target.lease_owner is not None or target.lease_expires_at is not None:
             raise JobWorkflowError("reclaimed background job must clear its lease")

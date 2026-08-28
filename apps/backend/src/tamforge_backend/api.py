@@ -12,6 +12,9 @@ from .evidence.service import EvidenceError
 from .learning.routes import activity_exception_handler
 from .learning.routes import router as activity_router
 from .learning.service import ActivityCommandError
+from .notifications.routes import notification_exception_handler
+from .notifications.routes import router as notification_router
+from .notifications.service import NotificationError
 from .roadmaps.ports import RoadmapWorkflowError
 from .roadmaps.routes import roadmap_exception_handler
 from .roadmaps.routes import router as roadmap_router
@@ -23,10 +26,12 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(auth_router)
     app.include_router(activity_router)
     app.include_router(evidence_router)
+    app.include_router(notification_router)
     app.include_router(roadmap_router)
     app.add_exception_handler(AuthError, auth_exception_handler)
     app.add_exception_handler(InvalidOAuthState, auth_exception_handler)
     app.add_exception_handler(ActivityCommandError, activity_exception_handler)
     app.add_exception_handler(EvidenceError, evidence_exception_handler)
+    app.add_exception_handler(NotificationError, notification_exception_handler)
     app.add_exception_handler(RoadmapWorkflowError, roadmap_exception_handler)
     app.add_exception_handler(ObjectStoreError, roadmap_exception_handler)
