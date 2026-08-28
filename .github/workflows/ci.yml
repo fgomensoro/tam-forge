@@ -15,6 +15,20 @@ env:
   UV_VERSION: "0.10.2"
 
 jobs:
+  macos-native:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build native macOS shell
+        run: >-
+          xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge
+          -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+      - name: Test native dependency container
+        run: >-
+          xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge
+          -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
+          -only-testing:TAMForgeTests test
+
   backend-unit:
     runs-on: ubuntu-latest
     steps:

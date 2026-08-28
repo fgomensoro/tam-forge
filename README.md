@@ -21,6 +21,20 @@ This runs backend lint/type checks and unit tests, web lint/type checks/tests/bu
 the generated OpenAPI-client drift guard, and the tracked secret/audio policy check.
 Every default Make target is non-Docker.
 
+## Native macOS shell
+
+The SwiftUI app shell lives in `apps/macos` and requires Xcode 26.6 for local
+development. Its local build configuration uses the `TAM Forge Local Development`
+identity; signing material is never committed. Run its focused build and unit checks
+with:
+
+```bash
+make macos-check
+```
+
+When Xcode is available, `make check` includes the same non-Docker native check.
+The GitHub Actions macOS job tests the unsigned CI build path separately.
+
 Regenerate the checked-in web API types only when the backend contract changes:
 
 ```bash
@@ -66,10 +80,10 @@ refuses to run outside `TAMFORGE_ENV=test`, refuses any database other than the
 local `tamforge_test`, and creates only a hashed, short-lived test session. It
 does not add a test-login endpoint to the application.
 
-GitHub Actions runs six isolated gates: backend unit checks, web checks,
-PostgreSQL integration tests, the Chromium learning journey, OpenAPI drift, and
-tracked secret/audio policy. CI receives no production credentials and does not
-deploy or merge anything.
+GitHub Actions runs seven isolated gates: native macOS build/unit checks, backend
+unit checks, web checks, PostgreSQL integration tests, the Chromium learning journey,
+OpenAPI drift, and tracked secret/audio policy. CI receives no production credentials
+and does not deploy or merge anything.
 
 ## GitHub planning catalog
 

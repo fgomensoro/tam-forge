@@ -1,0 +1,436 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* TAMForgeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000011 /* TAMForgeApp.swift */; };
+		A10000000000000000000002 /* TAMForgeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000012 /* TAMForgeUITests.swift */; };
+		A10000000000000000000003 /* AppDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000015 /* AppDependencies.swift */; };
+		A10000000000000000000004 /* AppDependenciesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000016 /* AppDependenciesTests.swift */; };
+		A10000000000000000000005 /* AppDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000015 /* AppDependencies.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A10000000000000000000032 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000041 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000051;
+			remoteInfo = TAMForge;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		A10000000000000000000011 /* TAMForgeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TAMForgeApp.swift; sourceTree = "<group>"; };
+		A10000000000000000000012 /* TAMForgeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TAMForgeUITests.swift; sourceTree = "<group>"; };
+		A10000000000000000000013 /* TAMForge.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TAMForge.entitlements; sourceTree = "<group>"; };
+		A10000000000000000000014 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A10000000000000000000015 /* AppDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependencies.swift; sourceTree = "<group>"; };
+		A10000000000000000000016 /* AppDependenciesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependenciesTests.swift; sourceTree = "<group>"; };
+		A10000000000000000000061 /* TAMForge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TAMForge.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000062 /* TAMForgeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TAMForgeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000063 /* TAMForgeUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TAMForgeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A10000000000000000000071 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000072 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000073 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A10000000000000000000042 = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000043 /* TAMForge */,
+				A10000000000000000000044 /* TAMForgeTests */,
+				A10000000000000000000045 /* TAMForgeUITests */,
+				A10000000000000000000046 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A10000000000000000000043 /* TAMForge */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000047 /* App */,
+				A10000000000000000000048 /* Core */,
+				A10000000000000000000013 /* TAMForge.entitlements */,
+				A10000000000000000000014 /* Info.plist */,
+			);
+			path = TAMForge;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000044 /* TAMForgeTests */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000016 /* AppDependenciesTests.swift */,
+			);
+			path = TAMForgeTests;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000045 /* TAMForgeUITests */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000012 /* TAMForgeUITests.swift */,
+			);
+			path = TAMForgeUITests;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000046 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000061 /* TAMForge.app */,
+				A10000000000000000000062 /* TAMForgeTests.xctest */,
+				A10000000000000000000063 /* TAMForgeUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000047 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000011 /* TAMForgeApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000048 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000015 /* AppDependencies.swift */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A10000000000000000000051 /* TAMForge */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000081 /* Build configuration list for PBXNativeTarget "TAMForge" */;
+			buildPhases = (
+				A10000000000000000000091 /* Sources */,
+				A10000000000000000000071 /* Frameworks */,
+				A10000000000000000000094 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = TAMForge;
+			productName = TAMForge;
+			productReference = A10000000000000000000061 /* TAMForge.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A10000000000000000000052 /* TAMForgeTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000082 /* Build configuration list for PBXNativeTarget "TAMForgeTests" */;
+			buildPhases = (
+				A10000000000000000000092 /* Sources */,
+				A10000000000000000000072 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = TAMForgeTests;
+			productName = TAMForgeTests;
+			productReference = A10000000000000000000062 /* TAMForgeTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		A10000000000000000000053 /* TAMForgeUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000083 /* Build configuration list for PBXNativeTarget "TAMForgeUITests" */;
+			buildPhases = (
+				A10000000000000000000093 /* Sources */,
+				A10000000000000000000073 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A10000000000000000000034 /* PBXTargetDependency */,
+			);
+			name = TAMForgeUITests;
+			productName = TAMForgeUITests;
+			productReference = A10000000000000000000063 /* TAMForgeUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A10000000000000000000041 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					A10000000000000000000051 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					A10000000000000000000052 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = A10000000000000000000051;
+					};
+					A10000000000000000000053 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = A10000000000000000000051;
+					};
+				};
+			};
+			buildConfigurationList = A10000000000000000000080 /* Build configuration list for PBXProject "TAMForge" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A10000000000000000000042;
+			productRefGroup = A10000000000000000000046 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A10000000000000000000051 /* TAMForge */,
+				A10000000000000000000052 /* TAMForgeTests */,
+				A10000000000000000000053 /* TAMForgeUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A10000000000000000000094 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A10000000000000000000091 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* TAMForgeApp.swift in Sources */,
+				A10000000000000000000003 /* AppDependencies.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000092 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000004 /* AppDependenciesTests.swift in Sources */,
+				A10000000000000000000005 /* AppDependencies.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000093 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000002 /* TAMForgeUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A10000000000000000000034 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000051 /* TAMForge */;
+			targetProxy = A10000000000000000000032 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		A100000000000000000000A1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Manual;
+				EXTRACT_APP_INTENTS_METADATA = NO;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				SDKROOT = macosx;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		A100000000000000000000A2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Manual;
+				EXTRACT_APP_INTENTS_METADATA = NO;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				SDKROOT = macosx;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		A100000000000000000000B1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = TAMForge/TAMForge.entitlements;
+				CODE_SIGN_IDENTITY = "TAM Forge Local Development";
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_DEBUG_DYLIB = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				INFOPLIST_FILE = TAMForge/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fgomensoro.tamforge;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		A100000000000000000000B2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = TAMForge/TAMForge.entitlements;
+				CODE_SIGN_IDENTITY = "TAM Forge Local Development";
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				INFOPLIST_FILE = TAMForge/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fgomensoro.tamforge;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+			};
+			name = Release;
+		};
+		A100000000000000000000C1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "TAM Forge Local Development";
+				CODE_SIGN_STYLE = Manual;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fgomensoro.tamforge.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		A100000000000000000000C2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "TAM Forge Local Development";
+				CODE_SIGN_STYLE = Manual;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fgomensoro.tamforge.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+		A100000000000000000000D1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "TAM Forge Local Development";
+				CODE_SIGN_STYLE = Manual;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fgomensoro.tamforge.ui-tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				TEST_TARGET_NAME = TAMForge;
+			};
+			name = Debug;
+		};
+		A100000000000000000000D2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "TAM Forge Local Development";
+				CODE_SIGN_STYLE = Manual;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fgomensoro.tamforge.ui-tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_TARGET_NAME = TAMForge;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A10000000000000000000080 /* Build configuration list for PBXProject "TAMForge" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A100000000000000000000A1 /* Debug */,
+				A100000000000000000000A2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000000081 /* Build configuration list for PBXNativeTarget "TAMForge" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A100000000000000000000B1 /* Debug */,
+				A100000000000000000000B2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000000082 /* Build configuration list for PBXNativeTarget "TAMForgeTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A100000000000000000000C1 /* Debug */,
+				A100000000000000000000C2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000000083 /* Build configuration list for PBXNativeTarget "TAMForgeUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A100000000000000000000D1 /* Debug */,
+				A100000000000000000000D2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A10000000000000000000041 /* Project object */;
+}
