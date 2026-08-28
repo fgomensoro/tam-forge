@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Annotated, cast
+from typing import Annotated, Any, cast
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Cookie, Depends, Header, Query, Request, Response
+from fastapi.exception_handlers import (
+    request_validation_exception_handler as default_request_validation_exception_handler,
+)
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from ..config import Settings
@@ -18,7 +23,18 @@ from .dependencies import (
     get_authenticated_owner,
     verify_request_origin,
 )
-from .schemas import AuthenticatedOwner, ProblemResponse, SessionResponse
+from .schemas import (
+    AuthenticatedOwner,
+    IssuedNativeCredentials,
+    NativeOAuthStartRequest,
+    NativeOAuthStartResponse,
+    NativeRefreshRequest,
+    NativeSessionResponse,
+    NativeTokenExchangeRequest,
+    NativeTokenResponse,
+    ProblemResponse,
+    SessionResponse,
+)
 from .service import (
     AuthError,
     AuthMisconfigured,
@@ -30,6 +46,13 @@ from .service import (
 )
 
 router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
+NATIVE_CALLBACK_URL = "tamforge://auth/callback"
+NATIVE_VALIDATION_RESPONSE: dict[int | str, dict[str, Any]] = {
+    422: {
+        "model": ProblemResponse,
+        "description": "Invalid native authentication request.",
+    }
+}
 
 
 def _settings(request: Request) -> Settings:
@@ -156,6 +179,31 @@ async def auth_exception_handler(request: Request, exc: Exception) -> JSONRespon
     return problem_response(exc)
 
 
+async def request_validation_exception_handler(
+    request: Request,
+    exc: Exception,
+) -> Response:
+    """Keep native credentials out of FastAPI's default validation details."""
+    if not isinstance(exc, RequestValidationError):
+        raise exc
+    if not request.url.path.startswith("/api/v1/auth/native/"):
+        return await default_request_validation_exception_handler(request, exc)
+    problem = ProblemResponse(
+        type="https://tamforge.local/problems/invalid_native_auth_request",
+        title="Invalid authentication request",
+        status=422,
+        detail="Authentication request is invalid.",
+        code="invalid_native_auth_request",
+    )
+    response = JSONResponse(
+        problem.model_dump(),
+        status_code=422,
+        media_type="application/problem+json",
+    )
+    _prevent_storage(response)
+    return response
+
+
 @router.get("/login", status_code=302)
 async def login(
     request: Request,
@@ -188,14 +236,27 @@ async def callback(
     ] = None,
 ) -> Response:
     settings = _settings(request)
+    response: Response
     try:
+        if state_cookie is None and AuthService.looks_like_native_state(state):
+            exchange_code = await service.complete_native_login(
+                code=code,
+                state=state,
+                redirect_uri=settings.github_callback_url,
+            )
+            native_response = RedirectResponse(
+                f"{NATIVE_CALLBACK_URL}?{urlencode({'code': exchange_code})}",
+                status_code=303,
+            )
+            _prevent_storage(native_response)
+            return native_response
         issued = await service.complete_login(
             code=code,
             state=state,
             state_cookie=state_cookie,
             redirect_uri=settings.github_callback_url,
         )
-        response: Response = RedirectResponse("/", status_code=303)
+        response = RedirectResponse("/", status_code=303)
         _prevent_storage(response)
         _set_cookie(
             response,
@@ -222,6 +283,94 @@ async def callback(
         secure=bool(settings.secure_cookies),
     )
     return response
+
+
+@router.post(
+    "/native/start",
+    response_model=NativeOAuthStartResponse,
+    responses=NATIVE_VALIDATION_RESPONSE,
+)
+async def native_start(
+    request: Request,
+    response: Response,
+    payload: NativeOAuthStartRequest,
+    service: Annotated[AuthService, Depends(get_auth_service)],
+) -> NativeOAuthStartResponse:
+    settings = _settings(request)
+    started = await service.start_native_login(
+        pkce_challenge=payload.code_challenge,
+        redirect_uri=settings.github_callback_url,
+    )
+    _prevent_storage(response)
+    return NativeOAuthStartResponse(authorization_url=started.authorization_url)
+
+
+def _native_token_response(issued: IssuedNativeCredentials) -> NativeTokenResponse:
+    return NativeTokenResponse(
+        access_token=issued.access_token,
+        refresh_token=issued.refresh_token,
+        expires_in=issued.access_expires_in,
+        github_login=issued.github_login,
+    )
+
+
+@router.post(
+    "/native/exchange",
+    response_model=NativeTokenResponse,
+    responses=NATIVE_VALIDATION_RESPONSE,
+)
+async def native_exchange(
+    response: Response,
+    payload: NativeTokenExchangeRequest,
+    service: Annotated[AuthService, Depends(get_auth_service)],
+) -> NativeTokenResponse:
+    issued = await service.exchange_native_code(
+        code=payload.code,
+        code_verifier=payload.code_verifier,
+    )
+    _prevent_storage(response)
+    return _native_token_response(issued)
+
+
+@router.post(
+    "/native/refresh",
+    response_model=NativeTokenResponse,
+    responses=NATIVE_VALIDATION_RESPONSE,
+)
+async def native_refresh(
+    response: Response,
+    payload: NativeRefreshRequest,
+    service: Annotated[AuthService, Depends(get_auth_service)],
+) -> NativeTokenResponse:
+    issued = await service.refresh_native_session(payload.refresh_token)
+    _prevent_storage(response)
+    return _native_token_response(issued)
+
+
+@router.post(
+    "/native/revoke",
+    status_code=204,
+    responses=NATIVE_VALIDATION_RESPONSE,
+)
+async def native_revoke(
+    payload: NativeRefreshRequest,
+    service: Annotated[AuthService, Depends(get_auth_service)],
+) -> Response:
+    await service.revoke_native_session(payload.refresh_token)
+    response = Response(status_code=204)
+    _prevent_storage(response)
+    return response
+
+
+@router.get("/native/session", response_model=NativeSessionResponse)
+async def native_session(
+    response: Response,
+    owner: Annotated[AuthenticatedOwner, Depends(get_authenticated_owner)],
+) -> NativeSessionResponse:
+    if owner.authentication_method != "bearer":
+        raise Unauthenticated("authentication required")
+    _prevent_storage(response)
+    return NativeSessionResponse(github_login=owner.github_login)
 
 
 @router.get("/session", response_model=SessionResponse)

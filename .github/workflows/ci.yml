@@ -45,7 +45,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy apps/backend/src packages/protocol/src
       - run: MYPYPATH=apps/backend/src:packages/protocol/src uv run mypy scripts/ci/check_openapi.py scripts/ci/check_repository_policy.py scripts/dev/seed_foundation_demo.py
-      - run: uv run pytest apps/backend/tests/unit packages/protocol/tests scripts/ci/tests scripts/dev/tests scripts/github/tests -m "not integration" -q
+      - run: uv run pytest apps/backend/tests/unit apps/backend/tests/security packages/protocol/tests scripts/ci/tests scripts/dev/tests scripts/github/tests -m "not integration" -q
 
   web:
     runs-on: ubuntu-latest

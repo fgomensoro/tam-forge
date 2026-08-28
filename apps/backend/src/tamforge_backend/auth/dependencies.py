@@ -14,10 +14,10 @@ from ..config import Settings
 from ..database import get_db_session
 from .crypto import OAuthStateManager
 from .github import GitHubOAuthGateway
-from .ports import AuthSessionRepository, GitHubGateway
+from .ports import GitHubGateway
 from .repository import SqlAlchemyAuthRepository
 from .schemas import AuthenticatedOwner
-from .service import AuthError, AuthMisconfigured, AuthService
+from .service import AuthError, AuthMisconfigured, AuthService, Unauthenticated
 
 SESSION_COOKIE_NAME = "tamforge_session"
 CSRF_COOKIE_NAME = "tamforge_csrf"
@@ -53,7 +53,7 @@ def get_github_gateway(request: Request) -> GitHubGateway:
 
 def get_auth_repository(
     session: Annotated[AsyncSession, Depends(get_db_session)],
-) -> AuthSessionRepository:
+) -> SqlAlchemyAuthRepository:
     return SqlAlchemyAuthRepository(session)
 
 
@@ -76,7 +76,7 @@ def get_oauth_state_manager(request: Request) -> OAuthStateManager:
 def get_auth_service(
     request: Request,
     github: Annotated[GitHubGateway, Depends(get_github_gateway)],
-    sessions: Annotated[AuthSessionRepository, Depends(get_auth_repository)],
+    sessions: Annotated[SqlAlchemyAuthRepository, Depends(get_auth_repository)],
     state_manager: Annotated[OAuthStateManager, Depends(get_oauth_state_manager)],
 ) -> AuthService:
     settings = cast(Settings, request.app.state.settings)
@@ -88,6 +88,11 @@ def get_auth_service(
         sessions=sessions,
         state_manager=state_manager,
         session_ttl=timedelta(seconds=settings.session_ttl_seconds),
+        native_sessions=sessions,
+        native_access_ttl=timedelta(seconds=settings.native_access_ttl_seconds),
+        native_refresh_ttl=timedelta(seconds=settings.native_refresh_ttl_seconds),
+        native_exchange_ttl=timedelta(seconds=settings.native_exchange_ttl_seconds),
+        native_flow_ttl=timedelta(seconds=settings.oauth_state_ttl_seconds),
     )
 
 
@@ -97,8 +102,21 @@ async def get_authenticated_owner(
         str | None,
         Cookie(alias=SESSION_COOKIE_NAME),
     ] = None,
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> AuthenticatedOwner:
-    """Return identity derived only from the opaque session cookie."""
+    """Return one unambiguous identity from a cookie or native bearer token."""
+    if authorization is not None:
+        if session_token is not None:
+            raise Unauthenticated("authentication required")
+        scheme, separator, token = authorization.partition(" ")
+        if (
+            separator != " "
+            or scheme.lower() != "bearer"
+            or not token
+            or " " in token
+        ):
+            raise Unauthenticated("authentication required")
+        return await service.authenticate_bearer(token)
     return await service.authenticate(session_token)
 
 
@@ -108,7 +126,9 @@ async def require_csrf_owner(
     owner: Annotated[AuthenticatedOwner, Depends(get_authenticated_owner)],
     csrf_token: Annotated[str | None, Header(alias="X-CSRF-Token")] = None,
 ) -> AuthenticatedOwner:
-    """Reusable guard for every cookie-authenticated application mutation."""
+    """Preserve browser CSRF and accept only server-validated native bearer auth."""
+    if owner.authentication_method == "bearer":
+        return owner
     settings = cast(Settings, request.app.state.settings)
     verify_request_origin(
         request_origin=request.headers.get("origin"),

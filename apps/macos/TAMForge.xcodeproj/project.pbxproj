@@ -19,6 +19,12 @@
 		A100000000000000000000E7 /* openapi.yaml in Resources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000E8 /* openapi.yaml */; };
 		A100000000000000000000E9 /* NativeAPITransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000EB /* NativeAPITransport.swift */; };
 		A100000000000000000000EA /* NativeAPITransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000EB /* NativeAPITransport.swift */; };
+		B10000000000000000000011 /* NativeAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* NativeAuthentication.swift */; };
+		B10000000000000000000012 /* KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* KeychainCredentialStore.swift */; };
+		B10000000000000000000013 /* NativeAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* NativeAuthentication.swift */; };
+		B10000000000000000000014 /* KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* KeychainCredentialStore.swift */; };
+		B10000000000000000000015 /* NativeAuthenticationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* NativeAuthenticationTests.swift */; };
+		B10000000000000000000016 /* LiveNativeAuthHTTPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* LiveNativeAuthHTTPClient.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -42,6 +48,10 @@
 		A100000000000000000000E6 /* openapi-generator-config.yaml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = openapi-generator-config.yaml; sourceTree = "<group>"; };
 		A100000000000000000000E8 /* openapi.yaml */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = openapi.yaml; sourceTree = "<group>"; };
 		A100000000000000000000EB /* NativeAPITransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAPITransport.swift; sourceTree = "<group>"; };
+		B10000000000000000000001 /* NativeAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAuthentication.swift; sourceTree = "<group>"; };
+		B10000000000000000000002 /* KeychainCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainCredentialStore.swift; sourceTree = "<group>"; };
+		B10000000000000000000003 /* NativeAuthenticationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAuthenticationTests.swift; sourceTree = "<group>"; };
+		B10000000000000000000004 /* LiveNativeAuthHTTPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveNativeAuthHTTPClient.swift; sourceTree = "<group>"; };
 		A10000000000000000000061 /* TAMForge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TAMForge.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000062 /* TAMForgeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TAMForgeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000063 /* TAMForgeUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TAMForgeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -104,6 +114,7 @@
 			children = (
 				A10000000000000000000016 /* AppDependenciesTests.swift */,
 				A100000000000000000000E2 /* NativeAPITransportTests.swift */,
+				B10000000000000000000003 /* NativeAuthenticationTests.swift */,
 			);
 			path = TAMForgeTests;
 			sourceTree = "<group>";
@@ -139,6 +150,7 @@
 			children = (
 				A10000000000000000000015 /* AppDependencies.swift */,
 				A100000000000000000000EC /* API */,
+				B10000000000000000000020 /* Auth */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -149,6 +161,16 @@
 				A100000000000000000000EB /* NativeAPITransport.swift */,
 			);
 			path = API;
+			sourceTree = "<group>";
+		};
+		B10000000000000000000020 /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000002 /* KeychainCredentialStore.swift */,
+				B10000000000000000000004 /* LiveNativeAuthHTTPClient.swift */,
+				B10000000000000000000001 /* NativeAuthentication.swift */,
+			);
+			path = Auth;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -281,6 +303,9 @@
 				A10000000000000000000001 /* TAMForgeApp.swift in Sources */,
 				A10000000000000000000003 /* AppDependencies.swift in Sources */,
 				A100000000000000000000E9 /* NativeAPITransport.swift in Sources */,
+				B10000000000000000000011 /* NativeAuthentication.swift in Sources */,
+				B10000000000000000000012 /* KeychainCredentialStore.swift in Sources */,
+				B10000000000000000000016 /* LiveNativeAuthHTTPClient.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -292,6 +317,9 @@
 				A10000000000000000000005 /* AppDependencies.swift in Sources */,
 				A100000000000000000000EA /* NativeAPITransport.swift in Sources */,
 				A100000000000000000000E1 /* NativeAPITransportTests.swift in Sources */,
+				B10000000000000000000013 /* NativeAuthentication.swift in Sources */,
+				B10000000000000000000014 /* KeychainCredentialStore.swift in Sources */,
+				B10000000000000000000015 /* NativeAuthenticationTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

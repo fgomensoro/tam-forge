@@ -6,9 +6,8 @@ import hashlib
 import importlib.util
 from pathlib import Path
 
-
-FROZEN_E10_I03_OPENAPI_SHA256 = (
-    "34f57897aa94cc47a83a59d82e609e80ac89643cc83caae291020f6dcfdb816e"
+FROZEN_E10_I04_OPENAPI_SHA256 = (
+    "7e491966f2d7da2a3ed83436e096c7b67cc033141623e49f6ca5a2818979b344"
 )
 
 
@@ -22,10 +21,10 @@ def _check_openapi_module() -> object:
     return module
 
 
-def test_normalized_fastapi_schema_matches_frozen_e10_i03_dispatch_contract() -> None:
-    """Keep the locked E10-I03 schema baseline explicit beside the drift guard."""
+def test_normalized_fastapi_schema_matches_frozen_e10_i04_auth_contract() -> None:
+    """Keep the locked E10-I04 auth schema explicit beside the drift guard."""
     check_openapi = _check_openapi_module()
 
     document = check_openapi.normalized_openapi_document()
 
-    assert hashlib.sha256(document).hexdigest() == FROZEN_E10_I03_OPENAPI_SHA256
+    assert hashlib.sha256(document).hexdigest() == FROZEN_E10_I04_OPENAPI_SHA256

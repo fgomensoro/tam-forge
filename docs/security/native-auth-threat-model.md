@@ -1,0 +1,72 @@
+# Native authentication threat model
+
+## Scope and assets
+
+E10-I04 adds GitHub OAuth for the macOS app while preserving browser cookie and
+CSRF authentication. Protected assets are the immutable owner identity, OAuth
+provider code, one-time app exchange code, access token, rotating refresh token,
+and server-side session state.
+
+Trust boundaries are the system browser, GitHub, the public FastAPI callback,
+the `tamforge://auth/callback` handoff, PostgreSQL, app memory, and macOS
+Keychain. The native app is a public OAuth client and contains no client secret.
+
+## Control checklist
+
+- [x] `ASWebAuthenticationSession` opens the system browser. The app contains no
+  embedded browser.
+- [x] A 43-character opaque state is stored server-side only as a SHA-256 hash,
+  expires after five minutes, and is consumed atomically before provider exchange.
+- [x] PKCE S256 binds the OAuth flow and the two-minute one-time exchange code to
+  the initiating app instance.
+- [x] GitHub authorization succeeds only for immutable user ID `102269369`.
+- [x] The callback URL contains only the bounded one-time exchange code. Auth
+  query strings are removed from access logs and all auth responses are `no-store`.
+- [x] Native request-validation errors are generic and never echo submitted codes,
+  verifiers, or tokens.
+- [x] Access tokens expire after 15 minutes and exist only in app memory. Refresh
+  tokens expire after 30 days, rotate on every use, and use generic-password
+  Keychain items marked non-synchronizable and
+  `WhenUnlockedThisDeviceOnly`.
+- [x] PostgreSQL stores only fixed-size SHA-256 hashes. Old refresh generations
+  remain as replay evidence.
+- [x] Exchange replay fails. Refresh replay revokes the whole token family in the
+  same transaction and emits a redacted audit event.
+- [x] Refresh is single-flight in the app. An indeterminate refresh clears memory,
+  quarantines the old refresh token for revocation, and requires reauthentication.
+- [x] Offline logout removes the active local credential and keeps one pending
+  Keychain revocation credential until the server acknowledges it. Crash recovery
+  handles the temporary state where active and pending entries match.
+- [x] Cookie and bearer credentials cannot be mixed. Bearer requests bypass browser
+  Origin/CSRF checks only after server-side token validation; owner scoping remains
+  unchanged.
+- [x] Migration downgrade refuses to remove native auth tables while any active
+  refresh-backed session remains.
+
+## Residual risks and production gates
+
+- macOS custom URL schemes are not globally exclusive. State, PKCE, strict
+  scheme/host/path validation, and `ASWebAuthenticationSession` limit interception,
+  but a separately installed malicious local app remains outside TAM Forge's trust
+  boundary. A claimed HTTPS callback can replace the scheme if that risk becomes
+  material.
+- The unauthenticated native-start endpoint creates short-lived database rows.
+  Before public production exposure, the Hetzner reverse proxy must apply a bounded
+  request rate and routine expired-row cleanup must be monitored. This is an
+  operations gate, not a reason to add a local daemon or cache.
+- Malware running as the same macOS user may target app memory or Keychain access.
+  Device security, stable code signing, FileVault, and OS updates remain required.
+
+## Verification evidence
+
+- Backend unit/security command:
+  `uv run pytest apps/backend/tests/unit/auth apps/backend/tests/security/test_github_oauth.py -q`
+- PostgreSQL integration coverage:
+  `apps/backend/tests/integration/auth/test_native_auth_integration.py`
+- Native unit/login/logout/Keychain coverage:
+  `apps/macos/TAMForgeTests/NativeAuthenticationTests.swift`
+- OpenAPI drift gate: `uv run python scripts/ci/check_openapi.py`
+
+PostgreSQL integration runs only in isolated CI or with explicit local Docker
+approval. A live GitHub login remains a manual smoke against configured non-production
+OAuth credentials; automated tests never receive production credentials.

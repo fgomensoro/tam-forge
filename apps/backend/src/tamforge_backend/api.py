@@ -1,9 +1,10 @@
 """HTTP API route and public error-handler wiring."""
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 
 from .auth.crypto import InvalidOAuthState
-from .auth.routes import auth_exception_handler
+from .auth.routes import auth_exception_handler, request_validation_exception_handler
 from .auth.routes import router as auth_router
 from .auth.service import AuthError
 from .evidence.routes import evidence_exception_handler
@@ -34,6 +35,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(today_router)
     app.add_exception_handler(AuthError, auth_exception_handler)
     app.add_exception_handler(InvalidOAuthState, auth_exception_handler)
+    app.add_exception_handler(RequestValidationError, request_validation_exception_handler)
     app.add_exception_handler(ActivityCommandError, activity_exception_handler)
     app.add_exception_handler(EvidenceError, evidence_exception_handler)
     app.add_exception_handler(NotificationError, notification_exception_handler)

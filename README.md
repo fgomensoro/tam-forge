@@ -53,9 +53,19 @@ pinned and resolved; this permits its noninteractive Xcode invocation.
 
 The current FastAPI contract still declares browser session-cookie parameters.
 The Apple generator reports those unsupported cookie parameters while producing
-the remaining typed client. E10-I03 deliberately does not emulate cookies or
-claim backend bearer authentication; E10-I04 introduces the unified FastAPI
-bearer contract before protected native operations are enabled.
+the remaining typed client. The backend accepts exactly one browser cookie or
+native bearer credential; mixed credentials fail closed. Browser mutations keep
+Origin and CSRF checks, while native mutations skip those browser-only checks only
+after bearer validation.
+
+Native GitHub login uses `ASWebAuthenticationSession`, PKCE S256, a short-lived
+one-time exchange code, a 15-minute memory-only access token, and a rotating
+30-day refresh token stored as a device-only generic Keychain item. PostgreSQL
+stores token hashes only. The GitHub OAuth application keeps the HTTPS backend
+callback `/api/v1/auth/callback`; the backend then returns the bounded exchange
+code through `tamforge://auth/callback`. Optional TTL overrides are documented in
+`.env.example`. See `docs/security/native-auth-threat-model.md` for controls,
+residual risks, and production gates.
 
 The optional `compose.dev.yml` provides local PostgreSQL/pgvector and a pinned
 MinIO release for later local integration work. It is never started by the
