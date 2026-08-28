@@ -17,7 +17,7 @@ The existing four-week, 88-hour Month 1 roadmap becomes a six-week **Phase 1** w
 - six-week capacity: 102 hours;
 - optional Week 7: completion-only safety week when the evidence or coverage gates are not met.
 
-The Phase 1 clock is anchored to legacy Day 1, not restarted when this redesign is activated. Its nominal six-week calendar is August 24–October 3, 2026, with October 5–10 available as Week 7 when triggered. The 102 hours are total Phase 1 capacity, including verified time already invested in Days 1–3; they are not 102 additional future hours. The transition ledger calculates remaining capacity from recorded actual minutes and marks unknown historical minutes as unknown rather than available.
+The Phase 1 clock is anchored to legacy Day 1, not restarted when this redesign is activated. Its nominal six-week calendar is August 24–October 3, 2026, with October 5–10 available as Week 7 when triggered. The 102 hours describe a clean six-week run in which every block uses the new model; they are not 102 additional future hours and are not used to calculate transition capacity. The transition ledger reserves every elapsed calendar block, records known and unknown historical time separately, and schedules future work only into weekday and Saturday blocks that remain through October 3.
 
 The redesign does not lower any competency target or delete any required topic, output, assessment, or exit criterion. It changes the sequencing and weekday task boundaries. The old four-hour weekday packets are decomposed into smaller units, and related case work may continue into the aligned interview block. Time and evidence are counted only once.
 
@@ -71,7 +71,7 @@ The learner is already in legacy Day 3. The redesign resumes from current eviden
 | Saturday assessments | 8 h |
 | **Total** | **88 h** |
 
-### 5.2 New allocation
+### 5.2 Nominal clean-run allocation
 
 | Category | Six-week allocation |
 |---|---:|
@@ -81,6 +81,8 @@ The learner is already in legacy Day 3. The redesign resumes from current eviden
 | Weekday notes and evidence | 7.5 h |
 | Saturday assessment/control | 12 h |
 | **Total** | **102 h** |
+
+This allocation explains the balanced target state of a clean six-week run. Because the redesign activates during Day 3, the transition forecast recalculates the remaining category minutes from unfinished coverage and future calendar blocks. It must not assume that all thirty weekdays remain or that earlier legacy days used the new allocation.
 
 The 37.5-hour roadmap block alone cannot contain the original 50 hours of SQL, technical concepts, and cases. The exact weekday reconciliation is:
 
@@ -140,8 +142,11 @@ The transition ledger is the first coverage-ledger view. It records:
 - completed, in-progress, and pending components of Day 3;
 - remaining Week 1 requirements;
 - the first session governed by the new `60 + 120` structure;
-- remaining Phase 1 capacity as `102 hours - verified Phase 1 actual minutes`;
-- unknown historical time without converting it into free future capacity.
+- elapsed calendar blocks, whether their actual time is verified or unknown;
+- verified historical actual time for reporting only;
+- unknown historical time as unknown, never as schedulable capacity;
+- future schedulable capacity as `remaining weekday blocks × 180 minutes + remaining Saturday blocks × 120 minutes` through October 3;
+- a remaining-category forecast built from unfinished coverage and those future blocks.
 
 The weekly pipeline target is not applied retroactively. The transition week records actions actually completed; the ten-action target begins with the first full week operated under this design.
 
@@ -271,9 +276,9 @@ Fresh diagnostic questions are not rehearsed variants of the weekday coached pro
 
 ## 12. Interview progression
 
-The first two weeks front-load questions expected in recruiter and initial hiring-manager interviews. Later weeks integrate technical TAM reasoning and senior judgment.
+Interview progression is an ordered queue that starts with the first session governed by the new `60 + 120` model. It is not retroactively attached to elapsed calendar weekdays. The first ten operating weekdays front-load questions expected in recruiter and initial hiring-manager interviews. Later queue segments integrate technical TAM reasoning and senior judgment.
 
-| Week | Five-question progression |
+| Queue segment | Ordered five-question set |
 |---|---|
 | 1 | Tell me about yourself; current role and scope; why TAM; why change now; strongest relevant achievement |
 | 2 | Why this company; difficult customer; conflict; failure and learning; ambiguity and prioritization |
@@ -281,6 +286,8 @@ The first two weeks front-load questions expected in recruiter and initial hirin
 | 4 | Explain APIs/webhooks; OAuth/security; idempotency/retries; observability/SLOs; architecture trade-offs |
 | 5 | Implementation leadership; launch decision; proactive account strategy; executive communication; influence without authority |
 | 6 | Company-specific recruiter screen; fresh behavioral round; technical TAM round; portfolio/customer simulation; 45-minute final mock |
+
+Each segment advances after five ordinary interview sessions, not after a calendar boundary. Existing pre-activation work may satisfy a queue item only when its saved evidence meets the same independent-attempt requirements. Otherwise the earliest unmet question remains next. The scheduled Week 6 final mock is a fixed roadmap event and may interrupt the queue; the queue resumes afterward. Any queue items that do not fit before October 3 continue in Week 7 or the ongoing interview-maintenance cycle rather than being compressed or deleted.
 
 Answers are learned as flexible evidence and decision points, not memorized scripts. The same true story may support several questions, but each answer must address the actual prompt. Codex must not invent experience, metrics, decisions, or technical evidence.
 
@@ -503,7 +510,7 @@ The redesign is complete only when all of the following are true:
 4. All fourteen Phase 1 and final competency targets are numerically unchanged.
 5. Ordinary weekdays implement the approved 60-minute independent-attempt, Codex-practice, and final-recording cycle; the final mock uses the sealed `5 + 45 + 10` exception.
 6. Active spoken-practice prompts and notes use Codex, not Claude.
-7. The first two weeks cover core recruiter and hiring-manager questions.
+7. The first ten operating weekdays cover the ordered core recruiter and hiring-manager questions without retroactive or compressed sessions.
 8. The weekly pipeline target is ten quality applications or recruiter replies, tracked separately with stages and next actions.
 9. The four canonical Saturday assessments retain their required timeboxes and no-coaching rules.
 10. The two added Saturdays provide fresh transfer evidence and weekly control without replacing canonical assessments.
@@ -512,7 +519,7 @@ The redesign is complete only when all of the following are true:
 13. Obsidian notes include corrected card-ready study answers while preserving original attempts as evidence.
 14. No day creates hidden time debt, and no unfinished work is moved to Sunday.
 15. Week 7 activates when required coverage/evidence remains incomplete or the approved reforecast rule requires it, and `Not assessed` cannot close the phase.
-16. The transition ledger anchors Phase 1 to legacy Day 1, credits verified Days 1–3 work, and calculates remaining rather than wholly new capacity.
+16. The transition ledger anchors Phase 1 to legacy Day 1, reserves elapsed blocks, separates verified and unknown historical time, and calculates capacity only from future calendar blocks.
 17. The original English, output-production, independent-attempt, resource, privacy, redo, and Sunday rules remain enforceable.
 18. Historical roadmap snapshots and evidence remain immutable and attributable to their original versions.
 
