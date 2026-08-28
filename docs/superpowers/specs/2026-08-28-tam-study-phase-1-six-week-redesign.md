@@ -17,6 +17,8 @@ The existing four-week, 88-hour Month 1 roadmap becomes a six-week **Phase 1** w
 - six-week capacity: 102 hours;
 - optional Week 7: completion-only safety week when the evidence or coverage gates are not met.
 
+The Phase 1 clock is anchored to legacy Day 1, not restarted when this redesign is activated. Its nominal six-week calendar is August 24–October 3, 2026, with October 5–10 available as Week 7 when triggered. The 102 hours are total Phase 1 capacity, including verified time already invested in Days 1–3; they are not 102 additional future hours. The transition ledger calculates remaining capacity from recorded actual minutes and marks unknown historical minutes as unknown rather than available.
+
 The redesign does not lower any competency target or delete any required topic, output, assessment, or exit criterion. It changes the sequencing and weekday task boundaries. The old four-hour weekday packets are decomposed into smaller units, and related case work may continue into the aligned interview block. Time and evidence are counted only once.
 
 First-round interview readiness and an active job pipeline run in parallel with the technical roadmap. The first 60 minutes of every weekday are protected for interview work. The remaining 120 minutes cover the career pipeline, the technical roadmap, and daily close-out.
@@ -29,7 +31,7 @@ The original roadmap schedules four focused hours each weekday and two hours on 
 
 Reducing technical coverage or competency targets would undermine the purpose of the plan. Continuing with an overfull daily schedule would create time debt, missed interview preparation, unreliable evidence, and a false sense of falling behind. The solution is to spread the same required learning outcomes across six weeks, integrate related practice deliberately, and finish Phase 1 by evidence rather than calendar passage alone.
 
-The learner is already in legacy Day 3. The redesign resumes from current evidence and checkpoints; it never resets completed work.
+The learner is already in legacy Day 3. The redesign resumes from current evidence and checkpoints; it never resets completed work or demands retroactive daily interview cycles. Missing required outputs from Days 1–3 remain visible coverage items and are scheduled deliberately rather than treated as failures for dates that preceded the new operating model.
 
 ## 3. Goals
 
@@ -80,20 +82,38 @@ The learner is already in legacy Day 3. The redesign resumes from current eviden
 | Saturday assessment/control | 12 h |
 | **Total** | **102 h** |
 
-The 37.5-hour roadmap block alone cannot contain the original 50 hours of SQL, technical concepts, and cases. At least 12.5 hours of case presentation, defense, and communication must therefore be placed deliberately in the aligned interview and Saturday blocks. This is integration, not double-counting: one output has one time record, one coverage record, and separate rubric evidence only for dimensions actually demonstrated.
+The 37.5-hour roadmap block alone cannot contain the original 50 hours of SQL, technical concepts, and cases. The exact weekday reconciliation is:
+
+| New block | Legacy and new coverage | Time |
+|---|---|---:|
+| Roadmap | SQL 15 h + technical concepts 15 h + case production 7.5 h | 37.5 h |
+| Interview | communication 15 h + aligned case presentation/defense 12.5 h + additional first-round work 2.5 h | 30 h |
+| Pipeline | original pipeline 10 h + expanded pipeline 5 h | 15 h |
+| Notes/evidence | original review 5 h + expanded evidence close 2.5 h | 7.5 h |
+| Saturday | canonical assessments 8 h + new diagnostics 4 h | 12 h |
+
+All 30 interview hours use first-round interview form even when they also fulfill an original communication or case-defense requirement. Saturdays are already fully allocated and cannot also absorb displaced weekday coverage. This is integration, not double-counting: one output has one time record, one coverage record, and separate rubric evidence only for dimensions actually demonstrated.
 
 The additional fourteen hours are not described as fourteen new interview hours. They also fund the expanded pipeline, evidence close-out, and two additional diagnostic Saturdays.
 
 ## 6. Phase completion and safety rule
 
-Phase 1 is targeted for six weeks. It completes only when:
+Every required exit criterion has one of three evidence states:
+
+- `Not assessed`: no valid independent attempt exists; the criterion cannot close and activates Week 7.
+- `Assessed—not demonstrated`: a valid attempt exists but performance is below the criterion or target.
+- `Demonstrated`: qualifying evidence meets the criterion.
+
+Phase 1 is targeted for six weeks. At the end of Week 6, both `Not assessed` and `Assessed—not demonstrated` exit criteria activate Week 7 for one focused remediation and fresh transfer attempt. After Week 7, `Not assessed` still blocks closure. `Assessed—not demonstrated` may close only as **Phase 1 complete with gap** after a valid Week 7 retest; the gap becomes an explicit Phase 2 priority and is never reported as target attainment.
+
+Phase 1 closes only when:
 
 - every required legacy coverage record is complete;
 - all four canonical assessments have been attempted under their original constraints;
-- the final exit criteria have qualifying evidence or are explicitly marked not yet demonstrated;
+- every final exit criterion is `Demonstrated` or, after the Week 7 rule above, `Assessed—not demonstrated`;
 - the weekly evidence review has set the next-phase priorities.
 
-At each weekly review, planned and actual focused minutes are compared. A variance above 15 percent triggers a reforecast and a provisional Week 7. Week 7 becomes active when required coverage or exit evidence remains incomplete after Week 6. It is a completion week, not a reason to add new material. No target is lowered to avoid it.
+At each weekly review, planned and actual focused minutes are compared. A variance above 15 percent triggers a reforecast and a provisional Week 7. Week 7 becomes active when required coverage is incomplete or an exit criterion needs assessment/remediation after Week 6. It is a completion week, not a reason to add new material. No target is lowered to avoid it.
 
 No work is moved to Sunday.
 
@@ -114,6 +134,17 @@ Each coverage record contains:
 - qualifying/nonqualifying evidence status;
 - reconciliation note when wording or time changes without changing coverage.
 
+The transition ledger is the first coverage-ledger view. It records:
+
+- verified actual minutes and outputs for completed Days 1–2;
+- completed, in-progress, and pending components of Day 3;
+- remaining Week 1 requirements;
+- the first session governed by the new `60 + 120` structure;
+- remaining Phase 1 capacity as `102 hours - verified Phase 1 actual minutes`;
+- unknown historical time without converting it into free future capacity.
+
+The weekly pipeline target is not applied retroactively. The transition week records actions actually completed; the ten-action target begins with the first full week operated under this design.
+
 Validation must report:
 
 - no orphaned required task;
@@ -125,6 +156,18 @@ Validation must report:
 Known current progress is imported from the existing Obsidian notes and learner confirmation. In particular, legacy Day 3 SQLBolt lessons 9–12 are complete, while the Day 3 idempotency application/case sequence continues from its saved checkpoint. Other status is taken from the existing Day 1–3 indices and notes, not inferred from calendar dates.
 
 Historical imported roadmap versions remain immutable. The six-week roadmap is a new staged version. The human-facing term becomes **Phase 1 target — six weeks**. Existing stored `month_one_target` values may remain as compatibility fields until a separate migration changes their schema, but new active displays and notes use the Phase 1 label.
+
+### 7.1 Preserved practice contract
+
+The original non-negotiable learning rules remain active:
+
+1. Required spoken and written outputs are in English.
+2. At least 70 percent of focused time produces an output: a query, diagram, answer, decision, update, plan, or recording.
+3. SQL, TAM cases, and interview Attempt A are committed before AI critique; AI does not create the first answer.
+4. No new course or study-resource collection is added during Phase 1.
+5. A spoken answer is recorded, reviewed once, and redone at most once; there is no endless polishing.
+6. Only fictional, public, assigned-case, or safely redacted personal material is used. Credentials, confidential payloads, customer data, and employer-derived confidential material are excluded.
+7. Sunday remains completely off, including from catch-up and study reminders.
 
 ## 8. Weekday operating model
 
@@ -161,6 +204,18 @@ A due correction may consume the first ten minutes of the roadmap unit. Exactly 
 - Do not create a hidden backlog or compensate on Sunday.
 - Do not invent work to fill unused time when the required output finishes early.
 - When a task repeatedly exceeds its estimate, split or reforecast it at the weekly review.
+
+### 8.4 Final-mock exception
+
+The Week 6 final 45-minute behavioral mock replaces the ordinary weekday interview cycle for that day:
+
+| Phase | Time |
+|---|---:|
+| Setup and seal prompt set | 5 min |
+| Independent mock with live follow-ups | 45 min |
+| Self-review, evidence save, and handoff | 10 min |
+
+Codex may act as interviewer but provides no coaching before or during the sealed mock. There is no same-session Attempt B. The recording is qualifying mock-interview evidence when rubric-scored; feedback and any correction occur later.
 
 ## 9. Pipeline operating model
 
@@ -254,7 +309,7 @@ Every practice prompt specifies:
 - at most two routine follow-ups;
 - no mid-answer correction;
 - at most one content/structure correction and one English/delivery correction;
-- a final uninterrupted response;
+- an explicit end to coaching before the learner makes a separate uninterrupted recording;
 - the required handoff format for the main study task.
 
 English correction should preserve conversational flow. It targets only the highest-impact issue and does not interrupt an answer for small grammar errors.
@@ -267,11 +322,11 @@ The practice task returns:
 4. one content or structure correction;
 5. one English or delivery correction;
 6. follow-up difficulty;
-7. final response status;
+7. coaching completion and the target for the separate final recording;
 8. one recommended transfer prompt;
 9. a compact handoff suitable for the main study task.
 
-The main study task remains the source of truth for progress, scoring, and Obsidian updates. The practice task does not independently advance competency estimates.
+After the coaching task returns this handoff, the learner records the separate uninterrupted Attempt B and sends its recording or transcript to the main study task. The main task analyzes it and completes the Obsidian record. The main study task remains the source of truth for progress and scoring; the practice task does not independently advance competency estimates.
 
 ## 14. Evidence and scoring
 
@@ -308,7 +363,7 @@ Portfolio Judgment remains a derived composite, not a fifteenth competency.
 
 ### 14.3 Attempt classification
 
-- Daily independent written Attempt A may qualify after rubric scoring.
+- Daily independent written Attempt A may qualify after rubric scoring only for competencies and English dimensions actually demonstrated in writing; it cannot demonstrate spoken fluency, pronunciation, or listening.
 - A same-question recording after coaching is Attempt B and cannot raise the estimated level.
 - A new independent scenario is required to demonstrate transfer.
 - A fresh Saturday mock or timed assessment may qualify.
@@ -415,7 +470,7 @@ If recording, transcription, or analysis is unfinished, the item is marked `pend
 | Real interview is booked | Use the first 60 minutes for company-specific preparation; keep the roadmap floor |
 | Real interview displaces more time | Record actual minutes and consume forecast capacity or Week 7; create no hidden debt |
 | Weekly actual time is over estimate by more than 15% | Re-split work and provisionally activate the safety week |
-| Required evidence is absent | Show `Not assessed`; do not infer a score from confidence or completion |
+| Required evidence is absent | Show `Not assessed`, activate the approved completion rule, and do not infer a score from confidence or completion |
 | Saturday work is unfinished | Record the gap and continue the following week; Sunday remains off |
 
 ## 17. Source versioning and implementation surfaces
@@ -446,7 +501,7 @@ The redesign is complete only when all of the following are true:
 2. Every original required task, output, assessment, resource assignment, and exit criterion has one traceable coverage record.
 3. Existing Day 1–3 progress is preserved and the learner resumes from the current Day 3 checkpoint.
 4. All fourteen Phase 1 and final competency targets are numerically unchanged.
-5. The first 60 minutes of every weekday implement the approved independent-attempt, Codex-practice, and final-recording cycle.
+5. Ordinary weekdays implement the approved 60-minute independent-attempt, Codex-practice, and final-recording cycle; the final mock uses the sealed `5 + 45 + 10` exception.
 6. Active spoken-practice prompts and notes use Codex, not Claude.
 7. The first two weeks cover core recruiter and hiring-manager questions.
 8. The weekly pipeline target is ten quality applications or recruiter replies, tracked separately with stages and next actions.
@@ -456,8 +511,10 @@ The redesign is complete only when all of the following are true:
 12. Weekly reporting separates level, confidence, trend, recency, self-score, reviewer score, and target gap.
 13. Obsidian notes include corrected card-ready study answers while preserving original attempts as evidence.
 14. No day creates hidden time debt, and no unfinished work is moved to Sunday.
-15. Week 7 activates when required coverage/evidence remains incomplete or the approved reforecast rule requires it.
-16. Historical roadmap snapshots and evidence remain immutable and attributable to their original versions.
+15. Week 7 activates when required coverage/evidence remains incomplete or the approved reforecast rule requires it, and `Not assessed` cannot close the phase.
+16. The transition ledger anchors Phase 1 to legacy Day 1, credits verified Days 1–3 work, and calculates remaining rather than wholly new capacity.
+17. The original English, output-production, independent-attempt, resource, privacy, redo, and Sunday rules remain enforceable.
+18. Historical roadmap snapshots and evidence remain immutable and attributable to their original versions.
 
 ## 19. Approved design decisions
 
