@@ -1,0 +1,73 @@
+schema_version: 1
+config_version: seed-v1
+skills:
+  - slug: api_integration_architecture
+    name: API and integration architecture
+    baseline: 3.0
+    month_one_target: 3.0
+    final_target: 3.25
+  - slug: structured_troubleshooting
+    name: Structured troubleshooting
+    baseline: 2.0
+    month_one_target: 2.5
+    final_target: 3.0
+  - slug: sql_reconciliation
+    name: SQL and reconciliation
+    baseline: 1.0
+    month_one_target: 2.0
+    final_target: 2.75
+  - slug: distributed_systems_reliability
+    name: Distributed systems and reliability
+    baseline: 2.0
+    month_one_target: 2.5
+    final_target: 3.0
+  - slug: payments_fintech_systems
+    name: Payments and fintech systems
+    baseline: 2.0
+    month_one_target: 2.5
+    final_target: 3.0
+  - slug: technical_discovery
+    name: Technical discovery
+    baseline: 2.0
+    month_one_target: 2.5
+    final_target: 3.0
+  - slug: incident_escalation_management
+    name: Incident and escalation management
+    baseline: 2.0
+    month_one_target: 2.5
+    final_target: 3.0
+  - slug: implementation_project_management
+    name: Implementation and project management
+    baseline: 2.0
+    month_one_target: 2.5
+    final_target: 2.75
+  - slug: proactive_account_strategy
+    name: Proactive account strategy
+    baseline: 2.0
+    month_one_target: 2.5
+    final_target: 2.75
+  - slug: executive_communication
+    name: Executive communication
+    baseline: 1.0
+    month_one_target: 2.0
+    final_target: 3.0
+  - slug: cross_functional_influence
+    name: Cross-functional influence
+    baseline: 2.0
+    month_one_target: 2.5
+    final_target: 2.75
+  - slug: business_value_framing
+    name: Business and value framing
+    baseline: 1.0
+    month_one_target: 2.0
+    final_target: 3.0
+  - slug: technical_writing
+    name: Technical writing
+    baseline: 1.0
+    month_one_target: 2.0
+    final_target: 2.75
+  - slug: tam_english
+    name: TAM English
+    baseline: 1.0
+    month_one_target: 2.0
+    final_target: 2.75

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "roadmap_version": "month-1-v2",
+  "task_count": 158,
+  "first_task": {
+    "stable_id": "m1-w1-d01-sql",
+    "week": 1,
+    "day": 1,
+    "block": "sql",
+    "order": 1,
+    "timebox_minutes": 45,
+    "exercise_type": "sql_guided_lesson",
+    "mapping_version": "seed-v1",
+    "allowed_ai_role": "tutor"
+  },
+  "resource_keys": [
+    "https://example.com/http",
+    "sql/tasks.md",
+    "templates/scorecard.md"
+  ],
+  "exit_criteria": [
+    "Explain one integration clearly.",
+    "Score at least 3 independently."
+  ],
+  "weekday_minutes": 240,
+  "saturday_minutes": 120
+}

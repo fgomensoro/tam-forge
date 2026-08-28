@@ -1,0 +1,10 @@
+schema_version: 1
+mapping_version: seed-v1
+supporting_tags: []
+exercise_types:
+  - slug: broken_mapping
+    evidence_mode: independent_practice
+    skill_impacts:
+      skill_that_does_not_exist:
+        weight: 1.00
+        condition: always

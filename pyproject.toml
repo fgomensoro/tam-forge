@@ -17,7 +17,13 @@ markers = [
   "integration: tests that require external services",
 ]
 pythonpath = ["."]
-testpaths = ["apps/backend/tests", "packages/protocol/tests", "scripts/github/tests"]
+testpaths = [
+  "apps/backend/tests",
+  "packages/protocol/tests",
+  "scripts/ci/tests",
+  "scripts/dev/tests",
+  "scripts/github/tests",
+]
 
 [tool.ruff]
 line-length = 100
