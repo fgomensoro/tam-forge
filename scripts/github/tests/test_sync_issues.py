@@ -55,7 +55,7 @@ class FakeGitHub:
     def create(self, resource: str, payload: dict[str, object]) -> dict[str, object]:
         self.calls.append(("create", resource, None, deepcopy(payload)))
         collection = self._collection(resource)
-        number = len(collection) + 1
+        number = max((int(item.get("number", 0)) for item in collection), default=0) + 1
         item = {**self._normalize(resource, payload), "number": number}
         collection.append(item)
         return deepcopy(item)
@@ -102,6 +102,24 @@ class FakeGitHub:
 @pytest.fixture
 def catalog_path() -> Path:
     return Path("docs/project/github-issues.yml")
+
+
+def historical_issue_records() -> list[dict[str, Any]]:
+    keys = [
+        *(f"E1-I{number:02}" for number in range(1, 6)),
+        *(f"E2-I{number:02}" for number in range(1, 13)),
+    ]
+    return [
+        {
+            "number": 100 + index,
+            "title": key,
+            "body": f"<!-- tam-forge-key: {key} -->\n",
+            "state": "closed",
+            "labels": [],
+            "milestone": None,
+        }
+        for index, key in enumerate(keys)
+    ]
 
 
 @pytest.fixture
@@ -157,6 +175,17 @@ def small_manifest(tmp_path: Path) -> Path:
             },
         ],
     }
+    execution = {
+        "owner": "subagent",
+        "model": "gpt-5.6-terra",
+        "effort": "high",
+        "reason": "Narrow deterministic catalog work with focused tests.",
+        "dispatch_gate": ["A gpt-5.6-sol / ultra catalog plan is locked."],
+        "escalation_triggers": ["A dependency cycle or live drift appears."],
+    }
+    for issue in data["issues"]:
+        if "epic" in issue:
+            issue["execution"] = deepcopy(execution)
     path = tmp_path / "manifest.yml"
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     return path
@@ -165,10 +194,228 @@ def small_manifest(tmp_path: Path) -> Path:
 def test_catalog_transcribes_all_approved_records(catalog_path: Path) -> None:
     manifest = load_and_validate(catalog_path)
     assert manifest.repository == "fgomensoro/tam-forge"
-    assert len(manifest.labels) == CATALOG_COUNTS.labels == 17
+    assert len(manifest.labels) == CATALOG_COUNTS.labels == 18
     assert len(manifest.milestones) == CATALOG_COUNTS.milestones == 5
-    assert len(manifest.epics) == CATALOG_COUNTS.epics == 9
-    assert len(manifest.children) == CATALOG_COUNTS.children == 105
+    assert len(manifest.epics) == CATALOG_COUNTS.epics == 10
+    assert len(manifest.children) == CATALOG_COUNTS.children == 115
+
+
+def test_native_catalog_has_e10_and_routes_every_executable_child(
+    catalog_path: Path,
+) -> None:
+    manifest = load_and_validate(catalog_path)
+    issues = {issue.key: issue for issue in manifest.issues}
+
+    assert CATALOG_COUNTS.labels == 18
+    assert CATALOG_COUNTS.epics == 10
+    assert CATALOG_COUNTS.children == 115
+    assert "area/macos" in {label.name for label in manifest.labels}
+    assert issues["E10"].milestone == "M0"
+    assert issues["E10"].children == tuple(f"E10-I{number:02}" for number in range(1, 11))
+    assert all(issue.execution is not None for issue in manifest.children)
+    historical_keys = {f"E1-I{number:02}" for number in range(1, 6)} | {
+        f"E2-I{number:02}" for number in range(1, 13)
+    }
+    assert len(historical_keys) == 17
+    assert all(
+        issues[key].execution is not None and issues[key].execution.status == "historical"
+        for key in historical_keys
+    )
+    assert all(
+        issue.execution is not None and issue.execution.is_executable
+        for issue in manifest.children
+        if issue.key not in historical_keys | {"E10-I09", "E10-I10"}
+    )
+    assert all(
+        issues[key].execution is not None and not issues[key].execution.is_executable
+        for key in ("E10-I09", "E10-I10")
+    )
+    executable_routes = [
+        (issue.execution.model, issue.execution.effort)
+        for issue in manifest.children
+        if issue.execution is not None and issue.execution.is_executable
+    ]
+    assert len(executable_routes) == 96
+    assert executable_routes.count(("gpt-5.6-sol", "xhigh")) == 60
+    assert executable_routes.count(("gpt-5.6-terra", "xhigh")) == 32
+    assert executable_routes.count(("gpt-5.6-terra", "high")) == 4
+    assert all(
+        any("gpt-5.6-sol / ultra" in gate for gate in issue.execution.dispatch_gate)
+        for issue in manifest.children
+        if issue.execution is not None and issue.execution.is_executable
+    )
+
+    deletion_gate_keys = {"E3-I05", "E3-I06", "E3-I09", "E4-I04", "E4-I05", "E4-I12"}
+    for key in deletion_gate_keys:
+        acceptance = " ".join(issues[key].acceptance).casefold()
+        assert "201 created" in acceptance, key
+        assert "transcript plus lineage" in acceptance, key
+        assert "transcription failure retains the spool" in acceptance, key
+
+
+def test_open_native_catalog_records_do_not_publish_retired_client_or_recorder_work(
+    catalog_path: Path,
+) -> None:
+    manifest = load_and_validate(catalog_path)
+    open_children = [
+        issue
+        for issue in manifest.children
+        if issue.execution is not None and issue.execution.status != "historical"
+    ]
+    retired_terms = (
+        "blackhole",
+        "tkinter",
+        "wss",
+        "silero",
+        "faster-whisper",
+        "apps/recorder",
+        "pnpm",
+    )
+    for issue in open_children:
+        if issue.epic not in {"E3", "E4"}:
+            continue
+        rendered = " ".join(
+            (issue.title, *issue.acceptance, *issue.verification, issue.plan, issue.task)
+        ).casefold()
+        assert not any(term in rendered for term in retired_terms), issue.key
+    for issue in open_children:
+        labels = set(issue.labels)
+        if issue.epic == "E3":
+            assert "area/macos" in labels
+            assert "area/recorder" not in labels
+        if issue.epic == "E8":
+            assert "area/macos" in labels
+            assert "area/web" not in labels
+        if issue.epic in {"E5", "E6", "E7", "E8", "E9"} and "area/macos" in labels:
+            verification = " ".join(issue.verification).casefold()
+            assert "pnpm" not in verification, issue.key
+            assert "apps/web" not in verification, issue.key
+
+    native_e7_ui = {"E7-I01", "E7-I05", "E7-I06", "E7-I07", "E7-I08"}
+    issues = {issue.key: issue for issue in open_children}
+    for key in native_e7_ui:
+        issue = issues[key]
+        assert "area/macos" in issue.labels
+        assert any("xcodebuild" in command for command in issue.verification)
+    assert "speaker-separated" not in " ".join(issues["E7-I07"].acceptance).casefold()
+    e3 = next(issue for issue in manifest.epics if issue.key == "E3")
+    assert "area/macos" in e3.labels
+    assert "area/recorder" not in e3.labels
+
+
+def test_execution_metadata_is_validated_and_rendered_for_executable_children(
+    small_manifest: Path,
+) -> None:
+    data = yaml.safe_load(small_manifest.read_text(encoding="utf-8"))
+    execution = {
+        "owner": "subagent",
+        "model": "gpt-5.6-terra",
+        "effort": "high",
+        "reason": "Narrow deterministic catalog work with focused tests.",
+        "dispatch_gate": ["A gpt-5.6-sol / ultra catalog plan is locked."],
+        "escalation_triggers": ["A dependency cycle or live drift appears."],
+    }
+    for issue in data["issues"]:
+        if "epic" in issue:
+            issue["execution"] = execution
+    small_manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    manifest = load_and_validate(small_manifest, _enforce_catalog_counts=False)
+    child = next(issue for issue in manifest.children if issue.key == "E1-I01")
+    assert child.execution is not None
+    assert child.execution.model == "gpt-5.6-terra"
+
+    github = FakeGitHub()
+    sync_manifest(small_manifest, github, apply=True, _enforce_catalog_counts=False)
+    body = str(github.issues[1]["body"])
+    assert "## Execution routing" in body
+    assert "**Owner:** subagent" in body
+    assert "**Model / effort:** gpt-5.6-terra / high" in body
+    assert "- A gpt-5.6-sol / ultra catalog plan is locked." in body
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (
+            lambda execution: execution.__setitem__("effort", "medium"),
+            "unsupported execution model/effort pair",
+        ),
+        (
+            lambda execution: execution.__setitem__("owner", "coordinator"),
+            "unsupported execution owner/model combination",
+        ),
+        (
+            lambda execution: execution.__setitem__(
+                "dispatch_gate", ["No Ultra plan is required."]
+            ),
+            "executable execution requires a gpt-5.6-sol / ultra plan",
+        ),
+        (
+            lambda execution: execution.__setitem__("dispatch_gate", []),
+            "execution dispatch_gate must not be empty",
+        ),
+        (
+            lambda execution: execution.__setitem__("escalation_triggers", []),
+            "execution escalation_triggers must not be empty",
+        ),
+    ],
+)
+def test_execution_metadata_fails_closed_when_not_dispatchable(
+    small_manifest: Path,
+    mutate: Any,
+    message: str,
+) -> None:
+    data = yaml.safe_load(small_manifest.read_text(encoding="utf-8"))
+    execution = {
+        "owner": "subagent",
+        "model": "gpt-5.6-terra",
+        "effort": "high",
+        "reason": "Narrow deterministic catalog work with focused tests.",
+        "dispatch_gate": ["A gpt-5.6-sol / ultra catalog plan is locked."],
+        "escalation_triggers": ["A dependency cycle or live drift appears."],
+    }
+    mutate(execution)
+    data["issues"][1]["execution"] = execution
+    small_manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(ManifestError, match=message):
+        load_and_validate(small_manifest, _enforce_catalog_counts=False)
+
+
+def test_child_without_execution_metadata_fails_closed(small_manifest: Path) -> None:
+    data = yaml.safe_load(small_manifest.read_text(encoding="utf-8"))
+    data["issues"][1].pop("execution")
+    small_manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(ManifestError, match="E1-I01 must define execution metadata"):
+        load_and_validate(small_manifest, _enforce_catalog_counts=False)
+
+
+def test_deferred_execution_requires_a_later_sol_ultra_plan_and_is_not_dispatchable(
+    small_manifest: Path,
+) -> None:
+    data = yaml.safe_load(small_manifest.read_text(encoding="utf-8"))
+    data["issues"][1]["execution"] = {
+        "status": "deferred",
+        "reason": "Native parity work waits for the later batch.",
+        "dispatch_gate": ["A later gpt-5.6-sol / ultra plan is locked."],
+    }
+    data["issues"][2]["execution"] = {
+        "owner": "subagent",
+        "model": "gpt-5.6-terra",
+        "effort": "high",
+        "reason": "Narrow deterministic catalog work with focused tests.",
+        "dispatch_gate": ["A gpt-5.6-sol / ultra catalog plan is locked."],
+        "escalation_triggers": ["A dependency cycle or live drift appears."],
+    }
+    small_manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    manifest = load_and_validate(small_manifest, _enforce_catalog_counts=False)
+    child = next(issue for issue in manifest.children if issue.key == "E1-I01")
+    assert child.execution is not None
+    assert not child.execution.is_executable
+    assert "gpt-5.6-sol / ultra" in child.execution.dispatch_gate[0]
 
 
 def test_catalog_keys_and_titles_match_the_master_plan_exactly(catalog_path: Path) -> None:
@@ -194,6 +441,7 @@ def test_catalog_keys_and_titles_match_the_master_plan_exactly(catalog_path: Pat
         "type/evaluation",
         "area/backend",
         "area/web",
+        "area/macos",
         "area/recorder",
         "area/speech",
         "area/agents",
@@ -223,6 +471,7 @@ def test_catalog_keys_and_titles_match_the_master_plan_exactly(catalog_path: Pat
         "E7": "M2",
         "E8": "M3",
         "E9": "M4",
+        "E10": "M0",
     }
     assert {epic.key: epic.milestone for epic in manifest.epics} == expected_assignment
 
@@ -249,8 +498,10 @@ def test_all_children_have_actionable_metadata_and_an_acyclic_dependency_dag(
         for issue in children.values()
     )
     assert all("master-implementation-plan" not in issue.plan for issue in children.values())
-    assert all(re.match(r"Task \d+: .+", issue.task) for issue in children.values())
     for issue in children.values():
+        assert issue.execution is not None
+        if not issue.execution.is_executable:
+            continue
         plan_path = Path(issue.plan)
         assert plan_path.is_file(), issue.key
         headings = {
@@ -283,9 +534,9 @@ def test_all_children_have_actionable_metadata_and_an_acyclic_dependency_dag(
     [
         ("E1-I04", "E1-I03", "test_migrations", "low", "01-foundation", "Task 3:"),
         ("E2-I05", "E1-I04", "auth/test_service", "medium", "01-foundation", "Task 9:"),
-        ("E3-I06", "E3-I05", "spool", "high", "02-recording", "Task 6:"),
-        ("E4-I04", "E4-I03", "transcript", "high", "02-recording", "Task 15:"),
-        ("E5-I05", "E5-I04", "correction", "medium", "03-agents", "Task 8:"),
+        ("E3-I06", "E3-I05", "xcodebuild", "high", "native-macos-redesign", "6.4"),
+        ("E4-I04", "E4-I03", "xcodebuild", "high", "native-macos-redesign", "7.2"),
+        ("E5-I05", "E5-I04", "feedback_routes", "medium", "03-agents", "Task 8:"),
         ("E6-I08", "E6-I07", "retrieval", "high", "03-agents", "Task 10:"),
         ("E7-I06", "E7-I05", "interview", "high", "03-agents", "Task 17:"),
         ("E8-I08", "E8-I05", "portfolio", "medium", "03-agents", "Task 20:"),
@@ -396,13 +647,14 @@ def test_second_apply_is_a_true_no_op(small_manifest: Path) -> None:
 
 def test_full_catalog_second_apply_is_a_true_no_op(catalog_path: Path) -> None:
     github = FakeGitHub()
+    github.issues = historical_issue_records()
     first = sync_manifest(catalog_path, github, apply=True)
     writes_after_first = len(github.writes)
     second = sync_manifest(catalog_path, github, apply=True)
-    assert len(first.created) == 136
-    assert len(github.labels) == 17
+    assert len(first.created) == 131
+    assert len(github.labels) == 18
     assert len(github.milestones) == 5
-    assert len(github.issues) == 114
+    assert len(github.issues) == 125
     assert len(github.writes) == writes_after_first
     assert second.created == []
     assert second.updated == []
@@ -522,6 +774,58 @@ def test_labels_and_milestones_are_upserted_without_removing_unrelated(
     assert github.milestones[0]["description"] == "Foundation"
 
 
+def test_open_managed_issues_replace_catalog_labels_but_keep_manual_labels(
+    small_manifest: Path,
+) -> None:
+    data = yaml.safe_load(small_manifest.read_text(encoding="utf-8"))
+    data["labels"].extend(
+        [
+            {"name": "area/web", "color": "0E8A16", "description": "Web"},
+            {"name": "area/macos", "color": "0052CC", "description": "macOS"},
+            {"name": "status/blocked", "color": "B60205", "description": "Blocked"},
+        ]
+    )
+    data["issues"][1]["labels"] = ["type:feature", "area/macos"]
+    small_manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    github = FakeGitHub()
+    sync_manifest(small_manifest, github, apply=True, _enforce_catalog_counts=False)
+    issue = next(item for item in github.issues if item["number"] == 2)
+    issue["labels"] = [
+        {"name": "type:feature"},
+        {"name": "area/web"},
+        {"name": "area/obsolete"},
+        {"name": "gate/obsolete"},
+        {"name": "type/obsolete"},
+        {"name": "status/blocked"},
+        {"name": "manual/triage"},
+    ]
+
+    sync_manifest(small_manifest, github, apply=True, _enforce_catalog_counts=False)
+    assert issue["labels"] == [
+        {"name": "type:feature"},
+        {"name": "area/macos"},
+        {"name": "manual/triage"},
+        {"name": "status/blocked"},
+    ]
+
+
+def test_closed_managed_issues_keep_catalog_and_manual_labels_unchanged(
+    small_manifest: Path,
+) -> None:
+    github = FakeGitHub()
+    sync_manifest(small_manifest, github, apply=True, _enforce_catalog_counts=False)
+    issue = next(item for item in github.issues if item["number"] == 2)
+    issue["state"] = "closed"
+    issue["labels"] = [{"name": "type:feature"}, {"name": "manual/triage"}]
+    writes_before = len(github.writes)
+
+    sync_manifest(small_manifest, github, apply=True, _enforce_catalog_counts=False)
+
+    assert issue["labels"] == [{"name": "type:feature"}, {"name": "manual/triage"}]
+    assert len(github.writes) == writes_before
+
+
 def test_stale_managed_issue_is_reported_but_never_closed(small_manifest: Path) -> None:
     github = FakeGitHub()
     github.issues = [
@@ -553,6 +857,67 @@ def test_closed_managed_issue_is_not_recreated_or_reopened(small_manifest: Path)
     assert len(github.writes) == writes_before
     assert plan.created == []
     assert plan.updated == []
+
+
+def test_missing_historical_child_fails_closed_without_recreation(
+    small_manifest: Path,
+) -> None:
+    data = yaml.safe_load(small_manifest.read_text(encoding="utf-8"))
+    data["issues"][1]["execution"] = {
+        "status": "historical",
+        "reason": "Closed GitHub history; never dispatch or rewrite.",
+    }
+    small_manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    github = FakeGitHub()
+    github.issues = historical_issue_records()[:1]
+    sync_manifest(small_manifest, github, apply=True, _enforce_catalog_counts=False)
+    github.issues = [
+        issue
+        for issue in github.issues
+        if "tam-forge-key: E1-I01" not in str(issue["body"])
+    ]
+    writes_before = len(github.writes)
+
+    with pytest.raises(ManifestError, match="historical issue E1-I01 is missing"):
+        sync_manifest(small_manifest, github, apply=False, _enforce_catalog_counts=False)
+
+    assert len(github.writes) == writes_before
+
+
+def test_historical_child_is_not_rewritten_if_reopened_during_apply(
+    small_manifest: Path,
+) -> None:
+    data = yaml.safe_load(small_manifest.read_text(encoding="utf-8"))
+    data["issues"][1]["execution"] = {
+        "status": "historical",
+        "reason": "Closed GitHub history; never dispatch or rewrite.",
+    }
+    small_manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    class ReopeningGitHub(FakeGitHub):
+        def __init__(self) -> None:
+            super().__init__()
+            self.issue_reads = 0
+
+        def list_issues(self) -> list[dict[str, object]]:
+            self.issue_reads += 1
+            if self.issue_reads == 2:
+                self.issues[0]["state"] = "open"
+                self.issues[0]["title"] = "Manually reopened historical issue"
+            return super().list_issues()
+
+    github = ReopeningGitHub()
+    github.issues = historical_issue_records()[:1]
+    historical_number = int(github.issues[0]["number"])
+
+    sync_manifest(small_manifest, github, apply=True, _enforce_catalog_counts=False)
+
+    assert github.issues[0]["state"] == "open"
+    assert github.issues[0]["title"] == "Manually reopened historical issue"
+    assert not any(
+        call[0] == "update" and call[1] == "issues" and call[2] == historical_number
+        for call in github.writes
+    )
 
 
 @pytest.mark.parametrize(
@@ -722,7 +1087,7 @@ def test_catalog_count_invariants_fail_before_client_call(
     path = tmp_path / "wrong-count.yml"
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     github = FakeGitHub()
-    with pytest.raises(ManifestError, match="exactly 105 child issues"):
+    with pytest.raises(ManifestError, match="exactly 115 child issues"):
         sync_manifest(path, github, apply=False)
     assert github.calls == []
 
@@ -731,6 +1096,7 @@ def test_cli_defaults_to_dry_run_and_apply_is_explicit(
     catalog_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     github = FakeGitHub()
+    github.issues = historical_issue_records()
     monkeypatch.setattr("scripts.github.sync_issues.GhCliClient", lambda _repo: github)
     monkeypatch.setattr("scripts.github.sync_issues.origin_matches", lambda _repo: True)
     assert (
@@ -788,7 +1154,7 @@ def test_cli_rejects_wrong_catalog_counts_before_any_api_call(
     ]
     if apply:
         arguments.append("--apply")
-    with pytest.raises(ManifestError, match="exactly 105 child issues"):
+    with pytest.raises(ManifestError, match="exactly 115 child issues"):
         main(arguments)
     assert github.calls == []
 
@@ -1059,5 +1425,5 @@ def test_local_catalog_cli_dry_run_is_offline_safe(catalog_path: Path) -> None:
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    assert "114 issue" in result.stdout
+    assert "125 issue" in result.stdout
     assert "DRY RUN" in result.stdout
