@@ -1036,10 +1036,8 @@ _ACTIVITY_PROVENANCE_ATTRIBUTES = (
     "task_objective_snapshot",
     "task_timebox_minutes_snapshot",
     "roadmap_version_key_snapshot",
-    "attempt_kind",
     "assistance_mode",
     "timebox_minutes",
-    "source_hidden",
     "replacement_version",
     "replaces_activity_id",
     "created_at",
@@ -1138,6 +1136,36 @@ def validate_activity_workflow(
                 raise ActivityWorkflowError(
                     "incomplete classification can change only when work becomes incomplete"
                 )
+        attempt_kind_history = state.attrs.attempt_kind.history
+        status_history = state.attrs.state.history
+        previous_state = status_history.deleted[0] if status_history.deleted else target.state
+        if attempt_kind_history.has_changes():
+            previous_kind = (
+                attempt_kind_history.deleted[0] if attempt_kind_history.deleted else None
+            )
+            if not (
+                previous_kind == "none"
+                and target.attempt_kind in {"attempt_a", "attempt_b"}
+                and previous_state == "active"
+                and target.state == "output_committed"
+            ):
+                raise ActivityWorkflowError(
+                    "attempt kind can be selected only while committing active output"
+                )
+        source_history = state.attrs.source_hidden.history
+        if source_history.has_changes():
+            if (
+                status_history.has_changes()
+                or attempt_kind_history.has_changes()
+                or classification_history.has_changes()
+                or stronger_evidence_history.has_changes()
+                or target.state not in {"ready", "active", "paused"}
+            ):
+                raise ActivityWorkflowError(
+                    "source visibility can change only before output commitment"
+                )
+        elif not status_history.has_changes():
+            raise ActivityWorkflowError("activity update must change state or source visibility")
 
     if (target.classification == "superseded") != (
         target.stronger_evidence_activity_id is not None

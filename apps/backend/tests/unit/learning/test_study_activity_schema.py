@@ -13,7 +13,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import URL
-from sqlalchemy.orm import make_transient_to_detached
+from sqlalchemy.orm import Session, make_transient_to_detached
 
 MIGRATION_PATH = Path("apps/backend/alembic/versions/20260825_0003_study_activities.py")
 EXPECTED_TABLES = {
@@ -698,6 +698,86 @@ def test_activity_orm_rejects_invalid_transition_and_provenance_mutation() -> No
         activity.started_at = datetime.now(UTC)
 
 
+def test_activity_orm_allows_only_precommit_visibility_and_atomic_attempt_selection() -> None:
+    from tamforge_backend.learning.models import (
+        ActivityInstance,
+        ActivityWorkflowError,
+        validate_activity_workflow,
+    )
+
+    now = datetime.now(UTC)
+
+    def activity(
+        *,
+        state: str = "active",
+        attempt_kind: str = "none",
+    ) -> ActivityInstance:
+        item = ActivityInstance(
+            id=1,
+            owner_id=1,
+            study_day_id=1,
+            roadmap_version_id=1,
+            task_definition_id=1,
+            task_stable_id_snapshot="week1.writing.1",
+            task_mapping_version_snapshot="v1",
+            task_objective_snapshot="Write an update.",
+            task_timebox_minutes_snapshot=35,
+            roadmap_version_key_snapshot="month-1-v1",
+            state=state,
+            attempt_kind=attempt_kind,
+            assistance_mode="none",
+            classification="required",
+            timebox_minutes=35,
+            source_hidden=False,
+            optimistic_version=1,
+            replacement_version=1,
+            replaces_activity_id=None,
+            stronger_evidence_activity_id=None,
+            created_at=now,
+            started_at=now,
+            output_committed_at=now if state == "output_committed" else None,
+            completed_at=None,
+        )
+        make_transient_to_detached(item)
+        return item
+
+    sessions: list[Session] = []
+
+    def persistent(item: ActivityInstance) -> ActivityInstance:
+        session = Session()
+        session.add(item)
+        sessions.append(session)
+        return item
+
+    try:
+        visibility = persistent(activity())
+        visibility.source_hidden = True
+        visibility.optimistic_version = 2
+        validate_activity_workflow(None, None, visibility)
+
+        commitment = persistent(activity())
+        commitment.attempt_kind = "attempt_a"
+        commitment.state = "output_committed"
+        commitment.output_committed_at = now
+        commitment.optimistic_version = 2
+        validate_activity_workflow(None, None, commitment)
+
+        late_visibility = persistent(activity(state="output_committed", attempt_kind="attempt_a"))
+        late_visibility.source_hidden = True
+        late_visibility.optimistic_version = 2
+        with pytest.raises(ActivityWorkflowError, match="source visibility"):
+            validate_activity_workflow(None, None, late_visibility)
+
+        kind_without_commit = persistent(activity())
+        kind_without_commit.attempt_kind = "attempt_a"
+        kind_without_commit.optimistic_version = 2
+        with pytest.raises(ActivityWorkflowError, match="attempt kind"):
+            validate_activity_workflow(None, None, kind_without_commit)
+    finally:
+        for session in sessions:
+            session.close()
+
+
 def test_study_day_orm_rejects_state_jumps_and_historical_scope_changes() -> None:
     from tamforge_backend.learning.models import StudyDay, StudyDayWorkflowError
 
@@ -848,9 +928,7 @@ def test_offline_sql_contains_hardened_reversible_guards() -> None:
 
 
 def test_activity_pause_migration_fails_closed_before_dropping_durable_progress() -> None:
-    upgrade_sql = _offline_sql(
-        "upgrade", "20260826_0007_task_refs:20260827_0008_activity_pause"
-    )
+    upgrade_sql = _offline_sql("upgrade", "20260826_0007_task_refs:20260827_0008_activity_pause")
     downgrade_sql = _offline_sql(
         "downgrade", "20260827_0008_activity_pause:20260826_0007_task_refs"
     )
@@ -861,6 +939,23 @@ def test_activity_pause_migration_fails_closed_before_dropping_durable_progress(
     assert "WHERE state = 'paused'" in downgrade_sql
     assert "WHERE stronger_evidence_activity_id IS NOT NULL" in downgrade_sql
     assert "WHERE last_client_sequence <> 0" in downgrade_sql
+
+
+def test_output_commit_migration_allows_only_scoped_mutable_activity_fields() -> None:
+    upgrade_sql = _offline_sql(
+        "upgrade", "20260827_0008_activity_pause:20260828_0009_output_commit"
+    )
+    downgrade_sql = _offline_sql(
+        "downgrade", "20260828_0009_output_commit:20260827_0008_activity_pause"
+    )
+
+    assert "invalid source visibility mutation" in upgrade_sql
+    assert "NEW.state NOT IN ('ready', 'active', 'paused')" in upgrade_sql
+    assert "OLD.attempt_kind = 'none'" in upgrade_sql
+    assert "NEW.attempt_kind IN ('attempt_a', 'attempt_b')" in upgrade_sql
+    assert "NEW.state = 'output_committed'" in upgrade_sql
+    assert "NEW.attempt_kind, NEW.assistance_mode" in downgrade_sql
+    assert "NEW.source_hidden, NEW.replacement_version" in downgrade_sql
 
 
 def test_settings_and_dates_use_native_types() -> None:
