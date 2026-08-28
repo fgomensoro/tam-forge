@@ -1095,6 +1095,25 @@ def test_basis_ids_are_unique_scoped_and_context_specific() -> None:
 
     portfolio.trend_basis = {
         "schema_version": 1,
+        "basis_code": "too_few_events",
+        "event_ids": [],
+    }
+    with pytest.raises(EvidenceContractError, match="prior score history"):
+        validate_portfolio_judgment_score(None, None, portfolio)
+
+    portfolio.trend_basis = {
+        "schema_version": 1,
+        "basis_code": "too_few_events",
+        "event_ids": [9],
+    }
+    validate_portfolio_judgment_score(
+        None,
+        _StubConnection(1),
+        portfolio,  # type: ignore[arg-type]
+    )
+
+    portfolio.trend_basis = {
+        "schema_version": 1,
         "basis_code": "stable",
         "event_ids": [9],
     }
@@ -1374,3 +1393,17 @@ def test_offline_guards_reconcile_dimension_rows_mappings_and_snapshot_inputs() 
     assert "tamforge_guard_skill_snapshot_insert" in downgrade_sql
     assert "tamforge_guard_portfolio_score_insert" in downgrade_sql
     assert "'unscored'" not in upgrade_sql
+
+
+def test_evidence_ledger_migration_allows_early_portfolio_history() -> None:
+    upgrade_sql = _offline_sql("upgrade", "20260828_0010_evidence_ledger")
+    downgrade_sql = _offline_sql(
+        "downgrade",
+        "20260828_0010_evidence_ledger:20260828_0009_output_commit",
+    )
+
+    assert (
+        "'too_few_events', 'improving', 'stable', 'declining'" in upgrade_sql
+    )
+    assert "'too_few_events', 'improving', 'stable', 'declining'" not in downgrade_sql
+    assert "'improving', 'stable', 'declining'" in downgrade_sql

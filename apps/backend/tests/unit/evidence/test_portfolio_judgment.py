@@ -40,6 +40,7 @@ def test_portfolio_is_separate_zero_to_twenty_composite_not_fifteenth_skill() ->
     )
     assert score.metric_slug == "portfolio_judgment"
     assert score.total_score == Decimal("20.000")
+    assert score.trend.code == "first_score"
     assert score.metric_slug not in {skill.slug for skill in bundle.skills}
     assert tuple(item.slug for item in score.components) == tuple(components())
 

@@ -13,6 +13,7 @@ from pydantic import (
     Field,
     TypeAdapter,
     ValidationError,
+    model_validator,
 )
 
 
@@ -52,6 +53,21 @@ class _OutputBase(_StrictContract):
     prompt: Text1M
     audience: Text256
     time_limit_minutes: Annotated[int, Field(gt=0, le=255)]
+    domain_competency_slug: Annotated[
+        str, Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    ] | None = None
+    story_competency_slug: Annotated[
+        str, Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    ] | None = None
+
+    @model_validator(mode="after")
+    def one_dynamic_selector(self) -> _OutputBase:
+        if (
+            self.domain_competency_slug is not None
+            and self.story_competency_slug is not None
+        ):
+            raise ValueError("only one competency selector may be committed")
+        return self
 
 
 class ReadingOutput(_OutputBase):
@@ -191,7 +207,7 @@ def validate_output_contract(
     if isinstance(parsed, SqlOutput) and parsed.solving_seconds > context.timebox_minutes * 60:
         raise OutputContractError("SQL solving time exceeds the assigned time limit")
 
-    output = parsed.model_dump(mode="json")
+    output = parsed.model_dump(mode="json", exclude_none=True)
     output.pop("contract_version")
     canonical_payload: dict[str, object] = {
         "contract_version": parsed.contract_version,

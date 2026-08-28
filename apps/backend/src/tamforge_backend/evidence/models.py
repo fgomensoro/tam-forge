@@ -1750,7 +1750,12 @@ def validate_portfolio_judgment_score(
         if event_ids:
             raise EvidenceContractError("first portfolio score cannot have trend history")
         return
-    if basis_code not in {"improving", "stable", "declining"} or not event_ids:
+    if basis_code not in {
+        "too_few_events",
+        "improving",
+        "stable",
+        "declining",
+    } or not event_ids:
         raise EvidenceContractError("portfolio trend requires prior score history")
     if connection is None:
         return

@@ -120,7 +120,10 @@ def score_portfolio_judgment(
     )
     if not rubric.scale_min <= total <= rubric.scale_max:
         raise PortfolioScoringError("portfolio total escaped its configured scale")
-    trend = calculate_trend(history, rules=trend_rules)
+    if not history:
+        trend = TrendResult("first_score", None, None, None, ())
+    else:
+        trend = calculate_trend(history, rules=trend_rules)
     return PortfolioScoreResult(
         metric_slug="portfolio_judgment",
         total_score=total,

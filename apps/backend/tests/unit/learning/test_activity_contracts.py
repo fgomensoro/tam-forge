@@ -257,3 +257,29 @@ def test_contract_rejects_wrong_task_type_or_time_limit() -> None:
     pipeline["time_limit_minutes"] = 30
     with pytest.raises(OutputContractError, match="time limit"):
         validate_output_contract(pipeline, context=_context(block="career_pipeline"))
+
+
+def test_dynamic_competency_selector_is_bound_into_the_immutable_attempt() -> None:
+    payload = {
+        **BASE,
+        "kind": "case",
+        "domain_competency_slug": "sql_reconciliation",
+        "canonical_prompt": "Explain one technical decision to two audiences.",
+        "canonical_facts": ["The reconciliation has one row per payment."],
+        "discovery_questions": ["Which audience is first?"],
+        "assumptions": ["The executive audience does not need query syntax."],
+        "working_notes": "Keep the core decision stable while changing detail.",
+        "final_artifact": "Two audience-specific explanations.",
+        "decisions": ["Lead with business impact for the executive."],
+        "risks": ["Too much SQL detail obscures the decision."],
+        "unresolved_questions": ["Which reconciliation exception matters most?"],
+    }
+    result = validate_output_contract(payload, context=_context(block="tam_case"))
+    assert (
+        result.canonical_payload["output"]["domain_competency_slug"]  # type: ignore[index]
+        == "sql_reconciliation"
+    )
+
+    payload["story_competency_slug"] = "structured_troubleshooting"
+    with pytest.raises(OutputContractError, match="only one competency selector"):
+        validate_output_contract(payload, context=_context(block="tam_case"))
