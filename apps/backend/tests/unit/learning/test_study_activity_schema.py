@@ -148,6 +148,7 @@ def test_models_expose_required_tables_columns_and_postgres_types() -> None:
             "optimistic_version",
             "replacement_version",
             "replaces_activity_id",
+            "stronger_evidence_activity_id",
             "created_at",
             "started_at",
             "output_committed_at",
@@ -163,6 +164,7 @@ def test_models_expose_required_tables_columns_and_postgres_types() -> None:
             "paused_at",
             "ended_at",
             "counted_seconds",
+            "last_client_sequence",
         },
         "attempts": {
             "id",
@@ -293,10 +295,13 @@ def test_named_constraints_restrict_history_and_index_every_foreign_key() -> Non
             "ck_activity_instances_attempt_kind_allowed",
             "ck_activity_instances_replacement_coherent",
             "ck_activity_instances_optimistic_version_positive",
+            "ck_activity_instances_stronger_evidence_classification_coherent",
+            "ck_activity_instances_stronger_evidence_not_self",
         },
         "activity_timer_sessions": {
             "uq_activity_timer_sessions_owner_idempotency",
             "ck_activity_timer_sessions_timestamps_coherent",
+            "ck_activity_timer_sessions_last_client_sequence_nonnegative",
         },
         "attempts": {
             "uq_attempts_owner_activity_kind",
@@ -779,6 +784,7 @@ def test_timer_orm_flush_guard_matches_monotonic_database_contract() -> None:
             paused_at=now if paused else None,
             ended_at=now if ended else None,
             counted_seconds=30,
+            last_client_sequence=0,
         )
         make_transient_to_detached(item)
         return item
@@ -792,6 +798,11 @@ def test_timer_orm_flush_guard_matches_monotonic_database_contract() -> None:
     counted_backwards.counted_seconds = 29
     with pytest.raises(TimerWorkflowError, match="counted seconds"):
         validate_timer_workflow(None, None, counted_backwards)
+
+    sequence_backwards = timer()
+    sequence_backwards.last_client_sequence = -1
+    with pytest.raises(TimerWorkflowError, match="sequence"):
+        validate_timer_workflow(None, None, sequence_backwards)
 
     changed_pause = timer(paused=True)
     changed_pause.paused_at = now + timedelta(seconds=1)
@@ -834,6 +845,22 @@ def test_offline_sql_contains_hardened_reversible_guards() -> None:
     assert "DROP INDEX uq_activity_artifact_links_without_attempt" in downgrade_sql
     for table_name in EXPECTED_TABLES:
         assert f"DROP TABLE {table_name}" in downgrade_sql
+
+
+def test_activity_pause_migration_fails_closed_before_dropping_durable_progress() -> None:
+    upgrade_sql = _offline_sql(
+        "upgrade", "20260826_0007_task_refs:20260827_0008_activity_pause"
+    )
+    downgrade_sql = _offline_sql(
+        "downgrade", "20260827_0008_activity_pause:20260826_0007_task_refs"
+    )
+
+    assert "ADD COLUMN stronger_evidence_activity_id BIGINT" in upgrade_sql
+    assert "ADD COLUMN last_client_sequence INTEGER DEFAULT 0 NOT NULL" in upgrade_sql
+    assert "NEW.last_client_sequence < OLD.last_client_sequence" in upgrade_sql
+    assert "WHERE state = 'paused'" in downgrade_sql
+    assert "WHERE stronger_evidence_activity_id IS NOT NULL" in downgrade_sql
+    assert "WHERE last_client_sequence <> 0" in downgrade_sql
 
 
 def test_settings_and_dates_use_native_types() -> None:

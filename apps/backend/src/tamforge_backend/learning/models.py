@@ -58,6 +58,7 @@ ACTIVITY_STATES = frozenset(
     {
         "ready",
         "active",
+        "paused",
         "output_committed",
         "self_review_complete",
         "ai_processing",
@@ -70,12 +71,13 @@ ACTIVITY_STATES = frozenset(
     }
 )
 ACTIVITY_TRANSITIONS = {
-    "ready": frozenset({"active", "incomplete", "superseded"}),
-    "active": frozenset({"output_committed", "incomplete"}),
+    "ready": frozenset({"active"}),
+    "active": frozenset({"paused", "output_committed", "incomplete"}),
+    "paused": frozenset({"active", "incomplete"}),
     "output_committed": frozenset({"self_review_complete"}),
-    "self_review_complete": frozenset({"ai_processing", "feedback_ready"}),
-    "ai_processing": frozenset({"feedback_ready", "needs_work"}),
-    "feedback_ready": frozenset({"correction_due", "demonstrated", "needs_work"}),
+    "self_review_complete": frozenset({"ai_processing"}),
+    "ai_processing": frozenset({"feedback_ready"}),
+    "feedback_ready": frozenset({"correction_due"}),
     "correction_due": frozenset({"demonstrated", "needs_work"}),
     "demonstrated": frozenset(),
     "needs_work": frozenset(),
@@ -248,6 +250,12 @@ class ActivityInstance(Base):
             name="fk_activity_instances_replacement_same_day_task",
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["owner_id", "stronger_evidence_activity_id"],
+            ["activity_instances.owner_id", "activity_instances.id"],
+            name="fk_activity_instances_owner_stronger_activity",
+            ondelete="RESTRICT",
+        ),
         UniqueConstraint("owner_id", "id", name="uq_activity_instances_owner_id_id"),
         UniqueConstraint(
             "owner_id",
@@ -290,7 +298,7 @@ class ActivityInstance(Base):
             name="roadmap_version_key_snapshot_bounded",
         ),
         CheckConstraint(
-            "state IN ('ready', 'active', 'output_committed', 'self_review_complete', "
+            "state IN ('ready', 'active', 'paused', 'output_committed', 'self_review_complete', "
             "'ai_processing', 'feedback_ready', 'correction_due', 'demonstrated', "
             "'needs_work', 'incomplete', 'superseded')",
             name="state_allowed",
@@ -308,6 +316,14 @@ class ActivityInstance(Base):
         CheckConstraint(
             "classification IN ('required', 'useful', 'optional', 'superseded')",
             name="classification_allowed",
+        ),
+        CheckConstraint(
+            "(classification = 'superseded') = (stronger_evidence_activity_id IS NOT NULL)",
+            name="stronger_evidence_classification_coherent",
+        ),
+        CheckConstraint(
+            "stronger_evidence_activity_id IS NULL OR stronger_evidence_activity_id <> id",
+            name="stronger_evidence_not_self",
         ),
         CheckConstraint("timebox_minutes > 0 AND timebox_minutes <= 255", name="timebox_bounded"),
         CheckConstraint("optimistic_version > 0", name="optimistic_version_positive"),
@@ -350,6 +366,11 @@ class ActivityInstance(Base):
             "task_definition_id",
             "replaces_activity_id",
         ),
+        Index(
+            "ix_activity_instances_owner_stronger_evidence",
+            "owner_id",
+            "stronger_evidence_activity_id",
+        ),
         Index("ix_activity_instances_state", "state"),
         Index(
             "ix_activity_instances_pending_self_review",
@@ -382,6 +403,7 @@ class ActivityInstance(Base):
         Integer, nullable=False, default=1, server_default="1"
     )
     replaces_activity_id: Mapped[int | None] = mapped_column(BigInteger)
+    stronger_evidence_activity_id: Mapped[int | None] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, server_default=func.now(), nullable=False
     )
@@ -409,6 +431,7 @@ class ActivityTimerSession(Base):
         CheckConstraint("btrim(idempotency_key) <> ''", name="idempotency_key_nonblank"),
         CheckConstraint("octet_length(idempotency_key) <= 256", name="idempotency_key_bounded"),
         CheckConstraint("counted_seconds BETWEEN 0 AND 918000", name="counted_seconds_bounded"),
+        CheckConstraint("last_client_sequence >= 0", name="last_client_sequence_nonnegative"),
         CheckConstraint(
             "last_heartbeat_at >= started_at "
             "AND (paused_at IS NULL OR paused_at >= started_at) "
@@ -439,6 +462,9 @@ class ActivityTimerSession(Base):
     paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     counted_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    last_client_sequence: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
 
@@ -1012,7 +1038,6 @@ _ACTIVITY_PROVENANCE_ATTRIBUTES = (
     "roadmap_version_key_snapshot",
     "attempt_kind",
     "assistance_mode",
-    "classification",
     "timebox_minutes",
     "source_hidden",
     "replacement_version",
@@ -1104,18 +1129,39 @@ def validate_activity_workflow(
         old_version = version_history.deleted[0]
         if target.optimistic_version != old_version + 1:
             raise ActivityWorkflowError("optimistic version must increase by one")
+        classification_history = state.attrs.classification.history
+        stronger_evidence_history = state.attrs.stronger_evidence_activity_id.history
+        if classification_history.has_changes() or stronger_evidence_history.has_changes():
+            status_history = state.attrs.state.history
+            previous_state = status_history.deleted[0] if status_history.deleted else target.state
+            if target.state != "incomplete" or previous_state not in {"active", "paused"}:
+                raise ActivityWorkflowError(
+                    "incomplete classification can change only when work becomes incomplete"
+                )
+
+    if (target.classification == "superseded") != (
+        target.stronger_evidence_activity_id is not None
+    ):
+        raise ActivityWorkflowError("superseded work must link stronger evidence")
+    if (
+        target.stronger_evidence_activity_id is not None
+        and target.stronger_evidence_activity_id == target.id
+    ):
+        raise ActivityWorkflowError("activity cannot supersede itself")
 
     if target.state == "ready" and any(
         value is not None
         for value in (target.started_at, target.output_committed_at, target.completed_at)
     ):
         raise ActivityWorkflowError("ready activity timestamps are incoherent")
-    if target.state == "active" and (
+    if target.state in {"active", "paused"} and (
         target.started_at is None
         or target.output_committed_at is not None
         or target.completed_at is not None
     ):
         raise ActivityWorkflowError("active activity timestamps are incoherent")
+    if target.state == "incomplete" and (target.started_at is None or target.completed_at is None):
+        raise ActivityWorkflowError("incomplete activity timestamps are incoherent")
     if target.state in {
         "output_committed",
         "self_review_complete",
@@ -1328,6 +1374,7 @@ def validate_timer_workflow(
         old_paused_at,
         old_ended_at,
         old_counted_seconds,
+        old_client_sequence,
     ) = timer_snapshot
 
     if old_ended_at is not None:
@@ -1348,6 +1395,8 @@ def validate_timer_workflow(
         raise TimerWorkflowError("timer heartbeat cannot move backward")
     if target.counted_seconds < old_counted_seconds:
         raise TimerWorkflowError("counted seconds cannot decrease")
+    if target.last_client_sequence < old_client_sequence:
+        raise TimerWorkflowError("timer client sequence cannot decrease")
     if old_paused_at is not None and target.paused_at != old_paused_at:
         raise TimerWorkflowError("paused_at is write-once")
 
@@ -1360,6 +1409,7 @@ TimerSnapshot = tuple[
     datetime,
     datetime | None,
     datetime | None,
+    int,
     int,
 ]
 
@@ -1390,6 +1440,7 @@ def _load_timer_snapshot(
                 table.c.paused_at,
                 table.c.ended_at,
                 table.c.counted_seconds,
+                table.c.last_client_sequence,
             ).where(table.c.id == target.id)
         ).one_or_none()
         return None if row is None else cast(TimerSnapshot, tuple(row))
@@ -1405,6 +1456,7 @@ def _load_timer_snapshot(
             _previous_timer_value(target, "paused_at"),
             _previous_timer_value(target, "ended_at"),
             _previous_timer_value(target, "counted_seconds"),
+            _previous_timer_value(target, "last_client_sequence"),
         ),
     )
 
