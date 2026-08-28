@@ -29,6 +29,12 @@ EffectiveWeight = Annotated[
 PriorWeight = Annotated[
     Decimal, Field(gt=0, le=1000, max_digits=10, decimal_places=6)
 ]
+DiscountFactor = Annotated[
+    Decimal, Field(gt=0, lt=1, max_digits=7, decimal_places=6)
+]
+MaximumEventWeight = Annotated[
+    Decimal, Field(gt=0, le=1.15, max_digits=7, decimal_places=6)
+]
 
 
 def _bounded_text(value: str, *, maximum_bytes: int) -> str:
@@ -261,11 +267,19 @@ class RecencyRules(StrictModel):
         return self
 
 
+class TrendRules(StrictModel):
+    recent_event_count: Annotated[int, Field(gt=0, le=1000)]
+    preceding_event_count: Annotated[int, Field(gt=0, le=1000)]
+    minimum_delta: Annotated[Decimal, Field(gt=0, le=4, decimal_places=3)]
+
+
 class FormulaConfig(StrictModel):
     version: VersionKey
     prior_weight: PriorWeight
     latest_qualifying_events: Annotated[int, Field(gt=0, le=1000)]
     full_weight_same_day_limit: Annotated[int, Field(gt=0, le=1000)]
+    same_day_repetition_factor: DiscountFactor
+    maximum_effective_weight_per_event: MaximumEventWeight
     performance_scale_min: Decimal
     performance_scale_max: Decimal
     practice_mode_factors: PracticeModeFactors
@@ -286,6 +300,7 @@ class FormulaConfig(StrictModel):
     independent_practice_requires_attempt_a: Literal[True]
     attempt_b_qualifies: Literal[False]
     confidence: ConfidenceRules
+    trend: TrendRules
     recency: RecencyRules
 
     @model_validator(mode="after")

@@ -344,6 +344,11 @@ def test_portfolio_and_formula_match_approved_contract(config_bundle) -> None:
     assert config_bundle.formula.prior_weight == Decimal("2.0")
     assert config_bundle.formula.latest_qualifying_events == 12
     assert config_bundle.formula.full_weight_same_day_limit == 2
+    assert config_bundle.formula.same_day_repetition_factor == Decimal("0.25")
+    assert config_bundle.formula.maximum_effective_weight_per_event == Decimal("1.15")
+    assert config_bundle.formula.trend.recent_event_count == 3
+    assert config_bundle.formula.trend.preceding_event_count == 3
+    assert config_bundle.formula.trend.minimum_delta == Decimal("0.25")
     assert config_bundle.formula.practice_mode_factors.model_dump() == {
         "exposure_only": Decimal("0.00"),
         "guided_practice": Decimal("0.35"),

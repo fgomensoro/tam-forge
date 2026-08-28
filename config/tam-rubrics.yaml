@@ -5,6 +5,8 @@ formula:
   prior_weight: 2.0
   latest_qualifying_events: 12
   full_weight_same_day_limit: 2
+  same_day_repetition_factor: 0.25
+  maximum_effective_weight_per_event: 1.15
   performance_scale_min: 0
   performance_scale_max: 4
   practice_mode_factors:
@@ -49,6 +51,10 @@ formula:
     medium_minimum_effective_weight: 3
     medium_minimum_exercise_types: 2
     medium_requires_independent_attempt: true
+  trend:
+    recent_event_count: 3
+    preceding_event_count: 3
+    minimum_delta: 0.25
   recency:
     fresh_max_days: 7
     aging_max_days: 21
