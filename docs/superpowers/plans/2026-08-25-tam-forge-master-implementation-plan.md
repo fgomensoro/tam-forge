@@ -4,21 +4,25 @@
 
 **Goal:** Deliver the complete private single-user TAM Forge application in verified increments, beginning with a usable closed spoken-practice loop and ending with the full approved curriculum workspace, durable professional agent memory, real-interview support, and verified portability.
 
-**Architecture:** Build a modular monorepo with a React/Vite web client, a Python FastAPI modular monolith with separate API and worker entrypoints, a lightweight Python/Tkinter macOS recorder, PostgreSQL/pgvector as canonical state, and private S3-compatible object storage for immutable artifacts. Execute three independently testable child plans in dependency order, keep every product invariant server-enforced, and deploy natively with systemd/Caddy on the dedicated Hetzner host only after the Gastos archive/restore/destructive gate.
+## Authoritative native architecture override
 
-**Tech Stack:** Python 3.12, uv, FastAPI, Pydantic 2, SQLAlchemy 2, Alembic, PostgreSQL 16, pgvector, React, TypeScript, Vite, pnpm, TanStack Query, Vitest, Playwright, sounddevice, websockets, cryptography, faster-whisper, Silero VAD through ONNX Runtime, Claude Agent SDK with Claude subscription authentication only, local FastEmbed embeddings, Caddy, systemd, GitHub Actions, Hetzner Object Storage.
+The locked [Native macOS Redesign](../specs/2026-08-28-tam-forge-native-macos-redesign.md) and [Native macOS Batch 01 Plan](./2026-08-28-tam-forge-native-macos-batch-01.md) are authoritative for all current and future work. They replace any conflicting React/Vite, Python-recorder, BlackHole, WSS, faster-whisper, or browser-only verification language in historical child plans.
+
+**Architecture:** Build a native SwiftUI macOS application that talks directly to the remote FastAPI backend through generated OpenAPI types and `URLSession`. Capture microphone and macOS-shareable system audio as separate synchronized tracks with ScreenCaptureKit/Core Audio, retain a bounded encrypted recovery spool until durable server audio plus accepted local transcript lineage are confirmed, and run one local `whisper.cpp` job at a time only after recording. Keep PostgreSQL, permanent object storage, pronunciation/alignment, and other heavy services on the Hetzner host. React/Vite and the Python recorder remain migration-only surfaces until E10-I10 proves parity and removes them.
+
+**Tech Stack:** Swift 6, SwiftUI, ScreenCaptureKit, Core Audio, URLSession, Swift OpenAPI Generator, Keychain Services, whisper.cpp with Metal and optional Core ML; Python 3.12, uv, FastAPI, Pydantic 2, SQLAlchemy 2, Alembic, PostgreSQL 16, pgvector, Claude Agent SDK with subscription authentication only, Caddy, systemd, GitHub Actions, and Hetzner Object Storage.
 
 ---
 
 ## 1. Plan set and execution order
 
-The approved product is intentionally split into independently testable child plans:
+The original product plan is split into three independently testable child plans:
 
 1. [Foundation and Learning Workspace](./2026-08-25-tam-forge-01-foundation-learning.md)
 2. [Durable Recording and Speech](./2026-08-25-tam-forge-02-recording-speech.md)
 3. [Agents, Interviews, and Operations](./2026-08-25-tam-forge-03-agents-interviews-operations.md)
 
-The governing specification is [TAM Forge Product and Architecture Design](../specs/2026-08-25-tam-forge-product-architecture-design.md).
+Their backend and domain tasks remain valid where the issue catalog still references them. The native redesign supersedes their client, recorder, local-transcription, and pronunciation architecture.
 
 Plan 1 establishes the repository, identity, storage, curriculum, activity, and evidence foundations used by Plans 2 and 3. Plan 2 completes durable audio plus local speech evidence. Plan 3 closes the AI feedback/memory loop, completes interview and opportunity behavior, adds the remaining specialized workspaces, and hardens operations/export.
 
@@ -33,7 +37,7 @@ main
 
 Each child plan contains the exact branch creation and draft-PR commands. A child branch must start from the recorded exact remote head of its prerequisite and its PR must target that prerequisite branch while the prerequisite PR is open. Never merge a child before its prerequisite. After an explicitly approved prerequisite merge, fetch `origin/main`, merge—not rebase—the new `origin/main` into the child branch, push without force, retarget the child PR to `main`, and verify that `git diff --name-status origin/main...HEAD` contains only the child slice before treating the transition as valid. Keep prerequisite branches until every dependent PR has been safely retargeted. Every PR lists its exact issue keys and prerequisite SHA, remains draft until its exact final head has passed required checks/review, and never mixes work whose prerequisite head is unavailable. No force-push, branch deletion, or merge is automatic.
 
-## 2. Locked repository layout
+## 2. Migration repository layout
 
 ```text
 tam-forge/
@@ -43,8 +47,9 @@ tam-forge/
 │   ├── pull_request_template.md
 │   └── workflows/
 │       ├── backend.yml
-│       ├── recorder.yml
-│       ├── web.yml
+│       ├── macos.yml
+│       ├── recorder.yml           # legacy until E10-I10
+│       ├── web.yml                # legacy until E10-I10
 │       ├── integration.yml
 │       └── security.yml
 ├── apps/
@@ -74,11 +79,16 @@ tam-forge/
 │   │   │   ├── config.py
 │   │   │   └── main.py
 │   │   └── tests/
-│   ├── recorder/
+│   ├── macos/
+│   │   ├── TAMForge.xcodeproj/
+│   │   ├── TAMForge/
+│   │   ├── TAMForgeTests/
+│   │   └── TAMForgeUITests/
+│   ├── recorder/                  # legacy until E10-I10
 │   │   ├── src/tamforge_recorder/
 │   │   ├── tests/
 │   │   └── tam-forge-recorder.spec
-│   └── web/
+│   └── web/                       # legacy until E10-I10
 │       ├── src/
 │       │   ├── app/
 │       │   ├── components/
@@ -119,9 +129,9 @@ tam-forge/
 Boundaries:
 
 - `apps/backend` is one deployable codebase with separate API, general-worker, speech-worker, and Claude-worker process entrypoints. This avoids duplicated domain logic while allowing resource isolation.
-- `apps/recorder` depends only on `packages/protocol`, never backend internals.
-- `apps/web` consumes the checked-in OpenAPI contract and generated types; it never imports backend code.
-- `packages/protocol` owns versioned recorder framing, checksums, control messages, and shared test vectors.
+- `apps/macos` is the only target native client. It consumes generated OpenAPI types, uses `URLSession`, owns capture and local transcription, and never imports backend internals.
+- `apps/recorder`, `apps/web`, and their workflows are legacy migration surfaces only; no open ticket may add new product behavior there unless E10-I10's later Ultra plan explicitly requires a parity fixture.
+- `packages/protocol` is historical Python-recorder protocol code. The native recording contract is the versioned HTTPS manifest/part API defined by the native redesign.
 - `config` contains versioned application-owned data, not secrets.
 - Infrastructure code never contains production credentials or the Gastos archive.
 
@@ -147,8 +157,9 @@ Create these labels idempotently through the issue manifest synchronizer:
 | `type/security` | Authentication/privacy/hardening |
 | `type/evaluation` | Quality or reliability measurement |
 | `area/backend` | FastAPI/domain/worker work |
-| `area/web` | React client work |
-| `area/recorder` | macOS recorder work |
+| `area/web` | Historical React client work retained on closed issues until cutover |
+| `area/macos` | SwiftUI macOS client work |
+| `area/recorder` | Historical legacy recorder work retained on closed issues only |
 | `area/speech` | Audio/transcript/metrics work |
 | `area/agents` | Agent SDK/prompts/tools/memory work |
 | `area/curriculum` | Roadmap/study/evidence work |
@@ -192,35 +203,35 @@ The sync manifest stores stable local keys so repeated runs update existing issu
 11. `E2-I11` Implement Today screen and primary Continue selection.
 12. `E2-I12` Implement allowed notification/status stream.
 
-### Epic E3 — Durable macOS recording
+### Epic E3 — Durable native macOS recording
 
-1. `E3-I01` Specify and test versioned binary/control protocol and golden vectors.
-2. `E3-I02` Implement authenticated recorder pairing, revocation, and Keychain storage.
-3. `E3-I03` Implement minimal topmost Tkinter shell and audio-device diagnostics.
-4. `E3-I04` Implement synchronized microphone and BlackHole capture adapters.
-5. `E3-I05` Implement callback-safe bounded queues and overload behavior.
-6. `E3-I06` Implement encrypted bounded recovery spool and reserve-space gate.
-7. `E3-I07` Implement WSS sender, high-water resume, retry, and stop/seal controls.
-8. `E3-I08` Implement FastAPI recording-session and track authorization.
-9. `E3-I09` Implement deterministic object segment persistence and DB high-water ACK.
-10. `E3-I10` Implement orphan reconciliation and byte-for-byte WAV finalization.
-11. `E3-I11` Run disconnect/crash/disk/duplicate/reorder reliability suite.
-12. `E3-I12` Package, sign/notarization-ready, and smoke-test the `.app` bundle.
+1. `E3-I01` Specify the versioned recording manifest and resumable HTTPS upload contract.
+2. `E3-I02` Implement recording permissions, all-Mac coverage prototype, preflight, and audio diagnostics.
+3. `E3-I03` Capture separate synchronized 48 kHz microphone and all shareable Mac audio tracks.
+4. `E3-I04` Implement callback-safe conversion, bounded buffering, and timeline accounting.
+5. `E3-I05` Implement the encrypted crash-recoverable bounded local spool.
+6. `E3-I06` Implement resumable URLSession upload and local recovery coordination.
+7. `E3-I07` Implement authenticated recording session, track, part, and seal endpoints.
+8. `E3-I08` Persist verified immutable recording parts and transactional high-water state.
+9. `E3-I09` Seal manifests, reconcile orphans, and finalize canonical server originals.
+10. `E3-I10` Run all-app coverage, route, interruption, crash, disk, duplicate, reorder, corruption, and permission tests.
+11. `E3-I11` Benchmark PCM format plus 10/60/120-minute resource and spool behavior.
+12. `E3-I12` Build the stable-signed app/DMG and prove permission persistence.
 
-### Epic E4 — Local speech and English measurement
+### Epic E4 — Local transcription and English measurement
 
-1. `E4-I01` Implement PostgreSQL durable jobs, leases, retries, and transactional outbox.
-2. `E4-I02` Implement sealed-audio preprocessing and quality metadata.
-3. `E4-I03` Integrate Silero VAD through a local ONNX adapter.
-4. `E4-I04` Integrate faster-whisper `small.en` CPU-int8 transcription.
-5. `E4-I05` Implement transcript/word/speaker/uncertainty versioning and corrections.
-6. `E4-I06` Implement deterministic pace/pause/filler/restart/latency metrics.
-7. `E4-I07` Build 10/60-minute performance and resource benchmark harness.
-8. `E4-I08` Build the speech gold-set manifest and adjudication workflow.
-9. `E4-I09` Spike local forced-alignment/GOP pronunciation candidates.
-10. `E4-I10` Implement controlled pronunciation diagnostic behind calibration gate.
-11. `E4-I11` Enforce WER/timestamp/pause/pronunciation decision-grade gates.
-12. `E4-I12` Implement priority per-turn transcription scheduling.
+1. `E4-I01` Integrate speech-analysis jobs and workers with the existing durable queue and outbox.
+2. `E4-I02` Implement versioned 16 kHz mono derivation and audio-quality lineage.
+3. `E4-I03` Integrate pinned whisper.cpp, built-in VAD, Metal, and optional Core ML.
+4. `E4-I04` Benchmark and select quantized Base.en versus Small.en on Francisco's voice.
+5. `E4-I05` Implement transcript, word, uncertainty, correction, and model lineage.
+6. `E4-I06` Implement deterministic pace, pause, filler, restart, and latency metrics.
+7. `E4-I07` Build M2/8 GB 10/60-minute speech performance and cleanup harness.
+8. `E4-I08` Build the private voice gold-set manifest and adjudication tooling.
+9. `E4-I09` Benchmark dedicated server-side pronunciation/alignment candidates on original audio.
+10. `E4-I10` Implement the calibrated server-side pronunciation pipeline and SwiftUI diagnostic.
+11. `E4-I11` Enforce decision-grade transcription, timing, pause, and pronunciation gates.
+12. `E4-I12` Implement one-at-a-time local speech scheduling and memory-pressure recovery.
 
 ### Epic E5 — Closed evidence and correction loop
 
@@ -243,9 +254,9 @@ The sync manifest stores stable local keys so repeated runs update existing issu
 3. `E6-I03` Implement bounded Claude job runner and structured-output repair.
 4. `E6-I04` Implement role-authorized typed in-process tools.
 5. `E6-I05` Implement Planner, Tutor, Coach, Reviewer, and Analyst prompt contracts.
-6. `E6-I06` Implement isolated Interviewer contract and local TTS turn orchestration.
+6. `E6-I06` Implement isolated Interviewer contract and native SwiftUI/TTS turn orchestration.
 7. `E6-I07` Implement versioned episodic/semantic/hypothesis/procedural memory schema.
-8. `E6-I08` Implement local embeddings, relational filtering, and pgvector retrieval.
+8. `E6-I08` Implement server-side embeddings, relational filtering, and pgvector retrieval.
 9. `E6-I09` Implement memory proposal, promotion, conflict, expiry, and supersession.
 10. `E6-I10` Implement role overlays and minimal context manifests.
 11. `E6-I11` Evaluate recall/relevance/provenance and zero forbidden leakage.
@@ -259,7 +270,7 @@ The sync manifest stores stable local keys so repeated runs update existing issu
 4. `E7-I04` Implement practice versus real-interview storage/retrieval isolation.
 5. `E7-I05` Implement mandatory immediate debrief before feedback.
 6. `E7-I06` Implement transcript redaction preview and explicit Claude-release approval.
-7. `E7-I07` Implement question segmentation, timeline, speaker separation, and attribution.
+7. `E7-I07` Implement question segmentation, synchronized two-track timeline, and user/remote attribution.
 8. `E7-I08` Implement two-correction real-interview recovery flow.
 9. `E7-I09` Track outcomes/stage timing without tone-based predictions.
 10. `E7-I10` Use active opportunity evidence to vary adaptive practice without changing the roadmap.
@@ -295,6 +306,19 @@ The sync manifest stores stable local keys so repeated runs update existing issu
 11. `E9-I11` Prove backup RPO/RTO with a clean-environment restore drill.
 12. `E9-I12` Complete production checklist, user runbook, and versioned release.
 
+### Epic E10 — Native macOS application and web parity
+
+1. `E10-I01` Add execution routing and native macOS taxonomy to the issue catalog.
+2. `E10-I02` Bootstrap the Swift 6 macOS 15 app, tests, and CI.
+3. `E10-I03` Generate the typed Swift OpenAPI client and URLSession transport.
+4. `E10-I04` Implement native GitHub OAuth exchange, token rotation, and Keychain storage.
+5. `E10-I05` Implement the SwiftUI shell, navigation, session states, and status stream.
+6. `E10-I06` Migrate Today and notifications to SwiftUI.
+7. `E10-I07` Migrate roadmap import, validation, diff, approval, and activation to SwiftUI.
+8. `E10-I08` Migrate activity workspace, timers, artifacts, commit, and self-review to SwiftUI.
+9. `E10-I09` Migrate the evidence ledger and confidence/portfolio explanations to SwiftUI.
+10. `E10-I10` Prove native parity and remove React/Vite/Node from runtime and CI.
+
 ## 6. Approval gates
 
 The agent may execute ordinary reversible development, verification, commits, pushes, draft PRs, and issue updates after plan approval. It must stop at these gates:
@@ -314,16 +338,16 @@ The agent may execute ordinary reversible development, verification, commits, pu
 | No feedback before self-review | Plans 1 and 3 | API/state-machine integration test |
 | Only qualifying Attempt A/assessment/mock/real evidence advances | Plan 1 | formula golden cases and inspectable ledger |
 | Exactly two strengths/corrections; no Attempt C | Plan 3 | schema/property tests at 100% |
-| No acknowledged audio segment is lost | Plan 2 | crash/reconnect/hash reconstruction tests |
-| Recorder RAM/spool remain bounded | Plan 2 | 60-minute soak report |
-| Audio never enters Claude | Plans 2 and 3 | request-capture and security tests |
+| No acknowledged audio segment is lost | Native E3 | crash/reconnect/hash reconstruction tests |
+| Native app RAM/spool remain bounded | Native E3/E4 | 10/60/120-minute M2/8 GB reports |
+| Audio never enters Claude | Native E3/E4 and Plan 3 | request-capture and security tests |
 | Interviewer cannot see reviewer/coach context | Plan 3 | seeded forbidden-context suite at 0 leakage |
 | Real-interview text requires redaction approval | Plan 3 | consent/redaction state tests |
 | Claude uses subscription only | Plan 3 | startup rejection of API credentials and compatibility smoke test |
 | Sunday creates no work/reminders | Plan 1 | calendar/property tests |
 | History and original artifacts are append-only | All | migration constraints, lineage, and export verification |
-| End-to-end analysis SLOs | Plans 2 and 3 | production-like benchmark report |
-| Pronunciation is measured only when calibrated | Plan 2 | controlled gold-set agreement report |
+| End-to-end analysis SLOs | Native E4 and Plan 3 | production-like benchmark report |
+| Pronunciation is measured only when calibrated | Native E4 | controlled gold-set agreement report |
 | Full export/restore preserves relationships | Plan 3 | clean restore and hash comparison |
 
 ## 8. Master execution tasks
@@ -354,8 +378,8 @@ Expected: no whitespace errors; no unresolved design placeholders.
 Run:
 
 ```bash
-rg -n "^\*\*Status:\*\* Approved" docs/superpowers/specs/2026-08-25-tam-forge-product-architecture-design.md
-rg -n "governing specification" docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md
+rg -n "^\*\*Status:\*\* Approved" docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+rg -n "Authoritative native architecture override" docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md
 ```
 
 Expected: both commands resolve exactly one authoritative design relationship.
@@ -369,20 +393,19 @@ git commit -m "docs: add TAM Forge implementation plan"
 
 Expected: one documentation-only commit and a clean worktree.
 
-### Task 2: Execute Plan 1 Tasks 1–2 — Bootstrap and GitHub planning
+### Task 2: Maintain the GitHub planning catalog
 
-**Files:** See Tasks 1–2 in `docs/superpowers/plans/2026-08-25-tam-forge-01-foundation-learning.md`.
+**Files:** See `scripts/github/sync_issues.py`, `scripts/github/tests/test_sync_issues.py`, `docs/project/github-issues.yml`, and the current ticket-specific Sol/ultra batch plan.
 
-Plan 1 is authoritative for this sequence. The local monorepo and test tooling must exist before the GitHub synchronizer tests run; the private remote and issues are created only after those tests and the explicit identity/privacy checks pass.
+The current native catalog and its locked batch plan are authoritative. Historical Plan 1 describes the original bootstrap only and must not replace the current counts, routing, or native taxonomy.
 
-- [ ] **Step 1: Execute Plan 1 Task 1 completely and commit the tested monorepo bootstrap**
-- [ ] **Step 2: Execute Plan 1 Task 2 Steps 1–5 to test and commit the idempotent issue synchronizer locally**
-- [ ] **Step 3: Verify `gh api user --jq .id` equals immutable personal owner ID `102269369` and that any existing target repository is private and personally owned**
-- [ ] **Step 4: Execute Plan 1 Task 2 Steps 7–8 to create/verify `fgomensoro/tam-forge`, push `main`, and synchronize exactly 5 milestones, 17 labels, 9 epics, and 105 children**
-- [ ] **Step 5: Re-run the synchronizer dry-run and verify zero duplicate/planned writes**
-- [ ] **Step 6: Execute Plan 1 Task 2 Step 9 to create the clean `feat/foundation-learning-workspace` branch**
+- [ ] **Step 1: Run the focused synchronizer tests and validate every child route before client access**
+- [ ] **Step 2: Verify `gh api user --jq .id` equals immutable personal owner ID `102269369` and the target repository is private and personally owned**
+- [ ] **Step 3: Run and review a live read-only dry-run; stop on missing historical issues, ambiguous markers, unexpected state, or stale keys**
+- [ ] **Step 4: Synchronize exactly 5 milestones, 18 labels, 10 epics, and 115 children only from a reviewed exact head**
+- [ ] **Step 5: Re-run the synchronizer dry-run and verify zero duplicate or planned writes**
 
-Expected: the tested bootstrap and planning source exist before their commands run; the private personal repository contains the approved docs; GitHub planning objects are reproducible and idempotent.
+Expected: GitHub planning objects are reproducible and idempotent; 17 closed historical children are never recreated, reopened, or rewritten; manual/status labels survive while structural labels match the catalog exactly.
 
 ### Task 3: Execute Plan 1 Tasks 3–26 — Foundation and learning workspace
 
@@ -396,21 +419,23 @@ Expected: the tested bootstrap and planning source exist before their commands r
 
 Expected: M0 application foundation plus the evidence-driven universal Month 1 workspace are usable without audio or Claude.
 
-### Task 4: Execute Plan 2 — Durable recording and speech
+### Task 4: Execute native E3/E4 — Durable recording and English measurement
 
-**Files:** See `docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md`.
+**Files:** See the locked [Native macOS Redesign](../specs/2026-08-28-tam-forge-native-macos-redesign.md), the routed E3/E4 issues, and the ticket-specific Sol/ultra batch plan required by each issue's dispatch gate. The older Plan 2 is historical context only.
 
-- [ ] **Step 1: Execute every Plan 2 task in dependency order with TDD**
-- [ ] **Step 2: Prove protocol, durability, bounded-memory, and reconstruction invariants**
-- [ ] **Step 3: Run the 10/60-minute speech benchmarks on the target host without changing architecture automatically**
-- [ ] **Step 4: Pass the gold-set gates, including the controlled pronunciation diagnostic**
-- [ ] **Step 5: Update linked issues and prepare the Plan 2 dependency-coherent draft PR for explicit merge approval**
+- [ ] **Step 1: Execute E3 and E4 in dependency order from locked ticket-specific plans with TDD**
+- [ ] **Step 2: Prove separate synchronized microphone/system tracks, HTTPS durability, bounded encrypted recovery, and reconstruction invariants**
+- [ ] **Step 3: Run 10/60/120-minute recording and speech benchmarks on the M2/8 GB Mac without lowering accuracy automatically**
+- [ ] **Step 4: Pass Base-versus-Small, PCM16-versus-PCM24, transcript, timing, pause, and server-side pronunciation gates**
+- [ ] **Step 5: Update linked issues and prepare dependency-coherent draft PRs for explicit merge approval**
 
-Expected: an independently verifiable recording/transcription/measurement pipeline whose acknowledged source audio cannot be lost under tested failures.
+Expected: an independently verifiable native capture/transcription/measurement pipeline whose acknowledged source audio cannot be lost under tested failures and whose local model memory is released after each job.
 
 ### Task 5: Execute Plan 3 — Agents, interviews, complete workspace, and operations
 
 **Files:** See `docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md`.
+
+For every user-facing step, the native issue acceptance and Swift verification supersede historical browser implementation commands.
 
 - [ ] **Step 1: Execute the closed feedback loop and subscription-only Agent SDK tasks**
 - [ ] **Step 2: Execute professional memory and role-isolation tasks**
@@ -448,11 +473,10 @@ Run:
 
 ```bash
 uv run pytest -m "not integration and not postgres_integration and not object_store_integration and not container_integration and not local_model and not hardware and not soak" -q
-uv run mypy apps/backend/src apps/recorder/src packages/protocol/src
-pnpm --filter @tam-forge/web lint
-pnpm --filter @tam-forge/web typecheck
-pnpm --filter @tam-forge/web test --run
-pnpm --filter @tam-forge/web build
+uv run mypy apps/backend/src packages/protocol/src scripts/github
+uv run python scripts/ci/check_openapi.py
+xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination 'platform=macOS' build
+xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination 'platform=macOS' test
 ```
 
 Expected: all commands pass. Plan 3 PostgreSQL tests run only through its zero-skip runner; integration, object-store, container, model, hardware, and soak evidence comes from the exact CI/manual procedures. A skip is not green.
@@ -469,7 +493,7 @@ Expected: integration, security, speech/agent evaluation, and required soak work
 
 - [ ] **Step 4: Verify production restore and observable smoke test**
 
-Run the versioned release checklist. Expected: health/readiness, authenticated Today flow, recorder pairing, one complete Attempt A/self-review/feedback/Attempt B cycle, export verification, and clean restore evidence all pass.
+Run the versioned release checklist. Expected: health/readiness, native authentication and Today flow, synchronized two-track recording, local transcription cleanup, one complete Attempt A/self-review/feedback/Attempt B cycle, export verification, and clean restore evidence all pass.
 
 - [ ] **Step 5: Request explicit merge/release approval**
 

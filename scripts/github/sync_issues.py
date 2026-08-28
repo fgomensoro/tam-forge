@@ -17,7 +17,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Protocol, cast
 from urllib.parse import quote
@@ -46,10 +46,10 @@ class TargetNotFoundError(RuntimeError):
 
 @dataclass(frozen=True)
 class CatalogCounts:
-    labels: int = 17
+    labels: int = 18
     milestones: int = 5
-    epics: int = 9
-    children: int = 105
+    epics: int = 10
+    children: int = 115
 
 
 CATALOG_COUNTS = CatalogCounts()
@@ -70,6 +70,21 @@ class MilestoneSpec:
 
 
 @dataclass(frozen=True)
+class ExecutionSpec:
+    status: str
+    reason: str
+    owner: str | None = None
+    model: str | None = None
+    effort: str | None = None
+    dispatch_gate: tuple[str, ...] = ()
+    escalation_triggers: tuple[str, ...] = ()
+
+    @property
+    def is_executable(self) -> bool:
+        return self.status == "executable"
+
+
+@dataclass(frozen=True)
 class IssueSpec:
     key: str
     title: str
@@ -83,6 +98,7 @@ class IssueSpec:
     children: tuple[str, ...] = ()
     epic: str | None = None
     depends_on: tuple[str, ...] = ()
+    execution: ExecutionSpec | None = None
 
     @property
     def is_epic(self) -> bool:
@@ -390,6 +406,164 @@ def _reject_reserved_marker_content(value: object, path: str = "manifest") -> No
             _reject_reserved_marker_content(item, key_path)
 
 
+def _parse_execution(value: object, key: str) -> ExecutionSpec:
+    record = _mapping(value, f"issue {key} execution")
+    status = record.get("status", "executable")
+    if status == "executable":
+        _require_exact_fields(
+            record,
+            {
+                "owner",
+                "model",
+                "effort",
+                "reason",
+                "dispatch_gate",
+                "escalation_triggers",
+            },
+            set(),
+            f"issue {key} execution",
+        )
+        owner = _string(record["owner"], f"issue {key} execution owner")
+        if owner not in {"coordinator", "subagent"}:
+            raise ManifestError(f"issue {key} execution owner is unsupported")
+        model = _string(record["model"], f"issue {key} execution model")
+        effort = _string(record["effort"], f"issue {key} execution effort")
+        if (model, effort) not in {
+            ("gpt-5.6-sol", "xhigh"),
+            ("gpt-5.6-terra", "xhigh"),
+            ("gpt-5.6-terra", "high"),
+        }:
+            raise ManifestError(f"issue {key} has unsupported execution model/effort pair")
+        if (model == "gpt-5.6-sol") != (owner == "coordinator"):
+            raise ManifestError(
+                f"issue {key} has unsupported execution owner/model combination"
+            )
+        dispatch_gate = _strings(
+            record["dispatch_gate"],
+            f"issue {key} execution dispatch_gate",
+        )
+        if not any("gpt-5.6-sol / ultra" in gate for gate in dispatch_gate):
+            raise ManifestError(
+                f"issue {key} executable execution requires a gpt-5.6-sol / ultra plan"
+            )
+        return ExecutionSpec(
+            status="executable",
+            owner=owner,
+            model=model,
+            effort=effort,
+            reason=_string(record["reason"], f"issue {key} execution reason"),
+            dispatch_gate=dispatch_gate,
+            escalation_triggers=_strings(
+                record["escalation_triggers"],
+                f"issue {key} execution escalation_triggers",
+            ),
+        )
+    if status == "deferred":
+        _require_exact_fields(
+            record,
+            {"status", "reason", "dispatch_gate"},
+            set(),
+            f"issue {key} execution",
+        )
+        dispatch_gate = _strings(
+            record["dispatch_gate"],
+            f"issue {key} execution dispatch_gate",
+        )
+        if not any("gpt-5.6-sol / ultra" in gate for gate in dispatch_gate):
+            raise ManifestError(
+                f"issue {key} deferred execution requires a later gpt-5.6-sol / ultra plan"
+            )
+        return ExecutionSpec(
+            status="deferred",
+            reason=_string(record["reason"], f"issue {key} execution reason"),
+            dispatch_gate=dispatch_gate,
+        )
+    if status == "historical":
+        _require_exact_fields(
+            record,
+            {"status", "reason"},
+            set(),
+            f"issue {key} execution",
+        )
+        return ExecutionSpec(
+            status="historical",
+            reason=_string(record["reason"], f"issue {key} execution reason"),
+        )
+    raise ManifestError(f"issue {key} execution status is unsupported")
+
+
+def _parse_catalog_execution(
+    value: object | None, child_keys: set[str]
+) -> dict[str, ExecutionSpec]:
+    if value is None:
+        return {}
+    record = _mapping(value, "execution")
+    _require_exact_fields(record, {"historical", "deferred", "routes"}, set(), "execution")
+    resolved: dict[str, ExecutionSpec] = {}
+
+    def add(keys: tuple[str, ...], execution: ExecutionSpec) -> None:
+        for key in keys:
+            if key not in child_keys:
+                raise ManifestError(f"execution metadata references unknown child {key}")
+            if key in resolved:
+                raise ManifestError(f"execution metadata assigns {key} more than once")
+            resolved[key] = execution
+
+    historical = _mapping(record["historical"], "execution historical")
+    _require_exact_fields(historical, {"keys", "reason"}, set(), "execution historical")
+    add(
+        _strings(historical["keys"], "execution historical keys"),
+        _parse_execution(
+            {"status": "historical", "reason": historical["reason"]}, "historical"
+        ),
+    )
+
+    for index, item in enumerate(_list(record["deferred"], "execution deferred")):
+        deferred = _mapping(item, f"execution deferred {index}")
+        _require_exact_fields(
+            deferred,
+            {"keys", "reason", "dispatch_gate"},
+            set(),
+            f"execution deferred {index}",
+        )
+        add(
+            _strings(deferred["keys"], f"execution deferred {index} keys"),
+            _parse_execution(
+                {
+                    "status": "deferred",
+                    "reason": deferred["reason"],
+                    "dispatch_gate": deferred["dispatch_gate"],
+                },
+                f"deferred {index}",
+            ),
+        )
+
+    for index, item in enumerate(_list(record["routes"], "execution routes")):
+        route = _mapping(item, f"execution route {index}")
+        _require_exact_fields(
+            route,
+            {
+                "keys",
+                "owner",
+                "model",
+                "effort",
+                "reason",
+                "dispatch_gate",
+                "escalation_triggers",
+            },
+            set(),
+            f"execution route {index}",
+        )
+        add(
+            _strings(route["keys"], f"execution route {index} keys"),
+            _parse_execution(
+                {field: value for field, value in route.items() if field != "keys"},
+                f"route {index}",
+            ),
+        )
+    return resolved
+
+
 def load_and_validate(path: Path, *, _enforce_catalog_counts: bool = True) -> Manifest:
     """Parse and validate every manifest invariant before client access."""
 
@@ -402,7 +576,7 @@ def load_and_validate(path: Path, *, _enforce_catalog_counts: bool = True) -> Ma
     _require_exact_fields(
         root,
         {"version", "repository", "labels", "milestones", "issues"},
-        set(),
+        {"execution"},
         "manifest",
     )
     if root["version"] != 1:
@@ -457,7 +631,7 @@ def load_and_validate(path: Path, *, _enforce_catalog_counts: bool = True) -> Ma
         _require_exact_fields(
             record,
             common_required,
-            {"children", "epic", "depends_on"},
+            {"children", "epic", "depends_on", "execution"},
             f"issue {index}",
         )
         key = _string(record["key"], f"issue {index} key")
@@ -474,7 +648,7 @@ def load_and_validate(path: Path, *, _enforce_catalog_counts: bool = True) -> Ma
         if is_epic_key:
             if not children:
                 raise ManifestError(f"epic {key} must define children")
-            if epic is not None or depends:
+            if epic is not None or depends or "execution" in record:
                 raise ManifestError(f"epic {key} cannot define epic or dependencies")
         else:
             if children:
@@ -500,6 +674,11 @@ def load_and_validate(path: Path, *, _enforce_catalog_counts: bool = True) -> Ma
                 children=children,
                 epic=epic,
                 depends_on=depends,
+                execution=(
+                    _parse_execution(record["execution"], key)
+                    if not is_epic_key and "execution" in record
+                    else None
+                ),
             )
         )
 
@@ -559,6 +738,28 @@ def load_and_validate(path: Path, *, _enforce_catalog_counts: bool = True) -> Ma
                 if dependency == issue.key:
                     raise ManifestError(f"issue {issue.key} cannot depend on itself")
 
+    catalog_execution = _parse_catalog_execution(root.get("execution"), child_keys)
+    resolved_issues: list[IssueSpec] = []
+    for issue in issues:
+        if issue.is_epic:
+            resolved_issues.append(issue)
+            continue
+        execution = issue.execution
+        if issue.key in catalog_execution:
+            if execution is not None:
+                raise ManifestError(f"issue {issue.key} has duplicate execution metadata")
+            execution = catalog_execution[issue.key]
+        if execution is None:
+            raise ManifestError(f"issue {issue.key} must define execution metadata")
+        resolved_issues.append(replace(issue, execution=execution))
+    manifest = Manifest(
+        version=1,
+        repository=repository,
+        labels=tuple(labels),
+        milestones=tuple(milestones),
+        issues=tuple(resolved_issues),
+    )
+
     _validate_dependency_dag(manifest.children)
     _validate_rendered_issue_bodies(manifest)
     if _enforce_catalog_counts:
@@ -584,9 +785,9 @@ def _validate_catalog_counts(manifest: Manifest) -> None:
         raise ManifestError(f"catalog must contain exactly {CATALOG_COUNTS.epics} epics")
     if len(manifest.children) != CATALOG_COUNTS.children:
         raise ManifestError(f"catalog must contain exactly {CATALOG_COUNTS.children} child issues")
-    expected_epics = {f"E{number}" for number in range(1, 10)}
+    expected_epics = {f"E{number}" for number in range(1, 11)}
     if {issue.key for issue in manifest.epics} != expected_epics:
-        raise ManifestError("catalog epic keys must be exactly E1 through E9")
+        raise ManifestError("catalog epic keys must be exactly E1 through E10")
 
 
 def _validate_dependency_dag(children: tuple[IssueSpec, ...]) -> None:
@@ -640,10 +841,19 @@ def _validate_catalog_content_quality(manifest: Manifest) -> None:
     if len(commands) < 20:
         raise ManifestError("catalog verification evidence is not sufficiently issue-specific")
     for issue in manifest.children:
-        if "master-implementation-plan" in issue.plan:
-            raise ManifestError(f"issue {issue.key} must point to an executable child plan")
-        if re.fullmatch(r"Task [0-9]+: .+", issue.task) is None:
-            raise ManifestError(f"issue {issue.key} must name its executable plan task")
+        assert issue.execution is not None
+        if not issue.execution.is_executable:
+            continue
+        path = Path(issue.plan)
+        if not path.is_file():
+            raise ManifestError(f"issue {issue.key} execution plan does not exist")
+        headings = {
+            line.lstrip("# ").strip()
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.startswith("#")
+        }
+        if issue.task not in headings:
+            raise ManifestError(f"issue {issue.key} task is not an execution-plan heading")
 
 
 def marker(key: str) -> str:
@@ -695,6 +905,29 @@ def render_issue_body(issue: IssueSpec, manifest: Manifest, numbers: dict[str, i
             lines.append(f"**Depends on:** {', '.join(dependencies)}")
         else:
             lines.append("**Depends on:** None")
+        assert issue.execution is not None
+        execution = issue.execution
+        lines.extend(["", "## Execution routing", f"**Status:** {execution.status}"])
+        if execution.is_executable:
+            assert execution.owner is not None
+            assert execution.model is not None
+            assert execution.effort is not None
+            lines.extend(
+                [
+                    f"**Owner:** {execution.owner}",
+                    f"**Model / effort:** {execution.model} / {execution.effort}",
+                    f"**Reason:** {execution.reason}",
+                    "**Dispatch gate:**",
+                ]
+            )
+            lines.extend(f"- {item}" for item in execution.dispatch_gate)
+            lines.append("**Escalation triggers:**")
+            lines.extend(f"- {item}" for item in execution.escalation_triggers)
+        else:
+            lines.append(f"**Reason:** {execution.reason}")
+            if execution.dispatch_gate:
+                lines.append("**Dispatch gate:**")
+                lines.extend(f"- {item}" for item in execution.dispatch_gate)
     lines.extend(["", "## Acceptance criteria"])
     lines.extend(f"- [ ] {item}" for item in issue.acceptance)
     lines.extend(["", "## Verification"])
@@ -717,7 +950,12 @@ def load_current_state(client: GhClient) -> CurrentState:
     )
 
 
-def build_sync_plan(manifest: Manifest, current: CurrentState) -> SyncPlan:
+def build_sync_plan(
+    manifest: Manifest,
+    current: CurrentState,
+    *,
+    allow_missing_historical: bool = False,
+) -> SyncPlan:
     """Build a deterministic write plan without mutating the client."""
 
     plan = SyncPlan(manifest=manifest)
@@ -745,6 +983,18 @@ def build_sync_plan(manifest: Manifest, current: CurrentState) -> SyncPlan:
         if isinstance(number, int):
             numbers[key] = number
 
+    for issue in manifest.children:
+        assert issue.execution is not None
+        if issue.execution.status != "historical":
+            continue
+        existing = issue_by_key.get(issue.key)
+        if existing is None:
+            if allow_missing_historical:
+                continue
+            raise ManifestError(f"historical issue {issue.key} is missing; refuse to recreate it")
+        if existing.get("state") != "closed":
+            raise ManifestError(f"historical issue {issue.key} is not closed")
+
     for label in manifest.labels:
         desired: dict[str, object] = {
             "name": label.name,
@@ -769,13 +1019,10 @@ def build_sync_plan(manifest: Manifest, current: CurrentState) -> SyncPlan:
     milestone_title_by_key = {item.key: item.title for item in manifest.milestones}
     for issue in manifest.issues:
         existing = issue_by_key.get(issue.key)
-        desired_labels = list(issue.labels)
-        if existing is not None:
-            desired_labels = sorted(set(desired_labels) | _current_label_names(existing))
         desired = {
             "title": issue.title,
             "body": render_issue_body(issue, manifest, numbers),
-            "labels": desired_labels,
+            "labels": _desired_issue_labels(issue, manifest, existing),
             "milestone_title": milestone_title_by_key[issue.milestone],
         }
         if existing is None:
@@ -832,6 +1079,28 @@ def _current_label_names(issue: dict[str, object]) -> set[str]:
         elif isinstance(item, dict) and isinstance(item.get("name"), str):
             result.add(cast(str, item["name"]))
     return result
+
+
+def _desired_issue_labels(
+    issue: IssueSpec, manifest: Manifest, existing: dict[str, object] | None
+) -> list[str]:
+    """Keep dynamic status/manual labels while exactly replacing catalog labels."""
+
+    desired = list(issue.labels)
+    if existing is None:
+        return desired
+    catalog_label_names = {label.name for label in manifest.labels}
+    dynamic_labels = sorted(
+        label
+        for label in _current_label_names(existing)
+        if label.startswith("status/")
+        or (
+            label not in catalog_label_names
+            and not label.startswith(("type/", "area/", "gate/"))
+        )
+    )
+    desired.extend(label for label in dynamic_labels if label not in desired)
+    return desired
 
 
 def _current_milestone_title(issue: dict[str, object]) -> str | None:
@@ -895,13 +1164,15 @@ def apply_sync_plan(plan: SyncPlan, client: GhClient) -> None:
     }
     milestone_title_by_key = {item.key: item.title for item in plan.manifest.milestones}
     for issue in plan.manifest.issues:
+        if issue.execution is not None and issue.execution.status == "historical":
+            continue
         existing = issues_by_key[issue.key]
         if existing.get("state", "open") == "closed":
             continue
         desired: dict[str, object] = {
             "title": issue.title,
             "body": render_issue_body(issue, plan.manifest, numbers),
-            "labels": sorted(set(issue.labels) | _current_label_names(existing)),
+            "labels": _desired_issue_labels(issue, plan.manifest, existing),
             "milestone_title": milestone_title_by_key[issue.milestone],
         }
         if _issue_changed(existing, desired):
@@ -944,7 +1215,11 @@ def sync_manifest(
     if apply:
         client.preflight_apply()
     current = load_current_state(client)
-    plan = build_sync_plan(manifest, current)
+    plan = build_sync_plan(
+        manifest,
+        current,
+        allow_missing_historical=isinstance(client, EmptyGhClient),
+    )
     if apply:
         apply_sync_plan(plan, client)
     return plan

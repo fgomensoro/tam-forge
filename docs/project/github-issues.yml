@@ -22,10 +22,13 @@ labels:
   description: FastAPI/domain/worker work
 - name: area/web
   color: 1D76DB
-  description: React client work
+  description: Historical React client work retained on closed issues until cutover
+- name: area/macos
+  color: 0052CC
+  description: SwiftUI macOS client work
 - name: area/recorder
   color: C5DEF5
-  description: macOS recorder work
+  description: Historical legacy recorder work retained on closed issues only
 - name: area/speech
   color: D4C5F9
   description: Audio/transcript/metrics work
@@ -53,6 +56,161 @@ labels:
 - name: status/blocked
   color: '000000'
   description: Cannot progress without a named gate/input
+execution:
+  historical:
+    keys:
+    - E1-I01
+    - E1-I02
+    - E1-I03
+    - E1-I04
+    - E1-I05
+    - E2-I01
+    - E2-I02
+    - E2-I03
+    - E2-I04
+    - E2-I05
+    - E2-I06
+    - E2-I07
+    - E2-I08
+    - E2-I09
+    - E2-I10
+    - E2-I11
+    - E2-I12
+    reason: Closed GitHub history; never dispatch, recreate, or rewrite.
+  deferred:
+  - keys:
+    - E10-I09
+    - E10-I10
+    reason: Native parity and React cutover require a later architecture batch.
+    dispatch_gate:
+    - A later gpt-5.6-sol / ultra plan is locked after E10-I06 through E10-I08 completion evidence.
+  routes:
+  - keys:
+    - E1-I06
+    - E1-I07
+    - E1-I08
+    - E1-I09
+    - E1-I10
+    - E1-I11
+    - E3-I01
+    - E3-I02
+    - E3-I03
+    - E3-I04
+    - E3-I05
+    - E3-I06
+    - E3-I07
+    - E3-I08
+    - E3-I09
+    - E3-I10
+    - E3-I11
+    - E3-I12
+    - E4-I01
+    - E4-I02
+    - E4-I03
+    - E4-I04
+    - E4-I05
+    - E4-I07
+    - E4-I09
+    - E4-I11
+    - E4-I12
+    - E5-I02
+    - E5-I03
+    - E5-I09
+    - E5-I11
+    - E6-I02
+    - E6-I03
+    - E6-I04
+    - E6-I06
+    - E6-I07
+    - E6-I08
+    - E6-I10
+    - E7-I01
+    - E7-I03
+    - E7-I04
+    - E7-I06
+    - E7-I07
+    - E7-I10
+    - E8-I01
+    - E8-I08
+    - E8-I09
+    - E8-I10
+    - E8-I11
+    - E9-I01
+    - E9-I02
+    - E9-I03
+    - E9-I04
+    - E9-I06
+    - E9-I08
+    - E9-I09
+    - E9-I10
+    - E9-I11
+    - E9-I12
+    - E10-I04
+    owner: coordinator
+    model: gpt-5.6-sol
+    effort: xhigh
+    reason: Coupled security, privacy, recovery, audio, migration, or architecture work needs coordinator ownership.
+    dispatch_gate:
+    - A ticket-specific gpt-5.6-sol / ultra plan is locked and every declared dependency has completion evidence.
+    escalation_triggers:
+    - New privacy, paid-service, destructive, or production scope appears.
+    - Contracts or dependency state conflict with the locked plan.
+  - keys:
+    - E4-I06
+    - E4-I10
+    - E5-I01
+    - E5-I04
+    - E5-I05
+    - E5-I06
+    - E5-I07
+    - E5-I08
+    - E5-I10
+    - E6-I05
+    - E6-I09
+    - E6-I11
+    - E6-I12
+    - E7-I02
+    - E7-I05
+    - E7-I08
+    - E7-I09
+    - E8-I02
+    - E8-I03
+    - E8-I04
+    - E8-I05
+    - E8-I06
+    - E8-I07
+    - E8-I12
+    - E8-I13
+    - E9-I07
+    - E10-I02
+    - E10-I03
+    - E10-I05
+    - E10-I06
+    - E10-I07
+    - E10-I08
+    owner: subagent
+    model: gpt-5.6-terra
+    effort: xhigh
+    reason: Well-specified production behavior has clear contracts and focused verification.
+    dispatch_gate:
+    - A ticket-specific gpt-5.6-sol / ultra plan is locked and all declared dependencies are complete.
+    escalation_triggers:
+    - Shared contracts, privacy, recovery, auth, or architecture work expands beyond the ticket.
+    - Focused verification does not establish the required acceptance evidence.
+  - keys:
+    - E4-I08
+    - E6-I01
+    - E9-I05
+    - E10-I01
+    owner: subagent
+    model: gpt-5.6-terra
+    effort: high
+    reason: Narrow deterministic work has bounded scope and strong objective checks.
+    dispatch_gate:
+    - A ticket-specific gpt-5.6-sol / ultra plan and focused test contract are locked.
+    escalation_triggers:
+    - Work requires architectural, privacy, or external-state decisions.
+    - The implementation exceeds narrow deterministic scope.
 milestones:
 - key: M0
   title: M0 — Safe Foundation
@@ -289,11 +447,11 @@ issues:
   depends_on:
   - E1-I10
   acceptance:
-  - Encrypted versioned backups meet the approved retention policy, and a clean-environment restore drill records
-    measured RPO and RTO evidence.
+  - Encrypted versioned backups meet the approved retention policy, and backend policy tests plus a clean-environment
+    restore drill record measured RPO and RTO evidence without a browser-only privacy check.
   privacy_impact: low
   verification:
-  - pnpm --dir apps/web exec vitest run src/features/privacy/RetentionArchivePage.test.tsx
+  - uv run pytest infra/tests/test_backup_scripts.py apps/backend/tests/unit/operations/test_backup_policy.py -q
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 24: Implement retention, archive, recoverable deletion, and encrypted off-host recovery'
 - key: E2
@@ -538,11 +696,11 @@ issues:
   plan: docs/superpowers/plans/2026-08-25-tam-forge-01-foundation-learning.md
   task: 'Task 20: Add the durable job primitive, actionable notifications, outbox delivery, and status streaming'
 - key: E3
-  title: 'Epic: Durable macOS recording'
+  title: 'Epic: Durable native macOS recording'
   milestone: M1
   labels:
   - type/epic
-  - area/recorder
+  - area/macos
   - gate/privacy
   children:
   - E3-I01
@@ -565,228 +723,229 @@ issues:
   plan: docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md
   task: Section 5 / Epic E3
 - key: E3-I01
-  title: Specify and test versioned binary/control protocol and golden vectors
+  title: Specify the versioned recording manifest and resumable HTTPS upload contract
   epic: E3
   milestone: M1
   labels:
   - type/feature
-  - area/recorder
+  - area/macos
+  - area/backend
   - gate/privacy
   depends_on:
   - E1-I05
   - E2-I07
   acceptance:
-  - Golden vectors round-trip the exact binary and control frames across implementations, while unsupported versions,
-    malformed lengths, and invalid sequencing fail closed.
+  - The versioned manifest, REST part contract, hashes, gaps, and retry semantics are deterministic and fail closed.
   privacy_impact: high
   verification:
-  - uv run --project packages/protocol pytest packages/protocol/tests/test_control_protocol.py -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 1: Establish the fixed audio/control protocol package'
+  - uv run pytest apps/backend/tests/recordings/test_manifest_contract.py -q
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 6.4 Upload and server acknowledgement
 - key: E3-I02
-  title: Implement authenticated recorder pairing, revocation, and Keychain storage
+  title: Implement recording permissions, all-Mac coverage prototype, preflight, and audio diagnostics
   epic: E3
   milestone: M1
   labels:
   - type/feature
-  - area/recorder
+  - area/macos
   - gate/privacy
   depends_on:
   - E3-I01
   acceptance:
-  - Pairing credentials are short-lived, revocable, scoped to one recorder, stored only in Keychain, and rejected
-    after revocation without leaking token material.
+  - Permission, microphone, free-space, route, and broad all-Mac coverage preflight block incomplete recording safely.
   privacy_impact: high
   verification:
-  - uv run --project apps/backend pytest apps/backend/tests/recordings/test_pairing.py -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 3: Implement backend recorder pairing and revocation'
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 6.1 Capture
 - key: E3-I03
-  title: Implement minimal topmost Tkinter shell and audio-device diagnostics
+  title: Capture separate synchronized 48 kHz microphone and all shareable Mac audio tracks
   epic: E3
   milestone: M1
   labels:
   - type/feature
-  - area/recorder
+  - area/macos
+  - area/speech
   - gate/privacy
   depends_on:
   - E3-I02
   acceptance:
-  - The topmost recorder shows explicit device and connection state, refuses Start when required devices fail preflight,
-    and remains operable with the minimal controls.
+  - Separate synchronized 48 kHz microphone and all-macOS-shareable system tracks retain source format and timeline evidence.
   privacy_impact: high
   verification:
-  - uv run --project apps/recorder pytest apps/recorder/tests/test_app.py -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 20: Assemble the minimal always-on-top recorder controller and GUI'
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 6.1 Capture
 - key: E3-I04
-  title: Implement synchronized microphone and BlackHole capture adapters
+  title: Implement callback-safe conversion, bounded buffering, and timeline accounting
   epic: E3
   milestone: M1
   labels:
   - type/feature
-  - area/recorder
+  - area/macos
   - gate/privacy
   depends_on:
   - E3-I03
   acceptance:
-  - Microphone and BlackHole adapters capture the approved PCM format with a shared monotonic clock and preserve separate
-    synchronized tracks.
+  - Capture callbacks only copy bounded samples; conversion, encryption, hashing, and I/O run outside callbacks with gaps explicit.
   privacy_impact: high
   verification:
-  - uv run --project apps/recorder pytest apps/recorder/tests/audio/test_capture.py -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 5: Discover, preflight, and synchronize microphone and BlackHole capture'
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 6.1 Capture
 - key: E3-I05
-  title: Implement callback-safe bounded queues and overload behavior
+  title: Implement the encrypted crash-recoverable bounded local spool
   epic: E3
   milestone: M1
   labels:
   - type/feature
-  - area/recorder
+  - area/macos
   - gate/privacy
   depends_on:
   - E3-I04
   acceptance:
-  - Audio callbacks never perform blocking I/O; queue exhaustion stops safely with a visible recoverable error instead
-    of silently dropping or growing memory.
+  - Independently authenticated one-second records, manifest recovery, 120-minute cap, and 8 GiB reserve prevent silent loss.
+  - Encrypted local audio and its key remain retained after server `201 Created` until the backend accepts the local
+    transcript plus lineage; transcription failure retains the spool for retry.
   privacy_impact: high
   verification:
-  - uv run --project apps/recorder pytest apps/recorder/tests/audio/test_sync.py -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 5: Discover, preflight, and synchronize microphone and BlackHole capture'
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 6.3 Encrypted temporary spool
 - key: E3-I06
-  title: Implement encrypted bounded recovery spool and reserve-space gate
+  title: Implement resumable URLSession upload and local recovery coordination
   epic: E3
   milestone: M1
   labels:
   - type/feature
-  - area/recorder
+  - area/macos
+  - area/backend
   - gate/privacy
   depends_on:
   - E3-I05
   acceptance:
-  - The encrypted spool survives restart, enforces byte and duration caps, and refuses recording when reserve space
-    is unsafe.
+  - File-backed HTTPS uploads resume idempotently and permanent audio is acknowledged only by server `201 Created`.
+  - Encrypted local audio and its key remain retained after server `201 Created` until the backend accepts the local
+    transcript plus lineage; transcription failure retains the spool for retry.
   privacy_impact: high
   verification:
-  - uv run --project apps/recorder pytest apps/recorder/tests/spool -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 6: Build the bounded encrypted recovery spool'
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 6.4 Upload and server acknowledgement
 - key: E3-I07
-  title: Implement WSS sender, high-water resume, retry, and stop/seal controls
+  title: Implement authenticated recording session, track, part, and seal endpoints
   epic: E3
   milestone: M1
   labels:
   - type/feature
-  - area/recorder
+  - area/backend
+  - area/macos
   - gate/privacy
   depends_on:
   - E3-I06
   acceptance:
-  - Frames resume from the server high-water mark, delete locally only after durable ACK, retry within bounds, and
-    seal only after all acknowledged data is accounted for.
+  - Native bearer authorization scopes session, track, part, and seal requests without a separate recorder identity.
   privacy_impact: high
   verification:
-  - uv run --project apps/recorder pytest apps/recorder/tests/streaming -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 7: Stream spooled frames with resume, ACK deletion, and bounded reconnect'
+  - uv run pytest apps/backend/tests/recordings/test_session_routes.py -q
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 6.4 Upload and server acknowledgement
 - key: E3-I08
-  title: Implement FastAPI recording-session and track authorization
+  title: Persist verified immutable recording parts and transactional high-water state
   epic: E3
   milestone: M1
   labels:
   - type/feature
-  - area/recorder
+  - area/backend
+  - area/macos
   - gate/docker-local
   - gate/privacy
   depends_on:
   - E3-I07
   acceptance:
-  - Only the paired recorder can claim the user-selected session and authorized tracks; expired, revoked, duplicate,
-    or cross-session claims are rejected.
+  - Part objects and PostgreSQL high-water state commit atomically after hash verification; duplicate parts are idempotent.
   privacy_impact: high
   verification:
-  - uv run --project apps/backend pytest apps/backend/tests/recordings/test_session_routes.py -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 8: Create, claim, and authorize web-selected recording sessions'
+  - uv run pytest apps/backend/tests/recordings/test_part_persistence.py -q
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 6.4 Upload and server acknowledgement
 - key: E3-I09
-  title: Implement deterministic object segment persistence and DB high-water ACK
+  title: Seal manifests, reconcile orphans, and finalize canonical server originals
   epic: E3
   milestone: M1
   labels:
   - type/feature
-  - area/recorder
+  - area/backend
+  - area/macos
   - gate/docker-local
   - gate/privacy
   depends_on:
   - E3-I08
   acceptance:
-  - Five-second segments use deterministic keys and checksums, duplicate uploads are idempotent, and database high-water
-    advances only after durable object persistence.
+  - Sealing verifies ordered parts, records explicit gaps, reconciles orphans, and makes permanent original tracks immutable.
+  - Encrypted local audio and its key remain retained after server `201 Created` until the backend accepts the local
+    transcript plus lineage; transcription failure retains the spool for retry.
   privacy_impact: high
   verification:
-  - uv run --project apps/backend pytest apps/backend/tests/unit/storage/test_contract.py apps/backend/tests/unit/storage/test_s3_adapter.py
-    -q -m "not object_store_integration"
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 10: Persist deterministic five-second batches and ACK database high-water'
+  - uv run pytest apps/backend/tests/recordings/test_manifest.py -q
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 6.4 Upload and server acknowledgement
 - key: E3-I10
-  title: Implement orphan reconciliation and byte-for-byte WAV finalization
+  title: Run all-app coverage, route, interruption, crash, disk, duplicate, reorder, corruption, and permission tests
   epic: E3
   milestone: M1
   labels:
   - type/feature
-  - area/recorder
+  - area/macos
+  - area/backend
   - gate/docker-local
   - gate/privacy
   depends_on:
   - E3-I09
   acceptance:
-  - Reconciliation repairs safe object/database orphans without duplication, and final WAV bytes and manifest hashes
-    reproduce the ordered accepted frames exactly.
+  - Coverage proves two required tracks across supported apps, routes, displays, interruptions, failures, and permissions.
   privacy_impact: high
   verification:
-  - uv run --project apps/backend pytest apps/backend/tests/recordings/test_manifest.py -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 12: Seal canonical manifests and stream verified WAV derivatives'
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 11. Verification and release evidence
 - key: E3-I11
-  title: Run disconnect/crash/disk/duplicate/reorder reliability suite
+  title: Benchmark PCM format plus 10/60/120-minute resource and spool behavior
   epic: E3
   milestone: M1
   labels:
   - type/feature
-  - area/recorder
+  - area/macos
+  - area/speech
   - gate/privacy
   depends_on:
   - E3-I10
   acceptance:
-  - The reliability run proves bounded recovery for disconnect, crash, low disk, duplicate, and reordered frames and
-    records any loss, duplication, or unsealed session as failure.
+  - PCM16 remains default unless blinded evaluation proves material outcome gain from PCM24; 10/60/120-minute M2/8 GB evidence is recorded.
   privacy_impact: high
   verification:
-  - uv run --project apps/recorder pytest apps/recorder/tests/soak/test_recorder_soak.py -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 21: Build reproducible failure-injection and performance evaluation harnesses'
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 6.2 Quality-versus-cost gate
 - key: E3-I12
-  title: Package, sign/notarization-ready, and smoke-test the `.app` bundle
+  title: Build the stable-signed app/DMG and prove permission persistence
   epic: E3
   milestone: M1
   labels:
   - type/feature
-  - area/recorder
+  - area/macos
   - gate/privacy
   depends_on:
   - E3-I11
   acceptance:
-  - The standalone app launches on a clean supported Mac, discovers packaged resources, records a smoke session, and
-    is ready for signing and notarization without source checkout.
+  - Stable local signing, DMG installation, permission persistence, entitlements, and clean-user recording smoke evidence pass.
   privacy_impact: high
   verification:
-  - uv run --project apps/recorder pytest apps/recorder/tests/packaging -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 22: Package and verify the standalone macOS `.app`'
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS build
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 11. Verification and release evidence
 - key: E4
-  title: 'Epic: Local speech and English measurement'
+  title: 'Epic: Local transcription and English measurement'
   milestone: M1
   labels:
   - type/epic
@@ -813,27 +972,24 @@ issues:
   plan: docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md
   task: Section 5 / Epic E4
 - key: E4-I01
-  title: Implement PostgreSQL durable jobs, leases, retries, and transactional outbox
+  title: Integrate speech-analysis jobs and workers with the existing durable queue and outbox
   epic: E4
   milestone: M1
   labels:
   - type/evaluation
   - area/speech
-  - gate/docker-local
   - gate/privacy
   depends_on:
   - E3-I10
   acceptance:
-  - Leased jobs recover after worker loss, retry idempotently, publish outbox state transactionally, and prioritize
-    recording turns under the single-concurrency limit.
+  - Existing durable queue primitives are reused; only speech-worker registration, priority, outbox status, and recovery are owned here.
   privacy_impact: high
   verification:
-  - uv run --project apps/backend pytest apps/backend/tests/recordings/test_recovery.py apps/backend/tests/jobs/test_scheduler.py
-    -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 13: Add recording-priority speech jobs and a single-concurrency worker'
+  - uv run pytest apps/backend/tests/jobs/test_scheduler.py apps/backend/tests/recordings/test_recovery.py -q
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 10. Server and operational boundary
 - key: E4-I02
-  title: Implement sealed-audio preprocessing and quality metadata
+  title: Implement versioned 16 kHz mono derivation and audio-quality lineage
   epic: E4
   milestone: M1
   labels:
@@ -843,34 +999,32 @@ issues:
   depends_on:
   - E4-I01
   acceptance:
-  - Preprocessing derives deterministic analysis audio and quality metadata only from sealed inputs, preserves originals
-    byte-for-byte, and marks unusable audio explicitly.
+  - A versioned 16 kHz mono PCM16 derivative for ASR retains source-track, quality, and conversion lineage without changing originals.
   privacy_impact: high
   verification:
-  - uv run --project apps/backend pytest apps/backend/tests/speech/test_audio_derivation.py apps/backend/tests/speech/test_vad.py
-    apps/backend/tests/speech/test_quality.py -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 14: Derive analysis audio and independent Silero speech intervals'
+  - uv run pytest apps/backend/tests/speech/test_audio_derivation.py apps/backend/tests/speech/test_quality.py -q
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 7.1 Processing order
 - key: E4-I03
-  title: Integrate Silero VAD through a local ONNX adapter
+  title: Integrate pinned whisper.cpp, built-in VAD, Metal, and optional Core ML
   epic: E4
   milestone: M1
   labels:
   - type/evaluation
   - area/speech
+  - area/macos
   - gate/privacy
   depends_on:
   - E4-I02
   acceptance:
-  - The checksum-pinned local ONNX adapter produces reproducible speech intervals without network access and records
-    model and threshold versions.
+  - Pinned whisper.cpp uses built-in VAD, Metal, and optional Core ML with no bundled Python runtime or network inference.
   privacy_impact: high
   verification:
-  - uv run --project apps/backend pytest apps/backend/tests/speech/test_vad.py -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 14: Derive analysis audio and independent Silero speech intervals'
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 7.2 Model selection
 - key: E4-I04
-  title: Integrate faster-whisper `small.en` CPU-int8 transcription
+  title: Benchmark and select quantized Base.en versus Small.en on Francisco's voice
   epic: E4
   milestone: M1
   labels:
@@ -880,15 +1034,16 @@ issues:
   depends_on:
   - E4-I03
   acceptance:
-  - Sealed analysis audio yields immutable word-timestamp transcript versions through CPU-int8 small.en without mutating
-    source audio.
+  - Base.en and Small.en use the same pinned quantization and private voice set; selection requires material accuracy evidence.
+  - Encrypted local audio and its key remain retained after server `201 Created` until the backend accepts the local
+    transcript plus lineage; transcription failure retains the spool for retry.
   privacy_impact: high
   verification:
-  - uv run --project apps/backend pytest apps/backend/tests/speech/test_transcription_adapter.py -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 15: Persist immutable transcript lineage and run faster-whisper CPU INT8'
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 7.2 Model selection
 - key: E4-I05
-  title: Implement transcript/word/speaker/uncertainty versioning and corrections
+  title: Implement transcript, word, uncertainty, correction, and model lineage
   epic: E4
   milestone: M1
   labels:
@@ -898,16 +1053,16 @@ issues:
   depends_on:
   - E4-I04
   acceptance:
-  - Raw and corrected transcripts, words, speakers, uncertainty, and processing-clock versions remain immutable and
-    every analysis records the exact transcript version used.
+  - Immutable transcript, word timestamps, uncertainty, corrections, and model/config hashes make every analysis reproducible.
+  - Encrypted local audio and its key remain retained after server `201 Created` until the backend accepts the local
+    transcript plus lineage; transcription failure retains the spool for retry.
   privacy_impact: high
   verification:
-  - uv run --project apps/backend pytest apps/backend/tests/speech/test_transcript_repository.py apps/backend/tests/speech/test_transcript_routes.py
-    apps/backend/tests/speech/test_speakers.py apps/backend/tests/speech/test_processing_clock.py -q -m "not postgres_integration"
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 15: Persist immutable transcript lineage and run faster-whisper CPU INT8'
+  - uv run pytest apps/backend/tests/speech/test_transcript_repository.py apps/backend/tests/speech/test_transcript_routes.py -q
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 7.1 Processing order
 - key: E4-I06
-  title: Implement deterministic pace/pause/filler/restart/latency metrics
+  title: Implement deterministic pace, pause, filler, restart, and latency metrics
   epic: E4
   milestone: M1
   labels:
@@ -917,15 +1072,14 @@ issues:
   depends_on:
   - E4-I05
   acceptance:
-  - Pace, pauses, fillers, restarts, lexical measures, and response latency follow the versioned formulas and return
-    unavailable rather than fabricated values when evidence is insufficient.
+  - Pace, pauses, fillers, restarts, and latency use versioned evidence and return unavailable rather than fabricated values.
   privacy_impact: high
   verification:
   - uv run --project apps/backend pytest apps/backend/tests/speech/metrics -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 16: Compute deterministic fluency, lexical, and turn metrics with honest availability'
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 8. English-analysis separation
 - key: E4-I07
-  title: Build 10/60-minute performance and resource benchmark harness
+  title: Build M2/8 GB 10/60-minute speech performance and cleanup harness
   epic: E4
   milestone: M1
   labels:
@@ -935,16 +1089,14 @@ issues:
   depends_on:
   - E4-I06
   acceptance:
-  - The 10- and 60-minute benchmark records latency, CPU, memory, and backlog against approved Mac and CX23 thresholds
-    in a reproducible artifact.
+  - 10- and 60-minute M2/8 GB runs prove one-job scheduling, cleanup, and no duration-linked memory growth.
   privacy_impact: high
   verification:
-  - uv run --project apps/backend pytest apps/backend/tests/evaluation/test_speech_benchmark.py apps/backend/tests/evaluation/test_cx23_benchmark.py
-    -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 21: Build reproducible failure-injection and performance evaluation harnesses'
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 7.3 Initial 8 GB gates
 - key: E4-I08
-  title: Build the speech gold-set manifest and adjudication workflow
+  title: Build the private voice gold-set manifest and adjudication tooling
   epic: E4
   milestone: M1
   labels:
@@ -954,16 +1106,14 @@ issues:
   depends_on:
   - E4-I07
   acceptance:
-  - A versioned, consented gold-set manifest links reference words, timestamps, pauses, and adjudication decisions
-    without overwriting earlier judgments.
+  - Private consented gold-set manifests preserve reference words, timestamps, adjudication, and no raw-audio commit.
   privacy_impact: high
   verification:
-  - uv run --project apps/backend pytest apps/backend/tests/evaluation/test_speech_benchmark.py apps/backend/tests/evaluation/test_cx23_benchmark.py
-    -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 21: Build reproducible failure-injection and performance evaluation harnesses'
+  - uv run pytest apps/backend/tests/evaluation/test_speech_benchmark.py -q
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 7.2 Model selection
 - key: E4-I09
-  title: Spike local forced-alignment/GOP pronunciation candidates
+  title: Benchmark dedicated server-side pronunciation/alignment candidates on original audio
   epic: E4
   milestone: M1
   labels:
@@ -973,33 +1123,32 @@ issues:
   depends_on:
   - E4-I08
   acceptance:
-  - The decision record compares local forced-alignment and GOP candidates on the approved gold set and records a
-    reproducible pass or reject decision for calibration.
+  - Server-side alignment candidates are compared on original microphone audio for accuracy, privacy, licensing, and cost.
   privacy_impact: high
   verification:
   - uv run --project apps/backend pytest apps/backend/tests/speech/pronunciation -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 17: Spike and gate the controlled pronunciation diagnostic'
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 8. English-analysis separation
 - key: E4-I10
-  title: Implement controlled pronunciation diagnostic behind calibration gate
+  title: Implement the calibrated server-side pronunciation pipeline and SwiftUI diagnostic
   epic: E4
   milestone: M1
   labels:
   - type/evaluation
   - area/speech
+  - area/macos
   - gate/privacy
   depends_on:
   - E4-I09
   acceptance:
-  - The pronunciation diagnostic is unavailable until calibration passes, presents word-level targets as controlled
-    evidence rather than accent judgment, and accepts human corrections.
+  - Server-calibrated pronunciation remains not_measured until evidence passes; SwiftUI exposes uncertainty and corrections without accent scoring.
   privacy_impact: high
   verification:
-  - pnpm --dir apps/web test -- PronunciationDiagnostic.test.tsx --run
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 18: Expose the controlled diagnostic and human-correction workflow'
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 8. English-analysis separation
 - key: E4-I11
-  title: Enforce WER/timestamp/pause/pronunciation decision-grade gates
+  title: Enforce decision-grade transcription, timing, pause, and pronunciation gates
   epic: E4
   milestone: M1
   labels:
@@ -1009,31 +1158,32 @@ issues:
   depends_on:
   - E4-I10
   acceptance:
-  - Release gates fail when WER, timestamp, pause, or benchmark thresholds are missed and keep pronunciation unavailable
-    unless its separate calibration threshold passes.
+  - Decision-grade gates cover transcript timing, pauses, and calibrated pronunciation; unsupported evidence stays unavailable.
   privacy_impact: high
   verification:
-  - uv run --project apps/recorder pytest apps/recorder/tests/soak/test_recorder_soak.py -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 21: Build reproducible failure-injection and performance evaluation harnesses'
+  - uv run pytest apps/backend/tests/evaluation/test_speech_benchmark.py -q
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 8. English-analysis separation
 - key: E4-I12
-  title: Implement priority per-turn transcription scheduling
+  title: Implement one-at-a-time local speech scheduling and memory-pressure recovery
   epic: E4
   milestone: M1
   labels:
   - type/evaluation
   - area/speech
+  - area/macos
   - gate/privacy
   depends_on:
   - E4-I11
   acceptance:
-  - Short interviewer-turn transcription runs ahead of offline analysis while preserving single-worker safety, durable
-    priority, and eventual progress for lower-priority jobs.
+  - One local job runs after recording; memory pressure or thermal limits defer safely and release owned model/audio memory.
+  - Encrypted local audio and its key remain retained after server `201 Created` until the backend accepts the local
+    transcript plus lineage; transcription failure retains the spool for retry.
   privacy_impact: high
   verification:
-  - uv run --project apps/backend pytest apps/backend/tests/speech/test_priority.py -q
-  plan: docs/superpowers/plans/2026-08-25-tam-forge-02-recording-speech.md
-  task: 'Task 13: Add recording-priority speech jobs and a single-concurrency worker'
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
+  plan: docs/superpowers/specs/2026-08-28-tam-forge-native-macos-redesign.md
+  task: 7.3 Initial 8 GB gates
 - key: E5
   title: 'Epic: Closed evidence and correction loop'
   milestone: M1
@@ -1128,6 +1278,7 @@ issues:
   - type/feature
   - area/backend
   - area/curriculum
+  - area/macos
   - gate/privacy
   depends_on:
   - E5-I03
@@ -1136,7 +1287,8 @@ issues:
     between observed content, user recollection, inference, and unknowns.
   privacy_impact: medium
   verification:
-  - pnpm --dir apps/web exec vitest run src/features/feedback/FeedbackPanel.test.tsx
+  - uv run pytest apps/backend/tests/unit/analysis/test_feedback_routes.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 7: Publish Reviewer results only after self-review and evidence validation'
 - key: E5-I05
@@ -1147,6 +1299,7 @@ issues:
   - type/feature
   - area/backend
   - area/curriculum
+  - area/macos
   - gate/privacy
   depends_on:
   - E5-I04
@@ -1155,7 +1308,8 @@ issues:
     evidence, a compact structure, and bounded Attempt B instructions.
   privacy_impact: medium
   verification:
-  - pnpm --dir apps/web exec vitest run src/features/corrections/CorrectionsPanel.test.tsx src/features/corrections/AttemptBPanel.test.tsx
+  - uv run pytest apps/backend/tests/unit/analysis/test_feedback_routes.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 8: Implement exactly-two corrections and the Attempt B lifecycle'
 - key: E5-I06
@@ -1166,6 +1320,7 @@ issues:
   - type/feature
   - area/backend
   - area/curriculum
+  - area/macos
   - gate/privacy
   depends_on:
   - E5-I05
@@ -1174,7 +1329,8 @@ issues:
     and no additional correction attempt is scheduled.
   privacy_impact: medium
   verification:
-  - pnpm --dir apps/web exec vitest run src/features/corrections/CorrectionsPanel.test.tsx src/features/corrections/AttemptBPanel.test.tsx
+  - uv run pytest apps/backend/tests/unit/analysis/test_feedback_routes.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 8: Implement exactly-two corrections and the Attempt B lifecycle'
 - key: E5-I07
@@ -1185,6 +1341,7 @@ issues:
   - type/feature
   - area/backend
   - area/curriculum
+  - area/macos
   - gate/privacy
   depends_on:
   - E5-I06
@@ -1193,7 +1350,8 @@ issues:
     workflow cannot create Attempt C.
   privacy_impact: medium
   verification:
-  - pnpm --dir apps/web exec vitest run src/features/corrections/CorrectionsPanel.test.tsx src/features/corrections/AttemptBPanel.test.tsx
+  - uv run pytest apps/backend/tests/unit/analysis/test_feedback_routes.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 8: Implement exactly-two corrections and the Attempt B lifecycle'
 - key: E5-I08
@@ -1204,6 +1362,7 @@ issues:
   - type/feature
   - area/backend
   - area/curriculum
+  - area/macos
   - gate/privacy
   depends_on:
   - E5-I07
@@ -1212,7 +1371,8 @@ issues:
     repetition of the original prompt.
   privacy_impact: medium
   verification:
-  - pnpm --dir apps/web exec vitest run src/features/corrections/CorrectionsPanel.test.tsx src/features/corrections/AttemptBPanel.test.tsx
+  - uv run pytest apps/backend/tests/unit/analysis/test_feedback_routes.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 8: Implement exactly-two corrections and the Attempt B lifecycle'
 - key: E5-I09
@@ -1223,6 +1383,7 @@ issues:
   - type/feature
   - area/backend
   - area/curriculum
+  - area/macos
   - gate/privacy
   depends_on:
   - E5-I08
@@ -1231,7 +1392,8 @@ issues:
     evidence and retain the qualifying evidence link.
   privacy_impact: medium
   verification:
-  - pnpm --dir apps/web exec vitest run src/features/feedback/FeedbackPanel.test.tsx
+  - uv run pytest apps/backend/tests/unit/analysis/test_feedback_routes.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 7: Publish Reviewer results only after self-review and evidence validation'
 - key: E5-I10
@@ -1391,12 +1553,13 @@ issues:
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 13: Implement Planner, Tutor, and unsaved Coach role services'
 - key: E6-I06
-  title: Implement isolated Interviewer contract and local TTS turn orchestration
+  title: Implement isolated Interviewer contract and native SwiftUI/TTS turn orchestration
   epic: E6
   milestone: M2
   labels:
   - type/feature
   - area/agents
+  - area/macos
   - gate/privacy
   depends_on:
   - E6-I05
@@ -1405,7 +1568,7 @@ issues:
     uses local TTS without inheriting another role's writable memory.
   privacy_impact: high
   verification:
-  - pnpm --dir apps/web exec vitest run src/features/interviews/PracticeInterviewer.test.tsx
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 16: Implement the isolated turn-based practice Interviewer'
 - key: E6-I07
@@ -1428,7 +1591,7 @@ issues:
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 9: Add canonical versioned memory and conversation storage'
 - key: E6-I08
-  title: Implement local embeddings, relational filtering, and pgvector retrieval
+  title: Implement server-side embeddings, relational filtering, and pgvector retrieval
   epic: E6
   milestone: M2
   labels:
@@ -1552,16 +1715,18 @@ issues:
   labels:
   - type/feature
   - area/backend
+  - area/macos
   - gate/docker-local
   - gate/privacy
   depends_on:
   - E6-I10
   acceptance:
   - Opportunities preserve company, role, job-description snapshot, stage history, next action, interview links, and
-    owner-scoped retrieval without cross-opportunity leakage.
+    owner-scoped retrieval without cross-opportunity leakage; the native workspace exposes the same lifecycle safely.
   privacy_impact: high
   verification:
   - uv run pytest packages/protocol/tests/test_interviews.py packages/protocol/tests/test_opportunities.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 15: Define and persist practice interviews, real interviews, consent, and opportunities'
 - key: E7-I02
@@ -1626,6 +1791,7 @@ issues:
   labels:
   - type/feature
   - area/backend
+  - area/macos
   - gate/privacy
   depends_on:
   - E7-I04
@@ -1634,7 +1800,8 @@ issues:
     transcript evidence and later inference.
   privacy_impact: high
   verification:
-  - pnpm --dir apps/web exec vitest run src/features/interviews/RealInterviewFlow.test.tsx
+  - uv run pytest apps/backend/tests/unit/interviews/test_policy.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 17: Enforce the real-interview consent, debrief, redaction, and analysis path'
 - key: E7-I06
@@ -1644,6 +1811,7 @@ issues:
   labels:
   - type/feature
   - area/backend
+  - area/macos
   - gate/privacy
   depends_on:
   - E7-I05
@@ -1654,24 +1822,28 @@ issues:
   verification:
   - uv run pytest apps/backend/tests/unit/interviews/test_policy.py apps/backend/tests/unit/interviews/test_redaction.py apps/backend/tests/security/test_real_interview_privacy.py
     -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 17: Enforce the real-interview consent, debrief, redaction, and analysis path'
 - key: E7-I07
-  title: Implement question segmentation, timeline, speaker separation, and attribution
+  title: Implement question segmentation, synchronized two-track timeline, and user/remote attribution
   epic: E7
   milestone: M2
   labels:
   - type/feature
   - area/backend
+  - area/macos
   - gate/privacy
   depends_on:
   - E7-I06
   acceptance:
-  - Processing produces speaker-separated questions and a timestamped timeline while labeling explicit content, recollection,
-    inference, uncertainty, and unknown information separately.
+  - Processing segments questions from synchronized microphone/system tracks and produces a timestamped user/remote
+    timeline while labeling explicit content, recollection, inference, uncertainty, and unknown information separately;
+    remote-speaker diarization remains out of scope until evidence requires it.
   privacy_impact: high
   verification:
-  - pnpm --dir apps/web exec vitest run src/features/interviews/RealInterviewFlow.test.tsx
+  - uv run pytest apps/backend/tests/unit/interviews/test_policy.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 17: Enforce the real-interview consent, debrief, redaction, and analysis path'
 - key: E7-I08
@@ -1681,6 +1853,7 @@ issues:
   labels:
   - type/feature
   - area/backend
+  - area/macos
   - gate/privacy
   depends_on:
   - E7-I07
@@ -1689,7 +1862,8 @@ issues:
     transfer in a different later scenario.
   privacy_impact: high
   verification:
-  - pnpm --dir apps/web exec vitest run src/features/interviews/RealInterviewFlow.test.tsx
+  - uv run pytest apps/backend/tests/unit/interviews/test_policy.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 17: Enforce the real-interview consent, debrief, redaction, and analysis path'
 - key: E7-I09
@@ -1736,7 +1910,7 @@ issues:
   labels:
   - type/epic
   - area/curriculum
-  - area/web
+  - area/macos
   children:
   - E8-I01
   - E8-I02
@@ -1765,7 +1939,7 @@ issues:
   labels:
   - type/feature
   - area/curriculum
-  - area/web
+  - area/macos
   depends_on:
   - E2-I07
   acceptance:
@@ -1774,6 +1948,7 @@ issues:
   privacy_impact: medium
   verification:
   - uv run pytest packages/protocol/tests/test_workspaces.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 19: Add specialized technical-reading and SQL workspaces after the universal MVP'
 - key: E8-I02
@@ -1783,7 +1958,7 @@ issues:
   labels:
   - type/feature
   - area/curriculum
-  - area/web
+  - area/macos
   depends_on:
   - E8-I01
   acceptance:
@@ -1792,6 +1967,7 @@ issues:
   privacy_impact: medium
   verification:
   - uv run pytest packages/protocol/tests/test_workspaces.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 19: Add specialized technical-reading and SQL workspaces after the universal MVP'
 - key: E8-I03
@@ -1801,7 +1977,7 @@ issues:
   labels:
   - type/feature
   - area/curriculum
-  - area/web
+  - area/macos
   depends_on:
   - E8-I02
   acceptance:
@@ -1811,6 +1987,7 @@ issues:
   verification:
   - uv run pytest packages/protocol/tests/test_workspaces.py apps/backend/tests/unit/workspaces/test_reading.py apps/backend/tests/unit/workspaces/test_sql.py
     -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 19: Add specialized technical-reading and SQL workspaces after the universal MVP'
 - key: E8-I04
@@ -1820,7 +1997,7 @@ issues:
   labels:
   - type/feature
   - area/curriculum
-  - area/web
+  - area/macos
   depends_on:
   - E8-I03
   acceptance:
@@ -1829,6 +2006,7 @@ issues:
   privacy_impact: medium
   verification:
   - uv run pytest apps/backend/tests/unit/workspaces/test_cases.py apps/backend/tests/unit/workspaces/test_portfolio.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 20: Add case, cumulative-history, and portfolio-judgment workspaces'
 - key: E8-I05
@@ -1838,7 +2016,7 @@ issues:
   labels:
   - type/feature
   - area/curriculum
-  - area/web
+  - area/macos
   depends_on:
   - E8-I04
   acceptance:
@@ -1847,6 +2025,7 @@ issues:
   privacy_impact: medium
   verification:
   - uv run pytest apps/backend/tests/unit/workspaces/test_cases.py apps/backend/tests/unit/workspaces/test_portfolio.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 20: Add case, cumulative-history, and portfolio-judgment workspaces'
 - key: E8-I06
@@ -1856,7 +2035,7 @@ issues:
   labels:
   - type/feature
   - area/curriculum
-  - area/web
+  - area/macos
   depends_on:
   - E8-I05
   acceptance:
@@ -1865,6 +2044,7 @@ issues:
   privacy_impact: medium
   verification:
   - uv run pytest apps/backend/tests/unit/workspaces/test_writing.py apps/backend/tests/unit/workspaces/test_career.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 21: Add written-communication and career-pipeline workspaces'
 - key: E8-I07
@@ -1874,7 +2054,7 @@ issues:
   labels:
   - type/feature
   - area/curriculum
-  - area/web
+  - area/macos
   depends_on:
   - E8-I06
   acceptance:
@@ -1883,6 +2063,7 @@ issues:
   privacy_impact: medium
   verification:
   - uv run pytest apps/backend/tests/unit/workspaces/test_writing.py apps/backend/tests/unit/workspaces/test_career.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 21: Add written-communication and career-pipeline workspaces'
 - key: E8-I08
@@ -1892,7 +2073,7 @@ issues:
   labels:
   - type/feature
   - area/curriculum
-  - area/web
+  - area/macos
   depends_on:
   - E8-I07
   - E8-I05
@@ -1901,6 +2082,7 @@ issues:
   privacy_impact: medium
   verification:
   - uv run pytest apps/backend/tests/unit/workspaces/test_cases.py apps/backend/tests/unit/workspaces/test_portfolio.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 20: Add case, cumulative-history, and portfolio-judgment workspaces'
 - key: E8-I09
@@ -1910,7 +2092,7 @@ issues:
   labels:
   - type/feature
   - area/curriculum
-  - area/web
+  - area/macos
   depends_on:
   - E8-I08
   acceptance:
@@ -1919,6 +2101,7 @@ issues:
   privacy_impact: medium
   verification:
   - uv run pytest packages/protocol/tests/test_reports.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 22: Build analytics, interview-family readiness, and reports over the foundation evidence ledger'
 - key: E8-I10
@@ -1928,7 +2111,7 @@ issues:
   labels:
   - type/feature
   - area/curriculum
-  - area/web
+  - area/macos
   depends_on:
   - E8-I09
   acceptance:
@@ -1937,6 +2120,7 @@ issues:
   privacy_impact: medium
   verification:
   - uv run pytest packages/protocol/tests/test_reports.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 22: Build analytics, interview-family readiness, and reports over the foundation evidence ledger'
 - key: E8-I11
@@ -1946,7 +2130,7 @@ issues:
   labels:
   - type/feature
   - area/curriculum
-  - area/web
+  - area/macos
   depends_on:
   - E8-I10
   acceptance:
@@ -1955,6 +2139,7 @@ issues:
   privacy_impact: medium
   verification:
   - uv run pytest packages/protocol/tests/test_reports.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 22: Build analytics, interview-family readiness, and reports over the foundation evidence ledger'
 - key: E8-I12
@@ -1964,7 +2149,7 @@ issues:
   labels:
   - type/feature
   - area/curriculum
-  - area/web
+  - area/macos
   depends_on:
   - E8-I11
   acceptance:
@@ -1973,6 +2158,7 @@ issues:
   privacy_impact: medium
   verification:
   - uv run pytest packages/protocol/tests/test_reports.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 22: Build analytics, interview-family readiness, and reports over the foundation evidence ledger'
 - key: E8-I13
@@ -1982,7 +2168,7 @@ issues:
   labels:
   - type/feature
   - area/curriculum
-  - area/web
+  - area/macos
   depends_on:
   - E8-I12
   acceptance:
@@ -1991,6 +2177,7 @@ issues:
   privacy_impact: medium
   verification:
   - uv run pytest packages/protocol/tests/test_reports.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 22: Build analytics, interview-family readiness, and reports over the foundation evidence ledger'
 - key: E9
@@ -2082,6 +2269,7 @@ issues:
   labels:
   - type/security
   - area/operations
+  - area/macos
   - gate/docker-local
   - gate/privacy
   depends_on:
@@ -2091,7 +2279,8 @@ issues:
     and leaves no partial state on failure.
   privacy_impact: high
   verification:
-  - pnpm --dir apps/web exec vitest run src/features/exports/ExportPanel.test.tsx src/features/exports/ImportRestorePanel.test.tsx
+  - uv run pytest apps/backend/tests/unit/exports -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 23: Build complete verified export plus dry-run/transactional import and optional OKF 0.2 projection'
 - key: E9-I05
@@ -2101,6 +2290,7 @@ issues:
   labels:
   - type/security
   - area/operations
+  - area/macos
   - gate/privacy
   depends_on:
   - E9-I03
@@ -2109,7 +2299,8 @@ issues:
     becomes or mutates the system of record.
   privacy_impact: high
   verification:
-  - pnpm --dir apps/web exec vitest run src/features/exports/ExportPanel.test.tsx src/features/exports/ImportRestorePanel.test.tsx
+  - uv run pytest apps/backend/tests/unit/exports -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 23: Build complete verified export plus dry-run/transactional import and optional OKF 0.2 projection'
 - key: E9-I06
@@ -2119,6 +2310,7 @@ issues:
   labels:
   - type/security
   - area/operations
+  - area/macos
   - gate/privacy
   depends_on:
   - E9-I01
@@ -2128,7 +2320,8 @@ issues:
     and never overwrite original evidence.
   privacy_impact: high
   verification:
-  - pnpm --dir apps/web exec vitest run src/features/privacy/RetentionArchivePage.test.tsx
+  - uv run pytest apps/backend/tests/unit/operations/test_retention.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 24: Implement retention, archive, recoverable deletion, and encrypted off-host recovery'
 - key: E9-I07
@@ -2235,6 +2428,7 @@ issues:
   labels:
   - type/security
   - area/operations
+  - area/macos
   depends_on:
   - E9-I03
   - E9-I04
@@ -2246,10 +2440,207 @@ issues:
   - E9-I11
   - E1-I10
   acceptance:
-  - The release checklist links passing learning, privacy, portability, recovery, runbook, and version evidence and
-    refuses release while any required item is unresolved.
+  - The release checklist links native app/DMG, signing, permission persistence, learning, privacy, recovery, and version evidence and refuses release while any required item is unresolved.
   privacy_impact: low
   verification:
   - uv run pytest apps/backend/tests/acceptance/test_plan_03_acceptance.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS build
   plan: docs/superpowers/plans/2026-08-25-tam-forge-03-agents-interviews-operations.md
   task: 'Task 29: Prove the integrated learning, privacy, portability, and recovery journey'
+- key: E10
+  title: 'Epic: Native macOS application and web parity'
+  milestone: M0
+  labels:
+  - type/epic
+  - area/macos
+  children:
+  - E10-I01
+  - E10-I02
+  - E10-I03
+  - E10-I04
+  - E10-I05
+  - E10-I06
+  - E10-I07
+  - E10-I08
+  - E10-I09
+  - E10-I10
+  acceptance:
+  - Native SwiftUI replaces each supported workspace only after parity evidence against the authoritative FastAPI backend.
+  privacy_impact: medium
+  verification:
+  - make check
+  plan: docs/superpowers/plans/2026-08-25-tam-forge-master-implementation-plan.md
+  task: Section 5 / Epic E10
+- key: E10-I01
+  title: Add execution routing and native macOS taxonomy to the issue catalog
+  epic: E10
+  milestone: M0
+  labels:
+  - type/infrastructure
+  - area/operations
+  - area/macos
+  depends_on: []
+  acceptance:
+  - The catalog adds area/macos, E10, validated routing, and native rewrites without recreating closed history.
+  privacy_impact: none
+  verification:
+  - uv run pytest scripts/github/tests/test_sync_issues.py -q
+  - uv run python scripts/github/sync_issues.py --repo fgomensoro/tam-forge --manifest docs/project/github-issues.yml --dry-run
+  plan: docs/superpowers/plans/2026-08-28-tam-forge-native-macos-batch-01.md
+  task: '4. Ticket E10-I01 — Catalog routing and native taxonomy'
+- key: E10-I02
+  title: Bootstrap the Swift 6 macOS 15 app, tests, and CI
+  epic: E10
+  milestone: M0
+  labels:
+  - type/infrastructure
+  - area/macos
+  depends_on:
+  - E10-I01
+  acceptance:
+  - The Swift 6 macOS 15 app, unit/UI targets, explicit local signing configuration, and scoped CI build without changing web parity coverage.
+  privacy_impact: low
+  verification:
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS build
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -showBuildSettings
+  plan: docs/superpowers/plans/2026-08-28-tam-forge-native-macos-batch-01.md
+  task: '5. Ticket E10-I02 — Swift app, tests, and CI'
+- key: E10-I03
+  title: Generate the typed Swift OpenAPI client and URLSession transport
+  epic: E10
+  milestone: M0
+  labels:
+  - type/feature
+  - area/macos
+  - area/backend
+  depends_on:
+  - E10-I02
+  acceptance:
+  - Generated types and URLSession transport preserve FastAPI contracts and fail closed on malformed responses.
+  privacy_impact: low
+  verification:
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
+  - uv run python scripts/ci/check_openapi.py
+  plan: docs/superpowers/plans/2026-08-28-tam-forge-native-macos-batch-01.md
+  task: '6. Ticket E10-I03 — Generated API client and URLSession transport'
+- key: E10-I04
+  title: Implement native GitHub OAuth exchange, token rotation, and Keychain storage
+  epic: E10
+  milestone: M0
+  labels:
+  - type/security
+  - area/macos
+  - area/backend
+  - gate/privacy
+  depends_on:
+  - E10-I03
+  acceptance:
+  - PKCE, one-time exchange, rotating credentials, owner checks, and Keychain storage preserve existing authorization boundaries.
+  privacy_impact: high
+  verification:
+  - uv run pytest apps/backend/tests/unit/auth apps/backend/tests/security/test_github_oauth.py -q
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
+  plan: docs/superpowers/plans/2026-08-28-tam-forge-native-macos-batch-01.md
+  task: '7. Ticket E10-I04 — Native OAuth and Keychain'
+- key: E10-I05
+  title: Implement the SwiftUI shell, navigation, session states, and status stream
+  epic: E10
+  milestone: M0
+  labels:
+  - type/feature
+  - area/macos
+  depends_on:
+  - E10-I03
+  - E10-I04
+  acceptance:
+  - Native navigation, signed-out states, retryable errors, and status-stream reconnection meet accessibility requirements.
+  privacy_impact: medium
+  verification:
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
+  plan: docs/superpowers/plans/2026-08-28-tam-forge-native-macos-batch-01.md
+  task: '8. Ticket E10-I05 — SwiftUI shell and status stream'
+- key: E10-I06
+  title: Migrate Today and notifications to SwiftUI
+  epic: E10
+  milestone: M0
+  labels:
+  - type/feature
+  - area/macos
+  depends_on:
+  - E10-I05
+  acceptance:
+  - Today and notifications preserve backend rules, accessible empty/loading/error states, and actionable status evidence.
+  privacy_impact: medium
+  verification:
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
+  plan: docs/superpowers/plans/2026-08-28-tam-forge-native-macos-batch-01.md
+  task: '9. Ticket E10-I06 — Today and notifications'
+- key: E10-I07
+  title: Migrate roadmap import, validation, diff, approval, and activation to SwiftUI
+  epic: E10
+  milestone: M0
+  labels:
+  - type/feature
+  - area/macos
+  depends_on:
+  - E10-I05
+  acceptance:
+  - Native roadmap administration preserves immutable import, validation, diff, approval, and activation contracts.
+  privacy_impact: medium
+  verification:
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
+  plan: docs/superpowers/plans/2026-08-28-tam-forge-native-macos-batch-01.md
+  task: '10. Ticket E10-I07 — Roadmap administration'
+- key: E10-I08
+  title: Migrate activity workspace, timers, artifacts, commit, and self-review to SwiftUI
+  epic: E10
+  milestone: M0
+  labels:
+  - type/feature
+  - area/macos
+  depends_on:
+  - E10-I05
+  acceptance:
+  - Native activity workflow preserves timers, artifacts, commit guards, self-review, and accessibility behavior.
+  privacy_impact: medium
+  verification:
+  - xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS test
+  plan: docs/superpowers/plans/2026-08-28-tam-forge-native-macos-batch-01.md
+  task: '11. Ticket E10-I08 — Universal activity workspace'
+- key: E10-I09
+  title: Migrate the evidence ledger and confidence/portfolio explanations to SwiftUI
+  epic: E10
+  milestone: M0
+  labels:
+  - type/feature
+  - area/macos
+  depends_on:
+  - E10-I06
+  - E10-I08
+  acceptance:
+  - 'Deferred: a later native-parity plan must define evidence-ledger acceptance and verification before dispatch.'
+  privacy_impact: medium
+  verification:
+  - Deferred pending later gpt-5.6-sol / ultra plan
+  plan: docs/superpowers/plans/2026-08-28-tam-forge-native-macos-batch-01.md
+  task: Deferred pending later gpt-5.6-sol / ultra plan
+- key: E10-I10
+  title: Prove native parity and remove React/Vite/Node from runtime and CI
+  epic: E10
+  milestone: M0
+  labels:
+  - type/infrastructure
+  - area/macos
+  depends_on:
+  - E10-I06
+  - E10-I07
+  - E10-I08
+  - E10-I09
+  acceptance:
+  - 'Deferred: a later native-parity plan must define final cutover evidence before dispatch.'
+  privacy_impact: high
+  verification:
+  - Deferred pending later gpt-5.6-sol / ultra plan
+  plan: docs/superpowers/plans/2026-08-28-tam-forge-native-macos-batch-01.md
+  task: Deferred pending later gpt-5.6-sol / ultra plan
