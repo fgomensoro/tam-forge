@@ -409,6 +409,8 @@ def test_universal_workspace_commits_immutable_output_then_requires_self_review(
                 status, reloaded = await request("GET", path)
                 assert status == 200
                 assert reloaded["state"] == "self_review_complete"
+                assert reloaded["task_contract"]["objective"] == "Explain your approach."
+                assert reloaded["task_contract"]["allowed_ai_role"] == "none"
                 assert reloaded["open_timer"] is None
                 assert reloaded["activity_focused_seconds"] == 20
                 expected_output = {

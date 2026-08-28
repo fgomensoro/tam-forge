@@ -9,6 +9,20 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from .enums import ActivityState, IncompleteClassification
 
+ActivityBlock = Literal[
+    "sql",
+    "technical_learning",
+    "career_pipeline",
+    "correction_warmup",
+    "tam_case",
+    "communication_spoken",
+    "daily_close",
+    "saturday_assessment",
+]
+ActivityAiRole = Literal[
+    "none", "planner", "tutor", "coach", "interviewer", "reviewer", "analyst"
+]
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -174,6 +188,34 @@ class SelfReviewSummary(StrictModel):
     submitted_at: datetime
 
 
+class ActivitySourceReference(StrictModel):
+    path: Annotated[str, Field(min_length=1, max_length=2048)]
+    anchor: Annotated[str | None, Field(max_length=512)] = None
+
+
+class ActivityProcedureStep(StrictModel):
+    phase: Annotated[str, Field(min_length=1, max_length=256)]
+    minutes: Annotated[int, Field(gt=0, le=255)]
+    requirement: Annotated[str, Field(min_length=1, max_length=2048)]
+
+
+class ActivityTaskContract(StrictModel):
+    stable_id: Annotated[str, Field(min_length=1, max_length=192)]
+    block: ActivityBlock
+    objective: Annotated[str, Field(min_length=1, max_length=4096)]
+    timebox_minutes: Annotated[int, Field(gt=0, le=255)]
+    required: bool
+    source_references: Annotated[tuple[ActivitySourceReference, ...], Field(max_length=256)]
+    required_output: Annotated[tuple[str, ...], Field(max_length=256)]
+    pass_criteria: Annotated[tuple[str, ...], Field(max_length=256)]
+    evidence_requirements: Annotated[tuple[str, ...], Field(max_length=256)]
+    allowed_ai_role: ActivityAiRole
+    procedure: Annotated[tuple[ActivityProcedureStep, ...], Field(max_length=64)]
+    constraints: Annotated[tuple[str, ...], Field(max_length=256)]
+    exercise_type: Annotated[str | None, Field(max_length=64)]
+    mapping_version: Annotated[str | None, Field(max_length=64)]
+
+
 class ActivityResponse(StrictModel):
     id: int
     study_day_id: int
@@ -189,5 +231,6 @@ class ActivityResponse(StrictModel):
 
 
 class ActivityDetailResponse(ActivityResponse):
+    task_contract: ActivityTaskContract
     committed_output: CommittedOutputSummary | None = None
     self_review: SelfReviewSummary | None = None

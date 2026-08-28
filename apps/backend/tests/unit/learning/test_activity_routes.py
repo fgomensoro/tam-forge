@@ -8,7 +8,12 @@ from tamforge_backend.auth.schemas import AuthenticatedOwner
 from tamforge_backend.config import Settings
 from tamforge_backend.learning.enums import ActivityState, IncompleteClassification
 from tamforge_backend.learning.routes import get_activity_service
-from tamforge_backend.learning.schemas import ActivityResponse, TimerResponse
+from tamforge_backend.learning.schemas import (
+    ActivityDetailResponse,
+    ActivityResponse,
+    ActivityTaskContract,
+    TimerResponse,
+)
 from tamforge_backend.learning.service import ActivityConflict
 from tamforge_backend.main import create_app
 
@@ -51,9 +56,28 @@ class StubActivityService:
             ),
         )
 
-    async def get_activity(self, **values: object) -> ActivityResponse:
+    async def get_activity(self, **values: object) -> ActivityDetailResponse:
         self.calls.append(("get", values))
-        return self._response(state=ActivityState.READY, version=1)
+        base = self._response(state=ActivityState.READY, version=1)
+        return ActivityDetailResponse(
+            **base.model_dump(),
+            task_contract=ActivityTaskContract(
+                stable_id="sql-7",
+                block="sql",
+                objective="Solve the assigned SQL task.",
+                timebox_minutes=45,
+                required=True,
+                source_references=(),
+                required_output=("Validated query",),
+                pass_criteria=("Correct result grain",),
+                evidence_requirements=("Query and result",),
+                allowed_ai_role="none",
+                procedure=(),
+                constraints=("Work independently.",),
+                exercise_type="sql",
+                mapping_version="month-1-v1",
+            ),
+        )
 
     async def start(self, **values: object) -> ActivityResponse:
         self.calls.append(("start", values))

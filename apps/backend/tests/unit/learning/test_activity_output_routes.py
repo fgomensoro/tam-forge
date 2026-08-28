@@ -13,6 +13,7 @@ from tamforge_backend.learning.routes import (
 )
 from tamforge_backend.learning.schemas import (
     ActivityDetailResponse,
+    ActivityTaskContract,
     ArtifactPresignResponse,
     ArtifactResponse,
     OutputCommitResponse,
@@ -49,6 +50,22 @@ class StubOutputService:
             hard_stop_recommended=False,
             open_timer=None,
             source_hidden=True,
+            task_contract=ActivityTaskContract(
+                stable_id="writing-7",
+                block="communication_spoken",
+                objective="Write a customer update.",
+                timebox_minutes=35,
+                required=True,
+                source_references=(),
+                required_output=("Independent draft",),
+                pass_criteria=("States the requested action.",),
+                evidence_requirements=("Committed draft",),
+                allowed_ai_role="none",
+                procedure=(),
+                constraints=("No AI before commitment.",),
+                exercise_type="writing",
+                mapping_version="month-1-v1",
+            ),
         )
 
     async def presign_artifact(self, **values: object) -> ArtifactPresignResponse:

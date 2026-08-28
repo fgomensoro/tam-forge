@@ -42,6 +42,9 @@ describe("protected application shell", () => {
       http.post("http://localhost:3000/api/v1/auth/logout", () =>
         new HttpResponse(null, { status: 204 }),
       ),
+      http.get("http://localhost:3000/api/v1/today", () =>
+        HttpResponse.json({ title: "Today is not ready", status: 404 }, { status: 404 }),
+      ),
     );
     const user = userEvent.setup();
 

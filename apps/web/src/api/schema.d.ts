@@ -559,8 +559,18 @@ export interface components {
              * @default false
              */
             source_hidden: boolean;
+            task_contract: components["schemas"]["ActivityTaskContract"];
             committed_output?: components["schemas"]["CommittedOutputSummary"] | null;
             self_review?: components["schemas"]["SelfReviewSummary"] | null;
+        };
+        /** ActivityProcedureStep */
+        ActivityProcedureStep: {
+            /** Phase */
+            phase: string;
+            /** Minutes */
+            minutes: number;
+            /** Requirement */
+            requirement: string;
         };
         /** ActivityResponse */
         ActivityResponse: {
@@ -587,11 +597,55 @@ export interface components {
              */
             source_hidden: boolean;
         };
+        /** ActivitySourceReference */
+        ActivitySourceReference: {
+            /** Path */
+            path: string;
+            /** Anchor */
+            anchor?: string | null;
+        };
         /**
          * ActivityState
          * @enum {string}
          */
         ActivityState: "ready" | "active" | "paused" | "output_committed" | "self_review_complete" | "ai_processing" | "feedback_ready" | "correction_due" | "demonstrated" | "needs_work" | "incomplete" | "superseded";
+        /** ActivityTaskContract */
+        ActivityTaskContract: {
+            /** Stable Id */
+            stable_id: string;
+            /**
+             * Block
+             * @enum {string}
+             */
+            block: "sql" | "technical_learning" | "career_pipeline" | "correction_warmup" | "tam_case" | "communication_spoken" | "daily_close" | "saturday_assessment";
+            /** Objective */
+            objective: string;
+            /** Timebox Minutes */
+            timebox_minutes: number;
+            /** Required */
+            required: boolean;
+            /** Source References */
+            source_references: components["schemas"]["ActivitySourceReference"][];
+            /** Required Output */
+            required_output: string[];
+            /** Pass Criteria */
+            pass_criteria: string[];
+            /** Evidence Requirements */
+            evidence_requirements: string[];
+            /**
+             * Allowed Ai Role
+             * @enum {string}
+             */
+            allowed_ai_role: "none" | "planner" | "tutor" | "coach" | "interviewer" | "reviewer" | "analyst";
+            /** Procedure */
+            procedure: components["schemas"]["ActivityProcedureStep"][];
+            /** Constraints */
+            constraints: string[];
+            /** Exercise Type */
+            exercise_type: string | null;
+            /** Mapping Version */
+            mapping_version: string | null;
+        };
         /** ArtifactConfirmCommand */
         ArtifactConfirmCommand: {
             /** Expected Version */

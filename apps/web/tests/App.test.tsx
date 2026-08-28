@@ -8,6 +8,9 @@ it("renders the private TAM Forge shell in English", async () => {
     http.get("http://localhost:3000/api/v1/auth/session", () =>
       HttpResponse.json({ github_login: "fgomensoro", csrf_token: "c".repeat(43) }),
     ),
+    http.get("http://localhost:3000/api/v1/today", () =>
+      HttpResponse.json({ title: "Today is not ready", status: 404 }, { status: 404 }),
+    ),
   );
 
   renderApp();

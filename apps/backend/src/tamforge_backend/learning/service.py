@@ -8,7 +8,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TypeVar
+from typing import TypeVar, cast
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
@@ -47,8 +47,13 @@ from .models import (
     StudyDay,
 )
 from .schemas import (
+    ActivityAiRole,
+    ActivityBlock,
     ActivityDetailResponse,
+    ActivityProcedureStep,
     ActivityResponse,
+    ActivitySourceReference,
+    ActivityTaskContract,
     ArtifactPresignResponse,
     ArtifactReference,
     ArtifactResponse,
@@ -63,6 +68,57 @@ from .state_machine import ActivityStateError, TransitionDecision, transition
 from .timers import TimerPolicyError, TimerState, apply_heartbeat, start_timer
 
 _SAFE_IDEMPOTENCY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
+def _string_items(payload: object, field: str) -> tuple[str, ...]:
+    if not isinstance(payload, dict):
+        raise ActivityConflict("stored task contract is invalid")
+    values = payload.get(field)
+    if not isinstance(values, list) or not all(isinstance(item, str) for item in values):
+        raise ActivityConflict("stored task contract is invalid")
+    return tuple(values)
+
+
+def _task_contract_response(definition: TaskDefinition) -> ActivityTaskContract:
+    references: list[ActivitySourceReference] = []
+    for value in definition.source_references:
+        if not isinstance(value, dict) or not isinstance(value.get("path"), str):
+            raise ActivityConflict("stored task source reference is invalid")
+        anchor = value.get("heading")
+        if anchor is not None and not isinstance(anchor, str):
+            raise ActivityConflict("stored task source reference is invalid")
+        references.append(ActivitySourceReference(path=value["path"], anchor=anchor))
+
+    if not isinstance(definition.output_contract, dict):
+        raise ActivityConflict("stored task output contract is invalid")
+    procedure_values = definition.output_contract.get("procedure")
+    if not isinstance(procedure_values, list):
+        raise ActivityConflict("stored task output contract is invalid")
+    procedure: list[ActivityProcedureStep] = []
+    for value in procedure_values:
+        if not isinstance(value, dict):
+            raise ActivityConflict("stored task procedure is invalid")
+        try:
+            procedure.append(ActivityProcedureStep.model_validate(value))
+        except ValueError as exc:
+            raise ActivityConflict("stored task procedure is invalid") from exc
+
+    return ActivityTaskContract(
+        stable_id=definition.stable_id,
+        block=cast(ActivityBlock, definition.block),
+        objective=definition.objective,
+        timebox_minutes=definition.timebox_minutes,
+        required=definition.required,
+        source_references=tuple(references),
+        required_output=_string_items(definition.output_contract, "items"),
+        pass_criteria=_string_items(definition.pass_contract, "items"),
+        evidence_requirements=_string_items(definition.evidence_contract, "items"),
+        allowed_ai_role=cast(ActivityAiRole, definition.allowed_ai_role),
+        procedure=tuple(procedure),
+        constraints=_string_items(definition.output_contract, "constraints"),
+        exercise_type=definition.exercise_type,
+        mapping_version=definition.mapping_version,
+    )
 
 
 class ActivityCommandError(Exception):
@@ -1021,6 +1077,7 @@ class ActivityService:
                 )
         return ActivityDetailResponse(
             **base.model_dump(),
+            task_contract=_task_contract_response(row.definition),
             committed_output=committed,
             self_review=review_summary,
         )
