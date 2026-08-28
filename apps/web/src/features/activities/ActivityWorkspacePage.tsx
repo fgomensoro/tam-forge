@@ -21,14 +21,30 @@ import { useResumableTimer } from "./useResumableTimer";
 const activityKey = (id: number) => ["activity", id] as const;
 const editableStates = new Set(["ready", "active", "paused"]);
 
-function readDraft(activity: ActivityDetail): OutputDraft {
+interface WorkingState {
+  draft: OutputDraft;
+  artifactRefs: ArtifactReference[];
+  artifactNames: string[];
+}
+
+function readWorkingState(activity: ActivityDetail): WorkingState {
   try {
     const saved = localStorage.getItem(`tamforge:activity:${activity.id}:draft`);
-    if (saved) return { ...emptyDraft(activity), ...JSON.parse(saved) as OutputDraft };
+    if (saved) {
+      const parsed = JSON.parse(saved) as Partial<WorkingState> & Partial<OutputDraft>;
+      if (parsed.draft) {
+        return {
+          draft: { ...emptyDraft(activity), ...parsed.draft },
+          artifactRefs: parsed.artifactRefs ?? [],
+          artifactNames: parsed.artifactNames ?? [],
+        };
+      }
+      return { draft: { ...emptyDraft(activity), ...parsed as OutputDraft }, artifactRefs: [], artifactNames: [] };
+    }
   } catch {
     // Invalid browser-local draft data is ignored without touching server evidence.
   }
-  return emptyDraft(activity);
+  return { draft: emptyDraft(activity), artifactRefs: [], artifactNames: [] };
 }
 
 function mergedDetail(current: ActivityDetail, response: ActivityResponse): ActivityDetail {
@@ -50,13 +66,14 @@ function ReadOnlyAttempt({ activity }: { activity: ActivityDetail }) {
 
 function LoadedActivity({ initial }: { initial: ActivityDetail }) {
   const queryClient = useQueryClient();
-  const [draft, setDraft] = useState<OutputDraft>(() => readDraft(initial));
+  const [restored] = useState<WorkingState>(() => readWorkingState(initial));
+  const [draft, setDraft] = useState<OutputDraft>(restored.draft);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [artifactRefs, setArtifactRefs] = useState<ArtifactReference[]>([]);
-  const [artifactNames, setArtifactNames] = useState<string[]>([]);
+  const [artifactRefs, setArtifactRefs] = useState<ArtifactReference[]>(restored.artifactRefs);
+  const [artifactNames, setArtifactNames] = useState<string[]>(restored.artifactNames);
   const activity = initial;
 
   const update = (response: ActivityResponse) => {
@@ -67,11 +84,16 @@ function LoadedActivity({ initial }: { initial: ActivityDetail }) {
   useEffect(() => {
     if (!editableStates.has(activity.state)) return;
     const timeout = window.setTimeout(() => {
-      localStorage.setItem(`tamforge:activity:${activity.id}:draft`, JSON.stringify(draft));
+      localStorage.setItem(`tamforge:activity:${activity.id}:draft`, JSON.stringify({
+        schemaVersion: 1,
+        draft,
+        artifactRefs,
+        artifactNames,
+      }));
       setSavedAt(new Date());
     }, 450);
     return () => window.clearTimeout(timeout);
-  }, [activity.id, activity.state, draft]);
+  }, [activity.id, activity.state, artifactNames, artifactRefs, draft]);
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true); setError(null);
