@@ -41,8 +41,11 @@ export function registerUnauthorizedHandler(handler: () => void) {
 }
 
 function apiUrl(path: string) {
-  if (/^https?:\/\//u.test(path)) return path;
-  return new URL(path, window.location.origin).toString();
+  const url = new URL(path, window.location.origin);
+  if (url.origin !== window.location.origin) {
+    throw new Error("API requests must remain same-origin");
+  }
+  return url.toString();
 }
 
 function isMutation(method = "GET") {
@@ -65,7 +68,9 @@ export async function apiRequest<T = unknown>(
 ): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
-  if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (typeof init.body === "string" && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
   if (isMutation(init.method) && csrfToken) headers.set("X-CSRF-Token", csrfToken);
 
   const response = await fetch(apiUrl(path), {

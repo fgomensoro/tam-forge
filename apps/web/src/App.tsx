@@ -1,6 +1,7 @@
 import { Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { AppShell } from "./components/AppShell";
+import { RoadmapImportPage } from "./features/roadmaps/RoadmapImportPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 
@@ -25,6 +26,7 @@ export function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell activeRole={null} />}>
           <Route index element={<TodayWelcome />} />
+          <Route path="roadmaps" element={<RoadmapImportPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>

@@ -82,4 +82,12 @@ describe("API client", () => {
     expect(onUnauthorized).toHaveBeenCalledOnce();
     unregister();
   });
+
+  it("never sends session credentials or CSRF to a different origin", async () => {
+    setCsrfToken("private-csrf");
+
+    await expect(
+      apiRequest("https://unexpected.example/api", { method: "POST", body: "{}" }),
+    ).rejects.toThrow("same-origin");
+  });
 });
