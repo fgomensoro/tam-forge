@@ -20,12 +20,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build native macOS shell
+        # The Apple build-tool plugin is exactly pinned in the project and Package.resolved.
         run: >-
-          xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge
+          xcodebuild -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge
           -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
-      - name: Test native dependency container
+      - name: Test native client transport
         run: >-
-          xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge
+          xcodebuild -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge
           -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
           -only-testing:TAMForgeTests test
 

@@ -35,12 +35,27 @@ make macos-check
 When Xcode is available, `make check` includes the same non-Docker native check.
 The GitHub Actions macOS job tests the unsigned CI build path separately.
 
-Regenerate the checked-in web API types only when the backend contract changes:
+The macOS target generates its Swift request and response types at build time from
+`apps/macos/TAMForge/openapi.yaml`; generated Swift files remain in Xcode's build
+directory and are never hand-copied into the repository. The same command checks
+both that native input and the checked-in web types when the backend contract
+changes:
 
 ```bash
 uv run python scripts/ci/check_openapi.py --write
 uv run python scripts/ci/check_openapi.py
 ```
+
+The native target pins the official Apple OpenAPI generator, runtime, and
+URLSession transport in the Xcode project and `Package.resolved`. CI passes
+`-skipPackagePluginValidation` only because that build-tool plugin is exactly
+pinned and resolved; this permits its noninteractive Xcode invocation.
+
+The current FastAPI contract still declares browser session-cookie parameters.
+The Apple generator reports those unsupported cookie parameters while producing
+the remaining typed client. E10-I03 deliberately does not emulate cookies or
+claim backend bearer authentication; E10-I04 introduces the unified FastAPI
+bearer contract before protected native operations are enabled.
 
 The optional `compose.dev.yml` provides local PostgreSQL/pgvector and a pinned
 MinIO release for later local integration work. It is never started by the

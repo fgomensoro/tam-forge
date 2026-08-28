@@ -17,7 +17,7 @@ enum AppEnvironment: Equatable, Sendable {
         }
     }
 
-    fileprivate var apiBaseURL: URL {
+    var apiBaseURL: URL {
         switch self {
         case .production:
             URL(string: "https://api.tamforge.invalid")!

@@ -12,6 +12,13 @@
 		A10000000000000000000003 /* AppDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000015 /* AppDependencies.swift */; };
 		A10000000000000000000004 /* AppDependenciesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000016 /* AppDependenciesTests.swift */; };
 		A10000000000000000000005 /* AppDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000015 /* AppDependencies.swift */; };
+		A100000000000000000000E1 /* NativeAPITransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000E2 /* NativeAPITransportTests.swift */; };
+		A100000000000000000000E3 /* OpenAPIRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000F3 /* OpenAPIRuntime */; };
+		A100000000000000000000E4 /* OpenAPIURLSession in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000F4 /* OpenAPIURLSession */; };
+		A100000000000000000000E5 /* openapi-generator-config.yaml in Resources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000E6 /* openapi-generator-config.yaml */; };
+		A100000000000000000000E7 /* openapi.yaml in Resources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000E8 /* openapi.yaml */; };
+		A100000000000000000000E9 /* NativeAPITransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000EB /* NativeAPITransport.swift */; };
+		A100000000000000000000EA /* NativeAPITransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000EB /* NativeAPITransport.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -31,6 +38,10 @@
 		A10000000000000000000014 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A10000000000000000000015 /* AppDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependencies.swift; sourceTree = "<group>"; };
 		A10000000000000000000016 /* AppDependenciesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependenciesTests.swift; sourceTree = "<group>"; };
+		A100000000000000000000E2 /* NativeAPITransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAPITransportTests.swift; sourceTree = "<group>"; };
+		A100000000000000000000E6 /* openapi-generator-config.yaml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = openapi-generator-config.yaml; sourceTree = "<group>"; };
+		A100000000000000000000E8 /* openapi.yaml */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = openapi.yaml; sourceTree = "<group>"; };
+		A100000000000000000000EB /* NativeAPITransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAPITransport.swift; sourceTree = "<group>"; };
 		A10000000000000000000061 /* TAMForge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TAMForge.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000062 /* TAMForgeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TAMForgeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000063 /* TAMForgeUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TAMForgeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -41,6 +52,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A100000000000000000000E3 /* OpenAPIRuntime in Frameworks */,
+				A100000000000000000000E4 /* OpenAPIURLSession in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -48,6 +61,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A100000000000000000000E3 /* OpenAPIRuntime in Frameworks */,
+				A100000000000000000000E4 /* OpenAPIURLSession in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +93,8 @@
 				A10000000000000000000048 /* Core */,
 				A10000000000000000000013 /* TAMForge.entitlements */,
 				A10000000000000000000014 /* Info.plist */,
+				A100000000000000000000E6 /* openapi-generator-config.yaml */,
+				A100000000000000000000E8 /* openapi.yaml */,
 			);
 			path = TAMForge;
 			sourceTree = "<group>";
@@ -86,6 +103,7 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000016 /* AppDependenciesTests.swift */,
+				A100000000000000000000E2 /* NativeAPITransportTests.swift */,
 			);
 			path = TAMForgeTests;
 			sourceTree = "<group>";
@@ -120,8 +138,17 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000015 /* AppDependencies.swift */,
+				A100000000000000000000EC /* API */,
 			);
 			path = Core;
+			sourceTree = "<group>";
+		};
+		A100000000000000000000EC /* API */ = {
+			isa = PBXGroup;
+			children = (
+				A100000000000000000000EB /* NativeAPITransport.swift */,
+			);
+			path = API;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -138,8 +165,13 @@
 			buildRules = (
 			);
 			dependencies = (
+				A100000000000000000000F5 /* OpenAPIGenerator */,
 			);
 			name = TAMForge;
+			packageProductDependencies = (
+				A100000000000000000000F3 /* OpenAPIRuntime */,
+				A100000000000000000000F4 /* OpenAPIURLSession */,
+			);
 			productName = TAMForge;
 			productReference = A10000000000000000000061 /* TAMForge.app */;
 			productType = "com.apple.product-type.application";
@@ -156,6 +188,10 @@
 			dependencies = (
 			);
 			name = TAMForgeTests;
+			packageProductDependencies = (
+				A100000000000000000000F3 /* OpenAPIRuntime */,
+				A100000000000000000000F4 /* OpenAPIURLSession */,
+			);
 			productName = TAMForgeTests;
 			productReference = A10000000000000000000062 /* TAMForgeTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -209,6 +245,11 @@
 				Base,
 			);
 			mainGroup = A10000000000000000000042;
+			packageReferences = (
+				A100000000000000000000F0 /* XCRemoteSwiftPackageReference "swift-openapi-generator" */,
+				A100000000000000000000F1 /* XCRemoteSwiftPackageReference "swift-openapi-runtime" */,
+				A100000000000000000000F2 /* XCRemoteSwiftPackageReference "swift-openapi-urlsession" */,
+			);
 			productRefGroup = A10000000000000000000046 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -225,6 +266,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A100000000000000000000E5 /* openapi-generator-config.yaml in Resources */,
+				A100000000000000000000E7 /* openapi.yaml in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -237,6 +280,7 @@
 			files = (
 				A10000000000000000000001 /* TAMForgeApp.swift in Sources */,
 				A10000000000000000000003 /* AppDependencies.swift in Sources */,
+				A100000000000000000000E9 /* NativeAPITransport.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -246,6 +290,8 @@
 			files = (
 				A10000000000000000000004 /* AppDependenciesTests.swift in Sources */,
 				A10000000000000000000005 /* AppDependencies.swift in Sources */,
+				A100000000000000000000EA /* NativeAPITransport.swift in Sources */,
+				A100000000000000000000E1 /* NativeAPITransportTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -265,7 +311,56 @@
 			target = A10000000000000000000051 /* TAMForge */;
 			targetProxy = A10000000000000000000032 /* PBXContainerItemProxy */;
 		};
+		A100000000000000000000F5 /* OpenAPIGenerator */ = {
+			isa = PBXTargetDependency;
+			productRef = A100000000000000000000F6 /* OpenAPIGenerator */;
+		};
 /* End PBXTargetDependency section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A100000000000000000000F0 /* XCRemoteSwiftPackageReference "swift-openapi-generator" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-openapi-generator.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.13.0;
+			};
+		};
+		A100000000000000000000F1 /* XCRemoteSwiftPackageReference "swift-openapi-runtime" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-openapi-runtime.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.12.0;
+			};
+		};
+		A100000000000000000000F2 /* XCRemoteSwiftPackageReference "swift-openapi-urlsession" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-openapi-urlsession.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.3.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A100000000000000000000F3 /* OpenAPIRuntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A100000000000000000000F1 /* XCRemoteSwiftPackageReference "swift-openapi-runtime" */;
+			productName = OpenAPIRuntime;
+		};
+		A100000000000000000000F4 /* OpenAPIURLSession */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A100000000000000000000F2 /* XCRemoteSwiftPackageReference "swift-openapi-urlsession" */;
+			productName = OpenAPIURLSession;
+		};
+		A100000000000000000000F6 /* OpenAPIGenerator */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A100000000000000000000F0 /* XCRemoteSwiftPackageReference "swift-openapi-generator" */;
+			productName = "plugin:OpenAPIGenerator";
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A100000000000000000000A1 /* Debug */ = {
