@@ -768,10 +768,13 @@ class SqlAlchemyEvidenceRepository:
                 for item in history_rows
             ),
         )
+        trend_event_ids: tuple[int | str, ...]
         if scored.trend.code == "insufficient_evidence":
             basis_code = "too_few_events"
+            trend_event_ids = tuple(item.id for item in history_rows)
         else:
             basis_code = scored.trend.code
+            trend_event_ids = scored.trend.event_ids
         components = {item.slug: item.score for item in scored.components}
         row = PortfolioJudgmentScore(
             owner_id=owner_id,
@@ -794,7 +797,7 @@ class SqlAlchemyEvidenceRepository:
             trend_basis={
                 "schema_version": 1,
                 "basis_code": basis_code,
-                "event_ids": list(scored.trend.event_ids),
+                "event_ids": list(trend_event_ids),
             },
             scored_at=prepared.evaluated_at,
             created_at=now,

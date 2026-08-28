@@ -1,0 +1,184 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
+  PNPM_VERSION: "11.19.0"
+  UV_VERSION: "0.10.2"
+
+jobs:
+  backend-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv sync --all-packages --all-extras --frozen
+      - run: uv run ruff check .
+      - run: uv run mypy apps/backend/src packages/protocol/src
+      - run: MYPYPATH=apps/backend/src:packages/protocol/src uv run mypy scripts/ci/check_openapi.py scripts/ci/check_repository_policy.py scripts/dev/seed_foundation_demo.py
+      - run: uv run pytest apps/backend/tests/unit packages/protocol/tests scripts/ci/tests scripts/dev/tests scripts/github/tests -m "not integration" -q
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test:bootstrap
+      - run: pnpm run verify:bootstrap
+      - run: pnpm --filter @tam-forge/web lint
+      - run: pnpm --filter @tam-forge/web typecheck
+      - run: pnpm --filter @tam-forge/web test -- --run
+      - run: pnpm --filter @tam-forge/web build
+
+  backend-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: tamforge_test
+          POSTGRES_USER: tamforge
+          POSTGRES_PASSWORD: tamforge
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U tamforge -d tamforge_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test
+      TEST_DATABASE_URL: postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv sync --all-packages --all-extras --frozen
+      - run: uv run alembic -c apps/backend/alembic.ini upgrade head
+      - run: uv run pytest -m integration apps/backend/tests/integration -q
+
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: tamforge_test
+          POSTGRES_USER: tamforge
+          POSTGRES_PASSWORD: tamforge
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U tamforge -d tamforge_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test
+      TEST_DATABASE_URL: postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: uv sync --all-packages --all-extras --frozen
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @tam-forge/web exec playwright install --with-deps chromium
+      - name: Start isolated MinIO
+        run: >-
+          docker run --detach --rm --name tam-forge-e2e-minio
+          --publish 127.0.0.1:9000:9000
+          --env MINIO_ROOT_USER=tamforge
+          --env MINIO_ROOT_PASSWORD=tamforge-local
+          minio/minio:RELEASE.2024-06-13T22-53-53Z
+          server /data
+      - name: Wait for isolated MinIO
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:9000/minio/health/live >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+      - run: uv run alembic -c apps/backend/alembic.ini upgrade head
+      - run: pnpm --filter @tam-forge/web exec playwright test e2e/foundation-learning.spec.ts
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7
+
+  openapi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: uv sync --all-packages --all-extras --frozen
+      - run: pnpm install --frozen-lockfile
+      - run: uv run python scripts/ci/check_openapi.py
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv sync --all-packages --all-extras --frozen
+      - run: uv run python scripts/ci/check_repository_policy.py

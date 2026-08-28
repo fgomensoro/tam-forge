@@ -17,6 +17,17 @@ Run the default unit checks (Docker is not required):
 make check
 ```
 
+This runs backend lint/type checks and unit tests, web lint/type checks/tests/build,
+the generated OpenAPI-client drift guard, and the tracked secret/audio policy check.
+Every default Make target is non-Docker.
+
+Regenerate the checked-in web API types only when the backend contract changes:
+
+```bash
+uv run python scripts/ci/check_openapi.py --write
+uv run python scripts/ci/check_openapi.py
+```
+
 The optional `compose.dev.yml` provides local PostgreSQL/pgvector and a pinned
 MinIO release for later local integration work. It is never started by the
 default Make targets and is not a production deployment configuration.
@@ -36,6 +47,29 @@ test covers the same access expectation locally but cannot prove production poli
 
 At-rest encryption and recovery-key ownership require a separate approved
 architecture decision and are not configured by the local object-store adapter.
+
+## Isolated integration and browser verification
+
+Integration and browser checks require the explicitly isolated `tamforge_test`
+database. They never create a database and never start Docker implicitly:
+
+```bash
+TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test \
+  make integration
+
+TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test \
+  make e2e
+```
+
+The browser journey uses `scripts/dev/seed_foundation_demo.py`. That helper
+refuses to run outside `TAMFORGE_ENV=test`, refuses any database other than the
+local `tamforge_test`, and creates only a hashed, short-lived test session. It
+does not add a test-login endpoint to the application.
+
+GitHub Actions runs six isolated gates: backend unit checks, web checks,
+PostgreSQL integration tests, the Chromium learning journey, OpenAPI drift, and
+tracked secret/audio policy. CI receives no production credentials and does not
+deploy or merge anything.
 
 ## GitHub planning catalog
 

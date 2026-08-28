@@ -195,7 +195,7 @@ class ActivitySourceReference(StrictModel):
 
 class ActivityProcedureStep(StrictModel):
     phase: Annotated[str, Field(min_length=1, max_length=256)]
-    minutes: Annotated[int, Field(gt=0, le=255)]
+    minutes: Annotated[int | None, Field(gt=0, le=255)] = None
     requirement: Annotated[str, Field(min_length=1, max_length=2048)]
 
 

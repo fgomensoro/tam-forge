@@ -71,7 +71,6 @@ def test_today_api_is_deterministic_resumable_and_sunday_safe(
                 expire_on_commit=False,
                 autoflush=False,
             )
-            fixed_now = datetime(2026, 8, 28, 12, tzinfo=UTC)
             try:
                 async with factory() as session:
                     roadmap_service = RoadmapService(
@@ -107,6 +106,8 @@ def test_today_api_is_deterministic_resumable_and_sunday_safe(
                         owner_id=owner_id,
                         version_id=approved.id,
                     )
+
+                fixed_now = datetime.now(UTC)
 
                 owner = AuthenticatedOwner(
                     owner_id=owner_id,
@@ -163,12 +164,13 @@ def test_today_api_is_deterministic_resumable_and_sunday_safe(
                                     ActivityInstance, first_activity_id
                                 )
                                 assert first is not None
+                                first_started_at = first.created_at + timedelta(seconds=1)
                                 first.state = "active"
-                                first.started_at = fixed_now
+                                first.started_at = first_started_at
                                 first.optimistic_version += 1
                                 await session.flush()
                                 first.state = "output_committed"
-                                first.output_committed_at = fixed_now + timedelta(minutes=1)
+                                first.output_committed_at = first_started_at + timedelta(minutes=1)
                                 first.optimistic_version += 1
                                 session.add(
                                     ActivityProcessingStatus(

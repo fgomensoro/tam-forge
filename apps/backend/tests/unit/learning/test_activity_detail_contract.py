@@ -18,7 +18,8 @@ def test_activity_detail_contract_preserves_governed_task_fields() -> None:
             "schema_version": 1,
             "items": ["Closed-source recall note", "Teach-back"],
             "procedure": [
-                {"phase": "Preview", "minutes": 2, "requirement": "Read the objective."}
+                {"phase": "Preview", "minutes": 2, "requirement": "Read the objective."},
+                {"phase": "Teach back", "requirement": "Explain the boundary."},
             ],
             "constraints": ["Commit recall with the source hidden."],
             "correction_selection": None,
@@ -46,6 +47,11 @@ def test_activity_detail_contract_preserves_governed_task_fields() -> None:
         "allowed_ai_role": "tutor",
         "procedure": (
             {"phase": "Preview", "minutes": 2, "requirement": "Read the objective."},
+            {
+                "phase": "Teach back",
+                "minutes": None,
+                "requirement": "Explain the boundary.",
+            },
         ),
         "constraints": ("Commit recall with the source hidden.",),
         "exercise_type": "technical_reading",

@@ -206,7 +206,7 @@ def test_universal_workspace_commits_immutable_output_then_requires_self_review(
                     json={"expected_version": 1},
                     idempotency_key="workspace-start",
                 )
-                assert status == 200
+                assert status == 200, started
                 assert started["state"] == "active"
 
                 clock["now"] += timedelta(seconds=12)
@@ -310,13 +310,17 @@ def test_universal_workspace_commits_immutable_output_then_requires_self_review(
                 assert status == 422
                 assert unbound["code"] == "invalid_activity_command"
 
+                status, current = await request("GET", path)
+                assert status == 200, current
+                assert current["state"] == "active", current
+                assert current["optimistic_version"] == 2, current
                 status, hidden = await request(
                     "POST",
                     path + "/source-visibility",
                     json={"expected_version": 2, "hidden": True},
                     idempotency_key="workspace-hide-source",
                 )
-                assert status == 200
+                assert status == 200, hidden
                 assert hidden["source_hidden"] is True
                 assert hidden["optimistic_version"] == 3
 
@@ -409,8 +413,11 @@ def test_universal_workspace_commits_immutable_output_then_requires_self_review(
                 status, reloaded = await request("GET", path)
                 assert status == 200
                 assert reloaded["state"] == "self_review_complete"
-                assert reloaded["task_contract"]["objective"] == "Explain your approach."
-                assert reloaded["task_contract"]["allowed_ai_role"] == "none"
+                assert reloaded["task_contract"]["objective"] == (
+                    "Read H1 and H5; record a 90-second Tell Me About Yourself, "
+                    "with the second attempt unscripted."
+                )
+                assert reloaded["task_contract"]["allowed_ai_role"] == "interviewer"
                 assert reloaded["open_timer"] is None
                 assert reloaded["activity_focused_seconds"] == 20
                 expected_output = {

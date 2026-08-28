@@ -568,7 +568,7 @@ export interface components {
             /** Phase */
             phase: string;
             /** Minutes */
-            minutes: number;
+            minutes?: number | null;
             /** Requirement */
             requirement: string;
         };
