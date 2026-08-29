@@ -63,7 +63,8 @@ def test_native_client_persists_refresh_credentials_only_as_device_keychain_item
 
     assert "kSecClassGenericPassword" in source
     assert "kSecAttrAccessibleWhenUnlockedThisDeviceOnly" in source
-    assert "kSecUseDataProtectionKeychain as String: true" in source
+    assert "query[kSecUseDataProtectionKeychain as String] = true" in source
+    assert "status == errSecMissingEntitlement ? baseQuery" in source
     assert "kSecAttrSynchronizable as String: false" in source
     assert "UserDefaults" not in source
     assert "write(to:" not in source
