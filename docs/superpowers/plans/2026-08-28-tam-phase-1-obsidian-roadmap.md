@@ -517,7 +517,7 @@ for legacy_id, row in rows.items():
         assert evidence != '—', (legacy_id, status, evidence)
 
 detail_ids = re.findall(r'^### (m1-w[1-4]-d\d{2}-[a-z0-9-]+)$', text, re.M)
-assert Counter(detail_ids) == Counter(expected), {
+assert Counter(detail_ids) == Counter(expected.keys()), {
     'missing_or_duplicate_detail_headings': sorted(set(expected) ^ set(detail_ids)),
 }
 
