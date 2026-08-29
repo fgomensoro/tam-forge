@@ -158,6 +158,26 @@ final class NativeAuthenticationTests: XCTestCase {
         XCTAssertNil(store.pending)
     }
 
+    func testCompletedRevocationDoesNotRemoveNewerPendingToken() async throws {
+        let http = FakeNativeAuthHTTPClient()
+        await http.pauseRevoke()
+        let store = MemoryCredentialStore(pending: token("r"))
+        let oauth = await MainActor.run { FakeOAuthSession() }
+        let coordinator = NativeAuthenticationCoordinator(
+            http: http,
+            credentialStore: store,
+            oauthSession: oauth
+        )
+
+        let retry = Task { try await coordinator.retryPendingRevocation() }
+        await http.waitForRevokeStart()
+        try store.storePendingRevocationToken(token("s"))
+        await http.resumeRevoke()
+        try await retry.value
+
+        XCTAssertEqual(store.pending, token("s"))
+    }
+
     func testCallbackRejectsExtraOrMalformedValues() throws {
         XCTAssertEqual(
             try NativeAuthenticationCoordinator.exchangeCode(
@@ -176,18 +196,41 @@ final class NativeAuthenticationTests: XCTestCase {
         }
     }
 
-    func testKeychainContractIsGenericDeviceOnlyAndMapsDeniedPaths() throws {
+    func testKeychainFallbackQueryIsGenericNonSynchronizableAndMapsDeniedPaths() throws {
         let tokenData = Data(token("r").utf8)
+        let primaryQuery = KeychainCredentialStore.dataProtectionQuery(
+            account: KeychainCredentialStore.activeAccount
+        )
+        let fallbackQuery = try XCTUnwrap(
+            KeychainCredentialStore.fallbackQuery(
+                account: KeychainCredentialStore.activeAccount,
+                after: errSecMissingEntitlement
+            )
+        )
         let item = KeychainCredentialStore.itemToAdd(
             tokenData: tokenData,
             account: KeychainCredentialStore.activeAccount
         )
+        let dataProtectionItem = KeychainCredentialStore.itemToAdd(
+            tokenData: tokenData,
+            account: KeychainCredentialStore.activeAccount,
+            query: primaryQuery
+        )
 
+        XCTAssertEqual(primaryQuery[kSecUseDataProtectionKeychain as String] as? Bool, true)
+        XCTAssertNil(fallbackQuery[kSecUseDataProtectionKeychain as String])
+        XCTAssertNil(
+            KeychainCredentialStore.fallbackQuery(
+                account: KeychainCredentialStore.activeAccount,
+                after: errSecAuthFailed
+            )
+        )
         XCTAssertEqual(item[kSecClass as String] as? String, kSecClassGenericPassword as String)
         XCTAssertEqual(item[kSecAttrSynchronizable as String] as? Bool, false)
-        XCTAssertEqual(item[kSecUseDataProtectionKeychain as String] as? Bool, true)
+        XCTAssertNil(item[kSecUseDataProtectionKeychain as String])
+        XCTAssertNil(item[kSecAttrAccessible as String])
         XCTAssertEqual(
-            item[kSecAttrAccessible as String] as? String,
+            dataProtectionItem[kSecAttrAccessible as String] as? String,
             kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String
         )
         XCTAssertNil(try KeychainCredentialStore.decodedRead(status: errSecItemNotFound, value: nil))
@@ -299,8 +342,10 @@ private actor FakeNativeAuthHTTPClient: NativeAuthHTTPClient {
     private var revokeFailure = false
     private var refreshPaused = false
     private var exchangePaused = false
+    private var revokePaused = false
     private let refreshGate = AsyncGate()
     private let exchangeGate = AsyncGate()
+    private let revokeGate = AsyncGate()
 
     func start(codeChallenge: String) async throws -> URL {
         startChallenge = codeChallenge
@@ -336,6 +381,7 @@ private actor FakeNativeAuthHTTPClient: NativeAuthHTTPClient {
     func revoke(refreshToken: String) async throws {
         XCTAssertTrue(refreshToken == token("r") || refreshToken == token("s"))
         revokeCalls += 1
+        if revokePaused { await revokeGate.wait() }
         if revokeFailure { throw TestError.offline }
     }
 
@@ -371,6 +417,19 @@ private actor FakeNativeAuthHTTPClient: NativeAuthHTTPClient {
     func resumeExchange() async {
         await exchangeGate.open()
         exchangePaused = false
+    }
+
+    func pauseRevoke() {
+        revokePaused = true
+    }
+
+    func waitForRevokeStart() async {
+        await revokeGate.waitUntilEntered()
+    }
+
+    func resumeRevoke() async {
+        await revokeGate.open()
+        revokePaused = false
     }
 }
 

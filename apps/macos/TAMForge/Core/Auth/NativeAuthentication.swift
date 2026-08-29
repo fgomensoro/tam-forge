@@ -151,7 +151,9 @@ actor NativeAuthenticationCoordinator {
             if try credentialStore.activeRefreshToken() == pending {
                 try credentialStore.removeActiveRefreshToken()
             }
-            try credentialStore.removePendingRevocationToken()
+            if try credentialStore.pendingRevocationToken() == pending {
+                try credentialStore.removePendingRevocationToken()
+            }
         } catch {
             throw NativeAuthenticationError.revocationPending
         }

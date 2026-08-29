@@ -51,8 +51,17 @@ struct KeychainCredentialStore: RefreshCredentialStore {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecAttrSynchronizable as String: false,
-            kSecUseDataProtectionKeychain as String: true,
         ]
+    }
+
+    static func dataProtectionQuery(account: String) -> [String: Any] {
+        var query = baseQuery(account: account)
+        query[kSecUseDataProtectionKeychain as String] = true
+        return query
+    }
+
+    static func fallbackQuery(account: String, after status: OSStatus) -> [String: Any]? {
+        status == errSecMissingEntitlement ? baseQuery(account: account) : nil
     }
 
     static func decodedRead(status: OSStatus, value: CFTypeRef?) throws -> String? {
@@ -74,19 +83,28 @@ struct KeychainCredentialStore: RefreshCredentialStore {
         return token
     }
 
-    static func itemToAdd(tokenData: Data, account: String) -> [String: Any] {
-        var item = baseQuery(account: account)
+    static func itemToAdd(
+        tokenData: Data,
+        account: String,
+        query: [String: Any]? = nil
+    ) -> [String: Any] {
+        var item = query ?? baseQuery(account: account)
         item[kSecValueData as String] = tokenData
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        if item[kSecUseDataProtectionKeychain as String] as? Bool == true {
+            item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        }
         return item
     }
 
     private func read(account: String) throws -> String? {
-        var query = Self.baseQuery(account: account)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        let (status, item) = Self.withCompatibleQuery(account: account) { query in
+            var query = query
+            query[kSecReturnData as String] = true
+            query[kSecMatchLimit as String] = kSecMatchLimitOne
+            var item: CFTypeRef?
+            let status = SecItemCopyMatching(query as CFDictionary, &item)
+            return (status, item)
+        }
         return try Self.decodedRead(status: status, value: item)
     }
 
@@ -94,21 +112,36 @@ struct KeychainCredentialStore: RefreshCredentialStore {
         guard Self.isValidToken(token), let data = token.data(using: .utf8) else {
             throw KeychainCredentialError.invalidCredential
         }
-        let query = Self.baseQuery(account: account)
         let update: [String: Any] = [kSecValueData as String: data]
-        var status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
-        if status == errSecItemNotFound {
-            let item = Self.itemToAdd(tokenData: data, account: account)
-            status = SecItemAdd(item as CFDictionary, nil)
+        let (status, _) = Self.withCompatibleQuery(account: account) { query in
+            var status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+            if status == errSecItemNotFound {
+                let item = Self.itemToAdd(tokenData: data, account: account, query: query)
+                status = SecItemAdd(item as CFDictionary, nil)
+            }
+            return (status, ())
         }
         try Self.requireSuccess(status)
     }
 
     private func remove(account: String) throws {
-        let status = SecItemDelete(Self.baseQuery(account: account) as CFDictionary)
+        let (status, _) = Self.withCompatibleQuery(account: account) { query in
+            (SecItemDelete(query as CFDictionary), ())
+        }
         if status != errSecItemNotFound {
             try Self.requireSuccess(status)
         }
+    }
+
+    private static func withCompatibleQuery<Value>(
+        account: String,
+        operation: ([String: Any]) -> (OSStatus, Value)
+    ) -> (OSStatus, Value) {
+        let result = operation(dataProtectionQuery(account: account))
+        if let fallback = fallbackQuery(account: account, after: result.0) {
+            return operation(fallback)
+        }
+        return result
     }
 
     private static func requireSuccess(_ status: OSStatus) throws {

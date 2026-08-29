@@ -29,8 +29,13 @@ Keychain. The native app is a public OAuth client and contains no client secret.
   verifiers, or tokens.
 - [x] Access tokens expire after 15 minutes and exist only in app memory. Refresh
   tokens expire after 30 days, rotate on every use, and use generic-password
-  Data Protection Keychain items marked non-synchronizable and
-  `WhenUnlockedThisDeviceOnly`.
+  macOS Keychain items marked non-synchronizable. The app tries the Data Protection
+  Keychain first with `WhenUnlockedThisDeviceOnly`, then falls back to the standard
+  Keychain only for `errSecMissingEntitlement`. The fallback omits
+  `kSecAttrAccessible`, which macOS permits only for Data Protection or
+  synchronizable items; standard-Keychain access defaults to when unlocked. Thus
+  the local/ad-hoc signature needs no application identifier or Keychain access
+  group, and refresh tokens never reach files or `UserDefaults`.
 - [x] PostgreSQL stores only fixed-size SHA-256 hashes. Old refresh generations
   remain as replay evidence.
 - [x] Exchange replay fails. Refresh replay revokes the whole token family in the
