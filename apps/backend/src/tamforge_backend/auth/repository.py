@@ -95,6 +95,17 @@ class SqlAlchemyAuthRepository:
         await self._session.rollback()
         return self._to_persisted(row)
 
+    async def is_session_active(self, session_id: int) -> bool:
+        statement = (
+            select(AuthSession.id)
+            .where(AuthSession.id == session_id)
+            .where(AuthSession.revoked_at.is_(None))
+            .where(AuthSession.expires_at > func.now())
+        )
+        active = (await self._session.execute(statement)).scalar_one_or_none() is not None
+        await self._session.rollback()
+        return active
+
     async def find_session_for_logout(self, token_hash: bytes) -> PersistedSession | None:
         statement = self._session_projection().where(AuthSession.token_hash == token_hash)
         row = (await self._session.execute(statement)).one_or_none()
@@ -475,6 +486,21 @@ class SqlAlchemyAuthRepository:
             refresh_expires_at=row.refresh_expires_at,
             revoked_at=row.revoked_at,
         )
+
+    async def is_native_session_active(self, session_id: int) -> bool:
+        statement = (
+            select(NativeAuthSession.id)
+            .join(NativeRefreshToken, NativeRefreshToken.session_id == NativeAuthSession.id)
+            .where(NativeAuthSession.id == session_id)
+            .where(NativeAuthSession.revoked_at.is_(None))
+            .where(NativeAuthSession.access_expires_at > func.now())
+            .where(NativeRefreshToken.consumed_at.is_(None))
+            .where(NativeRefreshToken.revoked_at.is_(None))
+            .where(NativeRefreshToken.expires_at > func.now())
+        )
+        active = (await self._session.execute(statement)).scalar_one_or_none() is not None
+        await self._session.rollback()
+        return active
 
     async def revoke_native_session(self, refresh_token_hash: bytes) -> bool:
         found = False

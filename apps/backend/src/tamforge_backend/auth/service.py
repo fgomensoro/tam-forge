@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 from .crypto import InvalidOAuthState, OAuthStateManager, hash_secret, issue_browser_secret
 from .ports import AuthSessionRepository, GitHubGateway, NativeAuthRepository
@@ -246,6 +246,14 @@ class AuthService:
             expires_at=persisted.access_expires_at,
             authentication_method="bearer",
         )
+
+    async def is_session_active(self, owner: AuthenticatedOwner) -> bool:
+        """Revalidate an already-authenticated stream by opaque session identity only."""
+        if owner.expires_at <= datetime.now(UTC):
+            return False
+        if owner.authentication_method == "bearer":
+            return await self._native_repository().is_native_session_active(owner.session_id)
+        return await self.sessions.is_session_active(owner.session_id)
 
     async def revoke_native_session(self, raw_refresh_token: str | None) -> None:
         repository = self._native_repository()

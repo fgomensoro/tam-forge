@@ -63,7 +63,14 @@ final class NativeAuthenticationTests: XCTestCase {
         let result = try await coordinator.performAuthenticated { token in
             if await attempts.next() == 1 {
                 throw NativeAPIError.problem(
-                    APIProblem(type: nil, title: "Unauthorized", status: 401, detail: nil, instance: nil)
+                    APIProblem(
+                        type: nil,
+                        title: "Unauthorized",
+                        status: 401,
+                        detail: nil,
+                        instance: nil,
+                        code: nil
+                    )
                 )
             }
             return token

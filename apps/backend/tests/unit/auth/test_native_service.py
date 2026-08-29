@@ -35,6 +35,7 @@ class FakeNativeRepository:
         self.persisted_values: list[dict[str, object]] = []
         self.next_session_id = 1
         self.accept_new_flows = True
+        self.liveness_checks: list[int] = []
 
     async def create_native_oauth_flow(self, **values: object) -> bool:
         if not self.accept_new_flows:
@@ -124,6 +125,13 @@ class FakeNativeRepository:
         if session is None or session.revoked_at is not None:
             return None
         return session
+
+    async def is_native_session_active(self, session_id: int) -> bool:
+        self.liveness_checks.append(session_id)
+        return any(
+            session.session_id == session_id and session.revoked_at is None
+            for session in self.access.values()
+        )
 
     async def revoke_native_session(self, refresh_token_hash: bytes) -> bool:
         session = self.refresh.get(refresh_token_hash) or self.consumed_refresh.get(
@@ -326,6 +334,33 @@ async def test_native_revoke_invalidates_access_and_is_idempotent() -> None:
 
     with pytest.raises(Unauthenticated):
         await service.authenticate_bearer(issued.access_token)
+
+
+@pytest.mark.anyio
+async def test_native_session_liveness_checks_bearer_identity_after_revocation() -> None:
+    service, repository, _ = make_service()
+    verifier = "v" * 43
+    started = await service.start_native_login(
+        pkce_challenge=service.pkce_challenge(verifier),
+        redirect_uri="https://app.example.test/api/v1/auth/callback",
+    )
+    state = parse_qs(urlsplit(started.authorization_url).query)["state"][0]
+    code = await service.complete_native_login(
+        code="provider-code",
+        state=state,
+        redirect_uri="https://app.example.test/api/v1/auth/callback",
+    )
+    issued = await service.exchange_native_code(code=code, code_verifier=verifier)
+    owner = await service.authenticate_bearer(issued.access_token)
+    owner = replace(owner, expires_at=datetime.now(UTC) + timedelta(minutes=15))
+
+    assert await service.is_session_active(owner)
+    await service.revoke_native_session(issued.refresh_token)
+    assert not await service.is_session_active(owner)
+    assert not await service.is_session_active(
+        replace(owner, expires_at=datetime.now(UTC) - timedelta(seconds=1))
+    )
+    assert repository.liveness_checks == [owner.session_id, owner.session_id]
 
 
 @pytest.mark.anyio

@@ -158,28 +158,49 @@ struct StatusStreamClient: Sendable {
 }
 
 struct SSEEventParser {
+    static let maximumPendingLineBytes = 64 * 1024
+    static let maximumEventDataBytes = 256 * 1024
+
     private var pending = Data()
     private var eventID: Int?
     private var eventName = "message"
     private var dataLines: [String] = []
+    private var eventDataBytes = 0
     private var malformedEvent = false
 
     mutating func append(_ data: Data) -> [StatusEvent] {
-        pending.append(data)
         var events: [StatusEvent] = []
+        var index = data.startIndex
 
-        while let newline = pending.firstIndex(of: 0x0A) {
-            var line = Data(pending.prefix(upTo: newline))
-            pending.removeSubrange(...newline)
-            if line.last == 0x0D {
-                line.removeLast()
+        while index < data.endIndex {
+            guard let newline = data[index...].firstIndex(of: 0x0A) else {
+                let byteCount = data.distance(from: index, to: data.endIndex)
+                if byteCount <= Self.maximumPendingLineBytes - pending.count {
+                    pending.append(contentsOf: data[index...])
+                } else {
+                    pending.removeAll(keepingCapacity: false)
+                    malformedEvent = true
+                }
+                break
             }
 
+            let byteCount = data.distance(from: index, to: newline)
+            guard byteCount <= Self.maximumPendingLineBytes - pending.count else {
+                pending.removeAll(keepingCapacity: false)
+                malformedEvent = true
+                index = data.index(after: newline)
+                continue
+            }
+            pending.append(contentsOf: data[index..<newline])
+            index = data.index(after: newline)
+
+            var line = pending
+            pending.removeAll(keepingCapacity: true)
+            if line.last == 0x0D { line.removeLast() }
             guard let text = String(data: line, encoding: .utf8) else {
                 malformedEvent = true
                 continue
             }
-
             if text.isEmpty {
                 if let event = completedEvent() {
                     events.append(event)
@@ -205,7 +226,17 @@ struct SSEEventParser {
             case "event":
                 eventName = value
             case "data":
+                let appendedBytes = value.utf8.count + (dataLines.isEmpty ? 0 : 1)
+                guard !malformedEvent,
+                      appendedBytes <= Self.maximumEventDataBytes - eventDataBytes
+                else {
+                    dataLines.removeAll(keepingCapacity: false)
+                    eventDataBytes = 0
+                    malformedEvent = true
+                    continue
+                }
                 dataLines.append(value)
+                eventDataBytes += appendedBytes
             default:
                 continue
             }
@@ -231,6 +262,7 @@ struct SSEEventParser {
         eventID = nil
         eventName = "message"
         dataLines.removeAll(keepingCapacity: true)
+        eventDataBytes = 0
         malformedEvent = false
     }
 }

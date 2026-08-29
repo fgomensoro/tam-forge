@@ -50,7 +50,7 @@ final class NativeAPITransportTests: XCTestCase {
         fixture.enqueue(
             .response(
                 statusCode: 400,
-                body: #"{"type":"https://example.test/problem","title":"Invalid command","status":400,"detail":"Fix input"}"#.data(using: .utf8)!
+                body: #"{"type":"https://example.test/problem","title":"Invalid command","status":400,"detail":"Fix input","code":"invalid_command"}"#.data(using: .utf8)!
             )
         )
         fixture.enqueue(.response(statusCode: 500, body: Data("not-json".utf8)))
@@ -68,7 +68,8 @@ final class NativeAPITransportTests: XCTestCase {
                         title: "Invalid command",
                         status: 400,
                         detail: "Fix input",
-                        instance: nil
+                        instance: nil,
+                        code: "invalid_command"
                     )
                 )
             )
@@ -79,6 +80,36 @@ final class NativeAPITransportTests: XCTestCase {
             XCTFail("Expected malformed problem fallback")
         } catch let error as NativeAPIError {
             XCTAssertEqual(error, .malformedProblem(statusCode: 500))
+        }
+    }
+
+    func testProblemCodeRemainsOptionalForNonconformingUpstreamBodies() async throws {
+        let fixture = URLProtocolFixture()
+        fixture.enqueue(
+            .response(
+                statusCode: 403,
+                body: #"{"title":"Forbidden","status":403}"#.data(using: .utf8)!
+            )
+        )
+        let transport = NativeAPITransport(baseURL: URL(string: "https://api.example.test")!, session: fixture.session())
+
+        do {
+            _ = try await transport.send(NativeAPIRequest(method: .get, path: "/commands"))
+            XCTFail("Expected problem details")
+        } catch let error as NativeAPIError {
+            XCTAssertEqual(
+                error,
+                .problem(
+                    APIProblem(
+                        type: nil,
+                        title: "Forbidden",
+                        status: 403,
+                        detail: nil,
+                        instance: nil,
+                        code: nil
+                    )
+                )
+            )
         }
     }
 
@@ -226,6 +257,68 @@ final class NativeAPITransportTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? NativeMultipartFileError, .payloadTooLarge(maximumBytes: 3))
         }
+    }
+
+    func testMultipartFileFailsClosedIfItGrowsAfterValidation() async throws {
+        let fileURL = try makeTemporaryFile(contents: Data("four".utf8))
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let file = try NativeMultipartFile(fileURL: fileURL, contentType: "application/octet-stream")
+
+        try Data("four-more".utf8).write(to: fileURL)
+
+        try await assertFileChanged(file)
+    }
+
+    func testMultipartFileFailsClosedIfItShrinksAfterValidation() async throws {
+        let fileURL = try makeTemporaryFile(contents: Data("four".utf8))
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let file = try NativeMultipartFile(fileURL: fileURL, contentType: "application/octet-stream")
+
+        try Data("x".utf8).write(to: fileURL)
+
+        try await assertFileChanged(file)
+    }
+
+    func testMultipartFileFailsClosedIfItIsReplacedAfterValidation() async throws {
+        let fileURL = try makeTemporaryFile(contents: Data("four".utf8))
+        let replacementURL = try makeTemporaryFile(contents: Data("next".utf8))
+        defer {
+            try? FileManager.default.removeItem(at: fileURL)
+            try? FileManager.default.removeItem(at: replacementURL)
+        }
+        let file = try NativeMultipartFile(fileURL: fileURL, contentType: "application/octet-stream")
+
+        _ = try FileManager.default.replaceItemAt(fileURL, withItemAt: replacementURL)
+
+        try await assertFileChanged(file)
+    }
+
+    private func makeTemporaryFile(contents: Data) throws -> URL {
+        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try contents.write(to: fileURL)
+        return fileURL
+    }
+
+    private func assertFileChanged(
+        _ multipartFile: NativeMultipartFile,
+        file sourceFile: StaticString = #filePath,
+        line: UInt = #line
+    ) async throws {
+        var emittedByteCount: Int64 = 0
+        do {
+            for try await chunk in multipartFile.httpBody() {
+                emittedByteCount += Int64(chunk.count)
+            }
+            XCTFail("Expected changed file to fail", file: sourceFile, line: line)
+        } catch {
+            XCTAssertEqual(error as? NativeMultipartFileError, .fileChanged, file: sourceFile, line: line)
+        }
+        XCTAssertLessThanOrEqual(
+            emittedByteCount,
+            multipartFile.byteCount,
+            file: sourceFile,
+            line: line
+        )
     }
 }
 

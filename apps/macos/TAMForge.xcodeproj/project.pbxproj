@@ -19,6 +19,7 @@
 		A100000000000000000000E7 /* openapi.yaml in Resources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000E8 /* openapi.yaml */; };
 		A100000000000000000000E9 /* NativeAPITransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000EB /* NativeAPITransport.swift */; };
 		A100000000000000000000EA /* NativeAPITransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000EB /* NativeAPITransport.swift */; };
+		D10000000000000000000001 /* GeneratedOpenAPIContract.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000002 /* GeneratedOpenAPIContract.swift */; };
 		B10000000000000000000011 /* NativeAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* NativeAuthentication.swift */; };
 		B10000000000000000000012 /* KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* KeychainCredentialStore.swift */; };
 		B10000000000000000000013 /* NativeAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* NativeAuthentication.swift */; };
@@ -56,6 +57,7 @@
 		A100000000000000000000E6 /* openapi-generator-config.yaml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = openapi-generator-config.yaml; sourceTree = "<group>"; };
 		A100000000000000000000E8 /* openapi.yaml */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = openapi.yaml; sourceTree = "<group>"; };
 		A100000000000000000000EB /* NativeAPITransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAPITransport.swift; sourceTree = "<group>"; };
+		D10000000000000000000002 /* GeneratedOpenAPIContract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedOpenAPIContract.swift; sourceTree = "<group>"; };
 		B10000000000000000000001 /* NativeAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAuthentication.swift; sourceTree = "<group>"; };
 		B10000000000000000000002 /* KeychainCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainCredentialStore.swift; sourceTree = "<group>"; };
 		B10000000000000000000003 /* NativeAuthenticationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAuthenticationTests.swift; sourceTree = "<group>"; };
@@ -176,6 +178,7 @@
 		A100000000000000000000EC /* API */ = {
 			isa = PBXGroup;
 			children = (
+				D10000000000000000000002 /* GeneratedOpenAPIContract.swift */,
 				A100000000000000000000EB /* NativeAPITransport.swift */,
 			);
 			path = API;
@@ -342,6 +345,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D10000000000000000000001 /* GeneratedOpenAPIContract.swift in Sources */,
 				A10000000000000000000001 /* TAMForgeApp.swift in Sources */,
 				A10000000000000000000003 /* AppDependencies.swift in Sources */,
 				A100000000000000000000E9 /* NativeAPITransport.swift in Sources */,

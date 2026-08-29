@@ -20,6 +20,28 @@ final class StatusStreamClientTests: XCTestCase {
         XCTAssertTrue(events.isEmpty)
     }
 
+    func testParserBoundsNoNewlineInputThenRecoversAtEventBoundary() {
+        var parser = SSEEventParser()
+
+        XCTAssertTrue(
+            parser.append(
+                Data(repeating: 0x61, count: SSEEventParser.maximumPendingLineBytes + 1)
+            ).isEmpty
+        )
+        XCTAssertTrue(parser.append(Data("\n".utf8)).isEmpty)
+
+        XCTAssertEqual(parser.append(Data(statusBlock(id: 9).utf8)).map(\.id), [9])
+    }
+
+    func testParserBoundsOversizedMultiLineEventThenRecoversAtEventBoundary() {
+        var parser = SSEEventParser()
+        let dataLine = String(repeating: "x", count: SSEEventParser.maximumEventDataBytes / 2)
+        let oversized = "id: 1\nevent: status\ndata: \(dataLine)\ndata: \(dataLine)\n\n"
+
+        XCTAssertTrue(parser.append(Data(oversized.utf8)).isEmpty)
+        XCTAssertEqual(parser.append(Data(statusBlock(id: 10).utf8)).map(\.id), [10])
+    }
+
     func testReconnectsWithLastEventIDSuppressesDuplicatesAndPollsFallback() async {
         let transport = FixtureStatusStreamTransport(outcomes: [
             .response(statusCode: 200, chunks: [Data(statusBlock(id: 7).utf8)], remainsOpen: false),

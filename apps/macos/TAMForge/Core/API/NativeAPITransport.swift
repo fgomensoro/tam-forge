@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import HTTPTypes
 import OpenAPIRuntime
@@ -54,6 +55,7 @@ struct APIProblem: Codable, Equatable, Sendable {
     let status: Int?
     let detail: String?
     let instance: String?
+    let code: String?
 }
 
 enum NativeAPIError: Error, Equatable {
@@ -272,24 +274,28 @@ struct NativeMultipartFile: Sendable {
     let fileURL: URL
     let contentType: String
     let byteCount: Int64
+    private let identity: FileIdentity
 
     init(fileURL: URL, contentType: String, maximumBytes: Int = Self.defaultMaximumBytes) throws {
-        let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-        guard values.isRegularFile == true, let fileSize = values.fileSize else {
-            throw NativeMultipartFileError.notRegularFile
-        }
-        guard fileSize <= maximumBytes else {
+        let identity = try FileIdentity.read(from: fileURL)
+        guard identity.byteCount <= Int64(maximumBytes) else {
             throw NativeMultipartFileError.payloadTooLarge(maximumBytes: maximumBytes)
         }
         self.fileURL = fileURL
         self.contentType = contentType
-        self.byteCount = Int64(fileSize)
+        self.byteCount = identity.byteCount
+        self.identity = identity
     }
 
     /// A repeatable, file-backed part body for the generated multipart API inputs.
     func httpBody() -> HTTPBody {
         HTTPBody(
-            FileChunkSequence(fileURL: fileURL, chunkSize: Self.chunkSize),
+            FileChunkSequence(
+                fileURL: fileURL,
+                identity: identity,
+                byteCount: byteCount,
+                chunkSize: Self.chunkSize
+            ),
             length: .known(byteCount),
             iterationBehavior: .multiple
         )
@@ -299,39 +305,117 @@ struct NativeMultipartFile: Sendable {
 enum NativeMultipartFileError: Error, Equatable {
     case notRegularFile
     case payloadTooLarge(maximumBytes: Int)
+    case fileChanged
+}
+
+private struct FileIdentity: Sendable, Equatable {
+    let device: UInt64
+    let inode: UInt64
+    let byteCount: Int64
+
+    static func read(from fileURL: URL) throws -> Self {
+        var metadata = Darwin.stat()
+        guard Darwin.lstat(fileURL.path, &metadata) == 0,
+              (metadata.st_mode & S_IFMT) == S_IFREG
+        else {
+            throw NativeMultipartFileError.notRegularFile
+        }
+        return Self(
+            device: UInt64(metadata.st_dev),
+            inode: UInt64(metadata.st_ino),
+            byteCount: metadata.st_size
+        )
+    }
+
+    static func read(from handle: FileHandle) throws -> Self {
+        var metadata = Darwin.stat()
+        guard Darwin.fstat(handle.fileDescriptor, &metadata) == 0,
+              (metadata.st_mode & S_IFMT) == S_IFREG
+        else {
+            throw NativeMultipartFileError.fileChanged
+        }
+        return Self(
+            device: UInt64(metadata.st_dev),
+            inode: UInt64(metadata.st_ino),
+            byteCount: metadata.st_size
+        )
+    }
 }
 
 private struct FileChunkSequence: AsyncSequence, Sendable {
     typealias Element = HTTPBody.ByteChunk
 
     let fileURL: URL
+    let identity: FileIdentity
+    let byteCount: Int64
     let chunkSize: Int
 
     func makeAsyncIterator() -> Iterator {
-        Iterator(fileURL: fileURL, chunkSize: chunkSize)
+        Iterator(
+            fileURL: fileURL,
+            identity: identity,
+            byteCount: byteCount,
+            chunkSize: chunkSize
+        )
     }
 
     struct Iterator: AsyncIteratorProtocol {
         private let fileURL: URL
+        private let identity: FileIdentity
         private let chunkSize: Int
         private var handle: FileHandle?
+        private var remainingBytes: Int64
 
-        init(fileURL: URL, chunkSize: Int) {
+        init(fileURL: URL, identity: FileIdentity, byteCount: Int64, chunkSize: Int) {
             self.fileURL = fileURL
+            self.identity = identity
             self.chunkSize = chunkSize
+            self.remainingBytes = byteCount
         }
 
         mutating func next() async throws -> HTTPBody.ByteChunk? {
-            try Task.checkCancellation()
-            if handle == nil {
-                handle = try FileHandle(forReadingFrom: fileURL)
+            do {
+                try Task.checkCancellation()
+                if handle == nil {
+                    let opened = try FileHandle(forReadingFrom: fileURL)
+                    guard try FileIdentity.read(from: opened) == identity else {
+                        try? opened.close()
+                        throw NativeMultipartFileError.fileChanged
+                    }
+                    handle = opened
+                }
+                guard let handle else { throw NativeMultipartFileError.fileChanged }
+                guard try FileIdentity.read(from: handle) == identity else {
+                    throw NativeMultipartFileError.fileChanged
+                }
+                guard remainingBytes > 0 else {
+                    closeHandle()
+                    return nil
+                }
+                let count = Int(Swift.min(Int64(chunkSize), remainingBytes))
+                guard let data = try handle.read(upToCount: count),
+                      !data.isEmpty,
+                      Int64(data.count) <= remainingBytes
+                else {
+                    throw NativeMultipartFileError.fileChanged
+                }
+                remainingBytes -= Int64(data.count)
+                return ArraySlice(data)
+            } catch {
+                closeHandle()
+                if error is CancellationError {
+                    throw CancellationError()
+                }
+                if let multipartError = error as? NativeMultipartFileError {
+                    throw multipartError
+                }
+                throw NativeMultipartFileError.fileChanged
             }
-            guard let data = try handle?.read(upToCount: chunkSize), !data.isEmpty else {
-                try handle?.close()
-                handle = nil
-                return nil
-            }
-            return ArraySlice(data)
+        }
+
+        private mutating func closeHandle() {
+            try? handle?.close()
+            handle = nil
         }
     }
 }
