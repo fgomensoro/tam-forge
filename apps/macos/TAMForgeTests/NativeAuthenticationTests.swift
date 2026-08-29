@@ -251,6 +251,103 @@ final class NativeAuthenticationTests: XCTestCase {
         )
     }
 
+    func testKeychainCopyMatchingRetriesWithStandardQueryOnlyForMissingEntitlement() throws {
+        let security = RecordingKeychainSecurityAPI(
+            copyResponses: [
+                (errSecMissingEntitlement, nil),
+                (errSecSuccess, Data(token("r").utf8) as CFData),
+            ]
+        )
+        let store = KeychainCredentialStore(security: security)
+
+        XCTAssertEqual(try store.activeRefreshToken(), token("r"))
+        assertDataProtectionThenStandardQueries(security.copyQueries)
+    }
+
+    func testKeychainCopyMatchingDoesNotRetryUnrelatedError() throws {
+        let security = RecordingKeychainSecurityAPI(copyResponses: [(errSecParam, nil)])
+        let store = KeychainCredentialStore(security: security)
+
+        XCTAssertThrowsError(try store.activeRefreshToken()) { error in
+            XCTAssertEqual(error as? KeychainCredentialError, .operationFailed(errSecParam))
+        }
+        assertDataProtectionQuery(security.copyQueries)
+    }
+
+    func testKeychainUpdateRetriesWithStandardQueryOnlyForMissingEntitlement() throws {
+        let security = RecordingKeychainSecurityAPI(
+            updateStatuses: [errSecMissingEntitlement, errSecItemNotFound],
+            addStatuses: [errSecSuccess]
+        )
+        let store = KeychainCredentialStore(security: security)
+
+        try store.storeActiveRefreshToken(token("r"))
+
+        assertDataProtectionThenStandardQueries(security.updateQueries)
+        assertStandardKeychainQuery(security.addQueries)
+        XCTAssertNil(security.addQueries[0][kSecAttrAccessible as String])
+    }
+
+    func testKeychainAddRetriesWithStandardQueryOnlyForMissingEntitlement() throws {
+        let security = RecordingKeychainSecurityAPI(
+            updateStatuses: [errSecItemNotFound, errSecItemNotFound],
+            addStatuses: [errSecMissingEntitlement, errSecSuccess]
+        )
+        let store = KeychainCredentialStore(security: security)
+
+        try store.storeActiveRefreshToken(token("r"))
+
+        assertDataProtectionThenStandardQueries(security.updateQueries)
+        assertDataProtectionThenStandardQueries(security.addQueries)
+        XCTAssertNil(security.addQueries[1][kSecAttrAccessible as String])
+    }
+
+    func testKeychainUpdateDoesNotRetryUnrelatedError() throws {
+        let security = RecordingKeychainSecurityAPI(updateStatuses: [errSecParam])
+        let store = KeychainCredentialStore(security: security)
+
+        XCTAssertThrowsError(try store.storeActiveRefreshToken(token("r"))) { error in
+            XCTAssertEqual(error as? KeychainCredentialError, .operationFailed(errSecParam))
+        }
+        assertDataProtectionQuery(security.updateQueries)
+        XCTAssertTrue(security.addQueries.isEmpty)
+    }
+
+    func testKeychainAddDoesNotRetryUnrelatedError() throws {
+        let security = RecordingKeychainSecurityAPI(
+            updateStatuses: [errSecItemNotFound],
+            addStatuses: [errSecParam]
+        )
+        let store = KeychainCredentialStore(security: security)
+
+        XCTAssertThrowsError(try store.storeActiveRefreshToken(token("r"))) { error in
+            XCTAssertEqual(error as? KeychainCredentialError, .operationFailed(errSecParam))
+        }
+        assertDataProtectionQuery(security.updateQueries)
+        assertDataProtectionQuery(security.addQueries)
+    }
+
+    func testKeychainDeleteRetriesWithStandardQueryOnlyForMissingEntitlement() throws {
+        let security = RecordingKeychainSecurityAPI(
+            deleteStatuses: [errSecMissingEntitlement, errSecSuccess]
+        )
+        let store = KeychainCredentialStore(security: security)
+
+        try store.removeActiveRefreshToken()
+
+        assertDataProtectionThenStandardQueries(security.deleteQueries)
+    }
+
+    func testKeychainDeleteDoesNotRetryUnrelatedError() throws {
+        let security = RecordingKeychainSecurityAPI(deleteStatuses: [errSecParam])
+        let store = KeychainCredentialStore(security: security)
+
+        XCTAssertThrowsError(try store.removeActiveRefreshToken()) { error in
+            XCTAssertEqual(error as? KeychainCredentialError, .operationFailed(errSecParam))
+        }
+        assertDataProtectionQuery(security.deleteQueries)
+    }
+
     func testLogoutPreventsLateRefreshFromRestoringCredentials() async throws {
         let http = FakeNativeAuthHTTPClient()
         await http.pauseRefresh()
@@ -331,6 +428,44 @@ final class NativeAuthenticationTests: XCTestCase {
         let revokeCalls = await http.revokeCalls
         XCTAssertEqual(revokeCalls, 0)
     }
+}
+
+private func assertDataProtectionThenStandardQueries(
+    _ queries: [[String: Any]],
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
+    XCTAssertEqual(queries.count, 2, file: file, line: line)
+    XCTAssertEqual(
+        queries[0][kSecUseDataProtectionKeychain as String] as? Bool,
+        true,
+        file: file,
+        line: line
+    )
+    XCTAssertNil(queries[1][kSecUseDataProtectionKeychain as String], file: file, line: line)
+}
+
+private func assertDataProtectionQuery(
+    _ queries: [[String: Any]],
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
+    XCTAssertEqual(queries.count, 1, file: file, line: line)
+    XCTAssertEqual(
+        queries[0][kSecUseDataProtectionKeychain as String] as? Bool,
+        true,
+        file: file,
+        line: line
+    )
+}
+
+private func assertStandardKeychainQuery(
+    _ queries: [[String: Any]],
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
+    XCTAssertEqual(queries.count, 1, file: file, line: line)
+    XCTAssertNil(queries[0][kSecUseDataProtectionKeychain as String], file: file, line: line)
 }
 
 private actor FakeNativeAuthHTTPClient: NativeAuthHTTPClient {
@@ -441,6 +576,72 @@ private final class FakeOAuthSession: NativeOAuthSession {
         XCTAssertEqual(url.host, "github.com")
         self.callbackScheme = callbackScheme
         return URL(string: "tamforge://auth/callback?code=\(token("e"))")!
+    }
+}
+
+private final class RecordingKeychainSecurityAPI: KeychainSecurityAPI, @unchecked Sendable {
+    private let lock = NSLock()
+    private var copyResponses: [(OSStatus, CFTypeRef?)]
+    private var updateStatuses: [OSStatus]
+    private var addStatuses: [OSStatus]
+    private var deleteStatuses: [OSStatus]
+    private var recordedCopyQueries: [[String: Any]] = []
+    private var recordedUpdateQueries: [[String: Any]] = []
+    private var recordedAddQueries: [[String: Any]] = []
+    private var recordedDeleteQueries: [[String: Any]] = []
+
+    init(
+        copyResponses: [(OSStatus, CFTypeRef?)] = [],
+        updateStatuses: [OSStatus] = [],
+        addStatuses: [OSStatus] = [],
+        deleteStatuses: [OSStatus] = []
+    ) {
+        self.copyResponses = copyResponses
+        self.updateStatuses = updateStatuses
+        self.addStatuses = addStatuses
+        self.deleteStatuses = deleteStatuses
+    }
+
+    var copyQueries: [[String: Any]] { lock.withLock { recordedCopyQueries } }
+    var updateQueries: [[String: Any]] { lock.withLock { recordedUpdateQueries } }
+    var addQueries: [[String: Any]] { lock.withLock { recordedAddQueries } }
+    var deleteQueries: [[String: Any]] { lock.withLock { recordedDeleteQueries } }
+
+    func copyMatching(
+        _ query: CFDictionary,
+        result: UnsafeMutablePointer<CFTypeRef?>?
+    ) -> OSStatus {
+        let response: (OSStatus, CFTypeRef?) = lock.withLock {
+            recordedCopyQueries.append(Self.dictionary(from: query))
+            return copyResponses.isEmpty ? (errSecItemNotFound, nil) : copyResponses.removeFirst()
+        }
+        result?.pointee = response.1
+        return response.0
+    }
+
+    func update(_ query: CFDictionary, attributesToUpdate: CFDictionary) -> OSStatus {
+        lock.withLock {
+            recordedUpdateQueries.append(Self.dictionary(from: query))
+            return updateStatuses.isEmpty ? errSecItemNotFound : updateStatuses.removeFirst()
+        }
+    }
+
+    func add(_ item: CFDictionary) -> OSStatus {
+        lock.withLock {
+            recordedAddQueries.append(Self.dictionary(from: item))
+            return addStatuses.isEmpty ? errSecSuccess : addStatuses.removeFirst()
+        }
+    }
+
+    func delete(_ query: CFDictionary) -> OSStatus {
+        lock.withLock {
+            recordedDeleteQueries.append(Self.dictionary(from: query))
+            return deleteStatuses.isEmpty ? errSecSuccess : deleteStatuses.removeFirst()
+        }
+    }
+
+    private static func dictionary(from dictionary: CFDictionary) -> [String: Any] {
+        dictionary as NSDictionary as! [String: Any]
     }
 }
 

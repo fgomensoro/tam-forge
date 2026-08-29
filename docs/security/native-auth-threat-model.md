@@ -30,12 +30,16 @@ Keychain. The native app is a public OAuth client and contains no client secret.
 - [x] Access tokens expire after 15 minutes and exist only in app memory. Refresh
   tokens expire after 30 days, rotate on every use, and use generic-password
   macOS Keychain items marked non-synchronizable. The app tries the Data Protection
-  Keychain first with `WhenUnlockedThisDeviceOnly`, then falls back to the standard
-  Keychain only for `errSecMissingEntitlement`. The fallback omits
+  Keychain first with `WhenUnlockedThisDeviceOnly`, then falls back to the
+  legacy/file-based Keychain only for `errSecMissingEntitlement`. The fallback uses
+  legacy Keychain ACL semantics and lacks `ThisDeviceOnly`; it omits
   `kSecAttrAccessible`, which macOS permits only for Data Protection or
-  synchronizable items; standard-Keychain access defaults to when unlocked. Thus
-  the local/ad-hoc signature needs no application identifier or Keychain access
-  group, and refresh tokens never reach files or `UserDefaults`.
+  synchronizable items, so standard-Keychain access defaults to when unlocked.
+  The supported local distribution uses the stable self-signed `TAM Forge Local
+  Development` identity: true ad-hoc rebuilds can change designated requirements
+  and are not the credential-continuity guarantee. No application identifier or
+  Keychain access group is required, and refresh tokens never reach files or
+  `UserDefaults`.
 - [x] PostgreSQL stores only fixed-size SHA-256 hashes. Old refresh generations
   remain as replay evidence.
 - [x] Exchange replay fails. Refresh replay revokes the whole token family in the

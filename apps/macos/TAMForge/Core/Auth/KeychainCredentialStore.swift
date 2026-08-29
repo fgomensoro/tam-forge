@@ -16,10 +16,46 @@ enum KeychainCredentialError: Error, Equatable {
     case operationFailed(OSStatus)
 }
 
+protocol KeychainSecurityAPI: Sendable {
+    func copyMatching(
+        _ query: CFDictionary,
+        result: UnsafeMutablePointer<CFTypeRef?>?
+    ) -> OSStatus
+    func update(_ query: CFDictionary, attributesToUpdate: CFDictionary) -> OSStatus
+    func add(_ item: CFDictionary) -> OSStatus
+    func delete(_ query: CFDictionary) -> OSStatus
+}
+
+private struct SystemKeychainSecurityAPI: KeychainSecurityAPI {
+    func copyMatching(
+        _ query: CFDictionary,
+        result: UnsafeMutablePointer<CFTypeRef?>?
+    ) -> OSStatus {
+        SecItemCopyMatching(query, result)
+    }
+
+    func update(_ query: CFDictionary, attributesToUpdate: CFDictionary) -> OSStatus {
+        SecItemUpdate(query, attributesToUpdate)
+    }
+
+    func add(_ item: CFDictionary) -> OSStatus {
+        SecItemAdd(item, nil)
+    }
+
+    func delete(_ query: CFDictionary) -> OSStatus {
+        SecItemDelete(query)
+    }
+}
+
 struct KeychainCredentialStore: RefreshCredentialStore {
     static let service = "com.tamforge.native-auth"
     static let activeAccount = "active-refresh-token"
     static let pendingAccount = "pending-revocation-token"
+    private let security: any KeychainSecurityAPI
+
+    init(security: any KeychainSecurityAPI = SystemKeychainSecurityAPI()) {
+        self.security = security
+    }
 
     func activeRefreshToken() throws -> String? {
         try read(account: Self.activeAccount)
@@ -102,7 +138,7 @@ struct KeychainCredentialStore: RefreshCredentialStore {
             query[kSecReturnData as String] = true
             query[kSecMatchLimit as String] = kSecMatchLimitOne
             var item: CFTypeRef?
-            let status = SecItemCopyMatching(query as CFDictionary, &item)
+            let status = security.copyMatching(query as CFDictionary, result: &item)
             return (status, item)
         }
         return try Self.decodedRead(status: status, value: item)
@@ -114,10 +150,10 @@ struct KeychainCredentialStore: RefreshCredentialStore {
         }
         let update: [String: Any] = [kSecValueData as String: data]
         let (status, _) = Self.withCompatibleQuery(account: account) { query in
-            var status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+            var status = security.update(query as CFDictionary, attributesToUpdate: update as CFDictionary)
             if status == errSecItemNotFound {
                 let item = Self.itemToAdd(tokenData: data, account: account, query: query)
-                status = SecItemAdd(item as CFDictionary, nil)
+                status = security.add(item as CFDictionary)
             }
             return (status, ())
         }
@@ -126,7 +162,7 @@ struct KeychainCredentialStore: RefreshCredentialStore {
 
     private func remove(account: String) throws {
         let (status, _) = Self.withCompatibleQuery(account: account) { query in
-            (SecItemDelete(query as CFDictionary), ())
+            (security.delete(query as CFDictionary), ())
         }
         if status != errSecItemNotFound {
             try Self.requireSuccess(status)
