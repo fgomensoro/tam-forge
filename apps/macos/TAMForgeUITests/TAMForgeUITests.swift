@@ -1,6 +1,10 @@
 import XCTest
 
 final class TAMForgeUITests: XCTestCase {
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+    }
+
     @MainActor
     func testSignedOutShellUsesSelectedEnvironmentWithoutExposingSecrets() {
         let app = XCUIApplication()
@@ -58,6 +62,9 @@ final class TAMForgeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["noNativeFeatures"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["todayNavigation"].exists)
         XCTAssertFalse(app.buttons["roadmapsNavigation"].exists)
-        XCTAssertTrue(app.buttons["signOutButton"].isHittable)
+        let signOut = app.buttons["signOutButton"]
+        XCTAssertTrue(signOut.waitForExistence(timeout: 5))
+        signOut.click()
+        XCTAssertTrue(app.buttons["signInButton"].waitForExistence(timeout: 5))
     }
 }
