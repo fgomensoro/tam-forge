@@ -117,6 +117,154 @@ class AuthSession(Base):
     )
 
 
+class NativeOAuthFlow(Base):
+    """Durable single-use native OAuth state bound to one PKCE challenge."""
+
+    __tablename__ = "native_oauth_flows"
+    __table_args__ = (
+        UniqueConstraint("state_hash", name="uq_native_oauth_flows_state_hash"),
+        CheckConstraint("octet_length(state_hash) = 32", name="state_hash_length"),
+        CheckConstraint(
+            "char_length(pkce_challenge) = 43 AND pkce_challenge ~ '^[A-Za-z0-9_-]+$'",
+            name="pkce_challenge_s256",
+        ),
+        CheckConstraint("expires_at > created_at", name="expires_after_creation"),
+        CheckConstraint(
+            "consumed_at IS NULL OR consumed_at >= created_at",
+            name="consumed_after_creation",
+        ),
+        Index("ix_native_oauth_flows_expires_at", "expires_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    state_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
+    pkce_challenge: Mapped[str] = mapped_column(Text, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, server_default=func.now(), nullable=False
+    )
+
+
+class NativeExchangeCode(Base):
+    """One-time app callback code containing no provider credential."""
+
+    __tablename__ = "native_exchange_codes"
+    __table_args__ = (
+        UniqueConstraint("code_hash", name="uq_native_exchange_codes_code_hash"),
+        CheckConstraint("octet_length(code_hash) = 32", name="code_hash_length"),
+        CheckConstraint(
+            "char_length(pkce_challenge) = 43 AND pkce_challenge ~ '^[A-Za-z0-9_-]+$'",
+            name="pkce_challenge_s256",
+        ),
+        CheckConstraint("expires_at > created_at", name="expires_after_creation"),
+        CheckConstraint(
+            "consumed_at IS NULL OR consumed_at >= created_at",
+            name="consumed_after_creation",
+        ),
+        Index("ix_native_exchange_codes_owner_id", "owner_id"),
+        Index("ix_native_exchange_codes_expires_at", "expires_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    owner_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "owners.id",
+            name="fk_native_exchange_codes_owner_id_owners",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    code_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
+    pkce_challenge: Mapped[str] = mapped_column(Text, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, server_default=func.now(), nullable=False
+    )
+
+
+class NativeAuthSession(Base):
+    """Native session with one current short-lived access-token hash."""
+
+    __tablename__ = "native_auth_sessions"
+    __table_args__ = (
+        UniqueConstraint("access_token_hash", name="uq_native_auth_sessions_access_hash"),
+        CheckConstraint(
+            "octet_length(access_token_hash) = 32", name="access_token_hash_length"
+        ),
+        CheckConstraint("access_expires_at > created_at", name="access_expires_after_creation"),
+        CheckConstraint(
+            "revoked_at IS NULL OR revoked_at >= created_at", name="revoked_after_creation"
+        ),
+        Index("ix_native_auth_sessions_owner_id", "owner_id"),
+        Index("ix_native_auth_sessions_access_expires_at", "access_expires_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    owner_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "owners.id",
+            name="fk_native_auth_sessions_owner_id_owners",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    access_token_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
+    access_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, server_default=func.now(), nullable=False
+    )
+
+
+class NativeRefreshToken(Base):
+    """Retained refresh-token generation used to reject rotation replay."""
+
+    __tablename__ = "native_refresh_tokens"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_native_refresh_tokens_token_hash"),
+        CheckConstraint("octet_length(token_hash) = 32", name="token_hash_length"),
+        CheckConstraint("expires_at > created_at", name="expires_after_creation"),
+        CheckConstraint(
+            "consumed_at IS NULL OR consumed_at >= created_at", name="consumed_after_creation"
+        ),
+        CheckConstraint(
+            "revoked_at IS NULL OR revoked_at >= created_at", name="revoked_after_creation"
+        ),
+        Index("ix_native_refresh_tokens_session_id", "session_id"),
+        Index("ix_native_refresh_tokens_expires_at", "expires_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "native_auth_sessions.id",
+            name="fk_native_refresh_tokens_session_id_native_auth_sessions",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    replaced_by_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "native_refresh_tokens.id",
+            name="fk_native_refresh_tokens_replaced_by_id_native_refresh_tokens",
+            ondelete="RESTRICT",
+        ),
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, server_default=func.now(), nullable=False
+    )
+
+
 class CommandReceipt(Base):
     """A bounded idempotency receipt without raw request content."""
 
@@ -350,6 +498,10 @@ __all__ = [
     "CommandReceipt",
     "ImmutableOwnerIdentityError",
     "Owner",
+    "NativeAuthSession",
+    "NativeExchangeCode",
+    "NativeOAuthFlow",
+    "NativeRefreshToken",
     "reject_audit_event_delete",
     "reject_audit_event_update",
     "validate_audit_event_insert",

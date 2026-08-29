@@ -9,8 +9,9 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth.dependencies import get_authenticated_owner, require_csrf_owner
+from ..auth.dependencies import get_auth_service, get_authenticated_owner, require_csrf_owner
 from ..auth.schemas import AuthenticatedOwner, ProblemResponse
+from ..auth.service import AuthService
 from ..database import get_db_session
 from .repository import SqlAlchemyNotificationRepository
 from .schemas import NotificationPage, NotificationResponse
@@ -72,6 +73,7 @@ async def mark_notification_read(
 async def stream_status_events(
     request: Request,
     service: Annotated[NotificationService, Depends(get_notification_service)],
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
     owner: Annotated[AuthenticatedOwner, Depends(get_authenticated_owner)],
     last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
 ) -> StreamingResponse:
@@ -79,12 +81,17 @@ async def stream_status_events(
         cursor = parse_last_event_id(last_event_id)
     except ValueError as exc:
         raise NotificationInvalidRequest("Last-Event-ID is invalid") from exc
+
+    async def session_is_active() -> bool:
+        return await auth_service.is_session_active(owner)
+
     response = StreamingResponse(
         status_event_stream(
             request=request,
             service=service,
             owner_id=owner.owner_id,
             after_event_id=cursor,
+            session_is_active=session_is_active,
             monotonic=time.monotonic,
         ),
         media_type="text/event-stream",

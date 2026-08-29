@@ -15,6 +15,21 @@ env:
   UV_VERSION: "0.10.2"
 
 jobs:
+  macos-native:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build native macOS shell
+        # The Apple build-tool plugin is exactly pinned in the project and Package.resolved.
+        run: >-
+          xcodebuild -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge
+          -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+      - name: Test native client transport
+        run: >-
+          xcodebuild -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge
+          -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
+          -only-testing:TAMForgeTests test
+
   backend-unit:
     runs-on: ubuntu-latest
     steps:
@@ -30,7 +45,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy apps/backend/src packages/protocol/src
       - run: MYPYPATH=apps/backend/src:packages/protocol/src uv run mypy scripts/ci/check_openapi.py scripts/ci/check_repository_policy.py scripts/dev/seed_foundation_demo.py
-      - run: uv run pytest apps/backend/tests/unit packages/protocol/tests scripts/ci/tests scripts/dev/tests scripts/github/tests -m "not integration" -q
+      - run: uv run pytest apps/backend/tests/unit apps/backend/tests/security packages/protocol/tests scripts/ci/tests scripts/dev/tests scripts/github/tests -m "not integration" -q
 
   web:
     runs-on: ubuntu-latest

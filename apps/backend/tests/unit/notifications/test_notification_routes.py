@@ -5,7 +5,11 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
-from tamforge_backend.auth.dependencies import get_authenticated_owner, require_csrf_owner
+from tamforge_backend.auth.dependencies import (
+    get_auth_service,
+    get_authenticated_owner,
+    require_csrf_owner,
+)
 from tamforge_backend.auth.schemas import AuthenticatedOwner
 from tamforge_backend.config import Settings
 from tamforge_backend.main import create_app
@@ -55,6 +59,11 @@ class StubNotificationService:
         )
 
 
+class StubAuthService:
+    async def is_session_active(self, owner: AuthenticatedOwner) -> bool:
+        return owner.session_id == OWNER.session_id
+
+
 def _client() -> tuple[TestClient, StubNotificationService]:
     app = create_app(
         Settings(
@@ -67,6 +76,7 @@ def _client() -> tuple[TestClient, StubNotificationService]:
     )
     service = StubNotificationService()
     app.dependency_overrides[get_notification_service] = lambda: service
+    app.dependency_overrides[get_auth_service] = StubAuthService
     app.dependency_overrides[get_authenticated_owner] = lambda: OWNER
     app.dependency_overrides[require_csrf_owner] = lambda: OWNER
     return TestClient(app), service

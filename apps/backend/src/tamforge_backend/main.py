@@ -45,7 +45,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_origins=configured.cors_origins,
             allow_credentials=True,
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-            allow_headers=["Content-Type", "Idempotency-Key", "X-CSRF-Token"],
+            allow_headers=[
+                "Authorization",
+                "Content-Type",
+                "Idempotency-Key",
+                "X-CSRF-Token",
+            ],
         )
     register_routes(app)
 

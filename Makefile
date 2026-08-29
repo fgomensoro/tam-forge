@@ -1,4 +1,4 @@
-.PHONY: install test check check-openapi check-policy integration e2e
+.PHONY: install test check check-openapi check-policy integration e2e macos-check
 
 install:
 	uv sync --all-packages --all-extras
@@ -21,6 +21,7 @@ check:
 	pnpm --filter @tam-forge/web build
 	uv run python scripts/ci/check_openapi.py
 	uv run python scripts/ci/check_repository_policy.py
+	$(MAKE) macos-check
 
 check-openapi:
 	uv run python scripts/ci/check_openapi.py
@@ -33,3 +34,12 @@ integration:
 
 e2e:
 	pnpm --filter @tam-forge/web exec playwright test e2e/foundation-learning.spec.ts
+
+# The exactly pinned/resolved Apple build-tool plugin needs this headless Xcode flag.
+macos-check:
+	@if command -v xcodebuild >/dev/null 2>&1; then \
+		xcodebuild -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination 'platform=macOS' build && \
+		xcodebuild -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination 'platform=macOS' -only-testing:TAMForgeTests test; \
+	else \
+		echo "Skipping macOS check: xcodebuild is unavailable."; \
+	fi

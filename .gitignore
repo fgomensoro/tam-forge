@@ -22,3 +22,20 @@ spools/
 .DS_Store
 *.pyc
 __pycache__/
+
+# Native macOS local build, signing, and private learning artifacts
+DerivedData/
+apps/macos/build/
+apps/macos/PrivateAudio/
+apps/macos/PrivateModels/
+apps/macos/Signing/
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xcarchive
+*.dmg
+*.pkg
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile

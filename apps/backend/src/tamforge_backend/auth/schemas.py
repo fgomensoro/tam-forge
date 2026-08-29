@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -60,8 +61,91 @@ class AuthenticatedOwner:
     github_user_id: int
     github_login: str
     session_id: int
-    csrf_hash: bytes
+    csrf_hash: bytes | None
     expires_at: datetime
+    authentication_method: Literal["cookie", "bearer"] = "cookie"
+
+
+@dataclass(frozen=True, slots=True)
+class PersistedNativeSession:
+    """Hash-only projection of one native session and its current refresh token."""
+
+    session_id: int
+    owner_id: int
+    github_user_id: int
+    github_login: str
+    access_token_hash: bytes
+    access_expires_at: datetime
+    refresh_token_hash: bytes
+    refresh_expires_at: datetime
+    revoked_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class IssuedNativeCredentials:
+    """Ephemeral native credentials; persistence receives only their hashes."""
+
+    access_token: str
+    refresh_token: str
+    access_expires_in: int
+    github_login: str
+
+
+class NativeOAuthStartRequest(BaseModel):
+    """PKCE-bound native authorization request."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code_challenge: str = Field(min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+class NativeOAuthStartResponse(BaseModel):
+    """GitHub authorization URL containing only a short-lived opaque state."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_url: str
+
+
+class NativeTokenExchangeRequest(BaseModel):
+    """One-time callback code and its RFC 7636 verifier."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]+$")
+    code_verifier: str = Field(
+        min_length=43,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._~-]+$",
+    )
+
+
+class NativeRefreshRequest(BaseModel):
+    """A rotating native refresh credential carried only in a no-store body."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    refresh_token: str = Field(min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+class NativeTokenResponse(BaseModel):
+    """Short-lived access credential and one replacement refresh credential."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    access_token: str = Field(min_length=43, max_length=43)
+    refresh_token: str = Field(min_length=43, max_length=43)
+    token_type: Literal["bearer"] = "bearer"
+    expires_in: int = Field(ge=300, le=3600)
+    github_login: str = Field(min_length=1, max_length=255)
+
+
+class NativeSessionResponse(BaseModel):
+    """Minimal owner display for an authenticated native client."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    github_login: str = Field(min_length=1, max_length=255)
 
 
 class SessionResponse(BaseModel):

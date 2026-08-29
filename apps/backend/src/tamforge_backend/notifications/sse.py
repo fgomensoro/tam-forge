@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 from fastapi import Request
 
@@ -33,6 +33,7 @@ async def status_event_stream(
     service: NotificationService,
     owner_id: int,
     after_event_id: int,
+    session_is_active: Callable[[], Awaitable[bool]],
     poll_seconds: float = 1.0,
     keepalive_seconds: float = 15.0,
     monotonic: Callable[[], float],
@@ -40,6 +41,8 @@ async def status_event_stream(
     cursor = after_event_id
     last_emit = monotonic()
     while not await request.is_disconnected():
+        if not await session_is_active():
+            return
         events = await service.list_status_events(
             owner_id=owner_id,
             after_event_id=cursor,
@@ -49,6 +52,8 @@ async def status_event_stream(
             for event in events:
                 if event.id <= cursor:
                     continue
+                if not await session_is_active():
+                    return
                 cursor = event.id
                 last_emit = monotonic()
                 yield encode_sse_event(event)

@@ -38,6 +38,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/native/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Native Start */
+        post: operations["native_start_api_v1_auth_native_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/native/exchange": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Native Exchange */
+        post: operations["native_exchange_api_v1_auth_native_exchange_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/native/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Native Refresh */
+        post: operations["native_refresh_api_v1_auth_native_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/native/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Native Revoke */
+        post: operations["native_revoke_api_v1_auth_native_revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/native/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Native Session */
+        get: operations["native_session_api_v1_auth_native_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/session": {
         parameters: {
             query?: never;
@@ -932,6 +1017,68 @@ export interface components {
             /** Stronger Evidence Id */
             stronger_evidence_id?: number | null;
         };
+        /**
+         * NativeOAuthStartRequest
+         * @description PKCE-bound native authorization request.
+         */
+        NativeOAuthStartRequest: {
+            /** Code Challenge */
+            code_challenge: string;
+        };
+        /**
+         * NativeOAuthStartResponse
+         * @description GitHub authorization URL containing only a short-lived opaque state.
+         */
+        NativeOAuthStartResponse: {
+            /** Authorization Url */
+            authorization_url: string;
+        };
+        /**
+         * NativeRefreshRequest
+         * @description A rotating native refresh credential carried only in a no-store body.
+         */
+        NativeRefreshRequest: {
+            /** Refresh Token */
+            refresh_token: string;
+        };
+        /**
+         * NativeSessionResponse
+         * @description Minimal owner display for an authenticated native client.
+         */
+        NativeSessionResponse: {
+            /** Github Login */
+            github_login: string;
+        };
+        /**
+         * NativeTokenExchangeRequest
+         * @description One-time callback code and its RFC 7636 verifier.
+         */
+        NativeTokenExchangeRequest: {
+            /** Code */
+            code: string;
+            /** Code Verifier */
+            code_verifier: string;
+        };
+        /**
+         * NativeTokenResponse
+         * @description Short-lived access credential and one replacement refresh credential.
+         */
+        NativeTokenResponse: {
+            /** Access Token */
+            access_token: string;
+            /** Refresh Token */
+            refresh_token: string;
+            /**
+             * Token Type
+             * @default bearer
+             * @constant
+             */
+            token_type: "bearer";
+            /** Expires In */
+            expires_in: number;
+            /** Github Login */
+            github_login: string;
+        };
         /** NotificationPage */
         NotificationPage: {
             /** Items */
@@ -1032,6 +1179,22 @@ export interface components {
             };
             /** Expires Seconds */
             expires_seconds: number;
+        };
+        /**
+         * ProblemResponse
+         * @description RFC 9457-style public error without provider or secret detail.
+         */
+        ProblemResponse: {
+            /** Type */
+            type: string;
+            /** Title */
+            title: string;
+            /** Status */
+            status: number;
+            /** Detail */
+            detail: string;
+            /** Code */
+            code: string;
         };
         /** RoadmapImportResponse */
         RoadmapImportResponse: {
@@ -1527,10 +1690,184 @@ export interface operations {
             };
         };
     };
-    session_api_v1_auth_session_get: {
+    native_start_api_v1_auth_native_start_post: {
         parameters: {
             query?: never;
             header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NativeOAuthStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NativeOAuthStartResponse"];
+                };
+            };
+            /** @description Invalid native authentication request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Native authentication is temporarily busy. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    native_exchange_api_v1_auth_native_exchange_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NativeTokenExchangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NativeTokenResponse"];
+                };
+            };
+            /** @description Invalid native authentication request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    native_refresh_api_v1_auth_native_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NativeRefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NativeTokenResponse"];
+                };
+            };
+            /** @description Invalid native authentication request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    native_revoke_api_v1_auth_native_revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NativeRefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid native authentication request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    native_session_api_v1_auth_native_session_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
+            path?: never;
+            cookie?: {
+                tamforge_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NativeSessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    session_api_v1_auth_session_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 tamforge_csrf?: string | null;
@@ -1593,7 +1930,9 @@ export interface operations {
     get_activity_api_v1_activities__activity_id__get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                Authorization?: string | null;
+            };
             path: {
                 activity_id: number;
             };
@@ -1629,6 +1968,7 @@ export interface operations {
             header: {
                 "Idempotency-Key": string;
                 "X-CSRF-Token"?: string | null;
+                Authorization?: string | null;
             };
             path: {
                 activity_id: number;
@@ -1669,6 +2009,7 @@ export interface operations {
             header: {
                 "Idempotency-Key": string;
                 "X-CSRF-Token"?: string | null;
+                Authorization?: string | null;
             };
             path: {
                 activity_id: number;
@@ -1709,6 +2050,7 @@ export interface operations {
             header: {
                 "Idempotency-Key": string;
                 "X-CSRF-Token"?: string | null;
+                Authorization?: string | null;
             };
             path: {
                 activity_id: number;
@@ -1749,6 +2091,7 @@ export interface operations {
             header: {
                 "Idempotency-Key": string;
                 "X-CSRF-Token"?: string | null;
+                Authorization?: string | null;
             };
             path: {
                 activity_id: number;
@@ -1789,6 +2132,7 @@ export interface operations {
             header: {
                 "Idempotency-Key": string;
                 "X-CSRF-Token"?: string | null;
+                Authorization?: string | null;
             };
             path: {
                 activity_id: number;
@@ -1829,6 +2173,7 @@ export interface operations {
             header: {
                 "Idempotency-Key": string;
                 "X-CSRF-Token"?: string | null;
+                Authorization?: string | null;
             };
             path: {
                 activity_id: number;
@@ -1869,6 +2214,7 @@ export interface operations {
             header: {
                 "Idempotency-Key": string;
                 "X-CSRF-Token"?: string | null;
+                Authorization?: string | null;
             };
             path: {
                 activity_id: number;
@@ -1909,6 +2255,7 @@ export interface operations {
             header: {
                 "Idempotency-Key": string;
                 "X-CSRF-Token"?: string | null;
+                Authorization?: string | null;
             };
             path: {
                 activity_id: number;
@@ -1949,6 +2296,7 @@ export interface operations {
             header: {
                 "Idempotency-Key": string;
                 "X-CSRF-Token"?: string | null;
+                Authorization?: string | null;
             };
             path: {
                 activity_id: number;
@@ -1989,6 +2337,7 @@ export interface operations {
             header: {
                 "Idempotency-Key": string;
                 "X-CSRF-Token"?: string | null;
+                Authorization?: string | null;
             };
             path: {
                 activity_id: number;
@@ -2026,7 +2375,9 @@ export interface operations {
     list_skills_api_v1_skills_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                Authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 tamforge_session?: string | null;
@@ -2057,7 +2408,9 @@ export interface operations {
     get_skill_api_v1_skills__skill_slug__get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                Authorization?: string | null;
+            };
             path: {
                 skill_slug: string;
             };
@@ -2093,7 +2446,9 @@ export interface operations {
                 cursor?: number | null;
                 limit?: number;
             };
-            header?: never;
+            header?: {
+                Authorization?: string | null;
+            };
             path: {
                 skill_slug: string;
             };
@@ -2129,7 +2484,9 @@ export interface operations {
                 cursor?: number | null;
                 limit?: number;
             };
-            header?: never;
+            header?: {
+                Authorization?: string | null;
+            };
             path: {
                 activity_id: number;
             };
@@ -2165,7 +2522,9 @@ export interface operations {
                 cursor?: number | null;
                 limit?: number;
             };
-            header?: never;
+            header?: {
+                Authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 tamforge_session?: string | null;
@@ -2199,7 +2558,9 @@ export interface operations {
                 cursor?: number | null;
                 limit?: number;
             };
-            header?: never;
+            header?: {
+                Authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 tamforge_session?: string | null;
@@ -2232,6 +2593,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-CSRF-Token"?: string | null;
+                Authorization?: string | null;
             };
             path: {
                 notification_id: number;
@@ -2267,6 +2629,7 @@ export interface operations {
             query?: never;
             header?: {
                 "Last-Event-ID"?: string | null;
+                Authorization?: string | null;
             };
             path?: never;
             cookie?: {
@@ -2301,6 +2664,7 @@ export interface operations {
             header: {
                 "Idempotency-Key": string;
                 "X-CSRF-Token"?: string | null;
+                Authorization?: string | null;
             };
             path?: never;
             cookie?: {
@@ -2336,7 +2700,9 @@ export interface operations {
     get_roadmap_import_api_v1_roadmap_imports__import_id__get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                Authorization?: string | null;
+            };
             path: {
                 import_id: number;
             };
@@ -2371,6 +2737,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-CSRF-Token"?: string | null;
+                Authorization?: string | null;
             };
             path: {
                 import_id: number;
@@ -2406,6 +2773,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-CSRF-Token"?: string | null;
+                Authorization?: string | null;
             };
             path: {
                 version_id: number;
@@ -2439,7 +2807,9 @@ export interface operations {
     list_roadmap_versions_api_v1_roadmap_versions_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                Authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 tamforge_session?: string | null;
@@ -2472,6 +2842,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-CSRF-Token"?: string | null;
+                Authorization?: string | null;
             };
             path: {
                 version_id: number;
@@ -2507,7 +2878,9 @@ export interface operations {
             query: {
                 date: string;
             };
-            header?: never;
+            header?: {
+                Authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 tamforge_session?: string | null;
@@ -2541,6 +2914,7 @@ export interface operations {
             header: {
                 "Idempotency-Key": string;
                 "X-CSRF-Token"?: string | null;
+                Authorization?: string | null;
             };
             path: {
                 local_date: string;

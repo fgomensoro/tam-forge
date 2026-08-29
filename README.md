@@ -21,12 +21,51 @@ This runs backend lint/type checks and unit tests, web lint/type checks/tests/bu
 the generated OpenAPI-client drift guard, and the tracked secret/audio policy check.
 Every default Make target is non-Docker.
 
-Regenerate the checked-in web API types only when the backend contract changes:
+## Native macOS shell
+
+The SwiftUI app shell lives in `apps/macos` and requires Xcode 26.6 for local
+development. Its local build configuration uses the `TAM Forge Local Development`
+identity; signing material is never committed. Run its focused build and unit checks
+with:
+
+```bash
+make macos-check
+```
+
+When Xcode is available, `make check` includes the same non-Docker native check.
+The GitHub Actions macOS job tests the unsigned CI build path separately.
+
+The macOS target generates its Swift request and response types at build time from
+`apps/macos/TAMForge/openapi.yaml`; generated Swift files remain in Xcode's build
+directory and are never hand-copied into the repository. The same command checks
+both that native input and the checked-in web types when the backend contract
+changes:
 
 ```bash
 uv run python scripts/ci/check_openapi.py --write
 uv run python scripts/ci/check_openapi.py
 ```
+
+The native target pins the official Apple OpenAPI generator, runtime, and
+URLSession transport in the Xcode project and `Package.resolved`. CI passes
+`-skipPackagePluginValidation` only because that build-tool plugin is exactly
+pinned and resolved; this permits its noninteractive Xcode invocation.
+
+The current FastAPI contract still declares browser session-cookie parameters.
+The Apple generator reports those unsupported cookie parameters while producing
+the remaining typed client. The backend accepts exactly one browser cookie or
+native bearer credential; mixed credentials fail closed. Browser mutations keep
+Origin and CSRF checks, while native mutations skip those browser-only checks only
+after bearer validation.
+
+Native GitHub login uses `ASWebAuthenticationSession`, PKCE S256, a short-lived
+one-time exchange code, a 15-minute memory-only access token, and a rotating
+30-day refresh token stored as a device-only generic Keychain item. PostgreSQL
+stores token hashes only. The GitHub OAuth application keeps the HTTPS backend
+callback `/api/v1/auth/callback`; the backend then returns the bounded exchange
+code through `tamforge://auth/callback`. Optional TTL overrides are documented in
+`.env.example`. See `docs/security/native-auth-threat-model.md` for controls,
+residual risks, and production gates.
 
 The optional `compose.dev.yml` provides local PostgreSQL/pgvector and a pinned
 MinIO release for later local integration work. It is never started by the
@@ -66,10 +105,10 @@ refuses to run outside `TAMFORGE_ENV=test`, refuses any database other than the
 local `tamforge_test`, and creates only a hashed, short-lived test session. It
 does not add a test-login endpoint to the application.
 
-GitHub Actions runs six isolated gates: backend unit checks, web checks,
-PostgreSQL integration tests, the Chromium learning journey, OpenAPI drift, and
-tracked secret/audio policy. CI receives no production credentials and does not
-deploy or merge anything.
+GitHub Actions runs seven isolated gates: native macOS build/unit checks, backend
+unit checks, web checks, PostgreSQL integration tests, the Chromium learning journey,
+OpenAPI drift, and tracked secret/audio policy. CI receives no production credentials
+and does not deploy or merge anything.
 
 ## GitHub planning catalog
 

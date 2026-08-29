@@ -25,6 +25,7 @@ class FakeAuthRepository:
         self.created: list[dict[str, object]] = []
         self.sessions: dict[bytes, object] = {}
         self.revocations = 0
+        self.liveness_checks: list[int] = []
 
     async def create_owner_session(self, **values: object) -> object:
         from tamforge_backend.auth.schemas import PersistedSession
@@ -52,6 +53,15 @@ class FakeAuthRepository:
 
     async def find_session_for_logout(self, token_hash: bytes) -> object | None:
         return self.sessions.get(token_hash)
+
+    async def is_session_active(self, session_id: int) -> bool:
+        self.liveness_checks.append(session_id)
+        return any(
+            session.session_id == session_id
+            and session.revoked_at is None
+            and session.expires_at > NOW
+            for session in self.sessions.values()
+        )
 
     async def revoke_session(self, token_hash: bytes) -> None:
         session = self.sessions.get(token_hash)
@@ -155,6 +165,24 @@ async def test_rejects_expired_and_revoked_sessions() -> None:
     )
     with pytest.raises(Unauthenticated):
         await service.authenticate(issued.raw_session_token)
+
+
+@pytest.mark.anyio
+async def test_browser_session_liveness_fails_closed_for_expiry_and_revocation() -> None:
+    service, repository = make_service()
+    issued = await service.issue_session_for_identity(102269369, "fgomensoro")
+    owner = await service.authenticate(issued.raw_session_token)
+    owner = replace(owner, expires_at=datetime.now(UTC) + timedelta(hours=1))
+
+    assert await service.is_session_active(owner)
+
+    stored = issued.persisted_session
+    repository.sessions[stored.token_hash] = replace(stored, revoked_at=NOW)
+    assert not await service.is_session_active(owner)
+    assert not await service.is_session_active(
+        replace(owner, expires_at=datetime.now(UTC) - timedelta(seconds=1))
+    )
+    assert repository.liveness_checks == [stored.session_id, stored.session_id]
 
 
 @pytest.mark.anyio

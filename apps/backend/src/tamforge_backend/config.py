@@ -64,6 +64,9 @@ class Settings(BaseSettings):
         "secure_cookies": "TAMFORGE_SECURE_COOKIES",
         "session_ttl_seconds": "TAMFORGE_SESSION_TTL_SECONDS",
         "oauth_state_ttl_seconds": "TAMFORGE_OAUTH_STATE_TTL_SECONDS",
+        "native_access_ttl_seconds": "TAMFORGE_NATIVE_ACCESS_TTL_SECONDS",
+        "native_refresh_ttl_seconds": "TAMFORGE_NATIVE_REFRESH_TTL_SECONDS",
+        "native_exchange_ttl_seconds": "TAMFORGE_NATIVE_EXCHANGE_TTL_SECONDS",
     }
 
     model_config = SettingsConfigDict(
@@ -195,6 +198,24 @@ class Settings(BaseSettings):
         ge=60,
         le=600,
         validation_alias="TAMFORGE_OAUTH_STATE_TTL_SECONDS",
+    )
+    native_access_ttl_seconds: int = Field(
+        default=900,
+        ge=300,
+        le=3600,
+        validation_alias="TAMFORGE_NATIVE_ACCESS_TTL_SECONDS",
+    )
+    native_refresh_ttl_seconds: int = Field(
+        default=2_592_000,
+        ge=86_400,
+        le=7_776_000,
+        validation_alias="TAMFORGE_NATIVE_REFRESH_TTL_SECONDS",
+    )
+    native_exchange_ttl_seconds: int = Field(
+        default=120,
+        ge=60,
+        le=300,
+        validation_alias="TAMFORGE_NATIVE_EXCHANGE_TTL_SECONDS",
     )
 
     def __init__(self, **values: Any) -> None:
