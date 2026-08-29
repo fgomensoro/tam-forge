@@ -34,6 +34,7 @@ enum ShellSessionPhase: Equatable, Sendable {
 struct ShellSessionActions: Sendable {
     let restore: @Sendable () async throws -> String
     let login: @Sendable () async throws -> String
+    let localLogout: @Sendable () throws -> Void
     let logout: @Sendable () async -> Void
 }
 
@@ -164,6 +165,14 @@ final class ShellSessionModel: ObservableObject {
         banner: GlobalBanner?,
         revokingCredentials: Bool
     ) {
+        if revokingCredentials {
+            do {
+                try actions.localLogout()
+            } catch {
+                self.banner = .actionRequired
+                return
+            }
+        }
         authenticationGeneration += 1
         statusTask?.cancel()
         statusTask = nil

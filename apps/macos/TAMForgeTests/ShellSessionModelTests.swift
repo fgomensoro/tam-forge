@@ -62,6 +62,7 @@ final class ShellSessionModelTests: XCTestCase {
             actions: ShellSessionActions(
                 restore: { "frank" },
                 login: { await recorder.record(); return "frank" },
+                localLogout: {},
                 logout: {}
             ),
             statusStream: nil,
@@ -72,6 +73,32 @@ final class ShellSessionModelTests: XCTestCase {
 
         let count = await recorder.count
         XCTAssertEqual(count, 0)
+    }
+
+    func testSignOutQuarantinesCredentialBeforeSignedOutUIAndDeferredLogout() async throws {
+        let store = ShellCredentialStore(active: "refresh-token")
+        let logoutGate = DeferredLogoutGate()
+        let model = ShellSessionModel(
+            actions: ShellSessionActions(
+                restore: { "frank" },
+                login: { "frank" },
+                localLogout: { try quarantineActiveRefreshCredential(in: store) },
+                logout: { await logoutGate.wait() }
+            ),
+            statusStream: nil,
+            initialPhase: .signedIn("frank")
+        )
+
+        model.signOut()
+
+        XCTAssertEqual(model.phase, .signedOut(.signedOut))
+        XCTAssertNil(store.active)
+        XCTAssertEqual(store.pending, "refresh-token")
+        let deferredLogoutStarted = await logoutGate.waitUntilEntered()
+        XCTAssertTrue(deferredLogoutStarted)
+        XCTAssertNil(store.active)
+        XCTAssertEqual(store.pending, "refresh-token")
+        await logoutGate.open()
     }
 }
 
@@ -87,8 +114,65 @@ private extension ShellSessionActions {
     static let authenticatedForTests = Self(
         restore: { "frank" },
         login: { "frank" },
+        localLogout: {},
         logout: {}
     )
+}
+
+private final class ShellCredentialStore: RefreshCredentialStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var activeValue: String?
+    private var pendingValue: String?
+
+    init(active: String?) {
+        activeValue = active
+    }
+
+    var active: String? { lock.withLock { activeValue } }
+    var pending: String? { lock.withLock { pendingValue } }
+
+    func activeRefreshToken() throws -> String? { active }
+
+    func storeActiveRefreshToken(_ token: String) throws {
+        lock.withLock { activeValue = token }
+    }
+
+    func removeActiveRefreshToken() throws {
+        lock.withLock { activeValue = nil }
+    }
+
+    func pendingRevocationToken() throws -> String? { pending }
+
+    func storePendingRevocationToken(_ token: String) throws {
+        lock.withLock { pendingValue = token }
+    }
+
+    func removePendingRevocationToken() throws {
+        lock.withLock { pendingValue = nil }
+    }
+}
+
+private actor DeferredLogoutGate {
+    private var entered = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        entered = true
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func waitUntilEntered() async -> Bool {
+        for _ in 0 ..< 10_000 {
+            if entered { return true }
+            await Task.yield()
+        }
+        return false
+    }
+
+    func open() {
+        continuation?.resume()
+        continuation = nil
+    }
 }
 
 private extension StatusEvent {

@@ -133,6 +133,13 @@ final class StatusStreamClientTests: XCTestCase {
         XCTAssertLessThan(backoff.delay(for: 1, random: 0), backoff.delay(for: 1, random: 1))
         XCTAssertLessThanOrEqual(backoff.delay(for: 50, random: 1), 8)
     }
+
+    func testLiveSessionPolicyBoundsRequestWithoutCappingStreamLifetime() {
+        let configuration = StatusStreamSessionConfiguration.make()
+
+        XCTAssertEqual(configuration.timeoutIntervalForRequest, 30)
+        XCTAssertTrue(configuration.timeoutIntervalForResource.isInfinite)
+    }
 }
 
 private func statusBlock(

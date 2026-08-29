@@ -18,6 +18,15 @@ protocol NativeAuthHTTPClient: Sendable {
     func revoke(refreshToken: String) async throws
 }
 
+func quarantineActiveRefreshCredential(in store: any RefreshCredentialStore) throws {
+    guard let active = try store.activeRefreshToken() else { return }
+    if let pending = try store.pendingRevocationToken(), pending != active {
+        throw NativeAuthenticationError.credentialStorageFailed
+    }
+    try store.storePendingRevocationToken(active)
+    try store.removeActiveRefreshToken()
+}
+
 @MainActor
 protocol NativeOAuthSession: AnyObject, Sendable {
     func authenticate(url: URL, callbackScheme: String) async throws -> URL
@@ -137,10 +146,7 @@ actor NativeAuthenticationCoordinator {
     }
 
     private func revokeActiveCredential() async throws {
-        if let active = try credentialStore.activeRefreshToken() {
-            try credentialStore.storePendingRevocationToken(active)
-            try credentialStore.removeActiveRefreshToken()
-        }
+        try quarantineActiveRefreshCredential(in: credentialStore)
         try await retryPendingRevocation()
     }
 
@@ -214,6 +220,19 @@ actor NativeAuthenticationCoordinator {
             throw NativeAuthenticationError.reauthenticationRequired
         }
         do {
+            guard try credentialStore.pendingRevocationToken() == nil else {
+                clearAccessToken()
+                try? await http.revoke(refreshToken: pair.refreshToken)
+                throw NativeAuthenticationError.reauthenticationRequired
+            }
+        } catch let error as NativeAuthenticationError {
+            throw error
+        } catch {
+            clearAccessToken()
+            try? await http.revoke(refreshToken: pair.refreshToken)
+            throw NativeAuthenticationError.credentialStorageFailed
+        }
+        do {
             try credentialStore.storeActiveRefreshToken(pair.refreshToken)
         } catch {
             clearAccessToken()
@@ -223,6 +242,14 @@ actor NativeAuthenticationCoordinator {
             } catch {
                 throw NativeAuthenticationError.credentialStorageFailed
             }
+            try? await http.revoke(refreshToken: pair.refreshToken)
+            throw NativeAuthenticationError.reauthenticationRequired
+        }
+        if try credentialStore.pendingRevocationToken() != nil {
+            if try credentialStore.activeRefreshToken() == pair.refreshToken {
+                try credentialStore.removeActiveRefreshToken()
+            }
+            clearAccessToken()
             try? await http.revoke(refreshToken: pair.refreshToken)
             throw NativeAuthenticationError.reauthenticationRequired
         }

@@ -201,9 +201,10 @@ private struct NativeShellView: View {
             )
         }
 #endif
+        let credentialStore = KeychainCredentialStore()
         let authentication = NativeAuthenticationCoordinator(
             http: LiveNativeAuthHTTPClient(baseURL: dependencies.environment.apiBaseURL),
-            credentialStore: KeychainCredentialStore(),
+            credentialStore: credentialStore,
             oauthSession: SystemOAuthSession()
         )
         let stream = StatusStreamClient(
@@ -217,6 +218,7 @@ private struct NativeShellView: View {
             actions: ShellSessionActions(
                 restore: { _ = try await authentication.currentAccessToken(); return "Signed in" },
                 login: { try await authentication.login() },
+                localLogout: { try quarantineActiveRefreshCredential(in: credentialStore) },
                 logout: { try? await authentication.logout() }
             ),
             statusStream: stream
@@ -228,6 +230,7 @@ private extension ShellSessionActions {
     static let uiTest = Self(
         restore: { "UI test" },
         login: { "UI test" },
+        localLogout: {},
         logout: {}
     )
 }

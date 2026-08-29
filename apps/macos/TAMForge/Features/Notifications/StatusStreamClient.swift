@@ -271,6 +271,17 @@ private enum StatusStreamFailure: Error {
     case invalidResponse
 }
 
+enum StatusStreamSessionConfiguration {
+    static func make() -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = .infinity
+        return configuration
+    }
+}
+
 private struct URLSessionStatusStreamTransport: StatusStreamTransport {
     private let session: URLSession
 
@@ -279,12 +290,7 @@ private struct URLSessionStatusStreamTransport: StatusStreamTransport {
             self.session = session
             return
         }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.urlCache = nil
-        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        configuration.timeoutIntervalForRequest = 15
-        configuration.timeoutIntervalForResource = 60
-        self.session = URLSession(configuration: configuration)
+        self.session = URLSession(configuration: StatusStreamSessionConfiguration.make())
     }
 
     func open(_ request: URLRequest) async throws -> StatusStreamResponse {

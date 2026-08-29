@@ -381,6 +381,46 @@ final class NativeAuthenticationTests: XCTestCase {
         XCTAssertNil(store.pending)
     }
 
+    func testLocalLogoutQuarantineBlocksPausedRefreshAndSessionRestore() async throws {
+        let http = FakeNativeAuthHTTPClient()
+        await http.pauseRefresh()
+        let store = MemoryCredentialStore(active: token("r"))
+        let oauth = await MainActor.run { FakeOAuthSession() }
+        let coordinator = NativeAuthenticationCoordinator(
+            http: http,
+            credentialStore: store,
+            oauthSession: oauth
+        )
+
+        let refresh = Task { try await coordinator.currentAccessToken() }
+        await http.waitForRefreshStart()
+        try quarantineActiveRefreshCredential(in: store)
+
+        XCTAssertNil(store.active)
+        XCTAssertEqual(store.pending, token("r"))
+        await http.resumeRefresh()
+
+        do {
+            _ = try await refresh.value
+            XCTFail("Expected stale refresh rejection")
+        } catch let error as NativeAuthenticationError {
+            XCTAssertEqual(error, .reauthenticationRequired)
+        }
+        XCTAssertNil(store.active)
+
+        let restored = NativeAuthenticationCoordinator(
+            http: http,
+            credentialStore: store,
+            oauthSession: oauth
+        )
+        do {
+            _ = try await restored.currentAccessToken()
+            XCTFail("Expected pending revocation to block restoration")
+        } catch let error as NativeAuthenticationError {
+            XCTAssertEqual(error, .revocationPending)
+        }
+    }
+
     func testLogoutPreventsLateLoginFromRestoringCredentials() async throws {
         let http = FakeNativeAuthHTTPClient()
         await http.pauseExchange()
