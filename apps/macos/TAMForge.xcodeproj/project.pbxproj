@@ -25,6 +25,14 @@
 		B10000000000000000000014 /* KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* KeychainCredentialStore.swift */; };
 		B10000000000000000000015 /* NativeAuthenticationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* NativeAuthenticationTests.swift */; };
 		B10000000000000000000016 /* LiveNativeAuthHTTPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* LiveNativeAuthHTTPClient.swift */; };
+		C10000000000000000000001 /* StatusStreamClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000011 /* StatusStreamClientTests.swift */; };
+		C10000000000000000000002 /* ShellSessionModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000012 /* ShellSessionModelTests.swift */; };
+		C10000000000000000000003 /* StatusStreamClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000013 /* StatusStreamClient.swift */; };
+		C10000000000000000000004 /* StatusStreamClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000013 /* StatusStreamClient.swift */; };
+		C10000000000000000000005 /* GlobalBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000014 /* GlobalBanner.swift */; };
+		C10000000000000000000006 /* GlobalBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000014 /* GlobalBanner.swift */; };
+		C10000000000000000000007 /* ShellSessionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000015 /* ShellSessionModel.swift */; };
+		C10000000000000000000008 /* ShellSessionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000015 /* ShellSessionModel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,6 +60,11 @@
 		B10000000000000000000002 /* KeychainCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainCredentialStore.swift; sourceTree = "<group>"; };
 		B10000000000000000000003 /* NativeAuthenticationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAuthenticationTests.swift; sourceTree = "<group>"; };
 		B10000000000000000000004 /* LiveNativeAuthHTTPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveNativeAuthHTTPClient.swift; sourceTree = "<group>"; };
+		C10000000000000000000011 /* StatusStreamClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusStreamClientTests.swift; sourceTree = "<group>"; };
+		C10000000000000000000012 /* ShellSessionModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellSessionModelTests.swift; sourceTree = "<group>"; };
+		C10000000000000000000013 /* StatusStreamClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusStreamClient.swift; sourceTree = "<group>"; };
+		C10000000000000000000014 /* GlobalBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalBanner.swift; sourceTree = "<group>"; };
+		C10000000000000000000015 /* ShellSessionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellSessionModel.swift; sourceTree = "<group>"; };
 		A10000000000000000000061 /* TAMForge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TAMForge.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000062 /* TAMForgeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TAMForgeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000063 /* TAMForgeUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TAMForgeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -101,6 +114,7 @@
 			children = (
 				A10000000000000000000047 /* App */,
 				A10000000000000000000048 /* Core */,
+				C10000000000000000000017 /* Features */,
 				A10000000000000000000013 /* TAMForge.entitlements */,
 				A10000000000000000000014 /* Info.plist */,
 				A100000000000000000000E6 /* openapi-generator-config.yaml */,
@@ -115,6 +129,8 @@
 				A10000000000000000000016 /* AppDependenciesTests.swift */,
 				A100000000000000000000E2 /* NativeAPITransportTests.swift */,
 				B10000000000000000000003 /* NativeAuthenticationTests.swift */,
+				C10000000000000000000011 /* StatusStreamClientTests.swift */,
+				C10000000000000000000012 /* ShellSessionModelTests.swift */,
 			);
 			path = TAMForgeTests;
 			sourceTree = "<group>";
@@ -141,6 +157,7 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000011 /* TAMForgeApp.swift */,
+				C10000000000000000000015 /* ShellSessionModel.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -151,6 +168,7 @@
 				A10000000000000000000015 /* AppDependencies.swift */,
 				A100000000000000000000EC /* API */,
 				B10000000000000000000020 /* Auth */,
+				C10000000000000000000016 /* Diagnostics */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -171,6 +189,30 @@
 				B10000000000000000000001 /* NativeAuthentication.swift */,
 			);
 			path = Auth;
+			sourceTree = "<group>";
+		};
+		C10000000000000000000016 /* Diagnostics */ = {
+			isa = PBXGroup;
+			children = (
+				C10000000000000000000014 /* GlobalBanner.swift */,
+			);
+			path = Diagnostics;
+			sourceTree = "<group>";
+		};
+		C10000000000000000000017 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				C10000000000000000000018 /* Notifications */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		C10000000000000000000018 /* Notifications */ = {
+			isa = PBXGroup;
+			children = (
+				C10000000000000000000013 /* StatusStreamClient.swift */,
+			);
+			path = Notifications;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -306,6 +348,9 @@
 				B10000000000000000000011 /* NativeAuthentication.swift in Sources */,
 				B10000000000000000000012 /* KeychainCredentialStore.swift in Sources */,
 				B10000000000000000000016 /* LiveNativeAuthHTTPClient.swift in Sources */,
+				C10000000000000000000003 /* StatusStreamClient.swift in Sources */,
+				C10000000000000000000005 /* GlobalBanner.swift in Sources */,
+				C10000000000000000000007 /* ShellSessionModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -320,6 +365,11 @@
 				B10000000000000000000013 /* NativeAuthentication.swift in Sources */,
 				B10000000000000000000014 /* KeychainCredentialStore.swift in Sources */,
 				B10000000000000000000015 /* NativeAuthenticationTests.swift in Sources */,
+				C10000000000000000000001 /* StatusStreamClientTests.swift in Sources */,
+				C10000000000000000000002 /* ShellSessionModelTests.swift in Sources */,
+				C10000000000000000000004 /* StatusStreamClient.swift in Sources */,
+				C10000000000000000000006 /* GlobalBanner.swift in Sources */,
+				C10000000000000000000008 /* ShellSessionModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -400,6 +450,7 @@
 				EXTRACT_APP_INTENTS_METADATA = NO;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
 			};

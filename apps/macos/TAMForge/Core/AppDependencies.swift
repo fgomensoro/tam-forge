@@ -54,23 +54,70 @@ enum ServiceStatus: Equatable, Sendable {
     }
 }
 
+enum NativeFeature: Hashable, Sendable {
+    case today
+    case roadmaps
+}
+
 struct AppDependencies: Sendable {
     let environment: AppEnvironment
     let api: any APIService
     let authentication: any AuthenticationService
     let status: any StatusService
+    let nativeFeatures: Set<NativeFeature>
 
-    static func live(environment: AppEnvironment) -> Self {
+    init(
+        environment: AppEnvironment,
+        api: any APIService,
+        authentication: any AuthenticationService,
+        status: any StatusService,
+        nativeFeatures: Set<NativeFeature> = []
+    ) {
+        self.environment = environment
+        self.api = api
+        self.authentication = authentication
+        self.status = status
+        self.nativeFeatures = nativeFeatures
+    }
+
+    static func live(
+        environment: AppEnvironment,
+        nativeFeatures: Set<NativeFeature> = []
+    ) -> Self {
         Self(
             environment: environment,
             api: UnconfiguredAPIService(baseURL: environment.apiBaseURL),
             authentication: UnconfiguredAuthenticationService(),
-            status: UnconfiguredStatusService()
+            status: UnconfiguredStatusService(),
+            nativeFeatures: nativeFeatures
         )
     }
 
     var diagnosticSummary: String {
         "Environment: \(environment.displayName). Authentication: unavailable. Service status: unavailable."
+    }
+
+    /// The shell polls only a bounded notification summary while live SSE reconnects.
+    /// It keeps server state authoritative and does not persist response bodies locally.
+    func makeStatusFallbackPoller(
+        accessToken: @escaping @Sendable () async -> String?,
+        send: (@Sendable (String) async -> Void)? = nil
+    ) -> @Sendable () async -> Void {
+        let environment = environment
+        return {
+            guard let token = await accessToken(), !token.isEmpty else { return }
+            if let send {
+                await send(token)
+                return
+            }
+            let transport = NativeAPITransport(
+                environment: environment,
+                bearerToken: { token }
+            )
+            _ = try? await transport.send(
+                NativeAPIRequest(method: .get, path: "/api/v1/notifications?limit=1")
+            )
+        }
     }
 }
 

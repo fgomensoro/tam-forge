@@ -5,11 +5,25 @@ final class AppDependenciesTests: XCTestCase {
         let dependencies = AppDependencies.live(environment: .preview)
 
         XCTAssertEqual(dependencies.environment, .preview)
+        XCTAssertTrue(dependencies.nativeFeatures.isEmpty)
         XCTAssertEqual(dependencies.api.baseURL.host, "api-preview.tamforge.invalid")
         let authenticationState = await dependencies.authentication.currentState()
         let serviceStatus = await dependencies.status.currentStatus()
         XCTAssertEqual(authenticationState, .unavailable)
         XCTAssertEqual(serviceStatus, .unavailable)
+    }
+
+    func testStatusFallbackDoesNotSendWithoutAnAccessToken() async {
+        let recorder = StatusFallbackRecorder()
+        let poll = AppDependencies.live(environment: .preview).makeStatusFallbackPoller(
+            accessToken: { nil },
+            send: { token in await recorder.record(token) }
+        )
+
+        await poll()
+
+        let tokens = await recorder.tokens
+        XCTAssertEqual(tokens, [])
     }
 
     @MainActor
@@ -41,6 +55,14 @@ final class AppDependenciesTests: XCTestCase {
         let serviceStatus = await dependencies.status.currentStatus()
         XCTAssertEqual(authenticationState, .unavailable)
         XCTAssertEqual(serviceStatus, .unavailable)
+    }
+}
+
+private actor StatusFallbackRecorder {
+    private(set) var tokens: [String] = []
+
+    func record(_ token: String) {
+        tokens.append(token)
     }
 }
 
