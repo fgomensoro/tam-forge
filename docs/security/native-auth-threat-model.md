@@ -34,7 +34,8 @@ Keychain. The native app is a public OAuth client and contains no client secret.
   legacy/file-based Keychain only for `errSecMissingEntitlement`. The fallback uses
   legacy Keychain ACL semantics and lacks `ThisDeviceOnly`; it omits
   `kSecAttrAccessible`, which macOS permits only for Data Protection or
-  synchronizable items, so standard-Keychain access defaults to when unlocked.
+  synchronizable items; availability follows the legacy login-Keychain lock state
+  and ACLs.
   The supported local distribution uses the stable self-signed `TAM Forge Local
   Development` identity: true ad-hoc rebuilds can change designated requirements
   and are not the credential-continuity guarantee. No application identifier or
