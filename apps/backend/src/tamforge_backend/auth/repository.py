@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import Select, func, select, update
+from sqlalchemy import Select, delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +25,9 @@ from .schemas import PersistedNativeSession, PersistedSession
 
 class SqlAlchemyAuthRepository:
     """Persist only fixed SHA-256 hashes and use database time for lifecycle writes."""
+
+    _NATIVE_OAUTH_FLOW_CAPACITY = 64
+    _NATIVE_OAUTH_FLOW_LOCK = 6_070_916_670_111_202_849
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -113,8 +116,22 @@ class SqlAlchemyAuthRepository:
         state_hash: bytes,
         pkce_challenge: str,
         flow_ttl: timedelta,
-    ) -> None:
+    ) -> bool:
         async with transaction_scope(self._session):
+            await self._session.execute(
+                select(func.pg_advisory_xact_lock(self._NATIVE_OAUTH_FLOW_LOCK))
+            )
+            await self._session.execute(
+                delete(NativeOAuthFlow).where(NativeOAuthFlow.expires_at <= func.now())
+            )
+            await self._session.execute(
+                delete(NativeExchangeCode).where(NativeExchangeCode.expires_at <= func.now())
+            )
+            outstanding = (
+                await self._session.execute(select(func.count()).select_from(NativeOAuthFlow))
+            ).scalar_one()
+            if outstanding >= self._NATIVE_OAUTH_FLOW_CAPACITY:
+                return False
             await self._session.execute(
                 insert(NativeOAuthFlow).values(
                     state_hash=state_hash,
@@ -123,6 +140,7 @@ class SqlAlchemyAuthRepository:
                     expires_at=func.now() + flow_ttl,
                 )
             )
+        return True
 
     async def consume_native_oauth_flow(self, state_hash: bytes) -> str | None:
         async with transaction_scope(self._session):
@@ -203,23 +221,23 @@ class SqlAlchemyAuthRepository:
                         ).where(NativeExchangeCode.code_hash == code_hash)
                     )
                 ).one_or_none()
-                self._session.add(
-                    self._native_audit_event(
-                        owner_id=None if denied is None else denied.owner_id,
-                        subject_hash=code_hash,
-                        action="auth.native_exchange.denied",
-                        aggregate_id="unknown" if denied is None else str(denied.id),
-                        outcome=AuditOutcome.DENIED,
-                        reason=(
-                            AuditReasonCode.NOT_FOUND
-                            if denied is None
-                            else AuditReasonCode.EXPIRED
-                            if denied.expired
-                            else AuditReasonCode.CONFLICT
-                        ),
-                        replayed=denied is not None and denied.consumed_at is not None,
+                if denied is not None:
+                    self._session.add(
+                        self._native_audit_event(
+                            owner_id=denied.owner_id,
+                            subject_hash=code_hash,
+                            action="auth.native_exchange.denied",
+                            aggregate_id=str(denied.id),
+                            outcome=AuditOutcome.DENIED,
+                            reason=(
+                                AuditReasonCode.EXPIRED
+                                if denied.expired
+                                else AuditReasonCode.CONFLICT
+                            ),
+                            authenticated=False,
+                            replayed=denied.consumed_at is not None,
+                        )
                     )
-                )
             else:
                 owner = (
                     await self._session.execute(
@@ -264,6 +282,7 @@ class SqlAlchemyAuthRepository:
                         aggregate_id=str(native_session.id),
                         outcome=AuditOutcome.SUCCEEDED,
                         reason=AuditReasonCode.NONE,
+                        authenticated=True,
                     )
                 )
                 result = PersistedNativeSession(
@@ -337,25 +356,25 @@ class SqlAlchemyAuthRepository:
                         .where(NativeRefreshToken.revoked_at.is_(None))
                         .values(revoked_at=func.now())
                     )
-                self._session.add(
-                    self._native_audit_event(
-                        owner_id=None if row is None else row.owner_id,
-                        subject_hash=refresh_token_hash,
-                        action="auth.native_refresh.denied",
-                        aggregate_id="unknown" if row is None else str(row.session_id),
-                        outcome=AuditOutcome.DENIED,
-                        reason=(
-                            AuditReasonCode.NOT_FOUND
-                            if row is None
-                            else AuditReasonCode.CONFLICT
-                            if row.consumed_at is not None
-                            else AuditReasonCode.EXPIRED
-                            if row.expired
-                            else AuditReasonCode.REVOKED
-                        ),
-                        replayed=row is not None and row.consumed_at is not None,
+                if row is not None:
+                    self._session.add(
+                        self._native_audit_event(
+                            owner_id=row.owner_id,
+                            subject_hash=refresh_token_hash,
+                            action="auth.native_refresh.denied",
+                            aggregate_id=str(row.session_id),
+                            outcome=AuditOutcome.DENIED,
+                            reason=(
+                                AuditReasonCode.CONFLICT
+                                if row.consumed_at is not None
+                                else AuditReasonCode.EXPIRED
+                                if row.expired
+                                else AuditReasonCode.REVOKED
+                            ),
+                            authenticated=False,
+                            replayed=row.consumed_at is not None,
+                        )
                     )
-                )
             else:
                 assert row is not None
                 new_refresh = (
@@ -397,6 +416,7 @@ class SqlAlchemyAuthRepository:
                         aggregate_id=str(row.session_id),
                         outcome=AuditOutcome.SUCCEEDED,
                         reason=AuditReasonCode.NONE,
+                        authenticated=True,
                     )
                 )
                 result = PersistedNativeSession(
@@ -474,18 +494,7 @@ class SqlAlchemyAuthRepository:
                     .with_for_update()
                 )
             ).one_or_none()
-            if row is None:
-                self._session.add(
-                    self._native_audit_event(
-                        owner_id=None,
-                        subject_hash=refresh_token_hash,
-                        action="auth.native_revoke.denied",
-                        aggregate_id="unknown",
-                        outcome=AuditOutcome.DENIED,
-                        reason=AuditReasonCode.NOT_FOUND,
-                    )
-                )
-            else:
+            if row is not None:
                 found = True
                 await self._session.execute(
                     update(NativeAuthSession)
@@ -515,6 +524,7 @@ class SqlAlchemyAuthRepository:
                             if row.revoked_at is not None
                             else AuditReasonCode.NONE
                         ),
+                        authenticated=row.revoked_at is None,
                     )
                 )
         return found
@@ -528,6 +538,7 @@ class SqlAlchemyAuthRepository:
         aggregate_id: str,
         outcome: AuditOutcome,
         reason: AuditReasonCode,
+        authenticated: bool,
         replayed: bool = False,
     ) -> AuditEvent:
         return AuditEvent(
@@ -543,7 +554,7 @@ class SqlAlchemyAuthRepository:
                 outcome=outcome,
                 reason_code=reason,
                 flags={
-                    AuditFlagKey.AUTHENTICATED: owner_id is not None,
+                    AuditFlagKey.AUTHENTICATED: authenticated,
                     AuditFlagKey.REPLAYED: replayed,
                     AuditFlagKey.REDACTED: True,
                 },

@@ -43,6 +43,10 @@ class AuthMisconfigured(AuthError):
     """Required authentication configuration is unavailable."""
 
 
+class NativeAuthCapacityExceeded(AuthError):
+    """The bounded outstanding native OAuth-flow capacity is full."""
+
+
 class AuthService:
     """Authenticate only the immutable numeric owner and issue hash-only sessions."""
 
@@ -137,11 +141,13 @@ class AuthService:
         repository = self._native_repository()
         self._validate_pkce_challenge(pkce_challenge)
         state = issue_browser_secret()
-        await repository.create_native_oauth_flow(
+        created = await repository.create_native_oauth_flow(
             state_hash=hash_secret(state),
             pkce_challenge=pkce_challenge,
             flow_ttl=self.native_flow_ttl,
         )
+        if not created:
+            raise NativeAuthCapacityExceeded("native authentication is temporarily busy")
         return OAuthStart(
             state=state,
             authorization_url=self.github.authorization_url(state=state, redirect_uri=redirect_uri),
@@ -320,9 +326,8 @@ class AuthService:
 
     @staticmethod
     def _validate_pkce_challenge(challenge: str) -> None:
-        if (
-            len(challenge) != 43
-            or any(not (character.isalnum() or character in "-_") for character in challenge)
+        if len(challenge) != 43 or any(
+            not (character.isalnum() or character in "-_") for character in challenge
         ):
             raise Unauthenticated("native authentication failed")
 

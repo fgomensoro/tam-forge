@@ -65,9 +65,7 @@ def test_native_oauth_rotation_replay_and_hash_only_storage(
                 json={"code_challenge": challenge},
             )
             assert started.status_code == 200
-            state = parse_qs(
-                urlsplit(started.json()["authorization_url"]).query
-            )["state"][0]
+            state = parse_qs(urlsplit(started.json()["authorization_url"]).query)["state"][0]
 
             callback = client.get(
                 "/api/v1/auth/callback",
@@ -81,10 +79,13 @@ def test_native_oauth_rotation_replay_and_hash_only_storage(
             )
             assert exchanged.status_code == 200
             first = exchanged.json()
-            assert client.get(
-                "/api/v1/auth/native/session",
-                headers={"Authorization": f"Bearer {first['access_token']}"},
-            ).status_code == 200
+            assert (
+                client.get(
+                    "/api/v1/auth/native/session",
+                    headers={"Authorization": f"Bearer {first['access_token']}"},
+                ).status_code
+                == 200
+            )
 
             refreshed = client.post(
                 "/api/v1/auth/native/refresh",
@@ -92,24 +93,47 @@ def test_native_oauth_rotation_replay_and_hash_only_storage(
             )
             assert refreshed.status_code == 200
             second = refreshed.json()
-            assert client.get(
-                "/api/v1/auth/native/session",
-                headers={"Authorization": f"Bearer {first['access_token']}"},
-            ).status_code == 401
+            assert (
+                client.get(
+                    "/api/v1/auth/native/session",
+                    headers={"Authorization": f"Bearer {first['access_token']}"},
+                ).status_code
+                == 401
+            )
 
             replay = client.post(
                 "/api/v1/auth/native/refresh",
                 json={"refresh_token": first["refresh_token"]},
             )
             assert replay.status_code == 401
-            assert client.get(
-                "/api/v1/auth/native/session",
-                headers={"Authorization": f"Bearer {second['access_token']}"},
-            ).status_code == 401
-            assert client.post(
-                "/api/v1/auth/native/refresh",
-                json={"refresh_token": second["refresh_token"]},
-            ).status_code == 401
+            assert (
+                client.get(
+                    "/api/v1/auth/native/session",
+                    headers={"Authorization": f"Bearer {second['access_token']}"},
+                ).status_code
+                == 401
+            )
+            assert (
+                client.post(
+                    "/api/v1/auth/native/refresh",
+                    json={"refresh_token": second["refresh_token"]},
+                ).status_code
+                == 401
+            )
+            assert (
+                client.post(
+                    "/api/v1/auth/native/refresh",
+                    json={"refresh_token": "x" * 43},
+                ).status_code
+                == 401
+            )
+            assert (
+                client.post(
+                    "/api/v1/auth/native/revoke",
+                    json={"refresh_token": "y" * 43},
+                ).status_code
+                == 204
+            )
 
         with engine.connect() as connection:
             stored = {
@@ -120,9 +144,7 @@ def test_native_oauth_rotation_replay_and_hash_only_storage(
                     text("SELECT code_hash, pkce_challenge FROM native_exchange_codes")
                 ).all(),
                 "session": connection.execute(
-                    text(
-                        "SELECT access_token_hash, revoked_at FROM native_auth_sessions"
-                    )
+                    text("SELECT access_token_hash, revoked_at FROM native_auth_sessions")
                 ).all(),
                 "refresh": connection.execute(
                     text(
@@ -146,6 +168,9 @@ def test_native_oauth_rotation_replay_and_hash_only_storage(
         replay_audit = [row for row in audits if row.action == "auth.native_refresh.denied"][-1]
         assert replay_audit.redacted_metadata["flags"]["replayed"] is True
         assert replay_audit.redacted_metadata["flags"]["redacted"] is True
+        assert replay_audit.redacted_metadata["flags"]["authenticated"] is False
+        assert len([row for row in audits if row.action == "auth.native_refresh.denied"]) == 2
+        assert not [row for row in audits if row.action == "auth.native_revoke.denied"]
         persisted = repr((stored, audits))
         for raw_secret in (
             state,
@@ -158,6 +183,82 @@ def test_native_oauth_rotation_replay_and_hash_only_storage(
             "provider-secret-not-persisted",
         ):
             assert raw_secret not in persisted
+    finally:
+        engine.dispose()
+
+
+def test_native_oauth_start_capacity_is_atomic_and_cleans_expired_rows(
+    test_database_url: str,
+) -> None:
+    from alembic import command
+    from alembic.config import Config
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine, text
+    from tamforge_backend.database import database_url_to_sync
+    from tamforge_backend.main import create_app
+
+    migration = Config("apps/backend/alembic.ini")
+    migration.attributes["database_url"] = test_database_url
+    command.downgrade(migration, "base")
+    command.upgrade(migration, "head")
+
+    engine = create_engine(database_url_to_sync(test_database_url))
+    try:
+        with TestClient(create_app(_settings(test_database_url))) as client:  # type: ignore[arg-type]
+            for _ in range(64):
+                response = client.post(
+                    "/api/v1/auth/native/start",
+                    json={"code_challenge": "c" * 43},
+                )
+                assert response.status_code == 200
+
+            full = client.post(
+                "/api/v1/auth/native/start",
+                json={"code_challenge": "c" * 43},
+            )
+            assert full.status_code == 429
+            assert full.headers["retry-after"] == "60"
+
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "UPDATE native_oauth_flows "
+                        "SET expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second'"
+                    )
+                )
+                connection.execute(
+                    text(
+                        "INSERT INTO owners (github_user_id, github_login) "
+                        "VALUES (102269369, 'fgomensoro') "
+                        "ON CONFLICT (github_user_id) DO NOTHING"
+                    )
+                )
+                connection.execute(
+                    text(
+                        "INSERT INTO native_exchange_codes "
+                        "(owner_id, code_hash, pkce_challenge, expires_at) "
+                        "SELECT id, :code_hash, :challenge, "
+                        "CURRENT_TIMESTAMP - INTERVAL '1 second' "
+                        "FROM owners WHERE github_user_id = 102269369"
+                    ),
+                    {"code_hash": b"e" * 32, "challenge": "c" * 43},
+                )
+
+            recovered = client.post(
+                "/api/v1/auth/native/start",
+                json={"code_challenge": "c" * 43},
+            )
+            assert recovered.status_code == 200
+
+        with engine.connect() as connection:
+            assert (
+                connection.execute(text("SELECT count(*) FROM native_oauth_flows")).scalar_one()
+                == 1
+            )
+            assert (
+                connection.execute(text("SELECT count(*) FROM native_exchange_codes")).scalar_one()
+                == 0
+            )
     finally:
         engine.dispose()
 

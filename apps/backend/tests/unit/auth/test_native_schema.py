@@ -54,3 +54,22 @@ def test_native_auth_migration_is_single_revision_with_guarded_downgrade() -> No
     source = MIGRATION_PATH.read_text(encoding="utf-8")
     assert "active native sessions must be revoked before downgrade" in source
     assert source.count("op.create_table(") == 4
+
+
+def test_denied_native_audit_does_not_claim_authentication() -> None:
+    from tamforge_backend.auth.audit import AuditOutcome, AuditReasonCode
+    from tamforge_backend.auth.repository import SqlAlchemyAuthRepository
+
+    event = SqlAlchemyAuthRepository._native_audit_event(
+        owner_id=7,
+        subject_hash=b"h" * 32,
+        action="auth.native_refresh.denied",
+        aggregate_id="11",
+        outcome=AuditOutcome.DENIED,
+        reason=AuditReasonCode.CONFLICT,
+        authenticated=False,
+        replayed=True,
+    )
+
+    assert event.redacted_metadata["flags"]["authenticated"] is False
+    assert event.redacted_metadata["flags"]["replayed"] is True

@@ -17,16 +17,19 @@ Keychain. The native app is a public OAuth client and contains no client secret.
   embedded browser.
 - [x] A 43-character opaque state is stored server-side only as a SHA-256 hash,
   expires after five minutes, and is consumed atomically before provider exchange.
+  A PostgreSQL advisory lock caps outstanding flow rows at 64 and each start
+  transaction deletes expired flow and exchange rows.
 - [x] PKCE S256 binds the OAuth flow and the two-minute one-time exchange code to
   the initiating app instance.
 - [x] GitHub authorization succeeds only for immutable user ID `102269369`.
-- [x] The callback URL contains only the bounded one-time exchange code. Auth
-  query strings are removed from access logs and all auth responses are `no-store`.
+- [x] The callback URL contains only the bounded one-time exchange code. The
+  application access logger removes auth query strings and all auth responses are
+  `no-store`; Caddy verification remains a production gate below.
 - [x] Native request-validation errors are generic and never echo submitted codes,
   verifiers, or tokens.
 - [x] Access tokens expire after 15 minutes and exist only in app memory. Refresh
   tokens expire after 30 days, rotate on every use, and use generic-password
-  Keychain items marked non-synchronizable and
+  Data Protection Keychain items marked non-synchronizable and
   `WhenUnlockedThisDeviceOnly`.
 - [x] PostgreSQL stores only fixed-size SHA-256 hashes. Old refresh generations
   remain as replay evidence.
@@ -34,6 +37,8 @@ Keychain. The native app is a public OAuth client and contains no client secret.
   same transaction and emits a redacted audit event.
 - [x] Refresh is single-flight in the app. An indeterminate refresh clears memory,
   quarantines the old refresh token for revocation, and requires reauthentication.
+- [x] Login, refresh, and logout share a generation boundary. Logout invalidates
+  in-flight work; a late token pair is revoked and cannot restore local credentials.
 - [x] Offline logout removes the active local credential and keeps one pending
   Keychain revocation credential until the server acknowledges it. Crash recovery
   handles the temporary state where active and pending entries match.
@@ -50,10 +55,14 @@ Keychain. The native app is a public OAuth client and contains no client secret.
   but a separately installed malicious local app remains outside TAM Forge's trust
   boundary. A claimed HTTPS callback can replace the scheme if that risk becomes
   material.
-- The unauthenticated native-start endpoint creates short-lived database rows.
-  Before public production exposure, the Hetzner reverse proxy must apply a bounded
-  request rate and routine expired-row cleanup must be monitored. This is an
-  operations gate, not a reason to add a local daemon or cache.
+- [ ] Before public production exposure, the exact deployed Caddy configuration
+  must rate-limit native start/exchange/refresh/revoke requests and redact the
+  complete GitHub callback query from access and error logs. A non-production
+  synthetic callback marker must be absent from both Caddy and application logs
+  before the gate can be checked. The database cap is defense in depth, not a
+  replacement for edge throttling.
+- [ ] Monitor native flow-capacity rejections and expired-row cleanup in production.
+  Sustained `429 native_auth_capacity` responses block rollout progression.
 - Malware running as the same macOS user may target app memory or Keychain access.
   Device security, stable code signing, FileVault, and OS updates remain required.
 

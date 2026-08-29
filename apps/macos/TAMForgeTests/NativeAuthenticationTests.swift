@@ -185,6 +185,7 @@ final class NativeAuthenticationTests: XCTestCase {
 
         XCTAssertEqual(item[kSecClass as String] as? String, kSecClassGenericPassword as String)
         XCTAssertEqual(item[kSecAttrSynchronizable as String] as? Bool, false)
+        XCTAssertEqual(item[kSecUseDataProtectionKeychain as String] as? Bool, true)
         XCTAssertEqual(
             item[kSecAttrAccessible as String] as? String,
             kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String
@@ -206,6 +207,87 @@ final class NativeAuthenticationTests: XCTestCase {
             token("r")
         )
     }
+
+    func testLogoutPreventsLateRefreshFromRestoringCredentials() async throws {
+        let http = FakeNativeAuthHTTPClient()
+        await http.pauseRefresh()
+        let store = MemoryCredentialStore(active: token("r"))
+        let oauth = await MainActor.run { FakeOAuthSession() }
+        let coordinator = NativeAuthenticationCoordinator(
+            http: http,
+            credentialStore: store,
+            oauthSession: oauth
+        )
+
+        let refresh = Task { try await coordinator.currentAccessToken() }
+        await http.waitForRefreshStart()
+        try await coordinator.logout()
+        await http.resumeRefresh()
+
+        do {
+            _ = try await refresh.value
+            XCTFail("Expected stale refresh rejection")
+        } catch let error as NativeAuthenticationError {
+            XCTAssertEqual(error, .reauthenticationRequired)
+        }
+        XCTAssertNil(store.active)
+        XCTAssertNil(store.pending)
+    }
+
+    func testLogoutPreventsLateLoginFromRestoringCredentials() async throws {
+        let http = FakeNativeAuthHTTPClient()
+        await http.pauseExchange()
+        let store = MemoryCredentialStore()
+        let oauth = await MainActor.run { FakeOAuthSession() }
+        let coordinator = NativeAuthenticationCoordinator(
+            http: http,
+            credentialStore: store,
+            oauthSession: oauth
+        )
+
+        let login = Task { try await coordinator.login() }
+        await http.waitForExchangeStart()
+        try await coordinator.logout()
+        await http.resumeExchange()
+
+        do {
+            _ = try await login.value
+            XCTFail("Expected stale login rejection")
+        } catch let error as NativeAuthenticationError {
+            XCTAssertEqual(error, .reauthenticationRequired)
+        }
+        XCTAssertNil(store.active)
+        XCTAssertNil(store.pending)
+    }
+
+    func testConcurrentLoginIsRejectedWithoutCreatingSecondSession() async throws {
+        let http = FakeNativeAuthHTTPClient()
+        await http.pauseExchange()
+        let store = MemoryCredentialStore()
+        let oauth = await MainActor.run { FakeOAuthSession() }
+        let coordinator = NativeAuthenticationCoordinator(
+            http: http,
+            credentialStore: store,
+            oauthSession: oauth
+        )
+
+        let first = Task { try await coordinator.login() }
+        await http.waitForExchangeStart()
+
+        do {
+            _ = try await coordinator.login()
+            XCTFail("Expected concurrent login rejection")
+        } catch let error as NativeAuthenticationError {
+            XCTAssertEqual(error, .authenticationInProgress)
+        }
+
+        await http.resumeExchange()
+        let login = try await first.value
+        XCTAssertEqual(login, "fgomensoro")
+        XCTAssertEqual(store.active, token("r"))
+        let revokeCalls = await http.revokeCalls
+        XCTAssertEqual(revokeCalls, 0)
+    }
 }
 
 private actor FakeNativeAuthHTTPClient: NativeAuthHTTPClient {
@@ -215,6 +297,10 @@ private actor FakeNativeAuthHTTPClient: NativeAuthHTTPClient {
     private(set) var revokeCalls = 0
     private var refreshFailure = false
     private var revokeFailure = false
+    private var refreshPaused = false
+    private var exchangePaused = false
+    private let refreshGate = AsyncGate()
+    private let exchangeGate = AsyncGate()
 
     func start(codeChallenge: String) async throws -> URL {
         startChallenge = codeChallenge
@@ -224,6 +310,7 @@ private actor FakeNativeAuthHTTPClient: NativeAuthHTTPClient {
     func exchange(code: String, codeVerifier: String) async throws -> NativeTokenPair {
         XCTAssertEqual(code, token("e"))
         exchangeVerifier = codeVerifier
+        if exchangePaused { await exchangeGate.wait() }
         return NativeTokenPair(
             accessToken: token("a"),
             refreshToken: token("r"),
@@ -235,6 +322,7 @@ private actor FakeNativeAuthHTTPClient: NativeAuthHTTPClient {
     func refresh(refreshToken: String) async throws -> NativeTokenPair {
         XCTAssertTrue(refreshToken == token("r") || refreshToken == token("s"))
         refreshCalls += 1
+        if refreshPaused { await refreshGate.wait() }
         await Task.yield()
         if refreshFailure { throw TestError.offline }
         return NativeTokenPair(
@@ -246,7 +334,7 @@ private actor FakeNativeAuthHTTPClient: NativeAuthHTTPClient {
     }
 
     func revoke(refreshToken: String) async throws {
-        XCTAssertEqual(refreshToken, token("r"))
+        XCTAssertTrue(refreshToken == token("r") || refreshToken == token("s"))
         revokeCalls += 1
         if revokeFailure { throw TestError.offline }
     }
@@ -257,6 +345,32 @@ private actor FakeNativeAuthHTTPClient: NativeAuthHTTPClient {
 
     func setRevokeFailure(_ value: Bool) {
         revokeFailure = value
+    }
+
+    func pauseRefresh() {
+        refreshPaused = true
+    }
+
+    func waitForRefreshStart() async {
+        await refreshGate.waitUntilEntered()
+    }
+
+    func resumeRefresh() async {
+        await refreshGate.open()
+        refreshPaused = false
+    }
+
+    func pauseExchange() {
+        exchangePaused = true
+    }
+
+    func waitForExchangeStart() async {
+        await exchangeGate.waitUntilEntered()
+    }
+
+    func resumeExchange() async {
+        await exchangeGate.open()
+        exchangePaused = false
     }
 }
 
@@ -321,6 +435,27 @@ private actor AttemptCounter {
     func next() -> Int {
         value += 1
         return value
+    }
+}
+
+private actor AsyncGate {
+    private var entered = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        entered = true
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func waitUntilEntered() async {
+        while !entered {
+            await Task.yield()
+        }
+    }
+
+    func open() {
+        continuation?.resume()
+        continuation = nil
     }
 }
 

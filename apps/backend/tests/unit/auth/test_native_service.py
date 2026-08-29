@@ -34,11 +34,15 @@ class FakeNativeRepository:
         self.consumed_refresh: dict[bytes, object] = {}
         self.persisted_values: list[dict[str, object]] = []
         self.next_session_id = 1
+        self.accept_new_flows = True
 
-    async def create_native_oauth_flow(self, **values: object) -> None:
+    async def create_native_oauth_flow(self, **values: object) -> bool:
+        if not self.accept_new_flows:
+            return False
         state_hash = bytes(values["state_hash"])
         self.flows[state_hash] = (str(values["pkce_challenge"]), False)
         self.persisted_values.append(values)
+        return True
 
     async def consume_native_oauth_flow(self, state_hash: bytes) -> str | None:
         flow = self.flows.get(state_hash)
@@ -181,6 +185,20 @@ async def test_native_start_persists_only_state_hash_and_pkce_challenge() -> Non
     assert state.encode() not in b"".join(repository.flows)
     assert repository.flows
     assert next(iter(repository.flows.values()))[0] == challenge
+
+
+@pytest.mark.anyio
+async def test_native_start_fails_closed_when_outstanding_flow_capacity_is_full() -> None:
+    from tamforge_backend.auth.service import NativeAuthCapacityExceeded
+
+    service, repository, _ = make_service()
+    repository.accept_new_flows = False
+
+    with pytest.raises(NativeAuthCapacityExceeded):
+        await service.start_native_login(
+            pkce_challenge=service.pkce_challenge("v" * 43),
+            redirect_uri="https://app.example.test/api/v1/auth/callback",
+        )
 
 
 @pytest.mark.anyio

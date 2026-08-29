@@ -32,6 +32,7 @@ enum NativeAuthenticationError: Error, Equatable {
     case browserUnavailable
     case browserCancelled
     case randomGenerationFailed
+    case authenticationInProgress
 }
 
 actor NativeAuthenticationCoordinator {
@@ -45,7 +46,9 @@ actor NativeAuthenticationCoordinator {
     private let now: @Sendable () -> Date
     private var accessToken: String?
     private var accessExpiresAt: Date?
-    private var refreshTask: Task<NativeTokenPair, Error>?
+    private var refreshTask: Task<String, Error>?
+    private var sessionGeneration = 0
+    private var loginInProgress = false
 
     init(
         http: any NativeAuthHTTPClient,
@@ -61,19 +64,35 @@ actor NativeAuthenticationCoordinator {
 
     @discardableResult
     func login() async throws -> String {
+        guard !loginInProgress else {
+            throw NativeAuthenticationError.authenticationInProgress
+        }
+        loginInProgress = true
+        defer { loginInProgress = false }
+
+        invalidateSession()
+        let generation = sessionGeneration
         try await retryPendingRevocation()
+        try requireCurrentSession(generation)
         if try credentialStore.activeRefreshToken() != nil {
-            try await logout()
+            try await revokeActiveCredential()
+            try requireCurrentSession(generation)
         }
         let verifier = try Self.makePKCEVerifier()
         let challenge = Self.pkceChallenge(verifier)
         let authorizationURL = try await http.start(codeChallenge: challenge)
+        try requireCurrentSession(generation)
         let callbackURL = try await oauthSession.authenticate(
             url: authorizationURL,
             callbackScheme: Self.callbackScheme
         )
+        try requireCurrentSession(generation)
         let code = try Self.exchangeCode(from: callbackURL)
         let pair = try await http.exchange(code: code, codeVerifier: verifier)
+        guard generation == sessionGeneration else {
+            try? await http.revoke(refreshToken: pair.refreshToken)
+            throw NativeAuthenticationError.reauthenticationRequired
+        }
         do {
             try credentialStore.storeActiveRefreshToken(pair.refreshToken)
         } catch {
@@ -113,7 +132,11 @@ actor NativeAuthenticationCoordinator {
     }
 
     func logout() async throws {
-        clearAccessToken()
+        invalidateSession()
+        try await revokeActiveCredential()
+    }
+
+    private func revokeActiveCredential() async throws {
         if let active = try credentialStore.activeRefreshToken() {
             try credentialStore.storePendingRevocationToken(active)
             try credentialStore.removeActiveRefreshToken()
@@ -136,24 +159,44 @@ actor NativeAuthenticationCoordinator {
 
     private func rotateAccessToken() async throws -> String {
         if let refreshTask {
-            return try await refreshTask.value.accessToken
+            return try await refreshTask.value
         }
         guard let refreshToken = try credentialStore.activeRefreshToken() else {
             throw NativeAuthenticationError.noStoredCredential
         }
-        let task = Task {
-            let pair = try await http.refresh(refreshToken: refreshToken)
-            try credentialStore.storeActiveRefreshToken(pair.refreshToken)
-            return pair
+        let generation = sessionGeneration
+        let task = Task { [self] in
+            try await refreshAccessToken(
+                refreshToken: refreshToken,
+                generation: generation
+            )
         }
         refreshTask = task
         do {
-            let pair = try await task.value
-            apply(pair)
-            refreshTask = nil
-            return pair.accessToken
+            let token = try await task.value
+            if generation == sessionGeneration {
+                refreshTask = nil
+            }
+            return token
         } catch {
-            refreshTask = nil
+            if generation == sessionGeneration {
+                refreshTask = nil
+            }
+            throw error
+        }
+    }
+
+    private func refreshAccessToken(
+        refreshToken: String,
+        generation: Int
+    ) async throws -> String {
+        let pair: NativeTokenPair
+        do {
+            pair = try await http.refresh(refreshToken: refreshToken)
+        } catch {
+            guard generation == sessionGeneration else {
+                throw NativeAuthenticationError.reauthenticationRequired
+            }
             clearAccessToken()
             do {
                 try credentialStore.storePendingRevocationToken(refreshToken)
@@ -163,6 +206,26 @@ actor NativeAuthenticationCoordinator {
             }
             throw NativeAuthenticationError.reauthenticationRequired
         }
+
+        guard generation == sessionGeneration else {
+            try? await http.revoke(refreshToken: pair.refreshToken)
+            throw NativeAuthenticationError.reauthenticationRequired
+        }
+        do {
+            try credentialStore.storeActiveRefreshToken(pair.refreshToken)
+        } catch {
+            clearAccessToken()
+            do {
+                try credentialStore.storePendingRevocationToken(refreshToken)
+                try credentialStore.removeActiveRefreshToken()
+            } catch {
+                throw NativeAuthenticationError.credentialStorageFailed
+            }
+            try? await http.revoke(refreshToken: pair.refreshToken)
+            throw NativeAuthenticationError.reauthenticationRequired
+        }
+        apply(pair)
+        return pair.accessToken
     }
 
     private func apply(_ pair: NativeTokenPair) {
@@ -173,6 +236,19 @@ actor NativeAuthenticationCoordinator {
     private func clearAccessToken() {
         accessToken = nil
         accessExpiresAt = nil
+    }
+
+    private func invalidateSession() {
+        sessionGeneration &+= 1
+        refreshTask?.cancel()
+        refreshTask = nil
+        clearAccessToken()
+    }
+
+    private func requireCurrentSession(_ generation: Int) throws {
+        guard generation == sessionGeneration else {
+            throw NativeAuthenticationError.reauthenticationRequired
+        }
     }
 
     static func exchangeCode(from callbackURL: URL) throws -> String {

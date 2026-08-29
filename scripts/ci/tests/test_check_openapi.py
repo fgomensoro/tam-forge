@@ -7,7 +7,7 @@ import importlib.util
 from pathlib import Path
 
 FROZEN_E10_I04_OPENAPI_SHA256 = (
-    "7e491966f2d7da2a3ed83436e096c7b67cc033141623e49f6ca5a2818979b344"
+    "fc91de42a3a2414941fadd840d325cea2224ef5c6fba61677a916ea5cd150de4"
 )
 
 
@@ -28,3 +28,18 @@ def test_normalized_fastapi_schema_matches_frozen_e10_i04_auth_contract() -> Non
     document = check_openapi.normalized_openapi_document()
 
     assert hashlib.sha256(document).hexdigest() == FROZEN_E10_I04_OPENAPI_SHA256
+
+
+def test_native_capacity_response_is_documented_only_on_start() -> None:
+    """Only native start allocates bounded server-side OAuth state."""
+    check_openapi = _check_openapi_module()
+
+    paths = check_openapi.generated_openapi_schema()["paths"]
+
+    assert "429" in paths["/api/v1/auth/native/start"]["post"]["responses"]
+    for path in (
+        "/api/v1/auth/native/exchange",
+        "/api/v1/auth/native/refresh",
+        "/api/v1/auth/native/revoke",
+    ):
+        assert "429" not in paths[path]["post"]["responses"]

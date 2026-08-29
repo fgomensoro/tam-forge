@@ -22,8 +22,13 @@ class StubNativeAuthService:
     def __init__(self) -> None:
         self.revocations = 0
         self.bearer_calls = 0
+        self.reject_starts = False
 
     async def start_native_login(self, *, pkce_challenge: str, redirect_uri: str) -> OAuthStart:
+        if self.reject_starts:
+            from tamforge_backend.auth.service import NativeAuthCapacityExceeded
+
+            raise NativeAuthCapacityExceeded("busy")
         assert pkce_challenge == "c" * 43
         assert redirect_uri == "https://app.example.test/api/v1/auth/callback"
         return OAuthStart(
@@ -114,6 +119,11 @@ def test_native_oauth_callback_and_rotation_contract() -> None:
     client, service = make_client()
     with client:
         started = client.post("/api/v1/auth/native/start", json={"code_challenge": "c" * 43})
+        client.cookies.set(
+            "tamforge_oauth_state",
+            "stale-browser-state",
+            path="/api/v1/auth/callback",
+        )
         callback = client.get(
             "/api/v1/auth/callback",
             params={"code": "provider-secret-code", "state": "n" * 43},
@@ -123,12 +133,8 @@ def test_native_oauth_callback_and_rotation_contract() -> None:
             "/api/v1/auth/native/exchange",
             json={"code": "e" * 43, "code_verifier": "v" * 43},
         )
-        refreshed = client.post(
-            "/api/v1/auth/native/refresh", json={"refresh_token": "r" * 43}
-        )
-        revoked = client.post(
-            "/api/v1/auth/native/revoke", json={"refresh_token": "s" * 43}
-        )
+        refreshed = client.post("/api/v1/auth/native/refresh", json={"refresh_token": "r" * 43})
+        revoked = client.post("/api/v1/auth/native/revoke", json={"refresh_token": "s" * 43})
 
     assert started.status_code == 200
     assert started.headers["cache-control"] == "no-store"
@@ -154,6 +160,22 @@ def test_native_oauth_callback_and_rotation_contract() -> None:
     assert revoked.status_code == 204
     assert revoked.headers["cache-control"] == "no-store"
     assert service.revocations == 1
+
+
+def test_native_start_capacity_returns_bounded_retry_response() -> None:
+    client, service = make_client()
+    service.reject_starts = True
+
+    with client:
+        response = client.post(
+            "/api/v1/auth/native/start",
+            json={"code_challenge": "c" * 43},
+        )
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "60"
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json()["code"] == "native_auth_capacity"
 
 
 def test_bearer_auth_is_unambiguous_and_skips_only_browser_csrf() -> None:

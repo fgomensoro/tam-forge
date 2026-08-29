@@ -42,6 +42,7 @@ from .service import (
     CsrfRejected,
     ExternalIdentityProviderError,
     ForbiddenIdentity,
+    NativeAuthCapacityExceeded,
     Unauthenticated,
 )
 
@@ -51,7 +52,14 @@ NATIVE_VALIDATION_RESPONSE: dict[int | str, dict[str, Any]] = {
     422: {
         "model": ProblemResponse,
         "description": "Invalid native authentication request.",
-    }
+    },
+}
+NATIVE_START_RESPONSES: dict[int | str, dict[str, Any]] = {
+    **NATIVE_VALIDATION_RESPONSE,
+    429: {
+        "model": ProblemResponse,
+        "description": "Native authentication is temporarily busy.",
+    },
 }
 
 
@@ -151,6 +159,13 @@ def problem_response(exc: Exception) -> JSONResponse:
             "Authentication is unavailable.",
             "auth_unavailable",
         )
+    elif isinstance(exc, NativeAuthCapacityExceeded):
+        status, title, detail, code = (
+            429,
+            "Authentication busy",
+            "Authentication is temporarily busy. Try again shortly.",
+            "native_auth_capacity",
+        )
     else:
         status, title, detail, code = (
             500,
@@ -170,6 +185,8 @@ def problem_response(exc: Exception) -> JSONResponse:
         status_code=status,
         media_type="application/problem+json",
     )
+    if isinstance(exc, NativeAuthCapacityExceeded):
+        response.headers["Retry-After"] = "60"
     _prevent_storage(response)
     return response
 
@@ -238,7 +255,7 @@ async def callback(
     settings = _settings(request)
     response: Response
     try:
-        if state_cookie is None and AuthService.looks_like_native_state(state):
+        if AuthService.looks_like_native_state(state):
             exchange_code = await service.complete_native_login(
                 code=code,
                 state=state,
@@ -288,7 +305,7 @@ async def callback(
 @router.post(
     "/native/start",
     response_model=NativeOAuthStartResponse,
-    responses=NATIVE_VALIDATION_RESPONSE,
+    responses=NATIVE_START_RESPONSES,
 )
 async def native_start(
     request: Request,
