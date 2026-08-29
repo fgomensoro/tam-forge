@@ -165,11 +165,15 @@ def test_native_oauth_rotation_replay_and_hash_only_storage(
         assert len(stored["session"][0].access_token_hash) == 32
         assert all(len(row.token_hash) == 32 for row in stored["refresh"])
         assert stored["session"][0].revoked_at is not None
-        replay_audit = [row for row in audits if row.action == "auth.native_refresh.denied"][-1]
-        assert replay_audit.redacted_metadata["flags"]["replayed"] is True
-        assert replay_audit.redacted_metadata["flags"]["redacted"] is True
-        assert replay_audit.redacted_metadata["flags"]["authenticated"] is False
-        assert len([row for row in audits if row.action == "auth.native_refresh.denied"]) == 2
+        denied_audits = [row for row in audits if row.action == "auth.native_refresh.denied"]
+        assert [row.redacted_metadata["flags"]["replayed"] for row in denied_audits] == [
+            True,
+            False,
+        ]
+        assert all(row.redacted_metadata["flags"]["redacted"] is True for row in denied_audits)
+        assert all(
+            row.redacted_metadata["flags"]["authenticated"] is False for row in denied_audits
+        )
         assert not [row for row in audits if row.action == "auth.native_revoke.denied"]
         persisted = repr((stored, audits))
         for raw_secret in (
@@ -223,7 +227,8 @@ def test_native_oauth_start_capacity_is_atomic_and_cleans_expired_rows(
                 connection.execute(
                     text(
                         "UPDATE native_oauth_flows "
-                        "SET expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second'"
+                        "SET created_at = CURRENT_TIMESTAMP - INTERVAL '2 seconds', "
+                        "expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second'"
                     )
                 )
                 connection.execute(
@@ -236,8 +241,9 @@ def test_native_oauth_start_capacity_is_atomic_and_cleans_expired_rows(
                 connection.execute(
                     text(
                         "INSERT INTO native_exchange_codes "
-                        "(owner_id, code_hash, pkce_challenge, expires_at) "
+                        "(owner_id, code_hash, pkce_challenge, created_at, expires_at) "
                         "SELECT id, :code_hash, :challenge, "
+                        "CURRENT_TIMESTAMP - INTERVAL '2 seconds', "
                         "CURRENT_TIMESTAMP - INTERVAL '1 second' "
                         "FROM owners WHERE github_user_id = 102269369"
                     ),
