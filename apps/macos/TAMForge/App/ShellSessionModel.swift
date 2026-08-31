@@ -47,6 +47,8 @@ final class ShellSessionModel: ObservableObject {
     @Published private(set) var statusHistory: [StatusEvent] = []
     @Published private(set) var banner: GlobalBanner?
     @Published private(set) var isStatusStreamActive = false
+    @Published private(set) var statusState: StatusStreamState = .connecting
+    @Published private(set) var featureRefreshVersion = 0
 
     private let actions: ShellSessionActions
     private let statusStream: StatusStreamClient?
@@ -101,6 +103,13 @@ final class ShellSessionModel: ObservableObject {
         enterSignedOut(reason: .signedOut, banner: nil, revokingCredentials: true)
     }
 
+    func unauthorizedHandlerForCurrentSession() -> NativeUnauthorizedHandler {
+        let generation = authenticationGeneration
+        return { [weak self] in
+            Task { @MainActor in self?.receive(.unauthorized, generation: generation) }
+        }
+    }
+
     func select(_ route: ShellRoute) {
         selectedRoute = route
     }
@@ -113,8 +122,10 @@ final class ShellSessionModel: ObservableObject {
         selectedRoute.restorationID
     }
 
-    func receive(_ event: StatusEvent) {
+    func receive(_ event: StatusEvent, generation: Int? = nil) {
+        if let generation, generation != authenticationGeneration { return }
         guard case .signedIn = phase else { return }
+        featureRefreshVersion += 1
         statusHistory.append(event)
         if statusHistory.count > Self.maximumStatusHistory {
             statusHistory.removeFirst(statusHistory.count - Self.maximumStatusHistory)
@@ -127,8 +138,11 @@ final class ShellSessionModel: ObservableObject {
         }
     }
 
-    func receive(_ state: StatusStreamState) {
+    func receive(_ state: StatusStreamState, generation: Int? = nil) {
+        if let generation, generation != authenticationGeneration { return }
         guard case .signedIn = phase else { return }
+        statusState = state
+        if state == .retrying || state == .live { featureRefreshVersion += 1 }
         switch state {
         case .connecting, .live:
             if state == .live { banner = nil }
@@ -148,13 +162,14 @@ final class ShellSessionModel: ObservableObject {
     private func startStatusStream() {
         guard statusTask == nil, let statusStream else { return }
         isStatusStreamActive = true
+        let generation = authenticationGeneration
         statusTask = Task { [weak self, statusStream] in
             await statusStream.run(
                 onEvent: { [weak self] event in
-                    await self?.receive(event)
+                    await self?.receive(event, generation: generation)
                 },
                 onState: { [weak self] state in
-                    await self?.receive(state)
+                    await self?.receive(state, generation: generation)
                 }
             )
         }
@@ -187,6 +202,8 @@ final class ShellSessionModel: ObservableObject {
 
     private func clearSensitiveFeatureState() {
         statusHistory.removeAll(keepingCapacity: false)
+        featureRefreshVersion = 0
+        statusState = .connecting
         selectedRoute = .today
     }
 }

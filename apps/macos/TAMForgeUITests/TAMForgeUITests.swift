@@ -1,6 +1,172 @@
 import XCTest
 
 final class TAMForgeUITests: XCTestCase {
+    @MainActor
+    func testApplicationCannotOpenAnIndependentSecondWorkspace() {
+        let app = launchWorkspace()
+        XCTAssertEqual(app.windows.count, 1)
+        app.typeKey("n", modifierFlags: [.command])
+        XCTAssertFalse(app.windows.element(boundBy: 1).waitForExistence(timeout: 1))
+        XCTAssertEqual(app.windows.count, 1)
+    }
+
+    @MainActor
+    func testDraftSurvivesNavigationButNotSignOut() {
+        let app = launchWorkspace()
+        app.buttons["todayContinueButton"].click()
+        let audience = app.textViews["Audience"]
+        reveal(audience, in: app)
+        audience.click()
+        audience.typeText("Private customer draft")
+        app.buttons["todayNavigation"].click()
+        XCTAssertTrue(app.buttons["todayContinueButton"].waitForExistence(timeout: 5))
+        app.buttons["todayContinueButton"].click()
+        reveal(audience, in: app)
+        XCTAssertEqual(audience.value as? String, "Private customer draft")
+        app.buttons["signOutButton"].click()
+        XCTAssertTrue(app.buttons["signInButton"].waitForExistence(timeout: 5))
+        app.buttons["signInButton"].click()
+        XCTAssertTrue(app.buttons["todayContinueButton"].waitForExistence(timeout: 5))
+        app.buttons["todayContinueButton"].click()
+        reveal(audience, in: app)
+        XCTAssertEqual(audience.value as? String, "")
+    }
+
+    @MainActor
+    func testCommittedActivityRequiresCompleteSelfReview() {
+        let app = launchWorkspace(extra: ["-ui-test-self-review"])
+        app.buttons["todayContinueButton"].click()
+        let submit = app.buttons["Submit self-review"]
+        reveal(submit, in: app)
+        XCTAssertFalse(submit.isEnabled)
+        let scroll = app.scrollViews["activityWorkspaceScroll"]
+        scroll.scroll(byDeltaX: 0, deltaY: 2_000)
+        for title in ["Main answer or decision", "What I did well", "Where structure was weak",
+                      "Where I became vague", "Where I hesitated", "What I will change"] {
+            let editor = app.textViews[title]
+            reveal(editor, in: app)
+            editor.click()
+            editor.typeText("Clear impact.")
+        }
+        reveal(submit, in: app)
+        XCTAssertTrue(submit.isEnabled)
+        submit.click()
+        XCTAssertTrue(app.staticTexts["Your score: 0 / 4. AI analysis has not been requested."].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Commit Attempt A"].exists)
+    }
+
+    @MainActor
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication, scrollIdentifier: String = "activityWorkspaceScroll") {
+        let scroll = app.scrollViews[scrollIdentifier]
+        XCTAssertTrue(scroll.waitForExistence(timeout: 5))
+        for _ in 0..<12 {
+            if element.exists && element.isHittable && scroll.frame.contains(element.frame) { return }
+            scroll.scroll(byDeltaX: 0, deltaY: -350)
+        }
+        XCTAssertTrue(element.exists && element.isHittable && scroll.frame.contains(element.frame),
+                      "Expected control fully inside the scrolling viewport")
+    }
+
+    @MainActor
+    private func capture(_ name: String, app: XCUIApplication) {
+        let attachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
+    func testTodayOpensActivityAndTimerSurvivesNavigation() {
+        let app = launchWorkspace()
+        let next = app.buttons["todayContinueButton"]
+        XCTAssertTrue(next.waitForExistence(timeout: 5))
+        capture("Today workspace", app: app)
+        next.click()
+        let start = app.buttons["Start activity"]
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+        start.click()
+        let pause = app.buttons["Pause"]
+        XCTAssertTrue(pause.waitForExistence(timeout: 5))
+        capture("Activity workspace", app: app)
+        pause.click()
+        XCTAssertTrue(app.buttons["Resume"].waitForExistence(timeout: 5))
+        app.buttons["todayNavigation"].click()
+        XCTAssertTrue(next.waitForExistence(timeout: 5))
+        next.click()
+        XCTAssertTrue(app.buttons["Resume"].waitForExistence(timeout: 5))
+        app.buttons["Resume"].click()
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testTodayDailyCloseRequiresEvidenceAndSaves() {
+        let app = launchWorkspace(extra: ["-ui-test-daily-close"])
+        XCTAssertTrue(app.buttons["todayContinueButton"].waitForExistence(timeout: 5))
+        app.buttons["todayContinueButton"].click()
+        let close = app.buttons["todayCloseDayButton"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        XCTAssertFalse(close.isEnabled)
+        app.textViews["Strongest output"].click()
+        app.textViews["Strongest output"].typeText("Clear rollback recommendation.")
+        app.textViews["Repeated mistake"].click()
+        app.textViews["Repeated mistake"].typeText("Impact came too late.")
+        app.checkBoxes["todayEvidenceConfirmation"].click()
+        close.click()
+        XCTAssertTrue(app.staticTexts["Daily close saved."].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testRoadmapSelectValidateApproveActivate() throws {
+        let package = FileManager.default.temporaryDirectory.appendingPathComponent("roadmap-ui-\(UUID().uuidString).zip")
+        try Data("redacted transport fixture".utf8).write(to: package)
+        defer { try? FileManager.default.removeItem(at: package) }
+        let app = launchWorkspace()
+        app.buttons["roadmapsNavigation"].click()
+        let choose = app.buttons["Choose ZIP or folder"]
+        XCTAssertTrue(choose.waitForExistence(timeout: 5))
+        choose.click()
+        app.typeKey("g", modifierFlags: [.command, .shift])
+        let location = app.textFields.firstMatch
+        XCTAssertTrue(location.waitForExistence(timeout: 5))
+        location.typeText(package.path)
+        app.typeKey(.return, modifierFlags: [])
+        app.windows["open-panel"].buttons["OKButton"].click()
+        let review = app.buttons["Review package"]
+        XCTAssertTrue(review.waitForExistence(timeout: 5))
+        review.click()
+        XCTAssertTrue(app.staticTexts["Validation passed"].waitForExistence(timeout: 5))
+        capture("Roadmap validation", app: app)
+        let inspect = app.buttons["Inspect all changes, fields, and values"]
+        reveal(inspect, in: app, scrollIdentifier: "roadmapWorkspaceScroll")
+        inspect.click()
+        XCTAssertTrue(app.staticTexts["Before"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["After"].exists)
+        let collapse = app.buttons["Show bounded preview"]
+        reveal(collapse, in: app, scrollIdentifier: "roadmapWorkspaceScroll")
+        collapse.click()
+        let approve = app.buttons["Approve roadmap"]
+        XCTAssertFalse(approve.isEnabled)
+        let confirmation = app.checkBoxes["roadmapApprovalConfirmation"]
+        reveal(confirmation, in: app, scrollIdentifier: "roadmapWorkspaceScroll")
+        confirmation.click()
+        reveal(approve, in: app, scrollIdentifier: "roadmapWorkspaceScroll")
+        approve.click()
+        let activate = app.buttons["Activate Month 1"]
+        XCTAssertTrue(activate.waitForExistence(timeout: 5))
+        reveal(activate, in: app, scrollIdentifier: "roadmapWorkspaceScroll")
+        activate.click()
+        XCTAssertTrue(app.staticTexts["Month 1 is active"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    private func launchWorkspace(extra: [String] = []) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ApplePersistenceIgnoreState", "YES", "-ui-test-signed-in", "-ui-test-native-features"] + extra
+        app.launch()
+        XCTAssertTrue(app.buttons["todayNavigation"].waitForExistence(timeout: 5))
+        return app
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
     }

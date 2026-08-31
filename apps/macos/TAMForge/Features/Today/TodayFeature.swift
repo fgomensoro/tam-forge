@@ -225,6 +225,15 @@ enum TodayDestination: Equatable, Sendable {
             return nil
         }
     }
+
+    init(task: TodayTask) {
+        if task.block == "daily_close" {
+            self = .dailyClose(activityID: task.activityID)
+        } else {
+            let focus: TodayFocus = task.state == "output_committed" ? .selfReview : .workspace
+            self = .activity(id: task.activityID, focus: focus)
+        }
+    }
 }
 
 enum TodayUnfinishedClassification: String, Codable, CaseIterable, Equatable, Sendable {
@@ -295,6 +304,193 @@ struct TodayDailyCloseResponse: Codable, Equatable, Sendable {
         case dayStatus = "day_status"
         case closedAt = "closed_at"
         case consequence, replayed
+    }
+}
+
+extension TodaySnapshot {
+    init(wire response: Components.Schemas.TodayResponse) {
+        self.init(
+            localDate: response.localDate,
+            timezone: response.timezone,
+            dayID: response.dayId,
+            dayType: response.dayType.rawValue,
+            dayStatus: response.dayStatus.rawValue,
+            roadmap: .init(wire: response.roadmap),
+            totalPlannedMinutes: response.totalPlannedMinutes,
+            timePolicy: .init(wire: response.timePolicy),
+            requiredBlocks: response.requiredBlocks.map(TodayBlock.init(wire:)),
+            tasks: response.tasks.map(TodayTask.init(wire:)),
+            corrections: response.corrections.map(TodayCorrection.init(wire:)),
+            interviews: response.interviews.map(TodayInterview.init(wire:)),
+            awaitingSelfReviews: response.awaitingSelfReviews.map(TodaySelfReview.init(wire:)),
+            analyses: response.analyses.map(TodayAnalysis.init(wire:)),
+            primaryContinue: response.primaryContinue.map { .init(wire: $0.value1) },
+            sourceUpdatedAt: NativeJSONCodec.timestamp(response.sourceUpdatedAt),
+            readModelVersion: response.readModelVersion,
+            etag: response.etag
+        )
+    }
+}
+
+private extension TodayRoadmap {
+    init(wire value: Components.Schemas.TodayRoadmap) {
+        self.init(
+            versionID: value.versionId,
+            versionKey: value.versionKey,
+            versionNumber: value.versionNumber,
+            month: value.month,
+            week: value.week,
+            day: value.day
+        )
+    }
+}
+
+private extension TodayTimePolicy {
+    init(wire value: Components.Schemas.TodayTimePolicy) {
+        self.init(
+            targetMinutes: value.targetMinutes,
+            acceptableMinimum: value.acceptableMinimum,
+            hardStopMinutes: value.hardStopMinutes,
+            focusedMinutes: value.focusedMinutes,
+            hardStopRecommended: value.hardStopRecommended
+        )
+    }
+}
+
+private extension TodayBlock {
+    init(wire value: Components.Schemas.TodayBlock) {
+        self.init(name: value.name, plannedMinutes: value.plannedMinutes, activityIDs: value.activityIds)
+    }
+}
+
+private extension TodayTask {
+    init(wire value: Components.Schemas.TodayTaskCard) {
+        self.init(
+            activityID: value.activityId,
+            roadmapOrder: value.roadmapOrder,
+            stableID: value.stableId,
+            block: value.block.rawValue,
+            state: value.state.rawValue,
+            objective: value.objective,
+            timeboxMinutes: value.timeboxMinutes,
+            sourceReferences: value.sourceReferences.map(TodaySourceReference.init(wire:)),
+            requiredOutput: value.requiredOutput,
+            passCriteria: value.passCriteria,
+            allowedAIRole: value.allowedAiRole.rawValue,
+            evidenceRequirements: value.evidenceRequirements,
+            required: value.required,
+            optimisticVersion: value.optimisticVersion
+        )
+    }
+}
+
+private extension TodaySourceReference {
+    init(wire value: Components.Schemas.TodaySourceReference) {
+        self.init(path: value.path, anchor: value.anchor)
+    }
+}
+
+private extension TodayCorrection {
+    init(wire value: Components.Schemas.TodayCorrection) {
+        self.init(
+            id: value.id,
+            priority: value.priority.rawValue,
+            dueDate: value.dueDate,
+            instruction: value.instruction,
+            status: value.status.rawValue,
+            attemptBActivityID: value.attemptBActivityId
+        )
+    }
+}
+
+private extension TodayInterview {
+    init(wire value: Components.Schemas.TodayInterview) {
+        self.init(
+            id: value.id,
+            company: value.company,
+            role: value.role,
+            stage: value.stage,
+            startsAt: NativeJSONCodec.timestamp(value.startsAt),
+            expectedDurationMinutes: value.expectedDurationMinutes,
+            privacyPermissionCode: value.privacyPermissionCode.rawValue
+        )
+    }
+}
+
+private extension TodaySelfReview {
+    init(wire value: Components.Schemas.TodaySelfReview) {
+        self.init(
+            activityID: value.activityId,
+            objective: value.objective,
+            outputCommittedAt: NativeJSONCodec.timestamp(value.outputCommittedAt)
+        )
+    }
+}
+
+private extension TodayAnalysis {
+    init(wire value: Components.Schemas.TodayAnalysis) {
+        self.init(
+            activityID: value.activityId,
+            state: value.state.rawValue,
+            progressLabel: value.progressLabel.rawValue,
+            updatedAt: NativeJSONCodec.timestamp(value.updatedAt)
+        )
+    }
+}
+
+private extension TodayContinueAction {
+    init(wire value: Components.Schemas.ContinueAction) {
+        self.init(
+            kind: value.kind.rawValue,
+            targetID: value.targetId,
+            label: value.label,
+            allowedAIRole: value.allowedAiRole.rawValue
+        )
+    }
+}
+
+extension Components.Schemas.DailyCloseCommand {
+    init(domain command: TodayDailyCloseCommand) {
+        self.init(
+            correctionIds: command.correctionIDs,
+            evidenceConfirmed: command.evidenceConfirmed,
+            evidenceManifest: .init(
+                activityIds: command.evidenceManifest.activityIDs,
+                artifactIds: command.evidenceManifest.artifactIDs,
+                attemptIds: command.evidenceManifest.attemptIDs,
+                schemaVersion: command.evidenceManifest.schemaVersion,
+                selfReviewIds: command.evidenceManifest.selfReviewIDs
+            ),
+            repeatedMistake: command.repeatedMistake,
+            strongestOutput: command.strongestOutput,
+            unfinishedClassification: .init(domain: command.unfinishedClassification),
+            unfinishedRequirement: command.unfinishedRequirement
+        )
+    }
+}
+
+private extension Components.Schemas.DailyCloseCommand.UnfinishedClassificationPayload {
+    init(domain value: TodayUnfinishedClassification) {
+        switch value {
+        case .none: self = .none
+        case .required: self = .required
+        case .useful: self = .useful
+        case .optional: self = .optional
+        case .superseded: self = .superseded
+        }
+    }
+}
+
+extension TodayDailyCloseResponse {
+    init(wire value: Components.Schemas.DailyCloseResponse) {
+        self.init(
+            dailyCloseID: value.dailyCloseId,
+            studyDayID: value.studyDayId,
+            dayStatus: value.dayStatus.rawValue,
+            closedAt: NativeJSONCodec.timestamp(value.closedAt),
+            consequence: value.consequence.rawValue,
+            replayed: value.replayed
+        )
     }
 }
 
@@ -390,8 +586,7 @@ enum TodayDateTime {
         timezoneIdentifier: String,
         locale: Locale = .current
     ) -> String {
-        let parser = ISO8601DateFormatter()
-        guard let date = parser.date(from: value) else { return value }
+        guard let date = NativeJSONCodec.date(value) else { return value }
         let formatter = DateFormatter()
         formatter.locale = locale
         formatter.timeZone = TimeZone(identifier: timezoneIdentifier) ?? .autoupdatingCurrent
@@ -416,7 +611,7 @@ struct NativeTodayAPIClient: TodayServicing {
         let response = try await transport.send(
             .init(method: .get, path: "/api/v1/today?date=\(localDate)")
         )
-        return try response.decoded(as: TodaySnapshot.self)
+        return .init(wire: try response.decoded(as: Components.Schemas.TodayResponse.self))
     }
 
     func closeToday(
@@ -424,7 +619,10 @@ struct NativeTodayAPIClient: TodayServicing {
         command: TodayDailyCloseCommand,
         idempotencyKey: String
     ) async throws -> TodayDailyCloseResponse {
-        let body = try JSONEncoder().encode(command)
+        let body = try NativeJSONCodec.encode(
+            Components.Schemas.DailyCloseCommand(domain: command),
+            insertingRequiredNulls: ["unfinished_requirement"]
+        )
         let response = try await transport.send(
             .init(
                 method: .post,
@@ -433,7 +631,7 @@ struct NativeTodayAPIClient: TodayServicing {
                 idempotencyKey: idempotencyKey
             )
         )
-        return try response.decoded(as: TodayDailyCloseResponse.self)
+        return .init(wire: try response.decoded(as: Components.Schemas.DailyCloseResponse.self))
     }
 }
 
@@ -471,7 +669,7 @@ final class TodayViewModel: ObservableObject {
     private let client: any TodayServicing
     private let now: @Sendable () -> Date
     private let idempotencyKey: @Sendable () -> String
-    private var requestedLocalDate: String?
+    private var loadGeneration = 0
     private var pendingClose: (localDate: String, command: TodayDailyCloseCommand, idempotencyKey: String)?
     private var latestStatusEventID = 0
 
@@ -488,16 +686,19 @@ final class TodayViewModel: ObservableObject {
     var snapshot: TodaySnapshot? { state.snapshot }
 
     func load() async {
-        let date = requestedLocalDate ?? TodayLocalDate.string(for: now())
-        requestedLocalDate = date
+        loadGeneration += 1
+        let generation = loadGeneration
+        let date = TodayLocalDate.string(for: now())
         let previous = state.snapshot
         if previous == nil { state = .loading }
         do {
             let snapshot = try await client.fetchToday(localDate: date)
+            guard generation == loadGeneration else { return }
             state = Self.presentationState(for: snapshot)
         } catch is CancellationError {
             return
         } catch {
+            guard generation == loadGeneration else { return }
             state = Self.failureState(for: error, previous: previous)
         }
     }
@@ -551,8 +752,9 @@ final class TodayViewModel: ObservableObject {
         } catch is CancellationError {
             closeState = .idle
         } catch {
+            let reconciled = try? await client.fetchToday(localDate: submission.localDate)
             await load()
-            if snapshot?.dayStatus == "closed" || snapshot?.dayStatus == "incomplete" {
+            if reconciled?.dayStatus == "closed" || reconciled?.dayStatus == "incomplete" {
                 pendingClose = nil
                 closeState = .idle
             } else {
@@ -583,6 +785,12 @@ final class TodayViewModel: ObservableObject {
 
 enum TodayStatusInvalidation {
     static func affects(snapshot: TodaySnapshot, event: StatusEvent) -> Bool {
+        if ["interview", "correction", "feedback"].contains(event.aggregateType)
+            || event.eventType.hasPrefix("interview.")
+            || event.eventType.hasPrefix("correction.")
+            || event.eventType.hasPrefix("feedback.") {
+            return true
+        }
         if event.aggregateType == "study_day", event.aggregateID == snapshot.dayID { return true }
         let taskIDs = Set(snapshot.tasks.map(\.activityID))
         return taskIDs.contains(event.aggregateID)

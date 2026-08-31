@@ -65,6 +65,10 @@ struct TodayView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header(snapshot, stale: stale)
+                if stale {
+                    Button("Retry") { Task { await model.retry() } }
+                        .accessibilityIdentifier("todayRetryButton")
+                }
                 if snapshot.dayType == "sunday" || snapshot.dayStatus == "off" {
                     GroupBox("Protected rest") {
                         Text("Sunday is off. No study, catch-up, or study reminders. Background processing may continue.")
@@ -167,7 +171,16 @@ struct TodayView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Stable roadmap spine").font(.caption).foregroundStyle(.secondary)
             Text("Required work").font(.title2).bold().accessibilityAddTraits(.isHeader)
-            ForEach(tasks) { task in TodayTaskCard(task: task) }
+            ForEach(tasks) { task in
+                TodayTaskCard(task: task) {
+                    let destination = TodayDestination(task: task)
+                    if case .dailyClose = destination {
+                        showingDailyClose = true
+                    } else {
+                        onNavigate(destination)
+                    }
+                }
+            }
         }
         .accessibilityIdentifier("todayTasks")
     }
@@ -175,6 +188,7 @@ struct TodayView: View {
 
 private struct TodayTaskCard: View {
     let task: TodayTask
+    let onOpen: () -> Void
 
     var body: some View {
         GroupBox {
@@ -201,6 +215,10 @@ private struct TodayTaskCard: View {
                         Text("Assigned source: \(task.sourceReferences.map { $0.path + ($0.anchor.map { " · \($0)" } ?? "") }.joined(separator: ", "))")
                     }
                 }
+                Button(task.block == "daily_close" ? "Open daily close" : "Open") {
+                    onOpen()
+                }
+                .accessibilityIdentifier("todayTaskOpen-\(task.activityID)")
             }
         }
         .accessibilityElement(children: .contain)

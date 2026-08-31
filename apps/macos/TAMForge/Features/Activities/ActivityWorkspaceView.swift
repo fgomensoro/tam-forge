@@ -12,21 +12,43 @@ struct ActivityWorkspaceView: View {
     @State private var incompleteClassification: ActivityIncompleteClassification = .required
     @State private var strongerEvidenceID = ""
     @State private var artifactClass: ActivityArtifactClass = .writtenOutput
+    private let focusSelfReview: Bool
 
-    init(model: ActivityWorkspaceModel, uploader: ActivityArtifactUploader) {
+    init(model: ActivityWorkspaceModel, uploader: ActivityArtifactUploader, focusSelfReview: Bool = false) {
         self.model = model
         self.uploader = uploader
+        self.focusSelfReview = focusSelfReview
     }
 
     var body: some View {
         Group {
             if let activity = model.activity {
                 content(for: activity)
+            } else if model.recovery != .none {
+                ContentUnavailableView {
+                    Label("Activity could not be opened", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
+                } description: {
+                    Text("Your draft remains in memory. Retry when the connection is available.")
+                } actions: {
+                    Button("Retry") { Task { await model.open() } }
+                        .disabled(!model.canRetry)
+                }
             } else {
                 ProgressView("Opening activity…")
                     .accessibilityLabel("Opening activity")
-                    .task { await model.open() }
             }
+        }
+        .task {
+            model.connect(uploader: uploader)
+            model.appear()
+            await model.open()
+        }
+        .onDisappear { model.disappear() }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)) { _ in
+            model.handleSleep()
+        }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
+            Task { await model.handleWake() }
         }
         .alert("Activity needs attention", isPresented: hasError) {
             Button("OK", role: .cancel) {}
@@ -36,57 +58,53 @@ struct ActivityWorkspaceView: View {
     }
 
     private func content(for activity: ActivityDetail) -> some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
-                header(activity)
-                status(activity)
-                if activity.hardStopRecommended {
-                    Label("255-minute hard stop reached. Save safely and stop; no extra work will be added.", systemImage: "stop.circle")
-                        .foregroundStyle(.orange)
-                }
-                if activity.state.isEditable {
-                    timerControls(activity)
-                    sourcePanel(activity)
-                    outputEditor(activity)
-                    artifactPanel(activity)
-                    commitPanel(activity)
-                    incompletePanel(activity)
-                } else {
-                    committedOutput(activity)
-                }
-                if activity.state == .outputCommitted { selfReviewPanel(activity) }
-                if activity.selfReview != nil { reviewComplete(activity) }
-                Label("AI feedback remains unavailable until a server-backed self-review. This app cannot create an AI Attempt A.", systemImage: "lock")
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("AI feedback locked until self-review")
-                contractPanel(activity)
-            }
-            .padding()
-        }
-        .onDisappear { model.saveDraft() }
-        .onReceive(NotificationCenter.default.publisher(for: NSWorkspace.willSleepNotification)) { _ in model.handleSleep() }
-        .onReceive(NotificationCenter.default.publisher(for: NSWorkspace.didWakeNotification)) { _ in
-            Task { await model.handleWake() }
-        }
-        .fileImporter(
-            isPresented: $isImporterPresented,
-            allowedContentTypes: [.item],
-            allowsMultipleSelection: false
-        ) { result in
-            guard let sourceURL = try? result.get().first else { return }
-            Task {
-                do {
-                    let artifact = try await uploader.upload(
-                        sourceURL: sourceURL,
-                        activityID: activity.id,
-                        expectedVersion: activity.optimisticVersion,
-                        artifactClass: artifactClass
-                    )
-                    model.attach(artifact)
-                } catch {
-                    if uploader.state != .cancelled {
-                        model.handleUploadError(error)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 20) {
+                    header(activity)
+                    status(activity)
+                    if model.canRetry {
+                        Button("Retry server sync") { Task { await model.open() } }
                     }
+                    if activity.hardStopRecommended {
+                        Label("Daily hard stop reached. Save safely and stop; no extra work will be added.", systemImage: "stop.circle")
+                            .foregroundStyle(.orange)
+                    }
+                    if activity.state.isEditable {
+                        timerControls(activity)
+                        sourcePanel(activity)
+                        outputEditor(activity)
+                            .disabled(!model.canEditDraft)
+                        artifactPanel(activity)
+                        commitPanel(activity)
+                        incompletePanel(activity)
+                    } else {
+                        committedOutput(activity)
+                        if let draft = model.recoverableDraft { recoveredDraftPanel(draft) }
+                    }
+                    if activity.state == .outputCommitted { selfReviewPanel(activity).id("activitySelfReview") }
+                    if activity.selfReview != nil { reviewComplete(activity) }
+                    Label("AI feedback remains unavailable until a server-backed self-review. This app cannot create an AI Attempt A.", systemImage: "lock")
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("AI feedback locked until self-review")
+                    contractPanel(activity)
+                }
+                .padding()
+            }
+            .accessibilityIdentifier("activityWorkspaceScroll")
+            .task(id: activity.state) {
+                if focusSelfReview && activity.state == .outputCommitted {
+                    proxy.scrollTo("activitySelfReview", anchor: .top)
+                }
+            }
+            .fileImporter(
+                isPresented: $isImporterPresented,
+                allowedContentTypes: [.item],
+                allowsMultipleSelection: false
+            ) { result in
+                guard let sourceURL = try? result.get().first else { return }
+                Task {
+                    await model.upload(sourceURL: sourceURL, artifactClass: artifactClass)
                 }
             }
         }
@@ -104,7 +122,7 @@ struct ActivityWorkspaceView: View {
             }
             Spacer()
             TimelineView(.periodic(from: .now, by: 1)) { _ in
-                let seconds = ActivityTimerDisplay(activity: activity).focusedSeconds()
+                let seconds = model.focusedSeconds()
                 VStack(alignment: .trailing) {
                     Text(timerText(seconds))
                         .font(.title3.monospacedDigit())
@@ -146,6 +164,7 @@ struct ActivityWorkspaceView: View {
                 }
             }
         }
+        .disabled(!model.canMutate)
         .accessibilityLabel("Focused timer controls")
     }
 
@@ -164,6 +183,7 @@ struct ActivityWorkspaceView: View {
                     Button(activity.sourceHidden ? "Reveal source" : "Hide source") {
                         Task { await model.setSourceHidden(!activity.sourceHidden) }
                     }
+                    .disabled(!model.canMutate)
                 }
                 if activity.sourceHidden {
                     Text("Closed-source mode is active. Recall from memory before reopening material.")
@@ -217,16 +237,19 @@ struct ActivityWorkspaceView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Button("Choose file…") { isImporterPresented = true }
-                        .disabled(uploader.state == .preparing || uploader.state == .uploading || uploader.state == .confirming)
+                        .disabled(!model.canUpload)
                     Text(uploadMessage)
                         .foregroundStyle(.secondary)
+                    if uploader.isRunning {
+                        Button("Cancel") { model.cancelUpload() }
+                    }
                 }
                 if uploader.state == .confirmationIndeterminate {
                     Button("Reconcile upload") {
-                        Task {
-                            if let artifact = try? await uploader.reconcile() { model.attach(artifact) }
-                        }
+                        Task { await model.reconcileUpload() }
                     }
+                    .disabled(uploader.isRunning || model.isCommandRunning || model.isLoading)
+                    Button("Abandon upload") { model.cancelUpload() }
                     Text("Upload may have reached storage. Reconcile before repeating confirmation.")
                         .foregroundStyle(.orange)
                 }
@@ -245,6 +268,7 @@ struct ActivityWorkspaceView: View {
         GroupBox("Commit independent Attempt A") {
             VStack(alignment: .leading, spacing: 10) {
                 Toggle("I understand this output becomes immutable evidence.", isOn: $model.hasAcknowledgedImmutability)
+                    .accessibilityIdentifier("activityImmutabilityAcknowledgment")
                 Button("Commit Attempt A") { Task { await model.commit() } }
                     .disabled(!model.canCommit)
                 Text("Draft remains only in memory until commitment; it is not evidence.")
@@ -268,7 +292,7 @@ struct ActivityWorkspaceView: View {
                     let evidenceID = Int(strongerEvidenceID)
                     Task { await model.classifyIncomplete(as: incompleteClassification, strongerEvidenceID: evidenceID) }
                 }
-                .disabled(incompleteClassification == .superseded && Int(strongerEvidenceID) == nil)
+                .disabled(!model.canMutate || (incompleteClassification == .superseded && Int(strongerEvidenceID) == nil))
             }
         }
     }
@@ -303,7 +327,26 @@ struct ActivityWorkspaceView: View {
                     ForEach(0...4, id: \.self) { Text("\($0)").tag($0) }
                 }
                 Button("Submit self-review") { Task { await model.submitSelfReview(review) } }
-                    .disabled(!review.isComplete)
+                    .disabled(!review.isComplete || !model.canMutate)
+            }
+        }
+    }
+
+    private func recoveredDraftPanel(_ draft: ActivityDraft) -> some View {
+        GroupBox("Recovered local draft — not evidence") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("The activity was finalized elsewhere. Your different local draft remains read-only in memory. Expand and copy any text you need before signing out; server evidence is unchanged.")
+                ForEach(draft.values.keys.sorted().filter { !draft.value(for: $0).isEmpty }, id: \.self) { key in
+                    DisclosureGroup(key.replacingOccurrences(of: "_", with: " ")) {
+                        Text(draft.value(for: key))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                ForEach(Array(draft.artifactReferences.enumerated()), id: \.offset) { _, reference in
+                    Text("Retained artifact #\(reference.artifactID) · \(reference.linkRole.rawValue)")
+                        .textSelection(.enabled)
+                }
             }
         }
     }
@@ -346,7 +389,7 @@ struct ActivityWorkspaceView: View {
         case .confirming: "Confirming…"
         case .confirmationIndeterminate: "Needs reconciliation"
         case .complete: "Uploaded"
-        case .cancelled: "Cancelled; temporary copy deleted"
+        case .cancelled: uploader.isRunning ? "Cancelling; cleaning temporary copy…" : "Cancelled; temporary copy deleted"
         case .failed: "Upload failed; temporary copy deleted"
         }
     }

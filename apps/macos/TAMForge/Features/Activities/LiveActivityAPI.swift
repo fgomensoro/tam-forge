@@ -1,40 +1,33 @@
 import Foundation
 import HTTPTypes
+import OpenAPIRuntime
 
 @MainActor
 final class LiveActivityAPI: ActivityAPI {
     private let transport: NativeAPITransport
-    private let encoder = JSONEncoder()
-    private let decoder: JSONDecoder
 
     init(transport: NativeAPITransport) {
         self.transport = transport
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .custom { container in
-            let value = try container.singleValueContainer().decode(String.self)
-            let fractional = ISO8601DateFormatter()
-            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let plain = ISO8601DateFormatter()
-            plain.formatOptions = [.withInternetDateTime]
-            guard let date = fractional.date(from: value) ?? plain.date(from: value) else {
-                throw DecodingError.dataCorrupted(.init(codingPath: container.codingPath, debugDescription: "Expected RFC 3339 timestamp"))
-            }
-            return date
-        }
-        self.decoder = decoder
     }
 
     func fetch(activityID: Int) async throws -> ActivityDetail {
-        try await send(method: .get, path: path(activityID), as: ActivityDetail.self)
+        try await send(
+            method: .get,
+            path: path(activityID),
+            responseLimit: .activityOutput,
+            as: Components.Schemas.ActivityDetailResponse.self,
+            map: { try .init(api: $0) }
+        )
     }
 
     func start(activityID: Int, expectedVersion: Int, idempotencyKey: String) async throws -> ActivitySummary {
-        try await self.command(
+        try await command(
             activityID: activityID,
             action: "start",
-            body: VersionPayload(expectedVersion: expectedVersion),
+            body: Components.Schemas.VersionedCommand(expectedVersion: expectedVersion),
             idempotencyKey: idempotencyKey,
-            as: ActivitySummary.self
+            as: Components.Schemas.ActivityResponse.self,
+            map: { try .init(api: $0) }
         )
     }
 
@@ -42,19 +35,24 @@ final class LiveActivityAPI: ActivityAPI {
         try await self.command(
             activityID: command.activityID,
             action: "pause",
-            body: HeartbeatPayload(expectedVersion: command.expectedVersion, clientSequence: command.clientSequence),
+            body: Components.Schemas.HeartbeatCommand(
+                clientSequence: command.clientSequence,
+                expectedVersion: command.expectedVersion
+            ),
             idempotencyKey: command.idempotencyKey,
-            as: ActivitySummary.self
+            as: Components.Schemas.ActivityResponse.self,
+            map: { try .init(api: $0) }
         )
     }
 
     func resume(activityID: Int, expectedVersion: Int, idempotencyKey: String) async throws -> ActivitySummary {
-        try await self.command(
+        try await command(
             activityID: activityID,
             action: "resume",
-            body: VersionPayload(expectedVersion: expectedVersion),
+            body: Components.Schemas.VersionedCommand(expectedVersion: expectedVersion),
             idempotencyKey: idempotencyKey,
-            as: ActivitySummary.self
+            as: Components.Schemas.ActivityResponse.self,
+            map: { try .init(api: $0) }
         )
     }
 
@@ -62,34 +60,55 @@ final class LiveActivityAPI: ActivityAPI {
         try await self.command(
             activityID: command.activityID,
             action: "heartbeat",
-            body: HeartbeatPayload(expectedVersion: command.expectedVersion, clientSequence: command.clientSequence),
+            body: Components.Schemas.HeartbeatCommand(
+                clientSequence: command.clientSequence,
+                expectedVersion: command.expectedVersion
+            ),
             idempotencyKey: command.idempotencyKey,
-            as: ActivitySummary.self
+            as: Components.Schemas.ActivityResponse.self,
+            map: { try .init(api: $0) }
         )
     }
 
-    func setSourceHidden(activityID: Int, expectedVersion: Int, hidden: Bool, idempotencyKey: String) async throws -> ActivityDetail {
-        try await self.command(
+    func setSourceHidden(
+        activityID: Int, expectedVersion: Int, hidden: Bool, idempotencyKey: String
+    ) async throws -> ActivityDetail {
+        try await command(
             activityID: activityID,
             action: "source-visibility",
-            body: SourceVisibilityPayload(expectedVersion: expectedVersion, hidden: hidden),
+            body: Components.Schemas.SourceVisibilityCommand(
+                expectedVersion: expectedVersion,
+                hidden: hidden
+            ),
             idempotencyKey: idempotencyKey,
-            as: ActivityDetail.self
+            as: Components.Schemas.ActivityDetailResponse.self,
+            map: { try .init(api: $0) }
         )
     }
 
     func commit(_ command: ActivityCommitCommand) async throws -> ActivityCommitReceipt {
-        try await self.command(
+        let artifactReferences = try command.artifactReferences.map {
+            Components.Schemas.ArtifactReference(
+                artifactId: $0.artifactID,
+                linkRole: try generated(
+                    Components.Schemas.ArtifactReference.LinkRolePayload.self,
+                    rawValue: $0.linkRole.rawValue
+                )
+            )
+        }
+        let body = try Components.Schemas.CommitOutputCommand(
+            artifactRefs: artifactReferences,
+            clientSequence: command.clientSequence,
+            expectedVersion: command.expectedVersion,
+            output: .init(additionalProperties: .init(activityJSONValues: command.output))
+        )
+        return try await self.command(
             activityID: command.activityID,
             action: "commit-output",
-            body: CommitPayload(
-                expectedVersion: command.expectedVersion,
-                clientSequence: command.clientSequence,
-                output: command.output,
-                artifactReferences: command.artifactReferences
-            ),
+            body: body,
             idempotencyKey: command.idempotencyKey,
-            as: ActivityCommitReceipt.self
+            as: Components.Schemas.OutputCommitResponse.self,
+            map: { try .init(api: $0) }
         )
     }
 
@@ -97,9 +116,19 @@ final class LiveActivityAPI: ActivityAPI {
         try await self.command(
             activityID: command.activityID,
             action: "self-review",
-            body: SelfReviewPayload(expectedVersion: command.expectedVersion, input: command.input),
+            body: Components.Schemas.SelfReviewCommand(
+                changeNext: command.input.changeNext,
+                didWell: command.input.didWell,
+                expectedVersion: command.expectedVersion,
+                hesitationPoints: command.input.hesitationPoints,
+                mainAnswer: command.input.mainAnswer,
+                selfScore: command.input.selfScore,
+                structureWeakness: command.input.structureWeakness,
+                vaguePoints: command.input.vaguePoints
+            ),
             idempotencyKey: command.idempotencyKey,
-            as: ActivitySelfReviewReceipt.self
+            as: Components.Schemas.SelfReviewResponse.self,
+            map: { try .init(api: $0) }
         )
     }
 
@@ -107,13 +136,17 @@ final class LiveActivityAPI: ActivityAPI {
         try await self.command(
             activityID: command.activityID,
             action: "classify-incomplete",
-            body: IncompletePayload(
+            body: Components.Schemas.IncompleteCommand(
+                classification: try generated(
+                    Components.Schemas.IncompleteClassification.self,
+                    rawValue: command.classification.rawValue
+                ),
                 expectedVersion: command.expectedVersion,
-                classification: command.classification,
-                strongerEvidenceID: command.strongerEvidenceID
+                strongerEvidenceId: command.strongerEvidenceID
             ),
             idempotencyKey: command.idempotencyKey,
-            as: ActivitySummary.self
+            as: Components.Schemas.ActivityResponse.self,
+            map: { try .init(api: $0) }
         )
     }
 
@@ -121,9 +154,20 @@ final class LiveActivityAPI: ActivityAPI {
         try await self.command(
             activityID: command.activityID,
             action: "artifacts/presign",
-            body: PresignPayload(command),
+            body: Components.Schemas.ArtifactPresignCommand(
+                artifactClass: try generated(
+                    Components.Schemas.ArtifactPresignCommand.ArtifactClassPayload.self,
+                    rawValue: command.artifactClass.rawValue
+                ),
+                byteLength: command.byteLength,
+                contentType: command.contentType,
+                expectedVersion: command.expectedVersion,
+                originalFilename: command.originalFilename,
+                sha256: command.sha256
+            ),
             idempotencyKey: command.idempotencyKey,
-            as: ActivityArtifactPresignResponse.self
+            as: Components.Schemas.ArtifactPresignResponse.self,
+            map: { try .init(api: $0) }
         )
     }
 
@@ -131,46 +175,63 @@ final class LiveActivityAPI: ActivityAPI {
         try await self.command(
             activityID: command.activityID,
             action: "artifacts/confirm",
-            body: ConfirmPayload(command),
+            body: Components.Schemas.ArtifactConfirmCommand(
+                expectedVersion: command.expectedVersion,
+                objectKey: command.objectKey,
+                uploadIdempotencyKey: command.uploadIdempotencyKey
+            ),
             idempotencyKey: command.idempotencyKey,
-            as: ActivityArtifact.self
+            as: Components.Schemas.ArtifactResponse.self,
+            map: { try .init(api: $0) }
         )
     }
 
-    private func command<Body: Encodable, Response: Decodable>(
+    private func command<Body: Encodable, Response: Decodable & Sendable, Value>(
         activityID: Int,
         action: String,
         body: Body,
         idempotencyKey: String,
-        as type: Response.Type
-    ) async throws -> Response {
-        let data = try encoder.encode(body)
-        return try await send(
+        as type: Response.Type,
+        map: @escaping (Response) throws -> Value
+    ) async throws -> Value {
+        try await send(
             method: .post,
             path: "\(path(activityID))/\(action)",
-            body: data,
+            body: try NativeJSONCodec.encode(body),
             idempotencyKey: idempotencyKey,
-            as: type
+            as: type,
+            map: map
         )
     }
 
-    private func send<Response: Decodable>(
+    private func send<Response: Decodable & Sendable, Value>(
         method: HTTPRequest.Method,
         path: String,
         body: Data? = nil,
         idempotencyKey: String? = nil,
-        as type: Response.Type
-    ) async throws -> Response {
+        responseLimit: NativeAPIResponseLimit = .standard,
+        as type: Response.Type,
+        map: @escaping (Response) throws -> Value
+    ) async throws -> Value {
         do {
-            let response = try await transport.send(.init(method: method, path: path, body: body, idempotencyKey: idempotencyKey))
-            guard let body = response.body else { throw ActivityAPIError.invalidResponse }
+            try Task.checkCancellation()
+            let response = try await transport.send(.init(
+                method: method,
+                path: path,
+                body: body,
+                idempotencyKey: idempotencyKey,
+                responseLimit: responseLimit
+            ))
+            let generated = try response.decoded(as: type)
             do {
-                return try decoder.decode(Response.self, from: body)
+                return try map(generated)
             } catch {
                 throw ActivityAPIError.invalidResponse
             }
         } catch is CancellationError {
             throw ActivityAPIError.cancelled
+        } catch let error as ActivityAPIError {
+            throw error
         } catch let error as NativeAPIError {
             switch error {
             case let .problem(problem):
@@ -179,6 +240,8 @@ final class LiveActivityAPI: ActivityAPI {
                 case 409: throw ActivityAPIError.conflict
                 default: throw ActivityAPIError.network
                 }
+            case .emptyResponse, .decodingResponse:
+                throw ActivityAPIError.invalidResponse
             default:
                 throw ActivityAPIError.network
             }
@@ -194,143 +257,269 @@ final class LiveActivityAPI: ActivityAPI {
     }
 }
 
-private struct VersionPayload: Encodable {
-    var expectedVersion: Int
-    enum CodingKeys: String, CodingKey { case expectedVersion = "expected_version" }
+private enum ActivityAdapterError: Error {
+    case invalidSchemaValue
 }
 
-private struct HeartbeatPayload: Encodable {
-    var expectedVersion: Int
-    var clientSequence: Int
-    enum CodingKeys: String, CodingKey {
-        case expectedVersion = "expected_version"
-        case clientSequence = "client_sequence"
+private func generated<Value: RawRepresentable>(
+    _ type: Value.Type, rawValue: String
+) throws -> Value where Value.RawValue == String {
+    guard let value = Value(rawValue: rawValue) else {
+        throw ActivityAdapterError.invalidSchemaValue
     }
+    return value
 }
 
-private struct SourceVisibilityPayload: Encodable {
-    var expectedVersion: Int
-    var hidden: Bool
-    enum CodingKeys: String, CodingKey { case expectedVersion = "expected_version"; case hidden }
-}
-
-private struct CommitPayload: Encodable {
-    var expectedVersion: Int
-    var clientSequence: Int
-    var output: [String: ActivityJSONValue]
-    var artifactReferences: [ActivityArtifactReference]
-    enum CodingKeys: String, CodingKey {
-        case expectedVersion = "expected_version"
-        case clientSequence = "client_sequence"
-        case output
-        case artifactReferences = "artifact_refs"
-    }
-}
-
-private struct SelfReviewPayload: Encodable {
-    var expectedVersion: Int
-    var input: ActivitySelfReviewInput
-    enum CodingKeys: String, CodingKey {
-        case expectedVersion = "expected_version"
-        case mainAnswer = "main_answer"
-        case didWell = "did_well"
-        case structureWeakness = "structure_weakness"
-        case vaguePoints = "vague_points"
-        case hesitationPoints = "hesitation_points"
-        case changeNext = "change_next"
-        case selfScore = "self_score"
-    }
-    func encode(to encoder: any Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(expectedVersion, forKey: .expectedVersion)
-        try container.encode(input.mainAnswer, forKey: .mainAnswer)
-        try container.encode(input.didWell, forKey: .didWell)
-        try container.encode(input.structureWeakness, forKey: .structureWeakness)
-        try container.encode(input.vaguePoints, forKey: .vaguePoints)
-        try container.encode(input.hesitationPoints, forKey: .hesitationPoints)
-        try container.encode(input.changeNext, forKey: .changeNext)
-        try container.encode(input.selfScore, forKey: .selfScore)
+private extension ActivitySummary {
+    init(api value: Components.Schemas.ActivityResponse) throws {
+        self.init(
+            id: value.id,
+            studyDayID: value.studyDayId,
+            state: try generated(ActivityState.self, rawValue: value.state.rawValue),
+            optimisticVersion: value.optimisticVersion,
+            classification: try generated(
+                ActivityIncompleteClassification.self,
+                rawValue: value.classification.rawValue
+            ),
+            strongerEvidenceID: value.strongerEvidenceId,
+            activityFocusedSeconds: value.activityFocusedSeconds,
+            dayFocusedMinutes: value.dayFocusedMinutes,
+            hardStopRecommended: value.hardStopRecommended,
+            openTimer: value.openTimer.map { .init(api: $0.value1) },
+            sourceHidden: value.sourceHidden ?? false
+        )
     }
 }
 
-private struct IncompletePayload: Encodable {
-    var expectedVersion: Int
-    var classification: ActivityIncompleteClassification
-    var strongerEvidenceID: Int?
-    enum CodingKeys: String, CodingKey {
-        case expectedVersion = "expected_version"
-        case classification
-        case strongerEvidenceID = "stronger_evidence_id"
+private extension ActivityDetail {
+    init(api value: Components.Schemas.ActivityDetailResponse) throws {
+        self.init(
+            id: value.id,
+            studyDayID: value.studyDayId,
+            state: try generated(ActivityState.self, rawValue: value.state.rawValue),
+            optimisticVersion: value.optimisticVersion,
+            classification: try generated(
+                ActivityIncompleteClassification.self,
+                rawValue: value.classification.rawValue
+            ),
+            strongerEvidenceID: value.strongerEvidenceId,
+            activityFocusedSeconds: value.activityFocusedSeconds,
+            dayFocusedMinutes: value.dayFocusedMinutes,
+            hardStopRecommended: value.hardStopRecommended,
+            openTimer: value.openTimer.map { .init(api: $0.value1) },
+            sourceHidden: value.sourceHidden ?? false,
+            taskContract: try .init(api: value.taskContract),
+            committedOutput: try value.committedOutput.map { try .init(api: $0.value1) },
+            selfReview: value.selfReview.map { .init(api: $0.value1) }
+        )
     }
 }
 
-private struct PresignPayload: Encodable {
-    var expectedVersion: Int
-    var artifactClass: ActivityArtifactClass
-    var sha256: String
-    var byteLength: Int
-    var contentType: String
-    var originalFilename: String
-    enum CodingKeys: String, CodingKey {
-        case expectedVersion = "expected_version"
-        case artifactClass = "artifact_class"
-        case sha256
-        case byteLength = "byte_length"
-        case contentType = "content_type"
-        case originalFilename = "original_filename"
-    }
-    init(_ command: ActivityArtifactPresignCommand) {
-        expectedVersion = command.expectedVersion
-        artifactClass = command.artifactClass
-        sha256 = command.sha256
-        byteLength = command.byteLength
-        contentType = command.contentType
-        originalFilename = command.originalFilename
-    }
-}
-
-private struct ConfirmPayload: Encodable {
-    var expectedVersion: Int
-    var uploadIdempotencyKey: String
-    var objectKey: String
-    enum CodingKeys: String, CodingKey {
-        case expectedVersion = "expected_version"
-        case uploadIdempotencyKey = "upload_idempotency_key"
-        case objectKey = "object_key"
-    }
-    init(_ command: ActivityArtifactConfirmCommand) {
-        expectedVersion = command.expectedVersion
-        uploadIdempotencyKey = command.uploadIdempotencyKey
-        objectKey = command.objectKey
+private extension ActivityTaskContract {
+    init(api value: Components.Schemas.ActivityTaskContract) throws {
+        self.init(
+            stableID: value.stableId,
+            block: try generated(ActivityBlock.self, rawValue: value.block.rawValue),
+            objective: value.objective,
+            timeboxMinutes: value.timeboxMinutes,
+            required: value.required,
+            sourceReferences: value.sourceReferences.map {
+                .init(path: $0.path, anchor: $0.anchor)
+            },
+            requiredOutput: value.requiredOutput,
+            passCriteria: value.passCriteria,
+            evidenceRequirements: value.evidenceRequirements,
+            allowedAIRole: try generated(ActivityAIRole.self, rawValue: value.allowedAiRole.rawValue),
+            procedure: value.procedure.map {
+                .init(phase: $0.phase, minutes: $0.minutes, requirement: $0.requirement)
+            },
+            constraints: value.constraints,
+            exerciseType: value.exerciseType,
+            mappingVersion: value.mappingVersion
+        )
     }
 }
 
-extension ActivityArtifactPresignResponse {
-    init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        artifactID = try container.decodeIfPresent(Int.self, forKey: .artifactID)
-        objectKey = try container.decode(String.self, forKey: .objectKey)
-        reused = try container.decode(Bool.self, forKey: .reused)
-        upload = try container.decodeIfPresent(ActivityPresignedUpload.self, forKey: .upload)
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case artifactID = "artifact_id"
-        case objectKey = "object_key"
-        case reused, upload
+private extension ActivityTimer {
+    init(api value: Components.Schemas.TimerResponse) {
+        self.init(
+            id: value.id,
+            startedAt: value.startedAt,
+            lastHeartbeatAt: value.lastHeartbeatAt,
+            countedSeconds: value.countedSeconds,
+            lastClientSequence: value.lastClientSequence
+        )
     }
 }
 
-extension ActivityPresignedUpload {
-    init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        url = try container.decode(URL.self, forKey: .url)
-        headers = try container.decode([String: String].self, forKey: .headers)
-        expiresSeconds = try container.decode(Int.self, forKey: .expiresSeconds)
+private extension ActivityCommittedOutput {
+    init(api value: Components.Schemas.CommittedOutputSummary) throws {
+        self.init(
+            attemptID: value.attemptId,
+            attemptKind: value.attemptKind,
+            commitmentSHA256: value.commitmentSha256,
+            contractPayload: try .init(openAPIObject: value.contractPayload.additionalProperties),
+            artifactIDs: value.artifactIds,
+            committedAt: value.committedAt
+        )
+    }
+}
+
+private extension ActivitySelfReview {
+    init(api value: Components.Schemas.SelfReviewSummary) {
+        self.init(
+            id: value.id,
+            attemptID: value.attemptId,
+            selfScore: value.selfScore,
+            mainAnswer: value.mainAnswer,
+            didWell: value.didWell,
+            structureWeakness: value.structureWeakness,
+            vaguePoints: value.vaguePoints,
+            hesitationPoints: value.hesitationPoints,
+            changeNext: value.changeNext,
+            submittedAt: value.submittedAt
+        )
+    }
+}
+
+private extension ActivityCommitReceipt {
+    init(api value: Components.Schemas.OutputCommitResponse) throws {
+        self.init(
+            activityID: value.activityId,
+            state: try generated(ActivityState.self, rawValue: value.state.rawValue),
+            optimisticVersion: value.optimisticVersion,
+            attemptID: value.attemptId,
+            commitmentSHA256: value.commitmentSha256,
+            artifactIDs: value.artifactIds
+        )
+    }
+}
+
+private extension ActivitySelfReviewReceipt {
+    init(api value: Components.Schemas.SelfReviewResponse) throws {
+        self.init(
+            activityID: value.activityId,
+            state: try generated(ActivityState.self, rawValue: value.state.rawValue),
+            optimisticVersion: value.optimisticVersion,
+            selfReviewID: value.selfReviewId,
+            attemptID: value.attemptId,
+            selfScore: value.selfScore
+        )
+    }
+}
+
+private extension ActivityArtifactPresignResponse {
+    init(api value: Components.Schemas.ArtifactPresignResponse) throws {
+        self.init(
+            artifactID: value.artifactId,
+            objectKey: value.objectKey,
+            reused: value.reused,
+            upload: try value.upload.map { try .init(api: $0.value1) }
+        )
+    }
+}
+
+private extension ActivityPresignedUpload {
+    init(api value: Components.Schemas.PresignedUploadResponse) throws {
+        guard value.method == "PUT", let url = URL(string: value.url) else {
+            throw ActivityAdapterError.invalidSchemaValue
+        }
+        self.init(
+            url: url,
+            headers: value.headers.additionalProperties,
+            expiresSeconds: value.expiresSeconds
+        )
+    }
+}
+
+private extension ActivityArtifact {
+    init(api value: Components.Schemas.ArtifactResponse) throws {
+        self.init(
+            id: value.id,
+            sha256: value.sha256,
+            byteLength: value.byteLength,
+            contentType: value.contentType,
+            originalFilename: value.originalFilename,
+            artifactClass: try generated(ActivityArtifactClass.self, rawValue: value.artifactClass)
+        )
+    }
+}
+
+private extension Dictionary where Key == String, Value == ActivityJSONValue {
+    init(openAPIObject value: OpenAPIObjectContainer) throws {
+        var mapped: Self = [:]
+        for (key, child) in value.value {
+            mapped[key] = try .init(openAPIValue: child)
+        }
+        self = mapped
     }
 
-    enum CodingKeys: String, CodingKey {
-        case url, headers
-        case expiresSeconds = "expires_seconds"
+    var openAPIObject: OpenAPIObjectContainer {
+        get throws {
+            var mapped: [String: (any Sendable)?] = [:]
+            for (key, value) in self {
+                mapped[key] = .some(try value.openAPIValue)
+            }
+            return try .init(unvalidatedValue: mapped)
+        }
+    }
+}
+
+private extension OpenAPIObjectContainer {
+    init(activityJSONValues value: [String: ActivityJSONValue]) throws {
+        self = try value.openAPIObject
+    }
+}
+
+private extension ActivityJSONValue {
+    init(openAPIValue value: (any Sendable)?) throws {
+        switch value {
+        case nil, is NSNull:
+            self = .null
+        case let value as Bool:
+            self = .boolean(value)
+        case let value as Int:
+            self = .integer(value)
+        case let value as Double:
+            self = .decimal(value)
+        case let value as String:
+            self = .string(value)
+        case let values as [(any Sendable)?]:
+            self = .array(try values.map { try .init(openAPIValue: $0) })
+        case let values as [String: (any Sendable)?]:
+            var mapped: [String: Self] = [:]
+            for (key, child) in values {
+                mapped[key] = try .init(openAPIValue: child)
+            }
+            self = .object(mapped)
+        default:
+            throw ActivityAdapterError.invalidSchemaValue
+        }
+    }
+
+    var openAPIValue: (any Sendable)? {
+        get throws {
+            switch self {
+            case let .string(value):
+                return value
+            case let .integer(value):
+                return value
+            case let .decimal(value):
+                return value
+            case let .boolean(value):
+                return value
+            case let .array(values):
+                let mapped: [(any Sendable)?] = try values.map { try $0.openAPIValue }
+                return mapped
+            case let .object(values):
+                var mapped: [String: (any Sendable)?] = [:]
+                for (key, value) in values {
+                    mapped[key] = .some(try value.openAPIValue)
+                }
+                return mapped
+            case .null:
+                return nil
+            }
+        }
     }
 }

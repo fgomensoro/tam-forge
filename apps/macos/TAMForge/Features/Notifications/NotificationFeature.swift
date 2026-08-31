@@ -77,14 +77,26 @@ struct NativeNotificationAPIClient: NotificationServicing {
         let response = try await transport.send(
             .init(method: .get, path: "/api/v1/notifications?limit=100")
         )
-        return try response.decoded(as: NotificationPage.self)
+        let page = try response.decoded(as: Components.Schemas.NotificationPage.self)
+        return NotificationPage(items: page.items.map(TAMForgeNotification.init(api:)), nextCursor: page.nextCursor)
     }
 
     func markRead(id: Int) async throws -> TAMForgeNotification {
         let response = try await transport.send(
             .init(method: .post, path: "/api/v1/notifications/\(id)/read")
         )
-        return try response.decoded(as: TAMForgeNotification.self)
+        return TAMForgeNotification(api: try response.decoded(as: Components.Schemas.NotificationResponse.self))
+    }
+}
+
+private extension TAMForgeNotification {
+    init(api: Components.Schemas.NotificationResponse) {
+        self.init(
+            id: api.id, notificationType: api.notificationType.rawValue,
+            subjectKind: api.subjectKind.rawValue, subjectID: api.subjectId,
+            createdAt: NativeJSONCodec.timestamp(api.createdAt),
+            readAt: api.readAt.map(NativeJSONCodec.timestamp)
+        )
     }
 }
 

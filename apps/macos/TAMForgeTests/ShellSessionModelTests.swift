@@ -2,6 +2,41 @@ import XCTest
 
 @MainActor
 final class ShellSessionModelTests: XCTestCase {
+    func testLateUnauthorizedHandlerCannotExpireNewSession() async throws {
+        let model = ShellSessionModel(actions: .authenticatedForTests, statusStream: nil)
+        await model.restore()
+        let oldHandler = model.unauthorizedHandlerForCurrentSession()
+        model.signOut()
+        await model.signIn()
+        oldHandler()
+        // Give the callback's MainActor task a chance to run before inspecting phase.
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(model.phase, .signedIn("frank"))
+
+        model.unauthorizedHandlerForCurrentSession()()
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(model.phase, .signedOut(.sessionExpired))
+    }
+
+    func testFeatureReadsInvalidateForEveryEventAndFallbackRetry() async {
+        let model = ShellSessionModel(actions: .authenticatedForTests, statusStream: nil)
+        await model.restore()
+
+        model.receive(StatusEvent.fixture(id: 1, eventType: "feedback_ready"))
+        model.receive(StatusEvent.fixture(id: 2, eventType: "correction_due"))
+        XCTAssertEqual(model.featureRefreshVersion, 2)
+        model.receive(.retrying)
+        XCTAssertEqual(model.featureRefreshVersion, 3)
+        model.receive(.live)
+        XCTAssertEqual(model.featureRefreshVersion, 4)
+
+        model.signOut()
+        let clearedVersion = model.featureRefreshVersion
+        model.receive(.retrying)
+        model.receive(StatusEvent.fixture(id: 3, eventType: "feedback_ready"))
+        XCTAssertEqual(model.featureRefreshVersion, clearedVersion)
+    }
+
     func testSessionExpirationReturnsToLoginAndClearsFeatureState() async {
         let model = ShellSessionModel(actions: .authenticatedForTests, statusStream: nil)
 

@@ -3,6 +3,30 @@ import XCTest
 
 @MainActor
 final class NotificationFeatureTests: XCTestCase {
+    func testLiveAdapterMapsGeneratedNotificationDatesAndReadReceipt() async throws {
+        let fixture = URLProtocolFixture()
+        let item = """
+        {"id":1,"notification_type":"feedback_ready","subject_kind":"activity","subject_id":41,
+         "created_at":"2026-08-27T12:00:00.123456Z","read_at":null}
+        """
+        fixture.enqueue(.response(statusCode: 200, body: Data("{\"items\":[\(item)],\"next_cursor\":null}".utf8)))
+        fixture.enqueue(.response(statusCode: 200, body: Data(item.replacingOccurrences(
+            of: "\"read_at\":null", with: "\"read_at\":\"2026-08-27T12:05:00Z\""
+        ).utf8)))
+        let client = NativeNotificationAPIClient(transport: .init(
+            baseURL: URL(string: "https://api.example.test")!, session: fixture.session()
+        ))
+
+        let page = try await client.fetchNotifications()
+        let receipt = try await client.markRead(id: 1)
+
+        XCTAssertEqual(page.items.first?.subjectID, 41)
+        XCTAssertEqual(page.items.first?.notificationType, "feedback_ready")
+        XCTAssertTrue(page.items.first?.createdAt.hasPrefix("2026-08-27T12:00:00.123") == true)
+        XCTAssertNil(page.items.first?.readAt)
+        XCTAssertTrue(receipt.readAt?.hasPrefix("2026-08-27T12:05:00") == true)
+    }
+
     func testAllowedNotificationsKeepOnlyPublishedActionTypes() throws {
         let page = try JSONDecoder().decode(NotificationPage.self, from: Data("""
         {"items":[

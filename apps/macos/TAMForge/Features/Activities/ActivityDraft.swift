@@ -22,6 +22,7 @@ struct ActivityDraft: Codable, Equatable, Sendable {
 
     var kind: ActivityOutputKind
     private(set) var values: [String: String]
+    var artifactReferences: [ActivityArtifactReference] = []
 
     static func empty(for activity: ActivityDetail, forcedKind: ActivityOutputKind? = nil) -> Self {
         let allowed = allowedKinds(for: activity.taskContract.block)
@@ -52,7 +53,9 @@ struct ActivityDraft: Codable, Equatable, Sendable {
     }
 
     func changingKind(to kind: ActivityOutputKind, for activity: ActivityDetail) -> Self {
-        Self.empty(for: activity, forcedKind: kind)
+        var result = Self.empty(for: activity, forcedKind: kind)
+        result.artifactReferences = artifactReferences
+        return result
     }
 
     func isComplete(for activity: ActivityDetail) -> Bool {
@@ -184,33 +187,4 @@ final class InMemoryActivityDraftStore: ActivityDraftStoring {
     func load(activityID: Int) -> ActivityDraft? { drafts[activityID] }
     func save(_ draft: ActivityDraft, activityID: Int) { drafts[activityID] = draft }
     func remove(activityID: Int) { drafts.removeValue(forKey: activityID) }
-}
-
-@MainActor
-final class UserDefaultsActivityDraftStore: ActivityDraftStoring {
-    private let defaults: UserDefaults
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
-
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-    }
-
-    func load(activityID: Int) -> ActivityDraft? {
-        guard let data = defaults.data(forKey: key(activityID)) else { return nil }
-        return try? decoder.decode(ActivityDraft.self, from: data)
-    }
-
-    func save(_ draft: ActivityDraft, activityID: Int) {
-        guard let data = try? encoder.encode(draft) else { return }
-        defaults.set(data, forKey: key(activityID))
-    }
-
-    func remove(activityID: Int) {
-        defaults.removeObject(forKey: key(activityID))
-    }
-
-    private func key(_ activityID: Int) -> String {
-        "tamforge.activity.\(activityID).draft.v1"
-    }
 }

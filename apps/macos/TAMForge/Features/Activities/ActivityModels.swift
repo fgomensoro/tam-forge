@@ -281,6 +281,11 @@ struct ActivityDetail: Codable, Equatable, Sendable {
 
     mutating func apply(_ summary: ActivitySummary) {
         precondition(summary.id == id, "activity summary belongs to another activity")
+        // A replay acknowledges the original command, not necessarily the newest state.
+        guard summary.optimisticVersion >= optimisticVersion else { return }
+        if summary.optimisticVersion == optimisticVersion,
+           let current = openTimer, let next = summary.openTimer,
+           current.id == next.id, next.lastClientSequence < current.lastClientSequence { return }
         state = summary.state
         optimisticVersion = summary.optimisticVersion
         classification = summary.classification

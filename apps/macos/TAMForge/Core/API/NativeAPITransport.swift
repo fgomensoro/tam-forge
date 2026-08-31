@@ -4,22 +4,108 @@ import HTTPTypes
 import OpenAPIRuntime
 import OpenAPIURLSession
 
+typealias NativeBearerTokenProvider = @Sendable () async throws -> String?
+typealias NativeUnauthorizedHandler = @Sendable () -> Void
+typealias NativeUnauthorizedHandlerFactory = @Sendable () async -> NativeUnauthorizedHandler
+
+func resolveNativeBearerToken(
+    using provider: NativeBearerTokenProvider,
+    onUnauthorized: NativeUnauthorizedHandler
+) async throws -> String? {
+    do {
+        let token = try await provider()
+        try Task.checkCancellation()
+        return token
+    } catch let error as NativeAuthenticationError {
+        switch error {
+        case .noStoredCredential, .reauthenticationRequired, .revocationPending:
+            onUnauthorized()
+        default:
+            break
+        }
+        throw error
+    }
+}
+
+enum NativeJSONCodec {
+    static func date(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: value) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
+    }
+
+    static func timestamp(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: date)
+    }
+
+    static func decode<Value: Decodable>(_ type: Value.Type, from data: Data) throws -> Value {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let value = try container.decode(String.self)
+            if let date = Self.date(value) { return date }
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Expected RFC 3339 timestamp")
+        }
+        return try decoder.decode(type, from: data)
+    }
+
+    static func encode<Value: Encodable>(
+        _ value: Value, insertingRequiredNulls keys: [String] = []
+    ) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(value)
+        guard !keys.isEmpty else { return data }
+        // The pinned generator encodes required-nullable optionals with encodeIfPresent.
+        // Restore only explicitly declared missing nulls; all payload fields still come
+        // from the generated schema, and present values are never overwritten.
+        guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw NativeJSONCodecError.expectedObject
+        }
+        for key in keys where object[key] == nil { object[key] = NSNull() }
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+}
+
+private enum NativeJSONCodecError: Error { case expectedObject }
+
+enum NativeAPIResponseLimit: Sendable {
+    case standard
+    case activityOutput
+
+    var bytes: Int {
+        switch self {
+        case .standard: 2 * 1024 * 1024
+        // Case contracts allow about 13 MiB of text. JSON control-character escaping
+        // can expand it sixfold. This is a collection ceiling, not a preallocation.
+        case .activityOutput: 96 * 1024 * 1024
+        }
+    }
+}
+
 struct NativeAPIRequest: Sendable {
     let method: HTTPRequest.Method
     let path: String
     let body: Data?
     let idempotencyKey: String?
+    let responseLimit: NativeAPIResponseLimit
 
     init(
         method: HTTPRequest.Method,
         path: String,
         body: Data? = nil,
-        idempotencyKey: String? = nil
+        idempotencyKey: String? = nil,
+        responseLimit: NativeAPIResponseLimit = .standard
     ) {
         self.method = method
         self.path = path
         self.body = body
         self.idempotencyKey = idempotencyKey
+        self.responseLimit = responseLimit
     }
 
     fileprivate var allowsRetry: Bool {
@@ -42,7 +128,7 @@ struct NativeAPIResponse: Sendable {
     func decoded<Value: Decodable & Sendable>(as type: Value.Type) throws -> Value {
         guard let body else { throw NativeAPIError.emptyResponse }
         do {
-            return try JSONDecoder().decode(Value.self, from: body)
+            return try NativeJSONCodec.decode(Value.self, from: body)
         } catch {
             throw NativeAPIError.decodingResponse
         }
@@ -104,24 +190,24 @@ struct NativeAPIDiagnostic: Sendable, CustomStringConvertible, Equatable {
 }
 
 struct NativeAPITransport: Sendable {
-    private static let maximumResponseBytes = 2 * 1024 * 1024
     private static let maximumProblemBytes = 64 * 1024
     private static let idempotencyKeyHeader = HTTPField.Name("Idempotency-Key")!
 
     private let baseURL: URL
-    private let bearerToken: @Sendable () async -> String?
+    private let bearerToken: NativeBearerTokenProvider
     private let retryPolicy: RetryPolicy
     private let transport: URLSessionTransport
-    private let onUnauthorized: @Sendable () -> Void
+    private let onUnauthorizedForRequest: NativeUnauthorizedHandlerFactory
     private let diagnostics: @Sendable (NativeAPIDiagnostic) -> Void
 
     init(
         baseURL: URL,
-        bearerToken: @escaping @Sendable () async -> String? = { nil },
+        bearerToken: @escaping NativeBearerTokenProvider = { nil },
         retryPolicy: RetryPolicy = .init(),
         timeoutPolicy: TimeoutPolicy = .standard,
         session: URLSession? = nil,
         onUnauthorized: @escaping @Sendable () -> Void = {},
+        onUnauthorizedForRequest: NativeUnauthorizedHandlerFactory? = nil,
         diagnostics: @escaping @Sendable (NativeAPIDiagnostic) -> Void = { _ in }
     ) {
         self.baseURL = baseURL
@@ -130,17 +216,18 @@ struct NativeAPITransport: Sendable {
         self.transport = URLSessionTransport(
             configuration: .init(session: session ?? Self.makeSession(timeoutPolicy: timeoutPolicy))
         )
-        self.onUnauthorized = onUnauthorized
+        self.onUnauthorizedForRequest = onUnauthorizedForRequest ?? { onUnauthorized }
         self.diagnostics = diagnostics
     }
 
     init(
         environment: AppEnvironment,
-        bearerToken: @escaping @Sendable () async -> String? = { nil },
+        bearerToken: @escaping NativeBearerTokenProvider = { nil },
         retryPolicy: RetryPolicy = .init(),
         timeoutPolicy: TimeoutPolicy = .standard,
         session: URLSession? = nil,
         onUnauthorized: @escaping @Sendable () -> Void = {},
+        onUnauthorizedForRequest: NativeUnauthorizedHandlerFactory? = nil,
         diagnostics: @escaping @Sendable (NativeAPIDiagnostic) -> Void = { _ in }
     ) {
         self.init(
@@ -150,6 +237,7 @@ struct NativeAPITransport: Sendable {
             timeoutPolicy: timeoutPolicy,
             session: session,
             onUnauthorized: onUnauthorized,
+            onUnauthorizedForRequest: onUnauthorizedForRequest,
             diagnostics: diagnostics
         )
     }
@@ -176,7 +264,8 @@ struct NativeAPITransport: Sendable {
         }
 
         var headers: HTTPFields = [:]
-        if let token = await bearerToken() {
+        let onUnauthorized = await onUnauthorizedForRequest()
+        if let token = try await resolveNativeBearerToken(using: bearerToken, onUnauthorized: onUnauthorized) {
             headers[.authorization] = "Bearer \(token)"
         }
         if let idempotencyKey = request.idempotencyKey {
@@ -218,7 +307,7 @@ struct NativeAPITransport: Sendable {
             do {
                 return NativeAPIResponse(
                     statusCode: statusCode,
-                    body: try await Self.collect(responseBody, upTo: Self.maximumResponseBytes)
+                    body: try await Self.collect(responseBody, upTo: request.responseLimit.bytes)
                 )
             } catch is ResponseLimitError {
                 throw NativeAPIError.responseTooLarge

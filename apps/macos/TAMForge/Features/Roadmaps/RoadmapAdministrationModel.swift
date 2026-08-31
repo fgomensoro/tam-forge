@@ -15,6 +15,7 @@ final class RoadmapAdministrationModel: ObservableObject {
     private let makeIdempotencyKey: @Sendable () -> String
     private var idempotencyKey: String?
     private var operation: Task<Void, Never>?
+    private var stageGeneration = 0
 
     init(
         service: any RoadmapServicing,
@@ -29,6 +30,7 @@ final class RoadmapAdministrationModel: ObservableObject {
     func select(_ package: RoadmapPackage) {
         operation?.cancel()
         operation = nil
+        stageGeneration += 1
         selection = package
         roadmapImport = nil
         version = nil
@@ -40,6 +42,7 @@ final class RoadmapAdministrationModel: ObservableObject {
 
     func choosePackage() {
         operation?.cancel()
+        stageGeneration += 1
         operation = Task { [weak self] in
             do {
                 guard let package = try await RoadmapPackagePicker.select() else { return }
@@ -54,21 +57,48 @@ final class RoadmapAdministrationModel: ObservableObject {
     }
 
     func beginStage() {
+        guard selection != nil, !isBusy else { return }
         operation?.cancel()
-        operation = Task { [weak self] in await self?.stage() }
+        stageGeneration += 1
+        let generation = stageGeneration
+        operation = Task { [weak self] in await self?.stage(generation: generation) }
     }
 
     func stage() async {
+        guard selection != nil, !isBusy else { return }
+        stageGeneration += 1
+        await stage(generation: stageGeneration)
+    }
+
+    func cancelUpload() {
+        guard isBusy, roadmapImport == nil else { return }
+        stageGeneration += 1
+        operation?.cancel()
+        operation = nil
+        isBusy = false
+        errorMessage = nil
+    }
+
+    private func stage(generation: Int) async {
         guard let selection, !isBusy else { return }
         isBusy = true
         errorMessage = nil
         let key = idempotencyKey ?? makeIdempotencyKey()
         idempotencyKey = key
-        defer { isBusy = false }
+        defer {
+            if generation == stageGeneration {
+                isBusy = false
+                operation = nil
+            }
+        }
         do {
-            roadmapImport = try await service.stage(package: selection, idempotencyKey: key)
+            let roadmapImport = try await service.stage(package: selection, idempotencyKey: key)
+            try Task.checkCancellation()
+            guard generation == stageGeneration else { return }
+            self.roadmapImport = roadmapImport
         } catch is CancellationError {
         } catch {
+            guard generation == stageGeneration else { return }
             errorMessage = message(for: error, month: nil)
         }
     }
@@ -76,6 +106,7 @@ final class RoadmapAdministrationModel: ObservableObject {
     func cancelReview() {
         operation?.cancel()
         operation = nil
+        stageGeneration += 1
         selection = nil
         roadmapImport = nil
         version = nil

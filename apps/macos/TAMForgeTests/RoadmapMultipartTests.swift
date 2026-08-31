@@ -2,6 +2,22 @@ import Foundation
 import XCTest
 
 final class RoadmapMultipartTests: XCTestCase {
+    func testTokenFailureNeverSendsAnAnonymousRoadmapRequest() async throws {
+        let fixture = URLProtocolFixture()
+        fixture.enqueue(.response(statusCode: 200, body: Data("[]".utf8)))
+        let service = LiveRoadmapService(
+            baseURL: URL(string: "https://api.example.test")!,
+            bearerToken: { throw URLError(.notConnectedToInternet) }, session: fixture.session()
+        )
+        do {
+            _ = try await service.listVersions()
+            XCTFail("Expected token acquisition failure")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, .notConnectedToInternet)
+        }
+        XCTAssertTrue(fixture.requests.isEmpty)
+    }
+
     func testLiveServiceStagesWithCallerIdempotencyKey() async throws {
         let recorder = RoadmapURLProtocol.recorder
         recorder.resetResponse()
@@ -66,6 +82,37 @@ final class RoadmapMultipartTests: XCTestCase {
         } catch let error as RoadmapServiceError {
             XCTAssertEqual(error, .responseTooLarge)
         }
+    }
+
+    func testLiveServiceCallsUnauthorizedBeforeReadingMalformed401Body() async throws {
+        DeferredUnauthorizedRoadmapURLProtocol.reset()
+        defer { DeferredUnauthorizedRoadmapURLProtocol.releaseBody() }
+        let callback = expectation(description: "unauthorized callback")
+        let callbackBox = TestExpectationBox(callback)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DeferredUnauthorizedRoadmapURLProtocol.self]
+        let service = LiveRoadmapService(
+            baseURL: URL(string: "https://api.example.test")!,
+            bearerToken: { nil },
+            session: URLSession(configuration: configuration),
+            onUnauthorized: { callbackBox.fulfill() }
+        )
+        let package = try zipPackage()
+
+        let task = Task { () -> RoadmapServiceError? in
+            do {
+                _ = try await service.stage(package: package, idempotencyKey: "roadmap-stable-key")
+                return nil
+            } catch {
+                return error as? RoadmapServiceError
+            }
+        }
+        await fulfillment(of: [callback], timeout: 1)
+        XCTAssertFalse(DeferredUnauthorizedRoadmapURLProtocol.didDeliverBody)
+
+        DeferredUnauthorizedRoadmapURLProtocol.releaseBody()
+        let result = await task.value
+        XCTAssertEqual(result, .problem(statusCode: 401, code: nil))
     }
 
     func testFolderMultipartUsesNormalizedPathsAndGenericFilenames() async throws {
@@ -214,4 +261,80 @@ private final class RoadmapURLProtocol: URLProtocol {
     }
 
     override func stopLoading() {}
+}
+
+private final class DeferredUnauthorizedRoadmapURLProtocol: URLProtocol {
+    private static let responseGate = DeferredUnauthorizedResponseGate()
+
+    static var didDeliverBody: Bool { responseGate.didDeliverBody }
+
+    static func reset() {
+        responseGate.reset()
+    }
+
+    static func releaseBody() {
+        responseGate.release()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 401,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        let client = client
+        let gate = Self.responseGate
+        DispatchQueue.global(qos: .userInitiated).async {
+            gate.wait()
+            gate.markDelivered()
+            client?.urlProtocol(self, didLoad: Data("not valid JSON".utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+    }
+
+    override func stopLoading() { Self.releaseBody() }
+}
+
+private final class DeferredUnauthorizedResponseGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var bodyRelease = DispatchSemaphore(value: 0)
+    private var deliveredBody = false
+
+    var didDeliverBody: Bool { lock.withLock { deliveredBody } }
+
+    func reset() {
+        lock.withLock {
+            bodyRelease = DispatchSemaphore(value: 0)
+            deliveredBody = false
+        }
+    }
+
+    func release() {
+        lock.withLock { bodyRelease }.signal()
+    }
+
+    func wait() {
+        lock.withLock { bodyRelease }.wait()
+    }
+
+    func markDelivered() {
+        lock.withLock { deliveredBody = true }
+    }
+}
+
+private final class TestExpectationBox: @unchecked Sendable {
+    private let expectation: XCTestExpectation
+
+    init(_ expectation: XCTestExpectation) {
+        self.expectation = expectation
+    }
+
+    func fulfill() {
+        expectation.fulfill()
+    }
 }

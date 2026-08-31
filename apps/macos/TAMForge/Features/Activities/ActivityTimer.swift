@@ -16,6 +16,9 @@ struct ActivityTimerDisplay: Equatable, Sendable {
 }
 
 struct ActivityPendingHeartbeat: Codable, Equatable, Sendable {
+    enum Operation: String, Codable, Sendable { case heartbeat, pause }
+    var operation: Operation
+    var expectedVersion: Int
     var clientSequence: Int
     var idempotencyKey: String
 }
@@ -61,7 +64,7 @@ final class UserDefaultsActivityTimerJournal: ActivityTimerJournaling {
     }
 
     private func key(_ activityID: Int) -> String {
-        "tamforge.activity.\(activityID).pending-heartbeat.v1"
+        "tamforge.activity.\(activityID).pending-timer.v2"
     }
 }
 
@@ -90,32 +93,44 @@ final class ActivityTimerCoordinator {
         return max(server, pending) + 1
     }
 
-    func nextHeartbeatCommand(for activity: ActivityDetail) -> ActivityHeartbeatCommand {
-        let pending = journal.load(activityID: activityID) ?? .init(
-            clientSequence: nextSequence(for: activity),
-            idempotencyKey: idempotency()
-        )
-        return .init(
-            activityID: activityID,
-            expectedVersion: activity.optimisticVersion,
-            clientSequence: pending.clientSequence,
-            idempotencyKey: pending.idempotencyKey
-        )
-    }
-
-    func journal(_ command: ActivityHeartbeatCommand) {
-        journal.save(
-            .init(clientSequence: command.clientSequence, idempotencyKey: command.idempotencyKey),
-            activityID: activityID
-        )
-    }
+    var pendingOperation: ActivityPendingHeartbeat.Operation? { journal.load(activityID: activityID)?.operation }
 
     func heartbeat(activity: ActivityDetail) async throws -> ActivitySummary? {
-        guard activity.state == .active else { return nil }
-        let command = nextHeartbeatCommand(for: activity)
-        journal(command)
+        guard activity.state == .active || journal.load(activityID: activityID) != nil else { return nil }
+        return try await perform(.heartbeat, activity: activity)
+    }
+
+    func pause(activity: ActivityDetail) async throws -> ActivitySummary {
+        var current = activity
+        if journal.load(activityID: activityID)?.operation == .heartbeat {
+            current.apply(try await perform(.heartbeat, activity: current))
+        }
+        guard current.state == .active || journal.load(activityID: activityID)?.operation == .pause else {
+            return current.summary
+        }
+        return try await perform(.pause, activity: current)
+    }
+
+    private func perform(
+        _ operation: ActivityPendingHeartbeat.Operation, activity: ActivityDetail
+    ) async throws -> ActivitySummary {
+        try Task.checkCancellation()
+        let pending = journal.load(activityID: activityID) ?? .init(
+            operation: operation, expectedVersion: activity.optimisticVersion,
+            clientSequence: nextSequence(for: activity), idempotencyKey: idempotency()
+        )
+        journal.save(pending, activityID: activityID)
+        let command = ActivityHeartbeatCommand(
+            activityID: activityID, expectedVersion: pending.expectedVersion,
+            clientSequence: pending.clientSequence, idempotencyKey: pending.idempotencyKey
+        )
         do {
-            let summary = try await api.heartbeat(command)
+            let summary: ActivitySummary
+            switch pending.operation {
+            case .heartbeat: summary = try await api.heartbeat(command)
+            case .pause: summary = try await api.pause(command)
+            }
+            try Task.checkCancellation()
             journal.remove(activityID: activityID)
             return summary
         } catch {
