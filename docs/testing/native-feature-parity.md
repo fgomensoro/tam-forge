@@ -38,7 +38,14 @@ the separately gated E10-I10 cutover. Server read models and commands remain aut
   command and unchanged FastAPI contract.
 - Native accessibility evidence covers labeled editors, keyboard-usable native
   controls, navigable forms, disabled-action gates and reduced-motion shell behavior.
-  Automated accessibility queries are not a claim of a complete human VoiceOver audit.
+  Evidence uses header traits and stable identifiers on the actual retry, paging,
+  activity, manifest and event controls rather than on ancestor containers that hide
+  their descendants in the macOS accessibility tree. A retained dark-appearance,
+  accessibility-extra-extra-extra-large screenshot at the minimum window size was
+  manually inspected: the title hierarchy, score-scale explanation, assessed and
+  unassessed cards, all three target gaps, focusable actions, wrapping and contrast
+  remained legible without clipped controls. Automated accessibility queries and this
+  visual inspection are not a claim of a complete human VoiceOver audit.
 - Activity output reads have a 96 MiB collection ceiling to accommodate the server's
   largest text contract and JSON escaping. Ordinary responses retain a 2 MiB ceiling;
   problems retain 64 KiB. These are limits, not reserved memory. Artifact bytes remain
