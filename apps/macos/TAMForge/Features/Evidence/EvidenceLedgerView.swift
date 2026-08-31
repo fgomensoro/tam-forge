@@ -311,7 +311,7 @@ struct EvidenceLedgerView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Activity \(event.activityID) · Attempt \(event.attemptID.map { String($0) } ?? "not linked")")
                 Text("Performance \(event.performanceScore) / 4 · Skill impact \(event.skillImpact) · Effective weight \(event.effectiveWeight)")
-                Text(event.qualifyingForLevel ? "Qualifies for level · \(event.qualificationReason)" : "Excluded from level · \(event.qualificationReason)")
+                Text(event.qualifyingForLevel ? "Qualifies for level · \(readable(event.qualificationReason))" : "Excluded from level · \(readable(event.qualificationReason))")
                 Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 4) {
                     metricRow("Exercise", readable(event.exerciseType))
                     metricRow("Mapping", event.mappingVersion)
@@ -331,12 +331,12 @@ struct EvidenceLedgerView: View {
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Evidence event \(event.id)").bold()
-                Text("\(readable(event.skillSlug)) · \(event.occurredAt.formatted(date: .abbreviated, time: .shortened))")
+                Text("\(model.skillName(for: event.skillSlug) ?? readable(event.skillSlug)) · \(event.occurredAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .accessibilityIdentifier("evidenceEvent_\(event.id)")
         }
-        .accessibilityIdentifier("evidenceEvent_\(event.id)")
     }
 
     @ViewBuilder

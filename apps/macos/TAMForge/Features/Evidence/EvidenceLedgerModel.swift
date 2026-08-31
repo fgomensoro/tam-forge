@@ -47,6 +47,10 @@ final class EvidenceLedgerModel: ObservableObject {
     var isNewestActivityPage: Bool { activityCursor == nil }
     var isNewestPortfolioPage: Bool { portfolioCursor == nil }
 
+    func skillName(for slug: String) -> String? {
+        skills.first { $0.slug == slug }?.name
+    }
+
     init(service: any EvidenceServicing) { self.service = service }
 
     func open(activityID: Int?) async {
@@ -126,7 +130,7 @@ final class EvidenceLedgerModel: ObservableObject {
 
     func retrySkills() async {
         guard active else { return }
-        await loadSkills(generation: lifetime)
+        _ = await loadSkills(generation: lifetime)
     }
 
     func inspectActivity(activityID: Int) async {
@@ -177,19 +181,20 @@ final class EvidenceLedgerModel: ObservableObject {
     private func loadDestination(reloadSelectedSkill: Bool) async {
         let generation = lifetime
         let skillReload = selectedSkillSlug
-        async let skillsDone: Void = loadSkills(generation: generation)
+        async let skillsLoaded = loadSkills(generation: generation)
         async let portfolioDone: Void = requestPortfolioPage(cursor: nil, generation: generation)
         if let id = activeActivityID {
             inspectedActivityID = id
             await requestActivityPage(activityID: id, cursor: nil, generation: generation)
         }
-        _ = await (skillsDone, portfolioDone)
-        if reloadSelectedSkill, generation == lifetime, active, let slug = skillReload ?? selectedSkillSlug {
+        let (loaded, _) = await (skillsLoaded, portfolioDone)
+        if reloadSelectedSkill, loaded, generation == lifetime, active, let slug = skillReload ?? selectedSkillSlug {
             await requestSkillPage(slug: slug, cursor: nil)
         }
     }
 
-    private func loadSkills(generation: Int) async {
+    @discardableResult
+    private func loadSkills(generation: Int) async -> Bool {
         skillsRequest &+= 1
         let request = skillsRequest
         skillsTask?.cancel()
@@ -197,13 +202,17 @@ final class EvidenceLedgerModel: ObservableObject {
         skillError = nil
         let task = Task { [service] in try await service.listSkills() }
         skillsTask = task
+        defer { if request == skillsRequest { skillsTask = nil } }
         do {
             let value = try await task.value
-            guard publishable(generation: generation, taskCancelled: task.isCancelled), request == skillsRequest else { return }
+            guard publishable(generation: generation, taskCancelled: task.isCancelled), request == skillsRequest else { return false }
             skills = value
             skillState = value.isEmpty ? .empty : .content
-        } catch { handle(error, generation: generation, section: .skills, cursor: nil, request: request) }
-        if request == skillsRequest { skillsTask = nil }
+            return true
+        } catch {
+            handle(error, generation: generation, section: .skills, cursor: nil, request: request)
+            return false
+        }
     }
 
     private func requestPortfolioPage(cursor: Int?, generation: Int) async {

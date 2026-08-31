@@ -141,4 +141,11 @@ enum NativeEvidenceFixtureQuery {
         return value
     }
 }
+
+enum NativeUIFixtureRequestValidator {
+    static func hasExpectedOrigin(_ url: URL, environment: AppEnvironment) -> Bool {
+        let expected = environment.apiBaseURL
+        return url.scheme == expected.scheme && url.host == expected.host && url.port == expected.port
+    }
+}
 #endif

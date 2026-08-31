@@ -34,11 +34,19 @@ private final class NativeUIFixtureState: @unchecked Sendable {
     private let closingDay = ProcessInfo.processInfo.arguments.contains("-ui-test-daily-close")
     private let reviewingEvidence = ProcessInfo.processInfo.arguments.contains("-ui-test-evidence-route")
     private let emptyEvidence = ProcessInfo.processInfo.arguments.contains("-ui-test-empty-evidence")
+    private let keyboardEvidenceRefresh = ProcessInfo.processInfo.arguments.contains("-ui-test-evidence-keyboard-refresh")
     private var failSkillsOnce = ProcessInfo.processInfo.arguments.contains("-ui-test-evidence-retry")
+    private var skillListRequests = 0
     private let stamp = "2026-08-27T20:00:00Z"
 
     func response(for request: URLRequest) throws -> Data {
         try lock.withLock {
+            guard let url = request.url,
+                  NativeUIFixtureRequestValidator.hasExpectedOrigin(
+                    url,
+                    environment: AppEnvironment.selected(from: ProcessInfo.processInfo.environment)
+                  )
+            else { throw URLError(.badURL) }
             let path = request.url?.path ?? ""
             if let evidence = try evidenceResponse(for: request) {
                 return try JSONSerialization.data(withJSONObject: evidence)
@@ -189,11 +197,13 @@ private final class NativeUIFixtureState: @unchecked Sendable {
         }
         switch path {
         case "/api/v1/skills":
+            skillListRequests += 1
             if failSkillsOnce {
                 failSkillsOnce = false
                 throw URLError(.notConnectedToInternet)
             }
-            return ["items": [evidenceSkill(), evidenceSkill(english: true)]]
+            let refreshed = keyboardEvidenceRefresh && skillListRequests > 1
+            return ["items": [evidenceSkill(refreshed: refreshed), evidenceSkill(english: true)]]
         case skillPath:
             return evidenceSkill()
         case "/api/v1/skills/tam_english":
@@ -229,11 +239,11 @@ private final class NativeUIFixtureState: @unchecked Sendable {
         }
     }
 
-    private func evidenceSkill(english: Bool = false) -> [String: Any] {
+    private func evidenceSkill(english: Bool = false, refreshed: Bool = false) -> [String: Any] {
         let assessed = !english && !emptyEvidence
         let snapshot: [String: Any] = [
             "id": 71, "formula_version": "seed-v1", "snapshot_date": "2026-08-27",
-            "estimated_level": "2.750", "confidence": "moderate", "trend": "improving", "recency": "recent",
+            "estimated_level": "2.750", "confidence": "medium", "trend": "improving", "recency": "fresh",
             "baseline_target_gap": "-0.750", "month_one_target_gap": "0.250", "final_target_gap": "0.750",
             "total_effective_weight": "1.400", "qualifying_event_count": 2, "exercise_type_count": 2,
             "last_strong_evidence_date": "2026-08-27",
@@ -248,7 +258,7 @@ private final class NativeUIFixtureState: @unchecked Sendable {
         ]
         return [
             "slug": english ? "tam_english" : "structured_troubleshooting",
-            "name": english ? "TAM English" : "Structured troubleshooting",
+            "name": english ? "TAM English" : refreshed ? "Structured troubleshooting refreshed" : "Structured troubleshooting",
             "baseline": "2.000", "month_one_target": "3.000", "final_target": "3.500",
             "latest_snapshot": assessed ? snapshot : NSNull(),
         ]
@@ -263,7 +273,7 @@ private final class NativeUIFixtureState: @unchecked Sendable {
             "evaluator": selfEvidence ? "self" : "human_coach", "practice_mode": "independent_practice",
             "assistance": "no_ai", "difficulty": "standard", "performance_score": "3.000",
             "skill_impact": "1.000", "effective_weight": "0.800", "qualifying_for_level": !selfEvidence,
-            "qualification_reason": selfEvidence ? "Self evidence does not change the skill estimate." : "Independent evidence qualifies.",
+            "qualification_reason": selfEvidence ? "excluded_by_formula" : "qualifies",
             "raw_dimension_scores": ["schema_version": 1, "scores": [
                 ["dimension_slug": "diagnosis", "availability": "scored", "score": "3.000",
                  "observations": ["Customer impact is explicit; next steps name an owner and a verification condition."]],

@@ -154,6 +154,27 @@ final class EvidenceLedgerTests: XCTestCase {
         XCTAssertEqual(service.listSkillsCallCount, callsBeforeStale + 1)
     }
 
+    func testRefreshDoesNotCombineRetainedSnapshotWithNewEventsWhenSkillsFail() async {
+        let service = EvidenceServiceStub(
+            skillsResult: .success([assessedSkill()]),
+            portfolioResult: .success(portfolioPage()),
+            skillPageResults: [
+                .success(.init(items: [event(id: 50, skill: "incident_communication")], nextCursor: nil)),
+            ]
+        )
+        let model = EvidenceLedgerModel(service: service)
+
+        await model.open(activityID: nil)
+        await model.inspectSkill(slug: "incident_communication")
+        service.skillsResult = .failure(.unavailable)
+        await model.refresh()
+
+        XCTAssertEqual(model.skillState, .failed)
+        XCTAssertEqual(service.skillEvidenceRequests.count, 1)
+        XCTAssertNil(model.skillPage)
+        XCTAssertEqual(model.skillInspectorState, .idle)
+    }
+
     func testNewDestinationDiscardsCancellationResistantRefreshCompletion() async {
         let skills = DeferredValues<[EvidenceSkill]>()
         let portfolio = DeferredValues<EvidencePortfolioPage>()
@@ -304,7 +325,7 @@ final class EvidenceLedgerTests: XCTestCase {
             slug: "incident_communication", name: name, baseline: "1", monthOneTarget: "2", finalTarget: "4",
             snapshot: .init(
                 id: 71, formulaVersion: "formula-v1", snapshotDate: "2026-08-31", estimatedLevel: "3.125",
-                confidence: "moderate", trend: "improving", recency: "recent", baselineTargetGap: "2.125",
+                confidence: "medium", trend: "improving", recency: "fresh", baselineTargetGap: "2.125",
                 monthOneTargetGap: "1.125", finalTargetGap: "0.875", totalEffectiveWeight: "1.250",
                 qualifyingEventCount: 2, exerciseTypeCount: 1, lastStrongEvidenceDate: nil,
                 manifest: [.init(eventID: 50, usedWeight: "0.125", inclusionCode: "included")],

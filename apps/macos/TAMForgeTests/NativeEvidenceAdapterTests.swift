@@ -43,7 +43,7 @@ final class NativeEvidenceAdapterTests: XCTestCase {
             .object(["items": .array([.integer(2), .object(["value": .string("kept")])])])
         )
         XCTAssertEqual(portfolio.items[0].totalScore, "16.500")
-        XCTAssertEqual(portfolio.items[0].components[0].score, "2.250")
+        XCTAssertEqual(portfolio.items[0].components[0].score, "3.500")
 
         let requests = fixture.requests
         XCTAssertEqual(requests.map(\.httpMethod), Array(repeating: "GET", count: 5))
@@ -91,6 +91,7 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         fixture.enqueue(.response(statusCode: 200, body: portfolioPageMissingLastComponent()))
         fixture.enqueue(.response(statusCode: 200, body: portfolioPageWithDuplicateComponent()))
         fixture.enqueue(.response(statusCode: 200, body: replacing(portfolioPageBody(nextCursor: nil), "16.500", "16.499")))
+        fixture.enqueue(.response(statusCode: 200, body: portfolioPageWithImpossibleComponent()))
         let api = LiveEvidenceAPI(transport: transport(fixture))
 
         await assertInvalidResponse { _ = try await api.listSkills() }
@@ -98,6 +99,23 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         await assertInvalidResponse { _ = try await api.fetchPortfolioHistory(cursor: nil) }
         await assertInvalidResponse { _ = try await api.fetchPortfolioHistory(cursor: nil) }
         await assertInvalidResponse { _ = try await api.fetchPortfolioHistory(cursor: nil) }
+        await assertInvalidResponse { _ = try await api.fetchPortfolioHistory(cursor: nil) }
+    }
+
+    func testAdapterCodeContractRejectsValuesTheBackendCannotProduce() {
+        XCTAssertTrue(EvidenceResponseContract.validSnapshotCodes(
+            confidence: "medium", trend: "improving", recency: "fresh"
+        ))
+        XCTAssertFalse(EvidenceResponseContract.validSnapshotCodes(
+            confidence: "moderate", trend: "improving", recency: "fresh"
+        ))
+        XCTAssertFalse(EvidenceResponseContract.validSnapshotCodes(
+            confidence: "medium", trend: "improving", recency: "recent"
+        ))
+        XCTAssertTrue(EvidenceResponseContract.validQualification(reason: "qualifies", qualifies: true))
+        XCTAssertTrue(EvidenceResponseContract.validQualification(reason: "excluded_by_formula", qualifies: false))
+        XCTAssertFalse(EvidenceResponseContract.validQualification(reason: "Independent evidence", qualifies: true))
+        XCTAssertFalse(EvidenceResponseContract.validQualification(reason: "qualifies", qualifies: false))
     }
 
     func testDebugFixturePaginationQueryRejectsBareEmptyDuplicateAndInvalidCursors() throws {
@@ -128,6 +146,28 @@ final class NativeEvidenceAdapterTests: XCTestCase {
             from: URL(string: "https://fixture.invalid/api/v1/skills?cursor=91")!,
             paginated: false
         ))
+    }
+
+    func testDebugFixtureRequiresTheSelectedHTTPSOrigin() {
+        XCTAssertTrue(NativeUIFixtureRequestValidator.hasExpectedOrigin(
+            URL(string: "https://api.tamforge.invalid/api/v1/skills")!,
+            environment: .production
+        ))
+        XCTAssertTrue(NativeUIFixtureRequestValidator.hasExpectedOrigin(
+            URL(string: "https://api-preview.tamforge.invalid/api/v1/skills")!,
+            environment: .preview
+        ))
+        for value in [
+            "http://api.tamforge.invalid/api/v1/skills",
+            "https://api-preview.tamforge.invalid/api/v1/skills",
+            "https://api.tamforge.invalid:443/api/v1/skills",
+            "https://attacker.invalid/api/v1/skills",
+        ] {
+            XCTAssertFalse(NativeUIFixtureRequestValidator.hasExpectedOrigin(
+                URL(string: value)!,
+                environment: .production
+            ), value)
+        }
     }
 
     func testMapsUnauthorizedAndSafeProblemStatusesWithoutProblemDetail() async throws {
@@ -283,7 +323,7 @@ final class NativeEvidenceAdapterTests: XCTestCase {
     private func snapshotBody(estimatedLevel: String = "3.125") -> String {
         """
         {"id":71,"formula_version":"v1","snapshot_date":"2026-08-31",
-         "estimated_level":"\(estimatedLevel)","confidence":"moderate","trend":"improving","recency":"recent",
+         "estimated_level":"\(estimatedLevel)","confidence":"medium","trend":"improving","recency":"fresh",
          "baseline_target_gap":"2.125","month_one_target_gap":"1.125","final_target_gap":"0.875",
          "total_effective_weight":"1.250","qualifying_event_count":2,"exercise_type_count":1,
          "last_strong_evidence_date":"2026-08-30",
@@ -302,7 +342,7 @@ final class NativeEvidenceAdapterTests: XCTestCase {
           "rubric_slug":"incident_rubric","rubric_version":"rubric-v1","evaluator":"human_coach",
           "practice_mode":"independent_practice","assistance":"no_ai","difficulty":"standard",
           "performance_score":"3.750","skill_impact":"0.500","effective_weight":"0.875",
-          "qualifying_for_level":true,"qualification_reason":"Independent evidence",
+          "qualifying_for_level":false,"qualification_reason":"missing_committed_attempt",
           "raw_dimension_scores":{"clarity":3,"nested":{"items":[2,{"value":"kept"}]}},
           "occurred_at":"2026-08-31T12:00:00Z"
         }],"next_cursor":\(cursor)}
@@ -315,13 +355,13 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         {"items":[{
           "id":91,"activity_id":41,"attempt_id":81,"formula_version":"portfolio-v1","rubric_version":"rubric-v1",
           "total_score":"16.500","components":[
-            {"slug":"impact_risk_assessment","score":"2.250"},
-            {"slug":"explicit_prioritization","score":"2.250"},
-            {"slug":"delegation_ownership","score":"2.250"},
-            {"slug":"communication_control","score":"2.250"},
-            {"slug":"proactive_work_protection","score":"2.500"},
+            {"slug":"impact_risk_assessment","score":"3.500"},
+            {"slug":"explicit_prioritization","score":"2.500"},
+            {"slug":"delegation_ownership","score":"2.500"},
+            {"slug":"communication_control","score":"2.500"},
+            {"slug":"proactive_work_protection","score":"1.500"},
             {"slug":"evidence_based_reprioritization","score":"2.500"},
-            {"slug":"english_clarity","score":"2.500"}],
+            {"slug":"english_clarity","score":"1.500"}],
           "trend_basis":{"prior_total":"15.000","unknown_basis":{"items":[1,2]}},
           "scored_at":"2026-08-31T12:00:00Z"
         }],"next_cursor":\(cursor)}
@@ -343,6 +383,17 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         var items = root["items"] as! [[String: Any]]
         var components = items[0]["components"] as! [[String: Any]]
         components.append(components[0])
+        items[0]["components"] = components
+        root["items"] = items
+        return try! JSONSerialization.data(withJSONObject: root)
+    }
+
+    private func portfolioPageWithImpossibleComponent() -> Data {
+        var root = try! JSONSerialization.jsonObject(with: portfolioPageBody(nextCursor: nil)) as! [String: Any]
+        var items = root["items"] as! [[String: Any]]
+        var components = items[0]["components"] as! [[String: Any]]
+        components[0]["score"] = "4.500"
+        components[3]["score"] = "1.500"
         items[0]["components"] = components
         root["items"] = items
         return try! JSONSerialization.data(withJSONObject: root)

@@ -61,8 +61,8 @@ final class TAMForgeUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["evidenceTitle"].waitForExistence(timeout: 5))
         XCTAssertTrue(textContaining("2.750 / 4", in: app).waitForExistence(timeout: 5))
-        XCTAssertTrue(textContaining("14.000 / 20", in: app).exists)
-        XCTAssertTrue(app.staticTexts["Not assessed"].exists)
+        XCTAssertTrue(textContaining("14.000 / 20", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 5))
         XCTAssertTrue(textContaining("Missing evidence is not zero", in: app).exists)
         XCTAssertTrue(textContaining("Baseline gap", in: app).exists)
         XCTAssertTrue(textContaining("Final target gap", in: app).exists)
@@ -87,20 +87,21 @@ final class TAMForgeUITests: XCTestCase {
         XCTAssertTrue(textContaining("Used weight 0.400 · Event weight 0.800", in: app).waitForExistence(timeout: 5))
         XCTAssertTrue(textContaining("Outside this page; browse older evidence", in: app).exists)
 
-        let event = app.disclosureTriangles["evidenceEvent_50"]
+        let event = eventDisclosure(50, in: app)
+        XCTAssertTrue(textContaining("Structured troubleshooting ·", in: app).waitForExistence(timeout: 5))
         setDisclosure(event, expanded: true, in: app)
         XCTAssertTrue(textContaining("human coach", in: app).exists)
         XCTAssertTrue(textContaining("no ai", in: app).exists)
-        XCTAssertTrue(textContaining("Independent evidence qualifies", in: app).exists)
+        XCTAssertTrue(textContaining("Qualifies", in: app).exists)
         let raw = app.disclosureTriangles["evidenceRawDimensions_50"]
         setDisclosure(raw, expanded: true, in: app)
         XCTAssertTrue(textContaining("Customer impact is explicit", in: app).exists)
         setDisclosure(event, expanded: false, in: app)
 
-        let excluded = app.disclosureTriangles["evidenceEvent_49"]
+        let excluded = eventDisclosure(49, in: app)
         setDisclosure(excluded, expanded: true, in: app)
         XCTAssertTrue(textContaining("Excluded from level", in: app).exists)
-        XCTAssertTrue(textContaining("Self evidence does not change", in: app).exists)
+        XCTAssertTrue(textContaining("Excluded by formula", in: app).exists)
         setDisclosure(excluded, expanded: false, in: app)
 
         reveal(older, in: app, scrollIdentifier: "evidenceLedger")
@@ -152,6 +153,7 @@ final class TAMForgeUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["evidenceTitle"].waitForExistence(timeout: 5))
         XCTAssertTrue(textContaining("No qualifying evidence is recorded for this activity", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 5))
         XCTAssertGreaterThanOrEqual(textsContaining("Not assessed", in: app).count, 1)
         XCTAssertEqual(textsContaining("0 / 4", in: app).count, 0)
         XCTAssertTrue(app.buttons["evidenceOpenActivity"].exists)
@@ -172,6 +174,29 @@ final class TAMForgeUITests: XCTestCase {
         reveal(inspect, in: app, scrollIdentifier: "evidenceLedger")
         XCTAssertTrue(inspect.isHittable)
         capture("Evidence dark large text", app: app)
+    }
+
+    @MainActor
+    func testEvidenceKeyboardRefreshAndAccessibilityReadingOrder() {
+        let app = launchWorkspace(extra: ["-ui-test-evidence-keyboard-refresh"])
+        app.buttons["evidenceNavigation"].click()
+
+        XCTAssertTrue(app.staticTexts["evidenceTitle"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Structured troubleshooting"].waitForExistence(timeout: 5))
+        app.typeKey("r", modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts["Structured troubleshooting refreshed"].waitForExistence(timeout: 5))
+
+        let labels = app.staticTexts.allElementsBoundByAccessibilityElement.map(\.label)
+        let expected = [
+            "Evidence",
+            "See what you demonstrated, how each estimate was calculated, and the evidence behind it.",
+            "Skill estimates",
+            "Structured troubleshooting refreshed",
+            "Portfolio history",
+        ]
+        let positions = expected.compactMap { labels.firstIndex(of: $0) }
+        XCTAssertEqual(positions.count, expected.count, "Expected all Evidence landmarks in the accessibility tree")
+        XCTAssertEqual(positions, positions.sorted(), "Evidence landmarks must follow their visual reading order")
     }
 
     @MainActor
@@ -265,10 +290,19 @@ final class TAMForgeUITests: XCTestCase {
         XCTAssertEqual(disclosureValue(element), target)
     }
 
+    @MainActor
     private func disclosureValue(_ element: XCUIElement) -> String {
         if let value = element.value as? String { return value }
         if let value = element.value as? NSNumber { return value.stringValue }
         return ""
+    }
+
+    @MainActor
+    private func eventDisclosure(_ id: Int, in app: XCUIApplication) -> XCUIElement {
+        app.disclosureTriangles.matching(NSPredicate(
+            format: "label BEGINSWITH[c] %@",
+            "Evidence event \(id),"
+        )).firstMatch
     }
 
     @MainActor

@@ -209,6 +209,9 @@ private extension EvidenceSnapshot {
         ])
         let manifest = try value.manifest.map(EvidenceManifestEntry.init(api:))
         guard value.id > 0, value.qualifyingEventCount >= 0, value.exerciseTypeCount >= 0,
+              EvidenceResponseContract.validSnapshotCodes(
+                confidence: value.confidence, trend: value.trend, recency: value.recency
+              ),
               Set(manifest.map(\.eventID)).count == manifest.count
         else { throw EvidenceAdapterError.invalidSchemaValue }
         self.init(
@@ -252,7 +255,10 @@ private extension EvidenceEvent {
         try EvidenceDecimal.validate([value.performanceScore], within: Decimal(0) ... Decimal(4))
         try EvidenceDecimal.validate([value.skillImpact, value.effectiveWeight])
         guard value.id > 0, value.activityId > 0, value.attemptId.map({ $0 > 0 }) ?? true,
-              LiveEvidenceAPI.isValidSlug(value.skillSlug)
+              LiveEvidenceAPI.isValidSlug(value.skillSlug),
+              EvidenceResponseContract.validQualification(
+                reason: value.qualificationReason, qualifies: value.qualifyingForLevel
+              )
         else { throw EvidenceAdapterError.invalidSchemaValue }
         self.init(
             id: value.id,
@@ -289,7 +295,10 @@ private extension EvidencePortfolioScore {
     init(api value: Components.Schemas.PortfolioScoreResponse) throws {
         let total = try EvidenceDecimal.parse(value.totalScore, within: Decimal(0) ... Decimal(20))
         let componentScores = try value.components.map {
-            try EvidenceDecimal.parse($0.score, within: Decimal(0) ... Decimal(20))
+            guard let maximum = EvidencePortfolioContract.componentMaximums[$0.slug] else {
+                throw EvidenceAdapterError.invalidSchemaValue
+            }
+            return try EvidenceDecimal.parse($0.score, within: Decimal(0) ... maximum)
         }
         let componentTotal = componentScores.reduce(Decimal.zero) { $0 + $1 }
         guard value.id > 0, value.activityId > 0, value.attemptId > 0,
@@ -331,15 +340,34 @@ private enum EvidenceDecimal {
 }
 
 private enum EvidencePortfolioContract {
-    static let componentSlugs: Set<String> = [
-        "impact_risk_assessment",
-        "explicit_prioritization",
-        "delegation_ownership",
-        "communication_control",
-        "proactive_work_protection",
-        "evidence_based_reprioritization",
-        "english_clarity",
+    static let componentMaximums: [String: Decimal] = [
+        "impact_risk_assessment": 4,
+        "explicit_prioritization": 3,
+        "delegation_ownership": 3,
+        "communication_control": 3,
+        "proactive_work_protection": 2,
+        "evidence_based_reprioritization": 3,
+        "english_clarity": 2,
     ]
+    static let componentSlugs = Set(componentMaximums.keys)
+}
+
+enum EvidenceResponseContract {
+    private static let confidence: Set<String> = ["low", "medium", "high"]
+    private static let trend: Set<String> = ["improving", "stable", "declining", "insufficient_evidence"]
+    private static let recency: Set<String> = ["fresh", "aging", "stale", "no_qualifying_evidence"]
+    private static let qualificationReasons: Set<String> = [
+        "qualifies", "nonqualifying_mode", "assisted_during_attempt", "attempt_b",
+        "missing_committed_attempt", "mapping_condition_not_met", "excluded_by_formula",
+    ]
+
+    static func validSnapshotCodes(confidence: String, trend: String, recency: String) -> Bool {
+        Self.confidence.contains(confidence) && Self.trend.contains(trend) && Self.recency.contains(recency)
+    }
+
+    static func validQualification(reason: String, qualifies: Bool) -> Bool {
+        qualificationReasons.contains(reason) && qualifies == (reason == "qualifies")
+    }
 }
 
 private enum EvidenceDate {
