@@ -89,11 +89,45 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         fixture.enqueue(.response(statusCode: 200, body: skillsBody(snapshot: snapshotBody(estimatedLevel: "4.001"))))
         fixture.enqueue(.response(statusCode: 200, body: replacing(portfolioPageBody(nextCursor: nil), "16.500", "20.001")))
         fixture.enqueue(.response(statusCode: 200, body: portfolioPageMissingLastComponent()))
+        fixture.enqueue(.response(statusCode: 200, body: portfolioPageWithDuplicateComponent()))
+        fixture.enqueue(.response(statusCode: 200, body: replacing(portfolioPageBody(nextCursor: nil), "16.500", "16.499")))
         let api = LiveEvidenceAPI(transport: transport(fixture))
 
         await assertInvalidResponse { _ = try await api.listSkills() }
         await assertInvalidResponse { _ = try await api.fetchPortfolioHistory(cursor: nil) }
         await assertInvalidResponse { _ = try await api.fetchPortfolioHistory(cursor: nil) }
+        await assertInvalidResponse { _ = try await api.fetchPortfolioHistory(cursor: nil) }
+        await assertInvalidResponse { _ = try await api.fetchPortfolioHistory(cursor: nil) }
+    }
+
+    func testDebugFixturePaginationQueryRejectsBareEmptyDuplicateAndInvalidCursors() throws {
+        XCTAssertNil(try NativeEvidenceFixtureQuery.cursor(
+            from: URL(string: "https://fixture.invalid/api/v1/portfolio-judgment?limit=20")!,
+            paginated: true
+        ))
+        XCTAssertEqual(try NativeEvidenceFixtureQuery.cursor(
+            from: URL(string: "https://fixture.invalid/api/v1/portfolio-judgment?limit=20&cursor=91")!,
+            paginated: true
+        ), 91)
+        XCTAssertNil(try NativeEvidenceFixtureQuery.cursor(
+            from: URL(string: "https://fixture.invalid/api/v1/skills")!,
+            paginated: false
+        ))
+
+        for suffix in [
+            "?limit=20&cursor", "?limit=20&cursor=", "?limit=20&cursor=0",
+            "?limit=20&cursor=-1", "?limit=20&cursor=bad", "?cursor=91",
+            "?limit=20&cursor=91&cursor=90", "?limit=20&unknown=1",
+        ] {
+            XCTAssertThrowsError(try NativeEvidenceFixtureQuery.cursor(
+                from: URL(string: "https://fixture.invalid/api/v1/portfolio-judgment\(suffix)")!,
+                paginated: true
+            ), suffix)
+        }
+        XCTAssertThrowsError(try NativeEvidenceFixtureQuery.cursor(
+            from: URL(string: "https://fixture.invalid/api/v1/skills?cursor=91")!,
+            paginated: false
+        ))
     }
 
     func testMapsUnauthorizedAndSafeProblemStatusesWithoutProblemDetail() async throws {
@@ -179,7 +213,9 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         fixture.enqueue(.pending)
         let api = LiveEvidenceAPI(transport: transport(fixture))
         let request = Task { try await api.listSkills() }
-        while fixture.requests.count < 2 { await Task.yield() }
+        defer { request.cancel() }
+        let requestStarted = await waitForRequests(2, in: fixture)
+        XCTAssertTrue(requestStarted, "Pending request did not start before the timeout")
         request.cancel()
         do { _ = try await request.value; XCTFail("Expected cancellation") }
         catch { XCTAssertEqual(error as? EvidenceAPIError, .cancelled) }
@@ -187,6 +223,16 @@ final class NativeEvidenceAdapterTests: XCTestCase {
 
     private func replacing(_ data: Data, _ old: String, _ new: String) -> Data {
         Data(String(decoding: data, as: UTF8.self).replacingOccurrences(of: old, with: new).utf8)
+    }
+
+    private func waitForRequests(_ count: Int, in fixture: URLProtocolFixture) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while fixture.requests.count < count {
+            guard clock.now < deadline, !Task.isCancelled else { return false }
+            try? await Task<Never, Never>.sleep(for: .milliseconds(5))
+        }
+        return true
     }
 
     private func assertInvalidRequest(
@@ -287,6 +333,16 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         var items = root["items"] as! [[String: Any]]
         var components = items[0]["components"] as! [[String: Any]]
         components.removeLast()
+        items[0]["components"] = components
+        root["items"] = items
+        return try! JSONSerialization.data(withJSONObject: root)
+    }
+
+    private func portfolioPageWithDuplicateComponent() -> Data {
+        var root = try! JSONSerialization.jsonObject(with: portfolioPageBody(nextCursor: nil)) as! [String: Any]
+        var items = root["items"] as! [[String: Any]]
+        var components = items[0]["components"] as! [[String: Any]]
+        components.append(components[0])
         items[0]["components"] = components
         root["items"] = items
         return try! JSONSerialization.data(withJSONObject: root)

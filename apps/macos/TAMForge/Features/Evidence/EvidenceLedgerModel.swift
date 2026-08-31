@@ -22,6 +22,7 @@ final class EvidenceLedgerModel: ObservableObject {
 
     private let service: any EvidenceServicing
     private var lifetime = 0
+    private var skillsRequest = 0
     private var skillRequest = 0
     private var activityRequest = 0
     private var portfolioRequest = 0
@@ -65,6 +66,12 @@ final class EvidenceLedgerModel: ObservableObject {
     func markStale() {
         invalidateAllRequests()
         isStale = true
+        restoreSectionStates()
+    }
+
+    func deactivate() {
+        active = false
+        invalidateAllRequests()
         restoreSectionStates()
     }
 
@@ -183,6 +190,8 @@ final class EvidenceLedgerModel: ObservableObject {
     }
 
     private func loadSkills(generation: Int) async {
+        skillsRequest &+= 1
+        let request = skillsRequest
         skillsTask?.cancel()
         skillState = .loading
         skillError = nil
@@ -190,11 +199,11 @@ final class EvidenceLedgerModel: ObservableObject {
         skillsTask = task
         do {
             let value = try await task.value
-            guard publishable(generation: generation, taskCancelled: task.isCancelled) else { return }
+            guard publishable(generation: generation, taskCancelled: task.isCancelled), request == skillsRequest else { return }
             skills = value
             skillState = value.isEmpty ? .empty : .content
-        } catch { handle(error, generation: generation, section: .skills, cursor: nil) }
-        if generation == lifetime { skillsTask = nil }
+        } catch { handle(error, generation: generation, section: .skills, cursor: nil, request: request) }
+        if request == skillsRequest { skillsTask = nil }
     }
 
     private func requestPortfolioPage(cursor: Int?, generation: Int) async {
@@ -283,7 +292,7 @@ final class EvidenceLedgerModel: ObservableObject {
     private func requestMatches(_ section: Section, _ request: Int?) -> Bool {
         guard let request else { return true }
         return switch section {
-        case .skills: true
+        case .skills: request == skillsRequest
         case .portfolio: request == portfolioRequest
         case .skillInspector: request == skillRequest
         case .activityInspector: request == activityRequest
@@ -296,6 +305,7 @@ final class EvidenceLedgerModel: ObservableObject {
 
     private func invalidateAllRequests() {
         lifetime &+= 1
+        skillsRequest &+= 1
         skillRequest &+= 1
         activityRequest &+= 1
         portfolioRequest &+= 1

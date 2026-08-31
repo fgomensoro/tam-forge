@@ -287,12 +287,15 @@ private extension EvidencePortfolioPage {
 
 private extension EvidencePortfolioScore {
     init(api value: Components.Schemas.PortfolioScoreResponse) throws {
-        try EvidenceDecimal.validate(
-            [value.totalScore] + value.components.map(\.score),
-            within: Decimal(0) ... Decimal(20)
-        )
+        let total = try EvidenceDecimal.parse(value.totalScore, within: Decimal(0) ... Decimal(20))
+        let componentScores = try value.components.map {
+            try EvidenceDecimal.parse($0.score, within: Decimal(0) ... Decimal(20))
+        }
+        let componentTotal = componentScores.reduce(Decimal.zero) { $0 + $1 }
         guard value.id > 0, value.activityId > 0, value.attemptId > 0,
-              Set(value.components.map(\.slug)) == EvidencePortfolioContract.componentSlugs
+              value.components.count == EvidencePortfolioContract.componentSlugs.count,
+              Set(value.components.map(\.slug)) == EvidencePortfolioContract.componentSlugs,
+              componentTotal == total
         else { throw EvidenceAdapterError.invalidSchemaValue }
         self.init(
             id: value.id,
@@ -314,13 +317,16 @@ private enum EvidenceDecimal {
     )
 
     static func validate(_ values: [String], within range: ClosedRange<Decimal>? = nil) throws {
-        guard values.allSatisfy({ value in
-            let full = NSRange(value.startIndex..<value.endIndex, in: value)
-            guard pattern.firstMatch(in: value, range: full)?.range == full else { return false }
-            guard let range else { return true }
-            guard let number = Decimal(string: value, locale: Locale(identifier: "en_US_POSIX")) else { return false }
-            return range.contains(number)
-        }) else { throw EvidenceAdapterError.invalidSchemaValue }
+        _ = try values.map { try parse($0, within: range) }
+    }
+
+    static func parse(_ value: String, within range: ClosedRange<Decimal>? = nil) throws -> Decimal {
+        let full = NSRange(value.startIndex..<value.endIndex, in: value)
+        guard pattern.firstMatch(in: value, range: full)?.range == full,
+              let number = Decimal(string: value, locale: Locale(identifier: "en_US_POSIX")),
+              range.map({ $0.contains(number) }) ?? true
+        else { throw EvidenceAdapterError.invalidSchemaValue }
+        return number
     }
 }
 

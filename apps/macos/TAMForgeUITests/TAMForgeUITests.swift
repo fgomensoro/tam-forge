@@ -46,7 +46,7 @@ final class TAMForgeUITests: XCTestCase {
         app.buttons["evidenceNavigation"].click()
         let retry = app.buttons["evidenceRetrySkills"]
         XCTAssertTrue(retry.waitForExistence(timeout: 5))
-        let portfolioScore = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "14.000 / 20")).firstMatch
+        let portfolioScore = textContaining("14.000 / 20", in: app)
         XCTAssertTrue(portfolioScore.waitForExistence(timeout: 5))
         retry.click()
         XCTAssertTrue(app.staticTexts["Structured troubleshooting"].waitForExistence(timeout: 5))
@@ -60,13 +60,15 @@ final class TAMForgeUITests: XCTestCase {
         app.buttons["evidenceNavigation"].click()
 
         XCTAssertTrue(app.staticTexts["evidenceTitle"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "2.750 / 4")).firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "14.000 / 20")).firstMatch.exists)
+        XCTAssertTrue(textContaining("2.750 / 4", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(textContaining("14.000 / 20", in: app).exists)
         XCTAssertTrue(app.staticTexts["Not assessed"].exists)
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Missing evidence is not zero")).firstMatch.exists)
-        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "streak")).count, 0)
-        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "recording count")).count, 0)
-        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "transcript word count")).count, 0)
+        XCTAssertTrue(textContaining("Missing evidence is not zero", in: app).exists)
+        XCTAssertTrue(textContaining("Baseline gap", in: app).exists)
+        XCTAssertTrue(textContaining("Final target gap", in: app).exists)
+        XCTAssertEqual(textsContaining("streak", in: app).count, 0)
+        XCTAssertEqual(textsContaining("recording count", in: app).count, 0)
+        XCTAssertEqual(textsContaining("transcript word count", in: app).count, 0)
     }
 
     @MainActor
@@ -75,22 +77,40 @@ final class TAMForgeUITests: XCTestCase {
         app.buttons["evidenceNavigation"].click()
         let inspect = app.buttons["evidenceInspectSkill_structured_troubleshooting"]
         reveal(inspect, in: app, scrollIdentifier: "evidenceLedger")
+        app.activate()
         inspect.click()
 
         let older = app.buttons["evidenceSkillOlder"]
         XCTAssertTrue(older.waitForExistence(timeout: 5))
         let manifest = app.disclosureTriangles["evidenceManifest"]
-        reveal(manifest, in: app, scrollIdentifier: "evidenceLedger")
-        manifest.click()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Used weight 0.400 · Event weight 0.800")).firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Outside this page; browse older evidence")).firstMatch.exists)
+        setDisclosure(manifest, expanded: true, in: app)
+        XCTAssertTrue(textContaining("Used weight 0.400 · Event weight 0.800", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(textContaining("Outside this page; browse older evidence", in: app).exists)
+
+        let event = app.disclosureTriangles["evidenceEvent_50"]
+        setDisclosure(event, expanded: true, in: app)
+        XCTAssertTrue(textContaining("human coach", in: app).exists)
+        XCTAssertTrue(textContaining("no ai", in: app).exists)
+        XCTAssertTrue(textContaining("Independent evidence qualifies", in: app).exists)
+        let raw = app.disclosureTriangles["evidenceRawDimensions_50"]
+        setDisclosure(raw, expanded: true, in: app)
+        XCTAssertTrue(textContaining("Customer impact is explicit", in: app).exists)
+        setDisclosure(event, expanded: false, in: app)
+
+        let excluded = app.disclosureTriangles["evidenceEvent_49"]
+        setDisclosure(excluded, expanded: true, in: app)
+        XCTAssertTrue(textContaining("Excluded from level", in: app).exists)
+        XCTAssertTrue(textContaining("Self evidence does not change", in: app).exists)
+        setDisclosure(excluded, expanded: false, in: app)
 
         reveal(older, in: app, scrollIdentifier: "evidenceLedger")
+        app.activate()
         older.click()
         XCTAssertTrue(app.staticTexts["Evidence event 39"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Evidence event 50"].exists)
         let newest = app.buttons["evidenceSkillNewest"]
         reveal(newest, in: app, scrollIdentifier: "evidenceLedger")
+        app.activate()
         newest.click()
         XCTAssertTrue(app.staticTexts["Evidence event 50"].waitForExistence(timeout: 5))
     }
@@ -121,7 +141,7 @@ final class TAMForgeUITests: XCTestCase {
         let allEvidence = app.buttons["evidenceAllActivitiesFromInspector"]
         reveal(allEvidence, in: app, scrollIdentifier: "evidenceLedger")
         allEvidence.click()
-        XCTAssertTrue(app.descendants(matching: .any)["evidenceActivityInspector"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["evidenceActivityHistory"].waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["evidenceTitle"].exists)
     }
 
@@ -131,9 +151,9 @@ final class TAMForgeUITests: XCTestCase {
         app.buttons["todayContinueButton"].click()
 
         XCTAssertTrue(app.staticTexts["evidenceTitle"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "No qualifying evidence is recorded for this activity")).firstMatch.waitForExistence(timeout: 5))
-        XCTAssertGreaterThanOrEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "Not assessed")).count, 1)
-        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "0 / 4")).count, 0)
+        XCTAssertTrue(textContaining("No qualifying evidence is recorded for this activity", in: app).waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(textsContaining("Not assessed", in: app).count, 1)
+        XCTAssertEqual(textsContaining("0 / 4", in: app).count, 0)
         XCTAssertTrue(app.buttons["evidenceOpenActivity"].exists)
     }
 
@@ -213,9 +233,11 @@ final class TAMForgeUITests: XCTestCase {
 
     @MainActor
     private func reveal(_ element: XCUIElement, in app: XCUIApplication, scrollIdentifier: String = "activityWorkspaceScroll") {
+        app.activate()
         let scroll = app.scrollViews[scrollIdentifier]
         XCTAssertTrue(scroll.waitForExistence(timeout: 5))
         for _ in 0..<12 {
+            app.activate()
             if element.exists && element.isHittable && scroll.frame.contains(element.frame) { return }
             scroll.scroll(byDeltaX: 0, deltaY: -350)
         }
@@ -229,6 +251,38 @@ final class TAMForgeUITests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    @MainActor
+    private func setDisclosure(_ element: XCUIElement, expanded: Bool, in app: XCUIApplication) {
+        reveal(element, in: app, scrollIdentifier: "evidenceLedger")
+        let target = expanded ? "1" : "0"
+        if disclosureValue(element) != target {
+            app.activate()
+            let chevronOffset = min(0.5, 24 / max(element.frame.width, 1))
+            element.coordinate(withNormalizedOffset: CGVector(dx: chevronOffset, dy: 0.5)).click()
+        }
+        XCTAssertEqual(disclosureValue(element), target)
+    }
+
+    private func disclosureValue(_ element: XCUIElement) -> String {
+        if let value = element.value as? String { return value }
+        if let value = element.value as? NSNumber { return value.stringValue }
+        return ""
+    }
+
+    @MainActor
+    private func textsContaining(_ value: String, in app: XCUIApplication) -> XCUIElementQuery {
+        app.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS[c] %@ OR value CONTAINS[c] %@",
+            value,
+            value
+        ))
+    }
+
+    @MainActor
+    private func textContaining(_ value: String, in app: XCUIApplication) -> XCUIElement {
+        textsContaining(value, in: app).firstMatch
     }
 
     @MainActor
@@ -320,6 +374,7 @@ final class TAMForgeUITests: XCTestCase {
         app.launchArguments = ["-ApplePersistenceIgnoreState", "YES", "-ui-test-signed-in", "-ui-test-native-features"] + extra
         app.launch()
         XCTAssertTrue(app.buttons["todayNavigation"].waitForExistence(timeout: 5))
+        app.activate()
         return app
     }
 

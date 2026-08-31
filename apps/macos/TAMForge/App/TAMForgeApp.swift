@@ -258,6 +258,11 @@ private struct NativeWorkspaceView: View {
                 state.evidence.markStale()
             }
         }
+        .onChange(of: session.selectedRoute) { oldRoute, newRoute in
+            guard case .evidence = oldRoute else { return }
+            if case .evidence = newRoute { return }
+            state.evidence.deactivate()
+        }
         // Close this generation on logout/expiry. A fresh sign-in gets a new model;
         // canceled or noncooperative reads cannot publish into the retired workspace.
         .onDisappear { state.evidence.reset() }

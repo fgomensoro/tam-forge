@@ -120,10 +120,11 @@ final class EvidenceLedgerTests: XCTestCase {
         let model = EvidenceLedgerModel(service: service)
 
         let open = Task { await model.open(activityID: nil) }
-        await skills.waitForCall(count: 1)
+        defer { open.cancel() }
+        await assertCall(skills, count: 1)
         model.reset()
         await skills.resolve([assessedSkill()])
-        await portfolio.waitForCall(count: 1)
+        await assertCall(portfolio, count: 1)
         await portfolio.resolve(portfolioPage())
         await open.value
 
@@ -160,14 +161,16 @@ final class EvidenceLedgerTests: XCTestCase {
         let model = EvidenceLedgerModel(service: service)
 
         let refresh = Task { await model.refresh() }
-        await skills.waitForCall(count: 1)
+        defer { refresh.cancel() }
+        await assertCall(skills, count: 1)
         let destination = Task { await model.open(activityID: 42) }
+        defer { destination.cancel() }
         await skills.resolve([assessedSkill()])
-        await portfolio.waitForCall(count: 1)
+        await assertCall(portfolio, count: 1)
         await portfolio.resolve(portfolioPage())
-        await skills.waitForCall(count: 2)
+        await assertCall(skills, count: 2)
         await skills.resolve([unassessedSkill()])
-        await portfolio.waitForCall(count: 2)
+        await assertCall(portfolio, count: 2)
         await portfolio.resolve(.init(items: [], nextCursor: nil))
         await destination.value
         await refresh.value
@@ -192,18 +195,22 @@ final class EvidenceLedgerTests: XCTestCase {
         let model = EvidenceLedgerModel(service: service)
 
         let firstSkill = Task { await model.inspectSkill(slug: "incident_communication") }
-        await skillA.waitForCall(count: 1)
+        defer { firstSkill.cancel() }
+        await assertCall(skillA, count: 1)
         let secondSkill = Task { await model.inspectSkill(slug: "technical_depth") }
-        await skillB.waitForCall(count: 1)
+        defer { secondSkill.cancel() }
+        await assertCall(skillB, count: 1)
         await skillB.resolve(.init(items: [event(id: 62, skill: "technical_depth")], nextCursor: nil))
         await skillA.resolve(.init(items: [event(id: 51, skill: "incident_communication")], nextCursor: nil))
         await secondSkill.value
         await firstSkill.value
 
         let firstActivity = Task { await model.inspectActivity(activityID: 41) }
-        await activity41.waitForCall(count: 1)
+        defer { firstActivity.cancel() }
+        await assertCall(activity41, count: 1)
         let secondActivity = Task { await model.inspectActivity(activityID: 42) }
-        await activity42.waitForCall(count: 1)
+        defer { secondActivity.cancel() }
+        await assertCall(activity42, count: 1)
         await activity42.resolve(.init(items: [event(id: 63, skill: "technical_depth", activityID: 42)], nextCursor: nil))
         await activity41.resolve(.init(items: [event(id: 52, skill: "incident_communication")], nextCursor: nil))
         await secondActivity.value
@@ -215,13 +222,86 @@ final class EvidenceLedgerTests: XCTestCase {
         XCTAssertEqual(model.activityPage?.items.map(\.id), [63])
     }
 
+    func testDeactivateDiscardsCancellationResistantInspectorCompletion() async {
+        let page = DeferredValues<EvidenceEventPage>()
+        let service = DeferredEvidenceService(
+            skills: DeferredValues(values: [[assessedSkill()]]),
+            portfolio: DeferredValues(values: [.init(items: [], nextCursor: nil)]),
+            skillPages: ["incident_communication": page]
+        )
+        let model = EvidenceLedgerModel(service: service)
+
+        let request = Task { await model.inspectSkill(slug: "incident_communication") }
+        defer { request.cancel() }
+        await assertCall(page, count: 1)
+        model.deactivate()
+        await page.resolve(.init(items: [event(id: 51, skill: "incident_communication")], nextCursor: nil))
+        await request.value
+
+        XCTAssertNil(model.skillPage)
+        XCTAssertEqual(model.skillInspectorState, .idle)
+    }
+
+    func testRapidSkillsRetriesKeepNewestCancellationResistantResult() async {
+        let skills = DeferredValues<[EvidenceSkill]>()
+        let service = DeferredEvidenceService(
+            skills: skills,
+            portfolio: DeferredValues(values: [.init(items: [], nextCursor: nil)])
+        )
+        let model = EvidenceLedgerModel(service: service)
+
+        let first = Task { await model.retrySkills() }
+        defer { first.cancel() }
+        await assertCall(skills, count: 1)
+        let second = Task { await model.retrySkills() }
+        defer { second.cancel() }
+        await assertCall(skills, count: 2)
+        await skills.resolve([assessedSkill(name: "Oldest")], call: 1)
+        await first.value
+
+        let third = Task { await model.retrySkills() }
+        defer { third.cancel() }
+        await assertCall(skills, count: 3)
+        await skills.resolve([assessedSkill(name: "Newest")], call: 3)
+        await third.value
+        await skills.resolve([assessedSkill(name: "Older")], call: 2)
+        await second.value
+
+        XCTAssertEqual(model.skills.first?.name, "Newest")
+        XCTAssertEqual(model.skillState, .content)
+    }
+
+    func testLineageTextLabelsKnownFieldsAndPreservesUnknownFallback() {
+        let rendered = EvidenceLineageText.render(.object([
+            "schema_version": .integer(1),
+            "basis_code": .string("improving"),
+            "event_ids": .array([.integer(50), .integer(9)]),
+            "future_basis": .object(["quoted\"key": .string("kept")]),
+        ]))
+
+        XCTAssertEqual(
+            rendered,
+            "Basis: \"improving\"\nEvidence events: [50, 9]\n\"future_basis\": {\"quoted\\\"key\": \"kept\"}\nSchema version: 1"
+        )
+    }
+
+    private func assertCall<Value: Sendable>(
+        _ deferred: DeferredValues<Value>,
+        count: Int,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        let reached = await deferred.waitForCall(count: count)
+        XCTAssertTrue(reached, "Request did not start before the timeout", file: file, line: line)
+    }
+
     private func unassessedSkill() -> EvidenceSkill {
         .init(slug: "incident_communication", name: "Incident communication", baseline: "1", monthOneTarget: "2", finalTarget: "4", snapshot: nil)
     }
 
-    private func assessedSkill() -> EvidenceSkill {
+    private func assessedSkill(name: String = "Incident communication") -> EvidenceSkill {
         .init(
-            slug: "incident_communication", name: "Incident communication", baseline: "1", monthOneTarget: "2", finalTarget: "4",
+            slug: "incident_communication", name: name, baseline: "1", monthOneTarget: "2", finalTarget: "4",
             snapshot: .init(
                 id: 71, formulaVersion: "formula-v1", snapshotDate: "2026-08-31", estimatedLevel: "3.125",
                 confidence: "moderate", trend: "improving", recency: "recent", baselineTargetGap: "2.125",
@@ -255,9 +335,9 @@ final class EvidenceLedgerTests: XCTestCase {
 
 private actor DeferredValues<Value: Sendable> {
     private var values: [Value]
-    private var waiters: [CheckedContinuation<Value, Never>] = []
+    private var waiters: [Int: CheckedContinuation<Value, Never>] = [:]
+    private var resolvedCalls: [Int: Value] = [:]
     private var callCount = 0
-    private var callWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
 
     init(values: [Value] = []) {
         self.values = values
@@ -265,28 +345,36 @@ private actor DeferredValues<Value: Sendable> {
 
     func next() async -> Value {
         callCount += 1
-        releaseCallWaiters()
+        let call = callCount
         if !values.isEmpty { return values.removeFirst() }
-        return await withCheckedContinuation { waiters.append($0) }
+        if let value = resolvedCalls.removeValue(forKey: call) { return value }
+        return await withCheckedContinuation { waiters[call] = $0 }
     }
 
-    func waitForCall(count: Int) async {
-        guard callCount < count else { return }
-        await withCheckedContinuation { callWaiters.append((count, $0)) }
-    }
-
-    func resolve(_ value: Value) {
-        if waiters.isEmpty {
-            values.append(value)
-        } else {
-            waiters.removeFirst().resume(returning: value)
+    func waitForCall(count: Int) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while callCount < count {
+            guard clock.now < deadline, !Task.isCancelled else { return false }
+            try? await Task<Never, Never>.sleep(for: .milliseconds(5))
         }
+        return true
     }
 
-    private func releaseCallWaiters() {
-        let ready = callWaiters.filter { $0.0 <= callCount }
-        callWaiters.removeAll { $0.0 <= callCount }
-        ready.forEach { $0.1.resume() }
+    func resolve(_ value: Value, call: Int? = nil) {
+        if let call {
+            if let waiter = waiters.removeValue(forKey: call) {
+                waiter.resume(returning: value)
+            } else {
+                resolvedCalls[call] = value
+            }
+            return
+        }
+        guard let call = waiters.keys.min(), let waiter = waiters.removeValue(forKey: call) else {
+            values.append(value)
+            return
+        }
+        waiter.resume(returning: value)
     }
 }
 

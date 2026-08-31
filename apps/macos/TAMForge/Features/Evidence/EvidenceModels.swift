@@ -115,3 +115,30 @@ protocol EvidenceServicing: AnyObject {
     func fetchActivityEvidence(activityID: Int, cursor: Int?) async throws -> EvidenceEventPage
     func fetchPortfolioHistory(cursor: Int?) async throws -> EvidencePortfolioPage
 }
+
+#if DEBUG
+/// Strict parser shared by the synthetic UI-test transport and unit tests.
+enum NativeEvidenceFixtureQuery {
+    enum ValidationError: Error { case invalid }
+
+    static func cursor(from url: URL, paginated: Bool) throws -> Int? {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw ValidationError.invalid
+        }
+        let query = components.queryItems ?? []
+        guard Set(query.map(\.name)).count == query.count else { throw ValidationError.invalid }
+        guard paginated else {
+            guard query.isEmpty else { throw ValidationError.invalid }
+            return nil
+        }
+        guard query.allSatisfy({ ["cursor", "limit"].contains($0.name) }),
+              query.first(where: { $0.name == "limit" })?.value == "20"
+        else { throw ValidationError.invalid }
+        guard let item = query.first(where: { $0.name == "cursor" }) else { return nil }
+        guard let raw = item.value, !raw.isEmpty, let value = Int(raw), value > 0 else {
+            throw ValidationError.invalid
+        }
+        return value
+    }
+}
+#endif

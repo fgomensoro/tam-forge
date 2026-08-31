@@ -180,12 +180,11 @@ private final class NativeUIFixtureState: @unchecked Sendable {
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             throw URLError(.badServerResponse)
         }
-        let query = components.queryItems ?? []
         let paginated = path.hasSuffix("/evidence") || path == "/api/v1/portfolio-judgment"
-        let cursor = query.first(where: { $0.name == "cursor" })?.value
-        guard Set(query.map(\.name)).count == query.count,
-              query.allSatisfy({ ["cursor", "limit"].contains($0.name) }),
-              paginated ? query.first(where: { $0.name == "limit" })?.value == "20" : query.isEmpty else {
+        let cursor: Int?
+        do {
+            cursor = try NativeEvidenceFixtureQuery.cursor(from: url, paginated: paginated)
+        } catch {
             throw URLError(.badServerResponse)
         }
         switch path {
@@ -200,7 +199,7 @@ private final class NativeUIFixtureState: @unchecked Sendable {
         case "/api/v1/skills/tam_english":
             return evidenceSkill(english: true)
         case "/api/v1/portfolio-judgment":
-            guard cursor == nil || cursor == "91" else { throw URLError(.badServerResponse) }
+            guard cursor == nil || cursor == 91 else { throw URLError(.badServerResponse) }
             if emptyEvidence { return ["items": [], "next_cursor": NSNull()] }
             let score: [String: Any] = [
                 "id": cursor == nil ? 91 : 90, "activity_id": 41, "attempt_id": 11,
@@ -220,7 +219,7 @@ private final class NativeUIFixtureState: @unchecked Sendable {
             let nextCursor: Any = cursor == nil ? 91 : NSNull()
             return ["items": [score], "next_cursor": nextCursor]
         default:
-            guard cursor == nil || cursor == "49" else { throw URLError(.badServerResponse) }
+            guard cursor == nil || cursor == 49 else { throw URLError(.badServerResponse) }
             if emptyEvidence || path.contains("tam_english") {
                 return ["items": [], "next_cursor": NSNull()]
             }

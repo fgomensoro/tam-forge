@@ -87,7 +87,6 @@ struct EvidenceLedgerView: View {
                 skillCard(skill)
             }
         }
-        .accessibilityIdentifier("evidenceSkills")
     }
 
     private func skillCard(_ skill: EvidenceSkill) -> some View {
@@ -109,7 +108,10 @@ struct EvidenceLedgerView: View {
                 if let snapshot = skill.snapshot {
                     Text("\(readable(snapshot.confidence)) confidence · \(readable(snapshot.trend)) trend · \(readable(snapshot.recency)) evidence")
                         .font(.subheadline)
-                    Text("Month 1 target gap \(snapshot.monthOneTargetGap) · Last strong evidence \(snapshot.lastStrongEvidenceDate ?? "not yet demonstrated")")
+                    Text("Baseline gap \(snapshot.baselineTargetGap) · Month 1 gap \(snapshot.monthOneTargetGap) · Final target gap \(snapshot.finalTargetGap)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text("Last strong evidence \(snapshot.lastStrongEvidenceDate ?? "not yet demonstrated")")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     Button(model.selectedSkillSlug == skill.slug ? "Hide evidence" : "Inspect evidence") {
@@ -177,7 +179,6 @@ struct EvidenceLedgerView: View {
         }
         .padding(12)
         .background(.quinary, in: RoundedRectangle(cornerRadius: 8))
-        .accessibilityIdentifier("evidenceSkillInspector")
     }
 
     private var portfolioSection: some View {
@@ -206,7 +207,6 @@ struct EvidenceLedgerView: View {
                 )
             }
         }
-        .accessibilityIdentifier("evidencePortfolioHistory")
     }
 
     private func portfolioCard(_ score: EvidencePortfolioScore) -> some View {
@@ -282,7 +282,6 @@ struct EvidenceLedgerView: View {
                 }
             }
         }
-        .accessibilityIdentifier("evidenceActivityInspector")
     }
 
     private func manifest(_ entries: [EvidenceManifestEntry], events: [EvidenceEvent]) -> some View {
@@ -417,20 +416,38 @@ struct EvidenceLedgerView: View {
     }
 }
 
-private enum EvidenceLineageText {
+enum EvidenceLineageText {
+    private static let labels = [
+        "basis_code": "Basis",
+        "availability": "Availability",
+        "context": "Context",
+        "dimension_slug": "Dimension",
+        "event_ids": "Evidence events",
+        "observations": "Observations",
+        "qualifying_events": "Qualifying events",
+        "score": "Score",
+        "scores": "Scores",
+        "schema_version": "Schema version",
+    ]
+
     static func render(_ value: ActivityJSONValue) -> String {
+        render(value, root: true)
+    }
+
+    private static func render(_ value: ActivityJSONValue, root: Bool) -> String {
         switch value {
-        case let .string(value): String(reflecting: value)
-        case let .integer(value): String(value)
-        case let .decimal(value): String(value)
-        case let .boolean(value): value ? "true" : "false"
-        case .null: "null"
+        case let .string(value): return String(reflecting: value)
+        case let .integer(value): return String(value)
+        case let .decimal(value): return String(value)
+        case let .boolean(value): return value ? "true" : "false"
+        case .null: return "null"
         case let .array(values):
-            "[" + values.map(render).joined(separator: ", ") + "]"
+            return "[" + values.map { render($0, root: false) }.joined(separator: ", ") + "]"
         case let .object(values):
-            values.keys.sorted().map { key in
-                "\(String(reflecting: key)): \(render(values[key]!))"
-            }.joined(separator: "\n")
+            let contents = values.keys.sorted().map { key in
+                "\(labels[key] ?? String(reflecting: key)): \(render(values[key]!, root: false))"
+            }.joined(separator: root ? "\n" : ", ")
+            return root ? contents : "{\(contents)}"
         }
     }
 }
