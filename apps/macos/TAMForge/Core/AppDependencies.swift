@@ -57,6 +57,7 @@ enum ServiceStatus: Equatable, Sendable {
 enum NativeFeature: Hashable, Sendable {
     case today
     case roadmaps
+    case evidence
 }
 
 struct AppDependencies: Sendable {

@@ -1,6 +1,14 @@
 import XCTest
 
 final class AppDependenciesTests: XCTestCase {
+    func testNativeFeatureSetIncludesEvidenceWithoutChangingEnvironment() {
+        let features: Set<NativeFeature> = [.today, .roadmaps, .evidence]
+        let dependencies = AppDependencies.live(environment: .preview, nativeFeatures: features)
+
+        XCTAssertEqual(dependencies.nativeFeatures, features)
+        XCTAssertEqual(dependencies.api.baseURL.host, "api-preview.tamforge.invalid")
+    }
+
     func testPreviewEnvironmentSelectsPreviewServices() async {
         let dependencies = AppDependencies.live(environment: .preview)
 

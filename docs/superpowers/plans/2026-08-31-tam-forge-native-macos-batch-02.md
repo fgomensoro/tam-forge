@@ -196,3 +196,18 @@ Independent Sol Ultra document reviewer `01a05950-9949-70b3-8022-c65d481a04a8` a
 Full SwiftUI replacement and both recommended verification decisions are approved. D1 uses layered native/backend parity; D2 uses explicit coordinator-enforced checks while private-repository protection remains unverified. No protection bypass, paid upgrade or production change is authorized. See spec section 8 for the retained decision context.
 
 The user switched to **Sol xhigh**, asked whether anything else was needed, and approved the final two recommendations in response to the execution handoff. The model/effort was verified from the active turn before execution. Continue the entire three-PR batch without per-PR merge questions. Recording is not silently added mid-batch.
+
+## 7. Execution checkpoint — 2026-08-31
+
+Planning commit `3818bd2` is pushed on `codex/native-evidence-batch-02`. Live catalog apply updated only #125/#126; follow-up dry-run has zero drift. Base remains `52c0858221524fa6c35fb18c2804c0d5874ce62a`. No implementation PR or merge has occurred.
+
+PR A remains uncommitted in the existing `native-macos-batch-02-plan` worktree, but implementation is complete pending UI execution and exact-head review. The coordinator completed the Terra xhigh worker's bounded draft after that worker stopped responding. Native Evidence now has generated-contract projections, fail-closed score/cursor/scope validation, independent bounded skill/portfolio/activity state, cancellation and session-generation guards, semantic SwiftUI disclosure/paging/retry views, shell routing, DEBUG-only strict fixtures and eight Evidence UI journeys. React and all legacy checks remain intact.
+
+Verified local receipts at this checkpoint:
+
+- Evidence adapter/model RED was preserved, then the final focused suite reached **18 passed, 0 failed** across nine adapter and nine model tests. The last contract addition first failed three assertions before scale and canonical seven-component validation was implemented.
+- Complete signed native build and unit regression: **180 passed, 0 failed, 0 skipped**, result `/tmp/tamforge-native-batch-02/Logs/Test/Test-TAMForge-2026.08.31_15-25-26--0700.xcresult`. A current `build-for-testing` also succeeded with the UI target compiled.
+- Backend evidence routes/service: **10 passed**; OpenAPI drift, repository policy, project plist and whitespace checks passed. Existing web evidence/unit regression remained green while React is intentionally retained in PR A.
+- No Docker, deployment, production credential, recording or legacy-client removal occurred.
+
+UI automation is the remaining local gate. One earlier shell UI smoke executed **1 passed, 0 failed, 0 skipped** after authentication (`/tmp/tamforge-native-batch-02/Logs/Test/Test-TAMForge-2026.08.31_14-12-29--0700.xcresult`). Later Evidence runs did not execute because a macOS “Enable UI Automation” authentication dialog remained active and then canceled. Do not bypass or count those runs. Once the user finishes that system prompt, run one Evidence test deterministically, then all Evidence UI journeys and the complete UI target; inspect the retained dark/large-text screenshot. After that, commit, obtain independent Sol xhigh spec and quality review of the exact head, push PR A, require all named CI contexts, and merge under standing authorization.

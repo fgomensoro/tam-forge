@@ -32,11 +32,17 @@ private final class NativeUIFixtureState: @unchecked Sendable {
     private var roadmapState: String?
     private var dayClosed = false
     private let closingDay = ProcessInfo.processInfo.arguments.contains("-ui-test-daily-close")
+    private let reviewingEvidence = ProcessInfo.processInfo.arguments.contains("-ui-test-evidence-route")
+    private let emptyEvidence = ProcessInfo.processInfo.arguments.contains("-ui-test-empty-evidence")
+    private var failSkillsOnce = ProcessInfo.processInfo.arguments.contains("-ui-test-evidence-retry")
     private let stamp = "2026-08-27T20:00:00Z"
 
     func response(for request: URLRequest) throws -> Data {
         try lock.withLock {
             let path = request.url?.path ?? ""
+            if let evidence = try evidenceResponse(for: request) {
+                return try JSONSerialization.data(withJSONObject: evidence)
+            }
             let value: Any
             switch path {
             case "/api/v1/today":
@@ -107,9 +113,9 @@ private final class NativeUIFixtureState: @unchecked Sendable {
             "optimistic_version": activityVersion,
         ]
         let action: [String: Any] = [
-            "kind": closingDay ? "close_day" : activityState == "output_committed" ? "complete_self_review" : "resume_activity",
+            "kind": reviewingEvidence ? "review_feedback" : closingDay ? "close_day" : activityState == "output_committed" ? "complete_self_review" : "resume_activity",
             "target_id": closingDay ? 70 : 41,
-            "label": closingDay ? "Close study day" : "Continue customer update", "allowed_ai_role": "none",
+            "label": reviewingEvidence ? "Review activity evidence" : closingDay ? "Close study day" : "Continue customer update", "allowed_ai_role": "none",
         ]
         return [
             "local_date": localDate, "timezone": "America/Los_Angeles", "day_id": 8,
@@ -158,6 +164,113 @@ private final class NativeUIFixtureState: @unchecked Sendable {
     private func activitySummary() -> [String: Any] {
         // Command receipts use ActivityResponse, which rejects detail-only properties.
         activity().filter { !["task_contract", "committed_output", "self_review"].contains($0.key) }
+    }
+
+    /// Synthetic read contracts only. Unsupported scopes, methods and cursors fail closed.
+    private func evidenceResponse(for request: URLRequest) throws -> Any? {
+        let path = request.url?.path ?? ""
+        let skillPath = "/api/v1/skills/structured_troubleshooting"
+        let paths = ["/api/v1/skills", skillPath, "\(skillPath)/evidence",
+                     "/api/v1/skills/tam_english", "/api/v1/skills/tam_english/evidence",
+                     "/api/v1/activities/41/evidence", "/api/v1/portfolio-judgment"]
+        guard paths.contains(path) else { return nil }
+        guard request.httpMethod == "GET", request.httpBody == nil, request.httpBodyStream == nil,
+              request.value(forHTTPHeaderField: "Authorization") == "Bearer ui-test-only",
+              let url = request.url,
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw URLError(.badServerResponse)
+        }
+        let query = components.queryItems ?? []
+        let paginated = path.hasSuffix("/evidence") || path == "/api/v1/portfolio-judgment"
+        let cursor = query.first(where: { $0.name == "cursor" })?.value
+        guard Set(query.map(\.name)).count == query.count,
+              query.allSatisfy({ ["cursor", "limit"].contains($0.name) }),
+              paginated ? query.first(where: { $0.name == "limit" })?.value == "20" : query.isEmpty else {
+            throw URLError(.badServerResponse)
+        }
+        switch path {
+        case "/api/v1/skills":
+            if failSkillsOnce {
+                failSkillsOnce = false
+                throw URLError(.notConnectedToInternet)
+            }
+            return ["items": [evidenceSkill(), evidenceSkill(english: true)]]
+        case skillPath:
+            return evidenceSkill()
+        case "/api/v1/skills/tam_english":
+            return evidenceSkill(english: true)
+        case "/api/v1/portfolio-judgment":
+            guard cursor == nil || cursor == "91" else { throw URLError(.badServerResponse) }
+            if emptyEvidence { return ["items": [], "next_cursor": NSNull()] }
+            let score: [String: Any] = [
+                "id": cursor == nil ? 91 : 90, "activity_id": 41, "attempt_id": 11,
+                "formula_version": "seed-v1", "rubric_version": "seed-v1", "total_score": "14.000",
+                "components": [
+                    ["slug": "impact_risk_assessment", "score": "3.000"],
+                    ["slug": "explicit_prioritization", "score": "2.000"],
+                    ["slug": "delegation_ownership", "score": "2.000"],
+                    ["slug": "communication_control", "score": "2.000"],
+                    ["slug": "proactive_work_protection", "score": "1.000"],
+                    ["slug": "evidence_based_reprioritization", "score": "2.000"],
+                    ["slug": "english_clarity", "score": "2.000"],
+                ],
+                "trend_basis": ["schema_version": 1, "basis_code": "first_score", "event_ids": []],
+                "scored_at": stamp,
+            ]
+            let nextCursor: Any = cursor == nil ? 91 : NSNull()
+            return ["items": [score], "next_cursor": nextCursor]
+        default:
+            guard cursor == nil || cursor == "49" else { throw URLError(.badServerResponse) }
+            if emptyEvidence || path.contains("tam_english") {
+                return ["items": [], "next_cursor": NSNull()]
+            }
+            let events = cursor == nil ? [evidenceEvent(id: 50), evidenceEvent(id: 49)] : [evidenceEvent(id: 39)]
+            let nextCursor: Any = cursor == nil ? 49 : NSNull()
+            return ["items": events, "next_cursor": nextCursor]
+        }
+    }
+
+    private func evidenceSkill(english: Bool = false) -> [String: Any] {
+        let assessed = !english && !emptyEvidence
+        let snapshot: [String: Any] = [
+            "id": 71, "formula_version": "seed-v1", "snapshot_date": "2026-08-27",
+            "estimated_level": "2.750", "confidence": "moderate", "trend": "improving", "recency": "recent",
+            "baseline_target_gap": "-0.750", "month_one_target_gap": "0.250", "final_target_gap": "0.750",
+            "total_effective_weight": "1.400", "qualifying_event_count": 2, "exercise_type_count": 2,
+            "last_strong_evidence_date": "2026-08-27",
+            "manifest": [
+                ["event_id": 50, "effective_weight": "0.400", "inclusion_code": "discounted_same_day"],
+                ["event_id": 49, "effective_weight": "0.000", "inclusion_code": "excluded_nonqualifying"],
+                ["event_id": 9, "effective_weight": "1.000", "inclusion_code": "included"],
+            ],
+            "confidence_basis": ["schema_version": 1, "qualifying_events": 2,
+                                 "future_basis": ["context": ["Independent case", "Timed writing"]]],
+            "trend_basis": ["schema_version": 1, "basis_code": "improving", "event_ids": [50, 9]],
+        ]
+        return [
+            "slug": english ? "tam_english" : "structured_troubleshooting",
+            "name": english ? "TAM English" : "Structured troubleshooting",
+            "baseline": "2.000", "month_one_target": "3.000", "final_target": "3.500",
+            "latest_snapshot": assessed ? snapshot : NSNull(),
+        ]
+    }
+
+    private func evidenceEvent(id: Int) -> [String: Any] {
+        let selfEvidence = id == 49
+        return [
+            "id": id, "activity_id": 41, "attempt_id": 11, "skill_slug": "structured_troubleshooting",
+            "exercise_type": "troubleshooting_case", "mapping_version": "seed-v1", "formula_version": "seed-v1",
+            "rubric_slug": "tam_case", "rubric_version": "seed-v1",
+            "evaluator": selfEvidence ? "self" : "human_coach", "practice_mode": "independent_practice",
+            "assistance": "no_ai", "difficulty": "standard", "performance_score": "3.000",
+            "skill_impact": "1.000", "effective_weight": "0.800", "qualifying_for_level": !selfEvidence,
+            "qualification_reason": selfEvidence ? "Self evidence does not change the skill estimate." : "Independent evidence qualifies.",
+            "raw_dimension_scores": ["schema_version": 1, "scores": [
+                ["dimension_slug": "diagnosis", "availability": "scored", "score": "3.000",
+                 "observations": ["Customer impact is explicit; next steps name an owner and a verification condition."]],
+            ]],
+            "occurred_at": stamp,
+        ]
     }
 }
 #endif

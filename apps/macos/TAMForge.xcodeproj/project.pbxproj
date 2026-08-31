@@ -7,6 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E30000000000000000000001 /* EvidenceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000061 /* EvidenceModels.swift */; };
+		E30000000000000000000021 /* EvidenceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000061 /* EvidenceModels.swift */; };
+		E30000000000000000000002 /* LiveEvidenceAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000062 /* LiveEvidenceAPI.swift */; };
+		E30000000000000000000022 /* LiveEvidenceAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000062 /* LiveEvidenceAPI.swift */; };
+		E30000000000000000000003 /* EvidenceLedgerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000063 /* EvidenceLedgerModel.swift */; };
+		E30000000000000000000023 /* EvidenceLedgerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000063 /* EvidenceLedgerModel.swift */; };
+		E30000000000000000000004 /* EvidenceLedgerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000064 /* EvidenceLedgerView.swift */; };
+		E30000000000000000000024 /* EvidenceLedgerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000064 /* EvidenceLedgerView.swift */; };
+		E30000000000000000000041 /* NativeEvidenceAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000071 /* NativeEvidenceAdapterTests.swift */; };
+		E30000000000000000000042 /* EvidenceLedgerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000072 /* EvidenceLedgerTests.swift */; };
 		E200000000000000000000B1 /* NativeActivityAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E200000000000000000000B2 /* NativeActivityAdapterTests.swift */; };
 		E200000000000000000000A3 /* Test generator config in Resources */ = {isa = PBXBuildFile; fileRef = E200000000000000000000A5 /* openapi-generator-config.yaml */; };
 		E200000000000000000000A4 /* Test OpenAPI input in Resources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000E8 /* openapi.yaml */; };
@@ -91,6 +101,12 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		E30000000000000000000061 /* EvidenceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvidenceModels.swift; sourceTree = "<group>"; };
+		E30000000000000000000062 /* LiveEvidenceAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveEvidenceAPI.swift; sourceTree = "<group>"; };
+		E30000000000000000000063 /* EvidenceLedgerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvidenceLedgerModel.swift; sourceTree = "<group>"; };
+		E30000000000000000000064 /* EvidenceLedgerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvidenceLedgerView.swift; sourceTree = "<group>"; };
+		E30000000000000000000071 /* NativeEvidenceAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeEvidenceAdapterTests.swift; sourceTree = "<group>"; };
+		E30000000000000000000072 /* EvidenceLedgerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvidenceLedgerTests.swift; sourceTree = "<group>"; };
 		E200000000000000000000B2 /* NativeActivityAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeActivityAdapterTests.swift; sourceTree = "<group>"; };
 		E200000000000000000000A5 /* openapi-generator-config.yaml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = "openapi-generator-config.yaml"; sourceTree = "<group>"; };
 		E20000000000000000000079 /* NativeUIFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeUIFixtures.swift; sourceTree = "<group>"; };
@@ -199,6 +215,8 @@
 		A10000000000000000000044 /* TAMForgeTests */ = {
 			isa = PBXGroup;
 			children = (
+				E30000000000000000000071 /* NativeEvidenceAdapterTests.swift */,
+				E30000000000000000000072 /* EvidenceLedgerTests.swift */,
 				E200000000000000000000B2 /* NativeActivityAdapterTests.swift */,
 				E200000000000000000000A5 /* openapi-generator-config.yaml */,
 				A10000000000000000000016 /* AppDependenciesTests.swift */,
@@ -287,6 +305,7 @@
 		C10000000000000000000017 /* Features */ = {
 			isa = PBXGroup;
 			children = (
+				E30000000000000000000091 /* Evidence */,
 				E20000000000000000000091 /* Today */,
 				C10000000000000000000018 /* Notifications */,
 				E20000000000000000000092 /* Roadmaps */,
@@ -338,6 +357,17 @@
 				E20000000000000000000070 /* ActivityWorkspaceView.swift */,
 			);
 			path = Activities;
+			sourceTree = "<group>";
+		};
+		E30000000000000000000091 /* Evidence */ = {
+			isa = PBXGroup;
+			children = (
+				E30000000000000000000061 /* EvidenceModels.swift */,
+				E30000000000000000000062 /* LiveEvidenceAPI.swift */,
+				E30000000000000000000063 /* EvidenceLedgerModel.swift */,
+				E30000000000000000000064 /* EvidenceLedgerView.swift */,
+			);
+			path = Evidence;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -478,6 +508,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E30000000000000000000001 /* EvidenceModels.swift in Sources */,
+				E30000000000000000000002 /* LiveEvidenceAPI.swift in Sources */,
+				E30000000000000000000003 /* EvidenceLedgerModel.swift in Sources */,
+				E30000000000000000000004 /* EvidenceLedgerView.swift in Sources */,
 				D10000000000000000000001 /* GeneratedOpenAPIContract.swift in Sources */,
 				A10000000000000000000001 /* TAMForgeApp.swift in Sources */,
 				E20000000000000000000049 /* NativeUIFixtures.swift in Sources */,
@@ -512,6 +546,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E30000000000000000000021 /* EvidenceModels.swift in Sources */,
+				E30000000000000000000022 /* LiveEvidenceAPI.swift in Sources */,
+				E30000000000000000000023 /* EvidenceLedgerModel.swift in Sources */,
+				E30000000000000000000024 /* EvidenceLedgerView.swift in Sources */,
+				E30000000000000000000041 /* NativeEvidenceAdapterTests.swift in Sources */,
+				E30000000000000000000042 /* EvidenceLedgerTests.swift in Sources */,
 				E200000000000000000000B1 /* NativeActivityAdapterTests.swift in Sources */,
 				A10000000000000000000004 /* AppDependenciesTests.swift in Sources */,
 				A10000000000000000000005 /* AppDependencies.swift in Sources */,

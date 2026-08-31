@@ -5,18 +5,25 @@ enum ShellRoute: Equatable, Sendable {
     case today
     case roadmaps
     case activity(Int)
+    case evidence(activityID: Int?)
 
     var restorationID: String {
         switch self {
         case .roadmaps:
             "roadmaps"
+        case .evidence:
+            "evidence"
         case .today, .activity:
             "today"
         }
     }
 
     static func restored(from identifier: String) -> Self {
-        identifier == "roadmaps" ? .roadmaps : .today
+        switch identifier {
+        case "roadmaps": .roadmaps
+        case "evidence": .evidence(activityID: nil)
+        default: .today
+        }
     }
 }
 
