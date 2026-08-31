@@ -354,6 +354,7 @@ struct ActivityWorkspaceView: View {
     private func reviewComplete(_ activity: ActivityDetail) -> some View {
         GroupBox("Self-review complete") {
             Text("Your score: \(activity.selfReview?.selfScore ?? 0) / 4. AI analysis has not been requested.")
+                .accessibilityIdentifier("activitySelfReviewSummary")
         }
     }
 

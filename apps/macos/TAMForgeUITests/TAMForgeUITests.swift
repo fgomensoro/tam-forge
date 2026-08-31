@@ -51,7 +51,10 @@ final class TAMForgeUITests: XCTestCase {
         reveal(submit, in: app)
         XCTAssertTrue(submit.isEnabled)
         submit.click()
-        XCTAssertTrue(app.staticTexts["Your score: 0 / 4. AI analysis has not been requested."].waitForExistence(timeout: 5))
+        let summary = app.staticTexts["activitySelfReviewSummary"]
+        // Wait for the command, detail reload, and macOS accessibility snapshot.
+        XCTAssertTrue(summary.waitForExistence(timeout: 20))
+        XCTAssertEqual(summary.value as? String, "Your score: 0 / 4. AI analysis has not been requested.")
         XCTAssertFalse(app.buttons["Commit Attempt A"].exists)
     }
 
