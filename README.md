@@ -32,6 +32,11 @@ with:
 make macos-check
 ```
 
+Local native checks default to two build jobs for the 8 GB Mac. To reuse a
+task-specific cache, pass
+`MACOS_BUILD_ARGUMENTS='-jobs 2 -derivedDataPath /tmp/tamforge-native-batch-01'`
+to `make macos-check` or `make check`; do not run native builds concurrently.
+
 When Xcode is available, `make check` includes the same non-Docker native check.
 The GitHub Actions macOS job tests the unsigned CI build path separately.
 

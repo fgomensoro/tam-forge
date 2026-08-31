@@ -1,5 +1,9 @@
 .PHONY: install test check check-openapi check-policy integration e2e macos-check
 
+# Keep local verification comfortable on the 8 GB development Mac. Callers can
+# also supply -derivedDataPath here to reuse an existing task-specific cache.
+MACOS_BUILD_ARGUMENTS ?= -jobs 2
+
 install:
 	uv sync --all-packages --all-extras
 	pnpm install
@@ -38,8 +42,8 @@ e2e:
 # The exactly pinned/resolved Apple build-tool plugin needs this headless Xcode flag.
 macos-check:
 	@if command -v xcodebuild >/dev/null 2>&1; then \
-		xcodebuild -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination 'platform=macOS' build && \
-		xcodebuild -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination 'platform=macOS' -only-testing:TAMForgeTests test; \
+		xcodebuild $(MACOS_BUILD_ARGUMENTS) -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination 'platform=macOS' build && \
+		xcodebuild $(MACOS_BUILD_ARGUMENTS) -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination 'platform=macOS' -only-testing:TAMForgeTests test; \
 	else \
 		echo "Skipping macOS check: xcodebuild is unavailable."; \
 	fi
