@@ -4,6 +4,87 @@ import OpenAPIRuntime
 import XCTest
 
 final class NativeAPITransportTests: XCTestCase {
+    func testIndeterminateAuthenticationExpiresWithoutSendingAnonymousRequest() async throws {
+        let fixture = URLProtocolFixture()
+        let recorder = DiagnosticRecorder()
+        let transport = NativeAPITransport(
+            baseURL: URL(string: "https://api.example.test")!,
+            bearerToken: { throw NativeAuthenticationError.reauthenticationRequired },
+            session: fixture.session(), onUnauthorized: { recorder.didNotifyUnauthorized() }
+        )
+        do {
+            _ = try await transport.send(.init(method: .get, path: "/protected"))
+            XCTFail("Expected reauthentication requirement")
+        } catch let error as NativeAuthenticationError {
+            XCTAssertEqual(error, .reauthenticationRequired)
+        }
+        XCTAssertTrue(fixture.requests.isEmpty)
+        XCTAssertEqual(recorder.unauthorizedNotifications, 1)
+    }
+
+    func testBearerAcquisitionFailureDoesNotSendAnonymousRequest() async throws {
+        let fixture = URLProtocolFixture()
+        fixture.enqueue(.response(statusCode: 401, body: Data("{}".utf8)))
+        let recorder = DiagnosticRecorder()
+        let transport = NativeAPITransport(
+            baseURL: URL(string: "https://api.example.test")!,
+            bearerToken: { throw URLError(.cannotConnectToHost) },
+            session: fixture.session(), onUnauthorized: { recorder.didNotifyUnauthorized() }
+        )
+        do {
+            _ = try await transport.send(.init(method: .get, path: "/protected"))
+            XCTFail("Expected token acquisition failure")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, .cannotConnectToHost)
+        } catch { XCTFail("Token failure must retain its retryable classification") }
+        XCTAssertTrue(fixture.requests.isEmpty)
+        XCTAssertEqual(recorder.unauthorizedNotifications, 0)
+    }
+
+    func testGeneratedResponseAcceptsPlainAndFractionalRFC3339Dates() throws {
+        for timestamp in ["2026-08-27T12:00:00Z", "2026-08-27T12:00:00.123456Z"] {
+            let body = Data("""
+            {"id":1,"notification_type":"feedback_ready","subject_kind":"activity","subject_id":41,
+             "created_at":"\(timestamp)","read_at":null}
+            """.utf8)
+            let response = NativeAPIResponse(statusCode: 200, body: body)
+            let item = try response.decoded(as: Components.Schemas.NotificationResponse.self)
+            XCTAssertEqual(item.id, 1)
+            XCTAssertNil(item.readAt)
+            XCTAssertGreaterThan(item.createdAt.timeIntervalSince1970, 1_700_000_000)
+        }
+    }
+
+    func testGeneratedRequiredNullableCommandWritesExplicitNullWithoutLosingFields() throws {
+        let command = Components.Schemas.DailyCloseCommand(
+            correctionIds: [], evidenceConfirmed: true,
+            evidenceManifest: .init(activityIds: [41], schemaVersion: 1),
+            repeatedMistake: "Impact late", strongestOutput: "Saved attempt",
+            unfinishedClassification: .none, unfinishedRequirement: nil
+        )
+        let body = try NativeJSONCodec.encode(command, insertingRequiredNulls: ["unfinished_requirement"])
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertTrue(object["unfinished_requirement"] is NSNull)
+        XCTAssertEqual(object["strongest_output"] as? String, "Saved attempt")
+        XCTAssertEqual(object["evidence_confirmed"] as? Bool, true)
+        let decoded = try JSONDecoder().decode(Components.Schemas.DailyCloseCommand.self, from: body)
+        XCTAssertEqual(decoded.evidenceManifest.activityIds, [41])
+    }
+
+    func testActivityOutputOptInAcceptsValidPayloadLargerThanOrdinaryResponses() async throws {
+        let fixture = URLProtocolFixture()
+        let payload = Data(repeating: 0x61, count: 2_501_832)
+        fixture.enqueue(.response(statusCode: 200, body: payload))
+        let transport = NativeAPITransport(baseURL: URL(string: "https://api.example.test")!, session: fixture.session())
+
+        let response = try await transport.send(.init(
+            method: .get, path: "/api/v1/activities/41", responseLimit: .activityOutput
+        ))
+
+        XCTAssertEqual(response.body, payload)
+        XCTAssertEqual(NativeAPIResponseLimit.activityOutput.bytes, 96 * 1024 * 1024)
+    }
+
     func testRequestUsesBaseURLBearerAndCallerIdempotencyKey() async throws {
         let fixture = URLProtocolFixture()
         fixture.enqueue(.response(statusCode: 200, body: #"{"value":"ok"}"#.data(using: .utf8)!))
@@ -348,7 +429,7 @@ private final class DiagnosticRecorder: @unchecked Sendable {
     }
 }
 
-private final class URLProtocolFixture: @unchecked Sendable {
+final class URLProtocolFixture: @unchecked Sendable {
     fileprivate static let store = FixtureStore()
 
     init() {

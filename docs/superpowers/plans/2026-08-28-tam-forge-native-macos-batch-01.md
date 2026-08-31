@@ -417,7 +417,7 @@ Before claiming Batch 01 complete:
 4. Obtain independent code/security review for native auth and the final integrated head.
 5. Push without force; bind PR review and CI to the exact final head SHA.
 6. Report each ticket as complete only with its stated evidence. A created PR is not a merge; a merge is not deployment.
-7. Stop for explicit merge approval.
+7. Use the user's standing merge authorization, as recorded in `developing-ticket-batches`: merge this and future batch PRs only after exact-final-head independent review, every required CI check present and passing, correct dependencies/base, and mergeability. No per-PR confirmation is needed. Deployment, destructive actions, force-pushes, branch deletion, spend/privacy expansion, and bypassing checks remain outside that authorization.
 
 ## 13. Planned execution routing
 

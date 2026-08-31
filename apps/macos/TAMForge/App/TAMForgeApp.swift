@@ -5,232 +5,298 @@ struct TAMForgeApp: App {
     let dependencies: AppDependencies
 
     init() {
-        let arguments = ProcessInfo.processInfo.arguments
+        // One startup sweep; live uploads are protected by their OS-held file locks.
+        _ = try? ActivityStagedFileStore().cleanupAbandonedCopies()
 #if DEBUG
-        let nativeFeatures: Set<NativeFeature> = arguments.contains("-ui-test-native-features")
-            ? [.today, .roadmaps]
-            : []
+        let arguments = ProcessInfo.processInfo.arguments
+        let nativeFeatures: Set<NativeFeature> = arguments.contains("-ui-test-signed-in")
+            && !arguments.contains("-ui-test-native-features") ? [] : [.today, .roadmaps]
 #else
-        let nativeFeatures: Set<NativeFeature> = []
+        let nativeFeatures: Set<NativeFeature> = [.today, .roadmaps]
 #endif
-        self.init(
-            dependencies: .live(
-                environment: .selected(from: ProcessInfo.processInfo.environment),
-                nativeFeatures: nativeFeatures
-            )
-        )
+        self.init(dependencies: .live(
+            environment: .selected(from: ProcessInfo.processInfo.environment),
+            nativeFeatures: nativeFeatures
+        ))
     }
 
-    init(dependencies: AppDependencies) {
-        self.dependencies = dependencies
-    }
+    init(dependencies: AppDependencies) { self.dependencies = dependencies }
 
     var body: some Scene {
-        WindowGroup {
-            NativeShellView(dependencies: dependencies)
-        }
+        // One workspace owns the authenticated session and its private in-memory drafts.
+        Window("TAM Forge", id: "main") { NativeShellView(dependencies: dependencies) }
     }
 }
 
 private struct NativeShellView: View {
     let dependencies: AppDependencies
-    @StateObject private var model: ShellSessionModel
-    @SceneStorage("tamforge.shell.route") private var restoredRouteID = "today"
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @StateObject private var composition: NativeShellComposition
 
     init(dependencies: AppDependencies) {
         self.dependencies = dependencies
-        _model = StateObject(wrappedValue: Self.makeModel(dependencies: dependencies))
+        _composition = StateObject(wrappedValue: NativeShellComposition(dependencies: dependencies))
     }
+
+    var body: some View {
+        NativeSessionView(dependencies: dependencies, model: composition.session, services: composition.services)
+    }
+}
+
+private struct NativeSessionView: View {
+    let dependencies: AppDependencies
+    @ObservedObject var model: ShellSessionModel
+    let services: NativeFeatureServices
+    @SceneStorage("tamforge.shell.route") private var restoredRouteID = "today"
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
             switch model.phase {
             case .loading:
-                ProgressView("Checking your secure session")
-                    .accessibilityIdentifier("sessionLoading")
+                ProgressView("Checking your secure session").accessibilityIdentifier("sessionLoading")
             case .signedOut:
-                signedOutView
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("TAM Forge").font(.largeTitle).accessibilityIdentifier("shellTitle")
+                    Text(dependencies.environment.displayName).accessibilityIdentifier("environmentLabel")
+                    Text("Sign in to continue your study workspace.")
+                    if let banner = model.banner { GlobalBannerView(banner: banner) }
+                    Button("Sign in") { Task { await model.signIn() } }
+                        .accessibilityIdentifier("signInButton")
+                        .keyboardShortcut(.defaultAction)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             case .signedIn:
-                signedInView
+                NativeWorkspaceView(dependencies: dependencies, session: model, services: services)
             }
         }
         .padding(24)
-        .frame(minWidth: 720, minHeight: 460)
+        .frame(minWidth: 900, minHeight: 640)
         .task {
             model.restoreRoute(from: restoredRouteID)
             await model.restore()
         }
-        .onChange(of: model.restorationRouteID) { _, routeID in
-            restoredRouteID = routeID
-        }
+        .onChange(of: model.restorationRouteID) { _, value in restoredRouteID = value }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: model.banner)
     }
+}
 
-    private var signedOutView: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("TAM Forge")
-                .font(.largeTitle)
-                .accessibilityIdentifier("shellTitle")
-            Text(dependencies.environment.displayName)
-                .accessibilityIdentifier("environmentLabel")
-            Text("Sign in to continue your study workspace.")
-            if let banner = model.banner {
-                GlobalBannerView(banner: banner)
-            }
-            Button("Sign in") {
-                Task { await model.signIn() }
-            }
-            .accessibilityIdentifier("signInButton")
-            .keyboardShortcut(.defaultAction)
+@MainActor
+private struct NativeFeatureServices {
+    let today: any TodayServicing
+    let notifications: any NotificationServicing
+    let roadmaps: any RoadmapServicing
+    let activities: any ActivityAPI
+}
+
+@MainActor
+private final class NativeShellComposition: ObservableObject {
+    let session: ShellSessionModel
+    let services: NativeFeatureServices
+
+    init(dependencies: AppDependencies) {
+        let bearerToken: NativeBearerTokenProvider
+        let httpSession: URLSession?
+#if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-ui-test-signed-out") || arguments.contains("-ui-test-signed-in") {
+            session = ShellSessionModel(
+                actions: .init(restore: { "UI test" }, login: { "UI test" }, localLogout: {}, logout: {}),
+                statusStream: nil,
+                initialPhase: arguments.contains("-ui-test-signed-out") ? .signedOut(.signedOut) : .signedIn("UI test"),
+                initialBanner: arguments.contains("-ui-test-offline") ? .offline : nil
+            )
+            bearerToken = { "ui-test-only" }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [NativeUIFixtureProtocol.self]
+            httpSession = URLSession(configuration: configuration)
+        } else {
+            (session, bearerToken) = Self.liveSession(dependencies)
+            httpSession = nil
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+#else
+        (session, bearerToken) = Self.liveSession(dependencies)
+        httpSession = nil
+#endif
+        let onUnauthorizedForRequest: NativeUnauthorizedHandlerFactory = { [weak session] in
+            guard let session else { return {} }
+            return await session.unauthorizedHandlerForCurrentSession()
+        }
+        let transport = NativeAPITransport(
+            environment: dependencies.environment, bearerToken: bearerToken,
+            session: httpSession, onUnauthorizedForRequest: onUnauthorizedForRequest
+        )
+        services = NativeFeatureServices(
+            today: NativeTodayAPIClient(transport: transport),
+            notifications: NativeNotificationAPIClient(transport: transport),
+            roadmaps: LiveRoadmapService(
+                baseURL: dependencies.environment.apiBaseURL, bearerToken: bearerToken,
+                session: httpSession, onUnauthorizedForRequest: onUnauthorizedForRequest
+            ),
+            activities: LiveActivityAPI(transport: transport)
+        )
     }
 
-    private var signedInView: some View {
+    private static func liveSession(
+        _ dependencies: AppDependencies
+    ) -> (ShellSessionModel, NativeBearerTokenProvider) {
+        let store = KeychainCredentialStore()
+        let authentication = NativeAuthenticationCoordinator(
+            http: LiveNativeAuthHTTPClient(baseURL: dependencies.environment.apiBaseURL),
+            credentialStore: store, oauthSession: SystemOAuthSession()
+        )
+        let bearerToken: NativeBearerTokenProvider = { try await authentication.currentAccessToken() }
+        let stream = StatusStreamClient(
+            baseURL: dependencies.environment.apiBaseURL,
+            bearerToken: { try await authentication.currentAccessToken() }
+        )
+        let session = ShellSessionModel(
+            actions: .init(
+                restore: { _ = try await authentication.currentAccessToken(); return "Signed in" },
+                login: { try await authentication.login() },
+                localLogout: { try quarantineActiveRefreshCredential(in: store) },
+                logout: { try? await authentication.logout() }
+            ),
+            statusStream: stream
+        )
+        return (session, bearerToken)
+    }
+}
+
+/// Lifetime matches one signed-in workspace. No draft text is written to UserDefaults.
+@MainActor
+private final class NativeWorkspaceState: ObservableObject {
+    let today: TodayViewModel
+    let notifications: NotificationViewModel
+    let roadmaps: RoadmapAdministrationModel
+    let drafts = InMemoryActivityDraftStore()
+    let timerJournal: any ActivityTimerJournaling
+
+    init(services: NativeFeatureServices) {
+        today = TodayViewModel(client: services.today)
+        notifications = NotificationViewModel(client: services.notifications)
+        roadmaps = RoadmapAdministrationModel(service: services.roadmaps)
+#if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-ui-test-signed-in") || arguments.contains("-ui-test-signed-out") {
+            // Fixture activity IDs must never share persistent recovery commands with real study work.
+            timerJournal = InMemoryActivityTimerJournal()
+        } else {
+            timerJournal = UserDefaultsActivityTimerJournal()
+        }
+#else
+        timerJournal = UserDefaultsActivityTimerJournal()
+#endif
+    }
+}
+
+private struct NativeWorkspaceView: View {
+    let dependencies: AppDependencies
+    @ObservedObject var session: ShellSessionModel
+    let services: NativeFeatureServices
+    @StateObject private var state: NativeWorkspaceState
+    @State private var focusSelfReview = false
+    @State private var showingEvidenceNotice = false
+
+    init(dependencies: AppDependencies, session: ShellSessionModel, services: NativeFeatureServices) {
+        self.dependencies = dependencies
+        self.session = session
+        self.services = services
+        _state = StateObject(wrappedValue: NativeWorkspaceState(services: services))
+    }
+
+    var body: some View {
         NavigationSplitView {
             List {
                 if dependencies.nativeFeatures.contains(.today) {
-                    Button {
-                        model.select(.today)
-                    } label: {
-                        Label("Today", systemImage: "sun.max")
-                    }
-                    .accessibilityIdentifier("todayNavigation")
+                    Button { session.select(.today) } label: { Label("Today", systemImage: "sun.max") }
+                        .accessibilityIdentifier("todayNavigation")
                 }
-
                 if dependencies.nativeFeatures.contains(.roadmaps) {
-                    Button {
-                        model.select(.roadmaps)
-                    } label: {
-                        Label("Roadmaps", systemImage: "map")
-                    }
-                    .accessibilityIdentifier("roadmapsNavigation")
+                    Button { session.select(.roadmaps) } label: { Label("Roadmaps", systemImage: "map") }
+                        .accessibilityIdentifier("roadmapsNavigation")
                 }
             }
             .navigationTitle("TAM Forge")
         } detail: {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text(dependencies.environment.displayName)
-                        .accessibilityIdentifier("environmentLabel")
+                    Text(dependencies.environment.displayName).accessibilityIdentifier("environmentLabel")
                     Spacer()
-                    Button("Sign out") { model.signOut() }
-                        .accessibilityIdentifier("signOutButton")
+                    if !dependencies.nativeFeatures.isEmpty {
+                        if session.isStatusStreamActive { NotificationConnectionStatusView(state: session.statusState) }
+                        NotificationPanelView(model: state.notifications)
+                    }
+                    Button("Sign out") { session.signOut() }.accessibilityIdentifier("signOutButton")
                 }
-                if let banner = model.banner {
-                    GlobalBannerView(banner: banner)
-                }
+                if let banner = session.banner { GlobalBannerView(banner: banner) }
                 routeDetail
             }
             .padding(.leading, 12)
+        }
+        .task(id: session.featureRefreshVersion) {
+            guard session.featureRefreshVersion > 0 else { return }
+            // Coalesce event bursts without dropping all but the final event.
+            // Reconnect retries invalidate these reads too: polling updates the UI,
+            // rather than fetching and discarding an unused notification summary.
+            do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
+            await state.today.load()
+            guard !Task.isCancelled else { return }
+            await state.notifications.load()
+        }
+        .alert("Evidence review", isPresented: $showingEvidenceNotice) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Native evidence review is part of the next migration. Your saved feedback remains on the server. You can continue other assigned activities from Today.")
         }
     }
 
     @ViewBuilder
     private var routeDetail: some View {
-        if !isAvailable(model.selectedRoute) {
-            ContentUnavailableView(
-                "Native features are being prepared.",
-                systemImage: "hammer"
+        switch session.selectedRoute {
+        case .today where dependencies.nativeFeatures.contains(.today):
+            TodayView(model: state.today, onNavigate: navigate)
+        case .roadmaps where dependencies.nativeFeatures.contains(.roadmaps):
+            RoadmapAdministrationView(model: state.roadmaps)
+        case let .activity(identifier) where dependencies.nativeFeatures.contains(.today):
+            NativeActivityScreen(
+                activityID: identifier, api: services.activities, drafts: state.drafts,
+                timerJournal: state.timerJournal, focusSelfReview: focusSelfReview
             )
-            .accessibilityIdentifier("noNativeFeatures")
-        } else {
-            availableRouteDetail
+            .id(identifier)
+        default:
+            ContentUnavailableView("Native features are being prepared.", systemImage: "hammer")
+                .accessibilityIdentifier("noNativeFeatures")
         }
     }
 
-    @ViewBuilder
-    private var availableRouteDetail: some View {
-        switch model.selectedRoute {
-        case .today:
-            Text("Today")
-                .font(.largeTitle)
-            if model.statusHistory.isEmpty {
-                ContentUnavailableView("No status updates yet.", systemImage: "bell")
-                    .accessibilityIdentifier("statusEmpty")
-            } else {
-                List(model.statusHistory) { event in
-                    HStack {
-                        Text(event.eventType.replacingOccurrences(of: "_", with: " "))
-                        Spacer()
-                        if event.aggregateType == "activity" {
-                            Button("Open activity") { model.select(.activity(event.aggregateID)) }
-                                .accessibilityLabel("Open related activity")
-                        }
-                    }
-                }
-            }
-        case .roadmaps:
-            Text("Roadmaps")
-                .font(.largeTitle)
-        case let .activity(identifier):
-            Text("Activity")
-                .font(.largeTitle)
-            Text("Activity \(identifier)")
-            Button("Back to Today") { model.select(.today) }
+    private func navigate(_ destination: TodayDestination) {
+        switch destination {
+        case let .activity(identifier, focus):
+            focusSelfReview = focus == .selfReview
+            session.select(.activity(identifier))
+        case .evidence:
+            showingEvidenceNotice = true
+        case .dailyClose:
+            break // Today owns the daily-close form and command.
         }
-    }
-
-    private func isAvailable(_ route: ShellRoute) -> Bool {
-        switch route {
-        case .today, .activity:
-            dependencies.nativeFeatures.contains(.today)
-        case .roadmaps:
-            dependencies.nativeFeatures.contains(.roadmaps)
-        }
-    }
-
-    @MainActor
-    private static func makeModel(dependencies: AppDependencies) -> ShellSessionModel {
-#if DEBUG
-        let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("-ui-test-signed-out") {
-            return ShellSessionModel(
-                actions: .uiTest,
-                statusStream: nil,
-                initialPhase: .signedOut(.signedOut)
-            )
-        }
-        if arguments.contains("-ui-test-signed-in") {
-            return ShellSessionModel(
-                actions: .uiTest,
-                statusStream: nil,
-                initialPhase: .signedIn("UI test"),
-                initialBanner: arguments.contains("-ui-test-offline") ? .offline : nil
-            )
-        }
-#endif
-        let credentialStore = KeychainCredentialStore()
-        let authentication = NativeAuthenticationCoordinator(
-            http: LiveNativeAuthHTTPClient(baseURL: dependencies.environment.apiBaseURL),
-            credentialStore: credentialStore,
-            oauthSession: SystemOAuthSession()
-        )
-        let stream = StatusStreamClient(
-            baseURL: dependencies.environment.apiBaseURL,
-            bearerToken: { try await authentication.currentAccessToken() },
-            fallbackPoll: dependencies.makeStatusFallbackPoller {
-                try? await authentication.currentAccessToken()
-            }
-        )
-        return ShellSessionModel(
-            actions: ShellSessionActions(
-                restore: { _ = try await authentication.currentAccessToken(); return "Signed in" },
-                login: { try await authentication.login() },
-                localLogout: { try quarantineActiveRefreshCredential(in: credentialStore) },
-                logout: { try? await authentication.logout() }
-            ),
-            statusStream: stream
-        )
     }
 }
 
-private extension ShellSessionActions {
-    static let uiTest = Self(
-        restore: { "UI test" },
-        login: { "UI test" },
-        localLogout: {},
-        logout: {}
-    )
+private struct NativeActivityScreen: View {
+    @StateObject private var model: ActivityWorkspaceModel
+    @StateObject private var uploader: ActivityArtifactUploader
+    let focusSelfReview: Bool
+
+    init(activityID: Int, api: any ActivityAPI, drafts: any ActivityDraftStoring,
+         timerJournal: any ActivityTimerJournaling, focusSelfReview: Bool) {
+        _model = StateObject(wrappedValue: ActivityWorkspaceModel(
+            activityID: activityID, api: api, drafts: drafts, timerJournal: timerJournal
+        ))
+        _uploader = StateObject(wrappedValue: ActivityArtifactUploader(api: api))
+        self.focusSelfReview = focusSelfReview
+    }
+
+    var body: some View {
+        ActivityWorkspaceView(model: model, uploader: uploader, focusSelfReview: focusSelfReview)
+    }
 }
