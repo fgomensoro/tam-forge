@@ -57,7 +57,9 @@ def _recording_problem_response_schema(description: str) -> dict[str, Any]:
 
 RECORDING_CREATE_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: _recording_problem_response_schema("Native bearer authentication is required."),
-    409: _recording_problem_response_schema("Recording identity conflicts with an existing request."),
+    409: _recording_problem_response_schema(
+        "Recording identity conflicts with an existing request."
+    ),
     422: _recording_problem_response_schema("Recording request validation failed."),
     503: _recording_problem_response_schema("Recording service is temporarily unavailable."),
 }

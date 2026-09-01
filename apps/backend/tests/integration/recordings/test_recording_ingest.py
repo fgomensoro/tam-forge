@@ -313,7 +313,8 @@ def test_native_bearer_routes_scope_records_to_the_authenticated_owner(
                     text(
                         "INSERT INTO native_auth_sessions ("
                         "owner_id, access_token_hash, access_expires_at"
-                        ") VALUES (:owner_id, :token_hash, CURRENT_TIMESTAMP + INTERVAL '15 minutes') "
+                        ") VALUES (:owner_id, :token_hash, "
+                        "CURRENT_TIMESTAMP + INTERVAL '15 minutes') "
                         "RETURNING id"
                     ),
                     {"owner_id": owner_id, "token_hash": hash_secret(token)},
