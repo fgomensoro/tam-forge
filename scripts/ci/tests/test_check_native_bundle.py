@@ -136,6 +136,11 @@ def test_checker_rejects_compatibility_library_trusted_only_by_filename(
             return str(tmp_path / "Xcode.xctoolchain" / "usr" / "bin" / "swiftc")
         if command[:2] == ["otool", "-L"] and command[-1].endswith("/TAMForge"):
             return "@rpath/libswiftCompatibilitySpan.dylib"
+        if command[:2] == ["otool", "-l"]:
+            return (
+                "cmd LC_RPATH\n"
+                "path @executable_path/../Frameworks (offset 12)"
+            )
         return ""
 
     monkeypatch.setattr(check_native_bundle, "_run", fake_run)  # type: ignore[attr-defined]
@@ -240,6 +245,11 @@ def test_checker_rejects_modified_compatibility_content_with_trusted_metadata(
             return uuid_details
         if command[:2] == ["otool", "-L"] and command[-1].endswith("/TAMForge"):
             return "@rpath/libswiftCompatibilitySpan.dylib"
+        if command[:2] == ["otool", "-l"]:
+            return (
+                "cmd LC_RPATH\n"
+                "path @executable_path/../Frameworks (offset 12)"
+            )
         return ""
 
     monkeypatch.setattr(check_native_bundle, "_run", fake_run)  # type: ignore[attr-defined]
@@ -272,6 +282,38 @@ def test_checker_requires_linked_compatibility_payload(
         assert "payload and executable link must agree" in str(exc)
     else:
         raise AssertionError("missing linked compatibility payload was accepted")
+
+
+def test_checker_requires_frameworks_runpath_for_linked_compatibility_payload(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    app = _app(tmp_path)
+    compatibility = app / "Contents" / "Frameworks" / "libswiftCompatibilitySpan.dylib"
+    compatibility.parent.mkdir(parents=True)
+    compatibility.write_bytes(b"\xcf\xfa\xed\xfe Apple Swift compatibility")
+
+    def fake_run(command: list[str]) -> str:
+        if command[:3] == ["codesign", "-dv", "--verbose=4"]:
+            return "Signature=adhoc"
+        if command[:2] == ["otool", "-L"] and command[-1].endswith("/TAMForge"):
+            return "@rpath/libswiftCompatibilitySpan.dylib"
+        if command[:2] == ["otool", "-l"]:
+            return "cmd LC_RPATH\npath /usr/lib/swift (offset 12)"
+        return ""
+
+    monkeypatch.setattr(check_native_bundle, "_run", fake_run)  # type: ignore[attr-defined]
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        check_native_bundle,
+        "_swift_compatibility_violations",
+        lambda _app: (),
+    )
+
+    try:
+        check_bundle(app, require_ad_hoc=True)
+    except NativeBundleError as exc:
+        assert "requires the bundled Frameworks runpath" in str(exc)
+    else:
+        raise AssertionError("linked compatibility payload without bundle runpath was accepted")
 
 
 def test_checker_inspects_only_allowed_binary_dependencies(

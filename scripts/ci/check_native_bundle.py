@@ -320,14 +320,24 @@ def check_bundle(app: Path, *, require_ad_hoc: bool) -> None:
             "Swift compatibility library payload and executable link must agree"
         )
 
+    load_commands_by_binary = {
+        binary: _run(["otool", "-l", str(binary)]) for binary in binaries
+    }
+    if (
+        compatibility_linked
+        and "@executable_path/../Frameworks"
+        not in _runpaths(load_commands_by_binary.get(main, ""))
+    ):
+        raise NativeBundleError(
+            "linked Swift compatibility library requires the bundled Frameworks runpath"
+        )
+
     compatibility_violations = _swift_compatibility_violations(app)
     if compatibility_violations:
         raise NativeBundleError("; ".join(compatibility_violations))
 
     links = "\n".join(links_by_binary.values())
-    load_commands = "\n".join(
-        _run(["otool", "-l", str(binary)]) for binary in binaries
-    )
+    load_commands = "\n".join(load_commands_by_binary.values())
     violations = bundle_violations(
         app,
         linked_libraries=links,
