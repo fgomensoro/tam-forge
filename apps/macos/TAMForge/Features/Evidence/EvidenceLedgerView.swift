@@ -67,6 +67,8 @@ struct EvidenceLedgerView: View {
                 .accessibilityElement(children: .contain)
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilitySortPriority(3)
     }
 
     private var skillSection: some View {
@@ -87,6 +89,8 @@ struct EvidenceLedgerView: View {
                 skillCard(skill)
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilitySortPriority(2)
     }
 
     private func skillCard(_ skill: EvidenceSkill) -> some View {
@@ -94,7 +98,10 @@ struct EvidenceLedgerView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .firstTextBaseline, spacing: 16) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(skill.name).font(.title3).bold()
+                        Text(skill.name)
+                            .font(.title3)
+                            .bold()
+                            .accessibilityIdentifier("evidenceSkillName_\(skill.slug)")
                         Text("Baseline \(skill.baseline) · Month 1 \(skill.monthOneTarget) · Final \(skill.finalTarget)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -207,6 +214,8 @@ struct EvidenceLedgerView: View {
                 )
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilitySortPriority(1)
     }
 
     private func portfolioCard(_ score: EvidencePortfolioScore) -> some View {
@@ -282,6 +291,7 @@ struct EvidenceLedgerView: View {
                 }
             }
         }
+        .accessibilityElement(children: .contain)
     }
 
     private func manifest(_ entries: [EvidenceManifestEntry], events: [EvidenceEvent]) -> some View {

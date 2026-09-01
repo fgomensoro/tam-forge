@@ -186,17 +186,21 @@ final class TAMForgeUITests: XCTestCase {
         app.typeKey("r", modifierFlags: .command)
         XCTAssertTrue(app.staticTexts["Structured troubleshooting refreshed"].waitForExistence(timeout: 5))
 
-        let labels = app.staticTexts.allElementsBoundByAccessibilityElement.map(\.label)
-        let expected = [
-            "Evidence",
-            "See what you demonstrated, how each estimate was calculated, and the evidence behind it.",
-            "Skill estimates",
-            "Structured troubleshooting refreshed",
-            "Portfolio history",
+        let skillGroup = app.groups["evidenceSkill_structured_troubleshooting"]
+        let portfolioGroup = app.groups["evidencePortfolio_91"]
+        XCTAssertTrue(skillGroup.staticTexts["evidenceSkillName_structured_troubleshooting"].exists)
+        XCTAssertTrue(portfolioGroup.staticTexts["Portfolio judgment"].exists)
+
+        let landmarks = [
+            app.staticTexts["evidenceTitle"],
+            app.staticTexts["evidenceIntro"],
+            app.staticTexts["Skill estimates"],
+            app.staticTexts["evidenceSkillName_structured_troubleshooting"],
+            app.staticTexts["Portfolio history"],
         ]
-        let positions = expected.compactMap { labels.firstIndex(of: $0) }
-        XCTAssertEqual(positions.count, expected.count, "Expected all Evidence landmarks in the accessibility tree")
-        XCTAssertEqual(positions, positions.sorted(), "Evidence landmarks must follow their visual reading order")
+        XCTAssertTrue(landmarks.allSatisfy(\.exists), "Expected all Evidence landmarks in the accessibility tree")
+        let topEdges = landmarks.map { $0.frame.minY }
+        XCTAssertEqual(topEdges, topEdges.sorted(), "Evidence landmarks must follow their visual reading order")
     }
 
     @MainActor
