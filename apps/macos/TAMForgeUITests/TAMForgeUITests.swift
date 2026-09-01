@@ -1,4 +1,4 @@
-import AppKit
+import Darwin
 import XCTest
 
 final class TAMForgeUITests: XCTestCase {
@@ -579,6 +579,7 @@ final class TAMForgeUITests: XCTestCase {
             JSONSerialization.jsonObject(with: configData) as? [String: String]
         )
         let receiptPath = try XCTUnwrap(config["receipt_path"])
+        let samplesPath = receiptPath + ".rss"
         let gitSHA = try XCTUnwrap(config["git_sha"])
         let fixtureURL = try XCTUnwrap(
             Bundle(for: Self.self).url(
@@ -595,6 +596,7 @@ final class TAMForgeUITests: XCTestCase {
         ]
         app.launchEnvironment["TAMFORGE_UI_FIXTURE_BASE64"] =
             fixtureData.base64EncodedString()
+        app.launchEnvironment["TAMFORGE_RESOURCE_RECEIPT_SAMPLES_PATH"] = samplesPath
 
         var launchSeconds: [Double] = []
         for _ in 0..<5 {
@@ -621,18 +623,18 @@ final class TAMForgeUITests: XCTestCase {
 
         app.buttons["evidenceNavigation"].click()
         XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 10))
-        let pid = try tamForgeProcessID()
-        _ = try residentMemoryKiB(pid: pid)
+        _ = try XCTUnwrap(waitForRSSSamples(at: samplesPath, minimumCount: 1, timeout: 5))
 
         Thread.sleep(forTimeInterval: 60)
-        var idleRSSKiB: [Int] = []
-        for _ in 0..<300 {
-            idleRSSKiB.append(try residentMemoryKiB(pid: pid))
-            Thread.sleep(forTimeInterval: 1)
-        }
+        let idleStart = rssSamples(at: samplesPath).count
+        let afterIdle = try XCTUnwrap(
+            waitForRSSSamples(at: samplesPath, minimumCount: idleStart + 300, timeout: 310)
+        )
+        let idleRSSKiB = Array(afterIdle[idleStart..<(idleStart + 300)])
 
         var navigationRSSKiB: [Int] = []
         for _ in 0..<20 {
+            let cycleStart = rssSamples(at: samplesPath).count
             app.buttons["todayNavigation"].click()
             XCTAssertTrue(
                 textContaining("240 planned minutes", in: app)
@@ -642,10 +644,16 @@ final class TAMForgeUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts["evidenceTitle"].waitForExistence(timeout: 5))
             app.buttons["evidenceRefresh"].click()
             XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 5))
-            navigationRSSKiB.append(try residentMemoryKiB(pid: pid))
+            let afterCycle = try XCTUnwrap(
+                waitForRSSSamples(at: samplesPath, minimumCount: cycleStart + 1, timeout: 5)
+            )
+            navigationRSSKiB.append(try XCTUnwrap(afterCycle.last))
         }
-        Thread.sleep(forTimeInterval: 60)
-        let finalRSSKiB = try residentMemoryKiB(pid: pid)
+        let postCycleStart = rssSamples(at: samplesPath).count
+        let afterPostCycle = try XCTUnwrap(
+            waitForRSSSamples(at: samplesPath, minimumCount: postCycleStart + 60, timeout: 70)
+        )
+        let finalRSSKiB = try XCTUnwrap(afterPostCycle.last)
 
         let idleP50MiB = mib(percentile(0.50, values: idleRSSKiB))
         let idleP95MiB = mib(percentile(0.95, values: idleRSSKiB))
@@ -662,7 +670,7 @@ final class TAMForgeUITests: XCTestCase {
             "git_sha": gitSHA,
             "scenario": "DEBUG shared parity fixture; Today and Evidence usable",
             "build": "ad-hoc signed macOS app; xcodebuild -jobs 2",
-            "hardware_model": try command("/usr/sbin/sysctl", ["-n", "hw.model"]),
+            "hardware_model": hardwareModel(),
             "physical_memory_bytes": ProcessInfo.processInfo.physicalMemory,
             "macos": ProcessInfo.processInfo.operatingSystemVersionString,
             "launch_count": launchSeconds.count,
@@ -704,40 +712,32 @@ final class TAMForgeUITests: XCTestCase {
         return app.state == .notRunning
     }
 
-    private func tamForgeProcessID() throws -> Int32 {
-        let application = try XCTUnwrap(
-            NSRunningApplication.runningApplications(
-                withBundleIdentifier: "com.fgomensoro.tamforge"
-            ).first,
-            "TAMForge process was not found"
-        )
-        return application.processIdentifier
+    private func rssSamples(at path: String) -> [Int] {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let text = String(data: data, encoding: .utf8) else { return [] }
+        return text.split(separator: "\n").compactMap { Int($0) }
     }
 
-    private func residentMemoryKiB(pid: Int32) throws -> Int {
-        let output = try command("/bin/ps", ["-o", "rss=", "-p", String(pid)])
-        return try XCTUnwrap(Int(output.trimmingCharacters(in: .whitespacesAndNewlines)))
+    private func waitForRSSSamples(
+        at path: String, minimumCount: Int, timeout: TimeInterval
+    ) -> [Int]? {
+        let deadline = Date().addingTimeInterval(timeout)
+        var samples = rssSamples(at: path)
+        while samples.count < minimumCount && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.1)
+            samples = rssSamples(at: path)
+        }
+        return samples.count >= minimumCount ? samples : nil
     }
 
-    private func command(_ executable: String, _ arguments: [String]) throws -> String {
-        let process = Process()
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.standardOutput = stdout
-        process.standardError = stderr
-        try process.run()
-        process.waitUntilExit()
-        let output = stdout.fileHandleForReading.readDataToEndOfFile()
-        let error = stderr.fileHandleForReading.readDataToEndOfFile()
-        XCTAssertEqual(
-            process.terminationStatus,
-            0,
-            String(data: error, encoding: .utf8) ?? "command failed"
-        )
-        return String(data: output, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    private func hardwareModel() -> String {
+        var size = 0
+        guard sysctlbyname("hw.model", nil, &size, nil, 0) == 0 else { return "unknown" }
+        var value = [CChar](repeating: 0, count: size)
+        guard sysctlbyname("hw.model", &value, &size, nil, 0) == 0 else { return "unknown" }
+        return value.withUnsafeBufferPointer {
+            String(decodingCString: $0.baseAddress!, as: UTF8.self)
+        }
     }
 
     private func percentile<T: BinaryFloatingPoint>(_ fraction: T, values: [T]) -> T {

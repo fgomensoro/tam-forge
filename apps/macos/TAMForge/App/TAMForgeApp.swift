@@ -1,3 +1,4 @@
+import Darwin
 import SwiftUI
 
 @main
@@ -8,6 +9,7 @@ struct TAMForgeApp: App {
         // One startup sweep; live uploads are protected by their OS-held file locks.
         _ = try? ActivityStagedFileStore().cleanupAbandonedCopies()
 #if DEBUG
+        LocalResourceSampler.startIfRequested()
         let arguments = ProcessInfo.processInfo.arguments
         let nativeFeatures: Set<NativeFeature> = arguments.contains("-ui-test-signed-in")
             && !arguments.contains("-ui-test-native-features") ? [] : [.today, .roadmaps, .evidence]
@@ -27,6 +29,46 @@ struct TAMForgeApp: App {
         Window("TAM Forge", id: "main") { NativeShellView(dependencies: dependencies) }
     }
 }
+
+#if DEBUG
+private enum LocalResourceSampler {
+    static func startIfRequested(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) {
+        guard let path = environment["TAMFORGE_RESOURCE_RECEIPT_SAMPLES_PATH"] else { return }
+        let url = URL(fileURLWithPath: path)
+        try? FileManager.default.removeItem(at: url)
+        FileManager.default.createFile(atPath: path, contents: nil)
+
+        Task.detached(priority: .utility) {
+            guard let handle = try? FileHandle(forWritingTo: url) else { return }
+            defer { try? handle.close() }
+            while !Task.isCancelled {
+                if let rssKiB = residentMemoryKiB() {
+                    try? handle.write(contentsOf: Data("\(rssKiB)\n".utf8))
+                }
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+    }
+
+    private static func residentMemoryKiB() -> Int? {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size
+        )
+        let status = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(
+                    mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count
+                )
+            }
+        }
+        guard status == KERN_SUCCESS else { return nil }
+        return Int(info.resident_size / 1024)
+    }
+}
+#endif
 
 private struct NativeShellView: View {
     let dependencies: AppDependencies
