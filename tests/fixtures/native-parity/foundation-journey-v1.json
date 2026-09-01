@@ -1,0 +1,282 @@
+{
+  "schema_version": 1,
+  "scenario_id": "native-foundation-month1-v1",
+  "fixed_now": "2026-08-24T12:00:00-07:00",
+  "source_package": {
+    "path": "apps/backend/tests/fixtures/roadmaps/month-v1.zip",
+    "sha256": "4011898c560e46faed645754e1e7aeb73c2fe20c66a06e9071167962258e2eb4",
+    "byte_length": 2338
+  },
+  "responses": {
+    "roadmap_import": {
+      "id": 17,
+      "status": "validated",
+      "failure_code": null,
+      "validation_report": {
+        "accepted": true,
+        "task_count": 158,
+        "resource_count": 0,
+        "exit_criterion_count": 1,
+        "issues": []
+      },
+      "semantic_diff": {
+        "summary": {
+          "added": 158,
+          "changed": 0,
+          "removed": 0
+        }
+      }
+    },
+    "roadmap_version": {
+      "id": 8,
+      "version_key": "month-1-v1",
+      "version_number": 1,
+      "month_number": 1,
+      "state": "active",
+      "mirror_status": "not_required",
+      "mirror_ref": null,
+      "mirror_error_code": null
+    },
+    "today": {
+      "local_date": "2026-08-24",
+      "timezone": "America/Los_Angeles",
+      "day_id": 8,
+      "day_type": "weekday",
+      "day_status": "planned",
+      "roadmap": {
+        "version_id": 8,
+        "version_key": "month-1-v1",
+        "version_number": 1,
+        "month": 1,
+        "week": 1,
+        "day": 1
+      },
+      "total_planned_minutes": 240,
+      "time_policy": {
+        "target_minutes": 240,
+        "acceptable_minimum": 225,
+        "hard_stop_minutes": 255,
+        "focused_minutes": 0,
+        "hard_stop_recommended": false
+      },
+      "required_blocks": [
+        {
+          "name": "technical_learning",
+          "planned_minutes": 45,
+          "activity_ids": [41]
+        }
+      ],
+      "tasks": [
+        {
+          "activity_id": 41,
+          "roadmap_order": 1,
+          "stable_id": "integration-reading",
+          "block": "technical_learning",
+          "state": "ready",
+          "objective": "Explain HTTP status versus business outcome from memory.",
+          "timebox_minutes": 45,
+          "source_references": [
+            {
+              "path": "TAM Practice/Docs/http-status.md",
+              "anchor": "failure-boundaries"
+            }
+          ],
+          "required_output": ["Independent closed-source recall"],
+          "pass_criteria": ["Separate transport status from business outcome"],
+          "allowed_ai_role": "none",
+          "evidence_requirements": ["Attempt A", "Mandatory self-review"],
+          "required": true,
+          "optimistic_version": 1
+        }
+      ],
+      "corrections": [],
+      "interviews": [],
+      "awaiting_self_reviews": [],
+      "analyses": [],
+      "primary_continue": {
+        "kind": "start_activity",
+        "target_id": 41,
+        "label": "Start technical reading",
+        "allowed_ai_role": "none"
+      },
+      "source_updated_at": "2026-08-24T19:00:00Z",
+      "read_model_version": "native-parity-v1",
+      "etag": "native-parity-v1"
+    },
+    "activity": {
+      "id": 41,
+      "study_day_id": 8,
+      "state": "ready",
+      "optimistic_version": 1,
+      "classification": "required",
+      "stronger_evidence_id": null,
+      "activity_focused_seconds": 0,
+      "day_focused_minutes": 0,
+      "hard_stop_recommended": false,
+      "open_timer": null,
+      "source_hidden": false,
+      "task_contract": {
+        "stable_id": "integration-reading",
+        "block": "technical_learning",
+        "objective": "Explain HTTP status versus business outcome from memory.",
+        "timebox_minutes": 45,
+        "required": true,
+        "source_references": [
+          {
+            "path": "TAM Practice/Docs/http-status.md",
+            "anchor": "failure-boundaries"
+          }
+        ],
+        "required_output": ["Independent closed-source recall"],
+        "pass_criteria": ["Separate transport status from business outcome"],
+        "evidence_requirements": ["Attempt A", "Mandatory self-review"],
+        "allowed_ai_role": "none",
+        "procedure": [],
+        "constraints": ["Hide the source before committing Attempt A."],
+        "exercise_type": "integration_diagram_and_explanation",
+        "mapping_version": "seed-v1"
+      },
+      "committed_output": null,
+      "self_review": null
+    },
+    "notifications": {
+      "items": [
+        {
+          "id": 61,
+          "notification_type": "feedback_ready",
+          "subject_kind": "activity",
+          "subject_id": 41,
+          "created_at": "2026-08-24T20:00:00Z",
+          "read_at": null
+        }
+      ],
+      "next_cursor": null
+    },
+    "skills": {
+      "items": [
+        {
+          "slug": "structured_troubleshooting",
+          "name": "Structured troubleshooting",
+          "baseline": "2.000",
+          "month_one_target": "2.500",
+          "final_target": "3.000",
+          "latest_snapshot": {
+            "id": 71,
+            "formula_version": "seed-v1",
+            "snapshot_date": "2026-08-24",
+            "estimated_level": "2.410",
+            "confidence": "low",
+            "trend": "insufficient_evidence",
+            "recency": "fresh",
+            "baseline_target_gap": "-0.410",
+            "month_one_target_gap": "0.090",
+            "final_target_gap": "0.590",
+            "total_effective_weight": "1.389375",
+            "qualifying_event_count": 3,
+            "exercise_type_count": 1,
+            "last_strong_evidence_date": null,
+            "manifest": [
+              {
+                "event_id": 50,
+                "effective_weight": "0.154375",
+                "inclusion_code": "discounted_same_day"
+              }
+            ],
+            "confidence_basis": {
+              "schema_version": 1,
+              "basis_code": "low_weight",
+              "event_ids": [50]
+            },
+            "trend_basis": {
+              "schema_version": 1,
+              "basis_code": "too_few_events",
+              "event_ids": []
+            }
+          }
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English",
+          "baseline": "1.000",
+          "month_one_target": "2.000",
+          "final_target": "2.750",
+          "latest_snapshot": null
+        }
+      ]
+    },
+    "portfolio": {
+      "items": [
+        {
+          "id": 91,
+          "activity_id": 41,
+          "attempt_id": 11,
+          "formula_version": "seed-v1",
+          "rubric_version": "seed-v1",
+          "total_score": "14.000",
+          "components": [
+            {"slug": "impact_risk_assessment", "score": "3.000"},
+            {"slug": "explicit_prioritization", "score": "2.000"},
+            {"slug": "delegation_ownership", "score": "2.000"},
+            {"slug": "communication_control", "score": "2.000"},
+            {"slug": "proactive_work_protection", "score": "1.000"},
+            {"slug": "evidence_based_reprioritization", "score": "2.000"},
+            {"slug": "english_clarity", "score": "2.000"}
+          ],
+          "trend_basis": {
+            "schema_version": 1,
+            "basis_code": "first_score",
+            "event_ids": []
+          },
+          "scored_at": "2026-08-24T20:00:00Z"
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  "journey": {
+    "activity_states": [
+      "ready",
+      "active",
+      "paused",
+      "active",
+      "output_committed",
+      "self_review_complete"
+    ],
+    "output": {
+      "contract_version": 1,
+      "kind": "reading",
+      "prompt": "Explain HTTP status versus business outcome from memory.",
+      "audience": "Technical hiring manager",
+      "time_limit_minutes": 45,
+      "key_ideas": [
+        "HTTP requests carry explicit methods and resource paths.",
+        "Status codes separate client and server failure classes.",
+        "A TAM connects protocol evidence to customer impact."
+      ],
+      "boundary_or_failure": "A successful transport does not prove the business operation completed.",
+      "tam_customer_example": "Confirm whether an order was committed before advising a retry.",
+      "unresolved_question": "Which application errors use a successful HTTP status?"
+    },
+    "self_review": {
+      "main_answer": "I separated transport status from business outcome.",
+      "did_well": "I connected the protocol to customer impact.",
+      "structure_weakness": "The boundary came later than it should.",
+      "vague_points": "I did not name the exact business error shape.",
+      "hesitation_points": "I paused while choosing the retry example.",
+      "change_next": "Lead with the business outcome before retry guidance.",
+      "self_score": 3
+    },
+    "evidence": {
+      "missing_label": "Not assessed",
+      "forbidden_vanity_proxies": [
+        "streak",
+        "recording count",
+        "transcript word count"
+      ]
+    },
+    "notification": {
+      "notification_type": "feedback_ready",
+      "keyboard_action": "mark_read"
+    }
+  }
+}
