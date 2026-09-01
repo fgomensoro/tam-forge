@@ -30,11 +30,40 @@ final class RecordingUploadTests: XCTestCase {
         XCTAssertFalse(first.headers.values.contains(key.data.base64EncodedString()))
         try second.verifyFileIdentity()
 
-        let handle = try FileHandle(forWritingTo: second.fileURL)
-        try handle.seekToEnd()
-        try handle.write(contentsOf: Data([0]))
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: second.fileURL.path
+        )
+        let handle = try FileHandle(forUpdating: second.fileURL)
+        try handle.seek(toOffset: 0)
+        try handle.write(contentsOf: Data([firstBytes[0] ^ 0xff]))
+        try handle.synchronize()
         try handle.close()
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o400],
+            ofItemAtPath: second.fileURL.path
+        )
         XCTAssertThrowsError(try second.verifyFileIdentity())
+    }
+
+    func testGrouperEmitsSixtySecondAndPartialPartsWithoutCrossingTrackBoundaries() throws {
+        let recordingID = UUID()
+        var grouper = RecordingUploadPartGrouper(maximumSampleCount: 48 * 60)
+        var groups: [RecoveredSpoolRecord] = []
+
+        for index in 0..<61 {
+            let record = try recoveredRecord(
+                recordingID: recordingID,
+                track: .microphone,
+                sampleStart: Int64(index * 48)
+            )
+            if let completed = grouper.append(record) { groups.append(completed) }
+        }
+        if let completed = grouper.finish() { groups.append(completed) }
+
+        XCTAssertEqual(groups.map(\.chunk.sampleCount), [48 * 60, 48])
+        XCTAssertEqual(groups.map(\.chunk.sampleStart), [0, Int64(48 * 60)])
+        XCTAssertEqual(groups.map(\.payload.count), [48 * 60 * 2, 48 * 2])
     }
 
     func testJournalReconstructsInflightAsPendingWithoutPersistingHeaders() async throws {
@@ -84,10 +113,13 @@ final class RecordingUploadTests: XCTestCase {
         let refreshes = TokenRefreshRecorder()
         let client = LiveRecordingServerClient(
             baseURL: URL(string: "https://api.example.test")!,
-            bearerToken: { "expired-token" },
-            refreshBearer: {
+            bearerToken: {
+                .init(token: "expired-token", sessionGeneration: 7)
+            },
+            refreshBearer: { lease in
+                XCTAssertEqual(lease.sessionGeneration, 7)
                 await refreshes.didRefresh()
-                return "fresh-token"
+                return .init(token: "fresh-token", sessionGeneration: 7)
             },
             session: fixture.session()
         )
@@ -105,6 +137,74 @@ final class RecordingUploadTests: XCTestCase {
             fixture.requests[1].value(forHTTPHeaderField: "X-TAM-Part-Key"),
             part.partKeyBase64URL
         )
+    }
+
+    func testSealedSpoolTraversesLiveHTTPRecoveryAndBothReleaseGates() async throws {
+        let spool = try await sealedSpool()
+        let fixture = URLProtocolFixture()
+        let recordingID = spool.recordingID.uuidString.lowercased()
+        let microphoneID = RecordingTrackIdentity.id(
+            recordingID: spool.recordingID,
+            track: .microphone
+        ).uuidString.lowercased()
+        let systemID = RecordingTrackIdentity.id(
+            recordingID: spool.recordingID,
+            track: .systemAudio
+        ).uuidString.lowercased()
+        let microphoneHash = sha256(Data(repeating: 1, count: 48 * 2))
+        let systemHash = sha256(Data(repeating: 2, count: 48 * 2 * 2))
+        let manifestHash = String(repeating: "a", count: 64)
+
+        fixture.enqueue(.response(
+            statusCode: 201,
+            body: Data(
+                #"{"schema_version":1,"recording_id":"\#(recordingID)","state":"reserved","replayed":false}"#.utf8
+            )
+        ))
+        for (trackID, hash) in [(microphoneID, microphoneHash), (systemID, systemHash)] {
+            fixture.enqueue(.response(
+                statusCode: 201,
+                body: Data(
+                    #"{"schema_version":1,"recording_id":"\#(recordingID)","track_id":"\#(trackID)","sequence":0,"sample_start":0,"sample_count":48,"plaintext_sha256":"\#(hash)","high_water_sample":48,"replayed":false}"#.utf8
+                )
+            ))
+        }
+        fixture.enqueue(.response(
+            statusCode: 201,
+            body: Data(
+                #"{"schema_version":1,"recording_id":"\#(recordingID)","state":"stored","coverage_status":"complete","track_manifest_sha256":["\#(manifestHash)","\#(manifestHash)"],"audio_created_on_server":true,"transcript_lineage_accepted":false,"replayed":false}"#.utf8
+            )
+        ))
+        let client = LiveRecordingServerClient(
+            baseURL: URL(string: "https://api.example.test")!,
+            bearerToken: { .init(token: "live-token", sessionGeneration: 3) },
+            refreshBearer: { _ in throw NativeAuthenticationError.reauthenticationRequired },
+            session: fixture.session()
+        )
+        let pipeline = RecordingUploadPipeline(spoolFactory: spool.factory, server: client)
+
+        let firstGates = try await pipeline.upload(
+            recordingID: spool.recordingID,
+            progress: { _ in }
+        )
+        XCTAssertEqual(fixture.requests.map(\.httpMethod), ["POST", "PUT", "PUT", "POST"])
+        XCTAssertTrue(firstGates.audioCreatedOnServer)
+        XCTAssertFalse(firstGates.transcriptLineageAccepted)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: spool.directory.path))
+
+        fixture.enqueue(.response(
+            statusCode: 200,
+            body: Data(
+                #"{"schema_version":1,"recording_id":"\#(recordingID)","state":"stored","coverage_status":"complete","tracks":[{"track_id":"\#(microphoneID)","kind":"microphone","high_water_sample":48,"stored_part_count":1,"gap_count":0,"manifest_sha256":"\#(manifestHash)"},{"track_id":"\#(systemID)","kind":"system_audio","high_water_sample":48,"stored_part_count":1,"gap_count":0,"manifest_sha256":"\#(manifestHash)"}],"audio_created_on_server":true,"transcript_lineage_accepted":true}"#.utf8
+            )
+        ))
+        let finalGates = try await pipeline.upload(
+            recordingID: spool.recordingID,
+            progress: { _ in }
+        )
+
+        XCTAssertTrue(finalGates.mayDeleteLocalSpool)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: spool.directory.path))
     }
 
     func testPipelineUploadsOnePartAtATimeAndKeepsSpoolAfterAudio201() async throws {
@@ -265,9 +365,11 @@ final class RecordingUploadTests: XCTestCase {
 
     private func recoveredRecord(
         recordingID: UUID,
-        track: RecordingTrackKind
+        track: RecordingTrackKind,
+        sampleStart: Int64 = 0
     ) throws -> RecoveredSpoolRecord {
-        let chunk = try chunk(track: track)
+        var chunk = try chunk(track: track)
+        chunk.sampleStart = sampleStart
         return .init(recordingID: recordingID, sequence: 0, payload: chunk.payload, chunk: chunk)
     }
 
@@ -298,6 +400,10 @@ final class RecordingUploadTests: XCTestCase {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
         return url
+    }
+
+    private func sha256(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 }
 

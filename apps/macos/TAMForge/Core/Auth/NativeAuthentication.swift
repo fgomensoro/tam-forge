@@ -44,6 +44,11 @@ enum NativeAuthenticationError: Error, Equatable {
     case authenticationInProgress
 }
 
+struct NativeAccessTokenLease: Sendable, Equatable {
+    let token: String
+    let sessionGeneration: Int
+}
+
 actor NativeAuthenticationCoordinator {
     static let callbackScheme = "tamforge"
     static let callbackHost = "auth"
@@ -126,9 +131,21 @@ actor NativeAuthenticationCoordinator {
         return try await rotateAccessToken()
     }
 
-    func refreshedAccessTokenAfterUnauthorized() async throws -> String {
+    func recordingAccessTokenLease() async throws -> NativeAccessTokenLease {
+        let generation = sessionGeneration
+        let token = try await currentAccessToken()
+        try requireCurrentSession(generation)
+        return .init(token: token, sessionGeneration: generation)
+    }
+
+    func refreshedAccessTokenAfterUnauthorized(
+        lease: NativeAccessTokenLease
+    ) async throws -> NativeAccessTokenLease {
+        try requireCurrentSession(lease.sessionGeneration)
         clearAccessToken()
-        return try await rotateAccessToken()
+        let token = try await rotateAccessToken()
+        try requireCurrentSession(lease.sessionGeneration)
+        return .init(token: token, sessionGeneration: lease.sessionGeneration)
     }
 
     func performAuthenticated<Value: Sendable>(

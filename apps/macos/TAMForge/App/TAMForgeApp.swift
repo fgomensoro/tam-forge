@@ -172,6 +172,7 @@ private final class NativeShellComposition: ObservableObject {
 
     init(dependencies: AppDependencies) {
         let bearerToken: NativeBearerTokenProvider
+        let recordingBearerToken: RecordingBearerTokenProvider
         let refreshBearer: RecordingBearerRefresh
         let httpSession: URLSession?
         #if DEBUG
@@ -187,16 +188,23 @@ private final class NativeShellComposition: ObservableObject {
                     initialBanner: arguments.contains("-ui-test-offline") ? .offline : nil
                 )
                 bearerToken = { "ui-test-only" }
-                refreshBearer = { "ui-test-only" }
+                recordingBearerToken = {
+                    .init(token: "ui-test-only", sessionGeneration: 0)
+                }
+                refreshBearer = { lease in lease }
                 let configuration = URLSessionConfiguration.ephemeral
                 configuration.protocolClasses = [NativeUIFixtureProtocol.self]
                 httpSession = URLSession(configuration: configuration)
             } else {
-                (session, bearerToken, refreshBearer) = Self.liveSession(dependencies)
+                (session, bearerToken, recordingBearerToken, refreshBearer) = Self.liveSession(
+                    dependencies
+                )
                 httpSession = nil
             }
         #else
-            (session, bearerToken, refreshBearer) = Self.liveSession(dependencies)
+            (session, bearerToken, recordingBearerToken, refreshBearer) = Self.liveSession(
+                dependencies
+            )
             httpSession = nil
         #endif
         let onUnauthorizedForRequest: NativeUnauthorizedHandlerFactory = { [weak session] in
@@ -236,12 +244,7 @@ private final class NativeShellComposition: ObservableObject {
         #endif
         let recordingServer = LiveRecordingServerClient(
             baseURL: dependencies.environment.apiBaseURL,
-            bearerToken: {
-                guard let token = try await bearerToken() else {
-                    throw NativeAuthenticationError.noStoredCredential
-                }
-                return token
-            },
+            bearerToken: recordingBearerToken,
             refreshBearer: refreshBearer,
             session: httpSession
         )
@@ -256,7 +259,12 @@ private final class NativeShellComposition: ObservableObject {
 
     private static func liveSession(
         _ dependencies: AppDependencies
-    ) -> (ShellSessionModel, NativeBearerTokenProvider, RecordingBearerRefresh) {
+    ) -> (
+        ShellSessionModel,
+        NativeBearerTokenProvider,
+        RecordingBearerTokenProvider,
+        RecordingBearerRefresh
+    ) {
         let store = KeychainCredentialStore()
         let authentication = NativeAuthenticationCoordinator(
             http: LiveNativeAuthHTTPClient(baseURL: dependencies.environment.apiBaseURL),
@@ -265,8 +273,11 @@ private final class NativeShellComposition: ObservableObject {
         let bearerToken: NativeBearerTokenProvider = {
             try await authentication.currentAccessToken()
         }
-        let refreshBearer: RecordingBearerRefresh = {
-            try await authentication.refreshedAccessTokenAfterUnauthorized()
+        let recordingBearerToken: RecordingBearerTokenProvider = {
+            try await authentication.recordingAccessTokenLease()
+        }
+        let refreshBearer: RecordingBearerRefresh = { lease in
+            try await authentication.refreshedAccessTokenAfterUnauthorized(lease: lease)
         }
         let stream = StatusStreamClient(
             baseURL: dependencies.environment.apiBaseURL,
@@ -284,7 +295,7 @@ private final class NativeShellComposition: ObservableObject {
             ),
             statusStream: stream
         )
-        return (session, bearerToken, refreshBearer)
+        return (session, bearerToken, recordingBearerToken, refreshBearer)
     }
 }
 
@@ -401,7 +412,10 @@ private struct NativeWorkspaceView: View {
                         if recording.requiresStopBeforeSignOut {
                             showRecordingSignOutConfirmation = true
                         } else {
-                            session.signOut()
+                            Task {
+                                await recording.pauseUploadsForSignOut()
+                                session.signOut()
+                            }
                         }
                     }
                     .accessibilityIdentifier("signOutButton")
@@ -434,7 +448,10 @@ private struct NativeWorkspaceView: View {
         }
         // Close this generation on logout/expiry. A fresh sign-in gets a new model;
         // canceled or noncooperative reads cannot publish into the retired workspace.
-        .onDisappear { state.evidence.reset() }
+        .onDisappear {
+            state.evidence.reset()
+            Task { await recording.pauseUploadsForSignOut() }
+        }
         .alert(
             "Stop recording before signing out?",
             isPresented: $showRecordingSignOutConfirmation
@@ -443,6 +460,7 @@ private struct NativeWorkspaceView: View {
             Button("Stop and sign out") {
                 Task {
                     await recording.stop()
+                    await recording.pauseUploadsForSignOut()
                     session.signOut()
                 }
             }

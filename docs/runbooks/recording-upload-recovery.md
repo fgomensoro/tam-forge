@@ -10,16 +10,19 @@ returns to the deterministic pending queue.
    release gates with a key derived from the recording root key.
 2. `upload-journal.json` contains only non-secret task identities, file identity, completed
    parts, and retry count. A prior in-flight entry becomes pending on relaunch.
-3. Each upload part is rebuilt one at a time from one authenticated spool record. Its AES-GCM
-   key and nonce are derived deterministically, but the key exists only in the live request
-   header. The encrypted body uses an ephemeral/default `URLSessionUploadTask(fromFile:)`.
+3. Authenticated one-second records are grouped by track and contiguous timeline into bounded
+   parts of at most 60 seconds. One read-only encrypted part exists at a time; its AES-GCM key
+   and nonce are derived deterministically, but the key exists only in the live request header.
+   A streamed ciphertext digest plus device/inode/size identity is checked before and after the
+   ephemeral/default `URLSessionUploadTask(fromFile:)`.
 4. Server create, part, and seal calls are idempotent. A lost response may cause a replay; it
    cannot create a competing immutable part.
 
 ## Recovery actions
 
 - **Waiting for sign-in:** sign in, then press Retry. A `401` creates one replacement upload
-  task with a refreshed bearer token.
+  task only while the original authentication-generation lease remains current. Sign-out
+  cancels active uploads; an old request cannot continue under a later login.
 - **Waiting for network:** reconnect, then press Retry. Completed part receipts remain in the
   non-secret journal.
 - **Needs attention:** do not remove the spool. Retry once; if the conflict remains, preserve

@@ -1,8 +1,9 @@
 import CryptoKit
 import Foundation
 
-typealias RecordingBearerTokenProvider = @Sendable () async throws -> String
-typealias RecordingBearerRefresh = @Sendable () async throws -> String
+typealias RecordingBearerTokenProvider = @Sendable () async throws -> NativeAccessTokenLease
+typealias RecordingBearerRefresh =
+    @Sendable (NativeAccessTokenLease) async throws -> NativeAccessTokenLease
 
 struct RecordingServerStatus: Equatable, Sendable {
     let recordingID: UUID
@@ -50,10 +51,14 @@ struct LiveRecordingServerClient: RecordingServerServicing, @unchecked Sendable 
     }
 
     func create(_ command: RecordingCreatePayload, idempotencyKey: String) async throws {
+        let body = try generatedRequestBody(
+            command,
+            as: Components.Schemas.RecordingCreateCommand.self
+        )
         let data = try await sendJSON(
             method: "POST",
             path: "/api/v1/recordings",
-            body: RecordingCanonicalJSON.encode(command),
+            body: body,
             idempotencyKey: idempotencyKey,
             expectedStatus: 201
         )
@@ -65,6 +70,7 @@ struct LiveRecordingServerClient: RecordingServerServicing, @unchecked Sendable 
     }
 
     func upload(_ part: RecordingPreparedPart) async throws {
+        try validateGeneratedPartContract(part)
         try part.verifyFileIdentity()
         let path =
             "/api/v1/recordings/\(part.recordingID.uuidString.lowercased())"
@@ -84,10 +90,14 @@ struct LiveRecordingServerClient: RecordingServerServicing, @unchecked Sendable 
         _ command: RecordingSealPayload,
         idempotencyKey: String
     ) async throws -> RecordingServerStatus {
+        let body = try generatedRequestBody(
+            command,
+            as: Components.Schemas.RecordingSealCommand.self
+        )
         let data = try await sendJSON(
             method: "POST",
             path: "/api/v1/recordings/\(command.recordingID)/seal",
-            body: RecordingCanonicalJSON.encode(command),
+            body: body,
             idempotencyKey: idempotencyKey,
             expectedStatus: 201
         )
@@ -156,11 +166,11 @@ struct LiveRecordingServerClient: RecordingServerServicing, @unchecked Sendable 
         perform: @escaping @Sendable (String) async throws -> (Data, URLResponse)
     ) async throws -> Data {
         do {
-            let token = try await bearerToken()
-            var result = try await perform(token)
+            let lease = try await bearerToken()
+            var result = try await perform(lease.token)
             if (result.1 as? HTTPURLResponse)?.statusCode == 401 {
-                let replacement = try await refreshBearer()
-                result = try await perform(replacement)
+                let replacement = try await refreshBearer(lease)
+                result = try await perform(replacement.token)
             }
             guard let response = result.1 as? HTTPURLResponse else {
                 throw RecordingUploadError.invalidResponse
@@ -223,6 +233,39 @@ struct LiveRecordingServerClient: RecordingServerServicing, @unchecked Sendable 
         do { return try JSONDecoder().decode(type, from: data) } catch {
             throw RecordingUploadError.invalidResponse
         }
+    }
+
+    private func generatedRequestBody<Local: Encodable, Generated: Codable>(
+        _ value: Local,
+        as type: Generated.Type
+    ) throws -> Data {
+        let localData = try RecordingCanonicalJSON.encode(value)
+        let generated = try decodeGenerated(type, data: localData)
+        do { return try NativeJSONCodec.encode(generated) } catch {
+            throw RecordingUploadError.invalidResponse
+        }
+    }
+
+    private func validateGeneratedPartContract(_ part: RecordingPreparedPart) throws {
+        let payload = RecordingPartContractPayload(
+            recordingID: part.recordingID.uuidString.lowercased(),
+            trackID: part.trackID.uuidString.lowercased(),
+            trackKind: part.track.rawValue,
+            format: .init(channelCount: part.track == .microphone ? 1 : 2),
+            sequence: part.sequence,
+            sampleStart: part.sampleStart,
+            sampleCount: part.sampleCount,
+            byteLength: part.plaintextLength,
+            ciphertextByteLength: part.ciphertextLength,
+            plaintextSHA256: part.plaintextSHA256,
+            ciphertextSHA256: part.ciphertextSHA256,
+            nonceBase64URL: part.nonceBase64URL
+        )
+        let data = try RecordingCanonicalJSON.encode(payload)
+        _ = try decodeGenerated(
+            Components.Schemas.RecordingPartUploadMetadata.self,
+            data: data
+        )
     }
 }
 
@@ -298,57 +341,34 @@ actor RecordingUploadPipeline: RecordingUploading {
             rootURL: spoolFactory.rootURL,
             keyStore: spoolFactory.keyStore
         )
-        var sequences: [RecordingTrackKind: Int] = [:]
-        var descriptors: [RecordingTrackKind: [RecordingPartDescriptorPayload]] = [:]
-        var hashers: [RecordingTrackKind: SHA256] = [
-            .microphone: SHA256(),
-            .systemAudio: SHA256(),
-        ]
-        var completedCount = 0
+        let assembly = RecordingUploadAssembly()
         let completed = Set((await journal.snapshot()).completedParts)
+        var grouper = RecordingUploadPartGrouper()
 
         while let record = try await reader.next() {
             try Task.checkCancellation()
-            let track = record.chunk.track
-            let sequence = sequences[track, default: 0]
-            sequences[track] = sequence + 1
-            let plaintextHash = SHA256.hash(data: record.payload).hex
-            descriptors[track, default: []].append(
-                .init(
-                    sequence: sequence,
-                    sampleStart: record.chunk.sampleStart,
-                    sampleCount: record.chunk.sampleCount,
-                    byteLength: record.payload.count,
-                    plaintextSHA256: plaintextHash
-                ))
-            var hasher = hashers[track] ?? SHA256()
-            hasher.update(data: record.payload)
-            hashers[track] = hasher
-
-            let identity = "\(track.rawValue):\(sequence):\(plaintextHash)"
-            if completed.contains(identity) {
-                completedCount += 1
-                progress(completedCount)
-                continue
+            if let group = grouper.append(record) {
+                try await uploadGroup(
+                    group,
+                    assembly: assembly,
+                    completed: completed,
+                    directory: directory,
+                    rootKey: rootKey,
+                    journal: journal,
+                    progress: progress
+                )
             }
-            let part = try partBuilder.prepare(
-                record: record,
-                uploadSequence: sequence,
+        }
+        if let group = grouper.finish() {
+            try await uploadGroup(
+                group,
+                assembly: assembly,
+                completed: completed,
+                directory: directory,
                 rootKey: rootKey,
-                directoryURL: directory
+                journal: journal,
+                progress: progress
             )
-            do {
-                try await journal.begin(part: part)
-                try await server.upload(part)
-                try await journal.complete(part: part)
-                try? FileManager.default.removeItem(at: part.fileURL)
-                completedCount += 1
-                progress(completedCount)
-            } catch {
-                try? await journal.markFailure()
-                try? FileManager.default.removeItem(at: part.fileURL)
-                throw error
-            }
         }
         let scan = await reader.summary()
         guard !scan.ignoredIncompleteTail else {
@@ -359,7 +379,7 @@ actor RecordingUploadPipeline: RecordingUploading {
             try RecordingTrackManifestPayload.make(
                 recordingID: recordingID,
                 track: track,
-                parts: descriptors[track, default: []],
+                parts: assembly.descriptors[track, default: []],
                 gaps: allGaps.filter { $0.track == track }.map {
                     .init(
                         sampleStart: $0.sampleStart,
@@ -368,7 +388,7 @@ actor RecordingUploadPipeline: RecordingUploading {
                     )
                 },
                 pcmSHA256: {
-                    var hasher = hashers[track] ?? SHA256()
+                    var hasher = assembly.hashers[track] ?? SHA256()
                     return hasher.finalize().hex
                 }()
             )
@@ -394,6 +414,67 @@ actor RecordingUploadPipeline: RecordingUploading {
         _ = try await spoolFactory.releaseIfEligible(recordingID: recordingID)
         return gates
     }
+
+    private func uploadGroup(
+        _ record: RecoveredSpoolRecord,
+        assembly: RecordingUploadAssembly,
+        completed: Set<String>,
+        directory: URL,
+        rootKey: SymmetricKey,
+        journal: RecordingUploadJournal,
+        progress: @escaping @Sendable (Int) -> Void
+    ) async throws {
+        let track = record.chunk.track
+        let sequence = assembly.sequences[track, default: 0]
+        assembly.sequences[track] = sequence + 1
+        let plaintextHash = SHA256.hash(data: record.payload).hex
+        assembly.descriptors[track, default: []].append(
+            .init(
+                sequence: sequence,
+                sampleStart: record.chunk.sampleStart,
+                sampleCount: record.chunk.sampleCount,
+                byteLength: record.payload.count,
+                plaintextSHA256: plaintextHash
+            ))
+        var hasher = assembly.hashers[track] ?? SHA256()
+        hasher.update(data: record.payload)
+        assembly.hashers[track] = hasher
+
+        let identity = "\(track.rawValue):\(sequence):\(plaintextHash)"
+        if completed.contains(identity) {
+            assembly.completedCount += 1
+            progress(assembly.completedCount)
+            return
+        }
+        let part = try partBuilder.prepare(
+            record: record,
+            uploadSequence: sequence,
+            rootKey: rootKey,
+            directoryURL: directory
+        )
+        do {
+            try await journal.begin(part: part)
+            try await server.upload(part)
+            try await journal.complete(part: part)
+            try? FileManager.default.removeItem(at: part.fileURL)
+            assembly.completedCount += 1
+            progress(assembly.completedCount)
+        } catch {
+            try? await journal.markFailure()
+            try? FileManager.default.removeItem(at: part.fileURL)
+            throw error
+        }
+    }
+}
+
+private final class RecordingUploadAssembly {
+    var sequences: [RecordingTrackKind: Int] = [:]
+    var descriptors: [RecordingTrackKind: [RecordingPartDescriptorPayload]] = [:]
+    var hashers: [RecordingTrackKind: SHA256] = [
+        .microphone: SHA256(),
+        .systemAudio: SHA256(),
+    ]
+    var completedCount = 0
 }
 
 private struct RecordingCreateResponsePayload: Decodable {

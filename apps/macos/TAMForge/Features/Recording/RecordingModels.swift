@@ -292,6 +292,8 @@ enum RecordingDiskPolicy {
     static let maximumGapEntries = RecordingTrackKind.allCases.count
         * maximumGapEntriesPerTrack
     static let maximumRecordingBytes = Int64(2.5 * Double(gibibyte))
+    // Covers per-record envelopes plus one bounded 60-second encrypted upload file.
+    static let maximumSpoolBytes = maximumRecordingBytes + 32 * 1_048_576
     static let maximumGlobalBytes = 5 * gibibyte
     static let requiredFreeReserveBytes = 8 * gibibyte
 
@@ -300,7 +302,7 @@ enum RecordingDiskPolicy {
         pendingGlobalBytes: Int64,
         proposedRecordingBytes: Int64
     ) -> RecordingPreflightFailure? {
-        guard proposedRecordingBytes <= maximumRecordingBytes else {
+        guard proposedRecordingBytes <= maximumSpoolBytes else {
             return .recordingSizeLimitReached
         }
         guard pendingGlobalBytes + proposedRecordingBytes <= maximumGlobalBytes else {

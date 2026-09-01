@@ -232,6 +232,40 @@ struct RecordingPartAADPayload: Codable, Equatable, Sendable {
     }
 }
 
+struct RecordingPartContractPayload: Codable, Equatable, Sendable {
+    let schemaVersion = 1
+    let recordingID: String
+    let trackID: String
+    let trackKind: String
+    let format: RecordingCanonicalFormatPayload
+    let sequence: Int
+    let sampleStart: Int64
+    let sampleCount: Int
+    let byteLength: Int
+    let ciphertextByteLength: Int
+    let plaintextSHA256: String
+    let ciphertextSHA256: String
+    let nonceBase64URL: String
+    let encryptionVersion = "aes-256-gcm-hkdf-sha256-v1"
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case recordingID = "recording_id"
+        case trackID = "track_id"
+        case trackKind = "track_kind"
+        case format
+        case sequence
+        case sampleStart = "sample_start"
+        case sampleCount = "sample_count"
+        case byteLength = "byte_length"
+        case ciphertextByteLength = "ciphertext_byte_length"
+        case plaintextSHA256 = "plaintext_sha256"
+        case ciphertextSHA256 = "ciphertext_sha256"
+        case nonceBase64URL = "nonce_base64url"
+        case encryptionVersion = "encryption_version"
+    }
+}
+
 struct RecordingPreparedPart: Sendable {
     let recordingID: UUID
     let trackID: UUID
@@ -343,7 +377,7 @@ struct RecordingUploadPartBuilder: Sendable {
         )
         try ciphertext.write(to: fileURL, options: [.atomic])
         try FileManager.default.setAttributes(
-            [.posixPermissions: 0o600],
+            [.posixPermissions: 0o400],
             ofItemAtPath: fileURL.path
         )
         return .init(
@@ -365,21 +399,90 @@ struct RecordingUploadPartBuilder: Sendable {
     }
 }
 
+struct RecordingUploadPartGrouper {
+    static let maximumSampleCount = RecordingPCMFormat.canonicalSampleRate * 60
+
+    private let maximumSampleCount: Int
+    private var pending: RecoveredSpoolRecord?
+
+    init(maximumSampleCount: Int = Self.maximumSampleCount) {
+        self.maximumSampleCount = maximumSampleCount
+    }
+
+    mutating func append(_ record: RecoveredSpoolRecord) -> RecoveredSpoolRecord? {
+        guard let current = pending else {
+            pending = record
+            return nil
+        }
+        let combinedSamples = current.chunk.sampleCount + record.chunk.sampleCount
+        guard current.recordingID == record.recordingID,
+            current.chunk.track == record.chunk.track,
+            current.chunk.format == record.chunk.format,
+            record.chunk.sampleStart
+                == current.chunk.sampleStart + Int64(current.chunk.sampleCount),
+            combinedSamples <= maximumSampleCount
+        else {
+            pending = record
+            return current
+        }
+
+        var payload = current.payload
+        payload.append(record.payload)
+        pending = .init(
+            recordingID: current.recordingID,
+            sequence: current.sequence,
+            payload: payload,
+            chunk: .init(
+                track: current.chunk.track,
+                presentationNanoseconds: current.chunk.presentationNanoseconds,
+                sampleStart: current.chunk.sampleStart,
+                sampleCount: combinedSamples,
+                format: current.chunk.format,
+                source: current.chunk.source,
+                payload: payload
+            )
+        )
+        return nil
+    }
+
+    mutating func finish() -> RecoveredSpoolRecord? {
+        defer { pending = nil }
+        return pending
+    }
+}
+
 struct RecordingUploadFileIdentity: Codable, Equatable, Sendable {
     let device: UInt64
     let inode: UInt64
     let byteCount: Int64
+    let ciphertextSHA256: String
 
     static func read(from url: URL) throws -> Self {
+        let descriptor = Darwin.open(url.path, O_RDONLY | O_NOFOLLOW)
+        guard descriptor >= 0 else { throw RecordingUploadError.fileChanged }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        defer { try? handle.close() }
         var metadata = Darwin.stat()
-        guard Darwin.lstat(url.path, &metadata) == 0,
-            metadata.st_mode & S_IFMT == S_IFREG
+        guard Darwin.fstat(descriptor, &metadata) == 0,
+            metadata.st_mode & S_IFMT == S_IFREG,
+            metadata.st_mode & (S_IWUSR | S_IWGRP | S_IWOTH) == 0
         else { throw RecordingUploadError.fileChanged }
         return .init(
             device: UInt64(metadata.st_dev),
             inode: UInt64(metadata.st_ino),
-            byteCount: metadata.st_size
+            byteCount: metadata.st_size,
+            ciphertextSHA256: try sha256(handle: handle)
         )
+    }
+
+    private static func sha256(handle: FileHandle) throws -> String {
+        var hasher = SHA256()
+        while true {
+            let chunk = try handle.read(upToCount: 1_048_576) ?? Data()
+            guard !chunk.isEmpty else { break }
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 }
 

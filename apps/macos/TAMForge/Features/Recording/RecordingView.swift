@@ -256,6 +256,7 @@ struct RecordingView: View {
     }
 
     private func uploadStateAllowsRetry(_ recordingID: UUID) -> Bool {
+        guard !coordinator.phase.isActive else { return false }
         switch coordinator.uploadStates[recordingID] ?? .pending {
         case .uploading:
             false

@@ -83,6 +83,28 @@ final class NativeAuthenticationTests: XCTestCase {
         XCTAssertEqual(refreshCalls, 1)
     }
 
+    func testRecordingBearerLeaseCannotRefreshAcrossLogoutGeneration() async throws {
+        let http = FakeNativeAuthHTTPClient()
+        let store = MemoryCredentialStore()
+        let oauth = await MainActor.run { FakeOAuthSession() }
+        let coordinator = NativeAuthenticationCoordinator(
+            http: http,
+            credentialStore: store,
+            oauthSession: oauth
+        )
+        _ = try await coordinator.login()
+        let staleLease = try await coordinator.recordingAccessTokenLease()
+
+        try await coordinator.logout()
+
+        do {
+            _ = try await coordinator.refreshedAccessTokenAfterUnauthorized(lease: staleLease)
+            XCTFail("Expected stale recording request to remain signed out")
+        } catch let error as NativeAuthenticationError {
+            XCTAssertEqual(error, .reauthenticationRequired)
+        }
+    }
+
     func testIndeterminateRotationClearsOldCredentialAndRequiresLogin() async throws {
         let http = FakeNativeAuthHTTPClient()
         await http.setRefreshFailure(true)
