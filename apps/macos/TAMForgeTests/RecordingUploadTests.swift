@@ -127,6 +127,17 @@ final class RecordingUploadTests: XCTestCase {
         XCTAssertEqual(segments.map(\.conversionVersion), ["tamforge-pcm16-v1"])
     }
 
+    func testLineageTruncatesIdentityStringsToServerLimit() throws {
+        var coalescer = RecordingSourceLineageCoalescer()
+        try coalescer.append(record: recoveredRecord(
+            recordingID: UUID(), track: .microphone, sampleStart: 0,
+            route: String(repeating: "r", count: 300)
+        ))
+        let segments = coalescer.finish()
+
+        XCTAssertEqual(segments.map(\.route), [String(repeating: "r", count: 256)])
+    }
+
     func testLineageFailsClosedOnUnknownConversionVersion() throws {
         var coalescer = RecordingSourceLineageCoalescer()
         XCTAssertThrowsError(try coalescer.append(record: recoveredRecord(

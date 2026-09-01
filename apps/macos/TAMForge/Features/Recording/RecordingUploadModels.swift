@@ -93,16 +93,22 @@ struct RecordingSourceLineageCoalescer: Sendable {
         let conversion = try RecordingConversionIdentifier.identifier(
             for: chunk.source.conversionVersion
         )
+        // The server caps lineage identity strings at 256 characters; truncate
+        // consistently so a long route can never poison the final seal.
+        let deviceID = String(chunk.source.deviceID.prefix(256))
+        let route = String(chunk.source.initialRoute.prefix(256))
         guard let rate = Int(exactly: chunk.source.sampleRate.rounded()),
               rate > 0,
+              !deviceID.isEmpty,
+              !route.isEmpty,
               chunk.source.presentationNanoseconds >= 0
         else { throw RecordingUploadError.invalidCoverage }
         if var current = pending,
            current.sampleStart + Int64(current.sampleCount) == chunk.sampleStart,
            current.sourceSampleRateHz == rate,
            current.sourceChannelCount == chunk.source.channelCount,
-           current.deviceID == chunk.source.deviceID,
-           current.route == chunk.source.initialRoute,
+           current.deviceID == deviceID,
+           current.route == route,
            current.conversionVersion == conversion {
             current.sampleCount += chunk.sampleCount
             pending = current
@@ -114,8 +120,8 @@ struct RecordingSourceLineageCoalescer: Sendable {
             sampleCount: chunk.sampleCount,
             sourceSampleRateHz: rate,
             sourceChannelCount: chunk.source.channelCount,
-            deviceID: chunk.source.deviceID,
-            route: chunk.source.initialRoute,
+            deviceID: deviceID,
+            route: route,
             presentationTimeStart: chunk.source.presentationNanoseconds,
             conversionVersion: conversion
         )
