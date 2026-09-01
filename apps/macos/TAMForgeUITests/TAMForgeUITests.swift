@@ -566,6 +566,179 @@ final class TAMForgeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Review package"].waitForExistence(timeout: 5))
     }
 
+    @MainActor
+    func testLocalNativeResourceReceipt() throws {
+        guard ProcessInfo.processInfo.environment["TAMFORGE_RUN_RESOURCE_RECEIPT"] == "1" else {
+            throw XCTSkip("opt-in local 8-minute resource receipt")
+        }
+        let fixtureURL = try XCTUnwrap(
+            Bundle(for: Self.self).url(
+                forResource: "foundation-journey-v1", withExtension: "json"
+            )
+        )
+        let fixtureData = try Data(contentsOf: fixtureURL)
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-ApplePersistenceIgnoreState", "YES",
+            "-ui-test-signed-in",
+            "-ui-test-native-features",
+            "-ui-test-parity-journey",
+        ]
+        app.launchEnvironment["TAMFORGE_UI_FIXTURE_BASE64"] =
+            fixtureData.base64EncodedString()
+
+        var launchSeconds: [Double] = []
+        for _ in 0..<5 {
+            if app.state != .notRunning {
+                app.terminate()
+                XCTAssertTrue(waitForTermination(app, timeout: 10))
+            }
+            let startedAt = ContinuousClock.now
+            app.launch()
+            XCTAssertTrue(
+                textContaining("240 planned minutes", in: app)
+                    .waitForExistence(timeout: 15)
+            )
+            let duration = startedAt.duration(to: .now).components
+            launchSeconds.append(
+                Double(duration.seconds) + Double(duration.attoseconds) / 1_000_000_000_000_000_000
+            )
+        }
+
+        app.buttons["evidenceNavigation"].click()
+        XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 10))
+        let pid = try tamForgeProcessID()
+
+        Thread.sleep(forTimeInterval: 60)
+        var idleRSSKiB: [Int] = []
+        for _ in 0..<300 {
+            idleRSSKiB.append(try residentMemoryKiB(pid: pid))
+            Thread.sleep(forTimeInterval: 1)
+        }
+
+        var navigationRSSKiB: [Int] = []
+        for _ in 0..<20 {
+            app.buttons["todayNavigation"].click()
+            XCTAssertTrue(
+                textContaining("240 planned minutes", in: app)
+                    .waitForExistence(timeout: 5)
+            )
+            app.buttons["evidenceNavigation"].click()
+            XCTAssertTrue(app.staticTexts["evidenceTitle"].waitForExistence(timeout: 5))
+            app.buttons["evidenceRefresh"].click()
+            XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 5))
+            navigationRSSKiB.append(try residentMemoryKiB(pid: pid))
+        }
+        Thread.sleep(forTimeInterval: 60)
+        let finalRSSKiB = try residentMemoryKiB(pid: pid)
+
+        let idleP50MiB = mib(percentile(0.50, values: idleRSSKiB))
+        let idleP95MiB = mib(percentile(0.95, values: idleRSSKiB))
+        let finalMiB = mib(finalRSSKiB)
+        XCTAssertLessThanOrEqual(idleP95MiB, 180.0, "idle p95 exceeded the locked gate")
+        XCTAssertLessThanOrEqual(
+            finalMiB,
+            idleP95MiB + 20.0,
+            "retired Evidence pages remained resident after 20 navigation cycles"
+        )
+
+        let receipt: [String: Any] = [
+            "schema_version": 1,
+            "git_sha": ProcessInfo.processInfo.environment["TAMFORGE_RESOURCE_GIT_SHA"]
+                ?? "unknown",
+            "scenario": "DEBUG shared parity fixture; Today and Evidence usable",
+            "build": "ad-hoc signed macOS app; xcodebuild -jobs 2",
+            "hardware_model": try command("/usr/sbin/sysctl", ["-n", "hw.model"]),
+            "physical_memory_bytes": ProcessInfo.processInfo.physicalMemory,
+            "macos": ProcessInfo.processInfo.operatingSystemVersionString,
+            "launch_count": launchSeconds.count,
+            "launch_seconds": launchSeconds,
+            "launch_p50_seconds": percentile(0.50, values: launchSeconds),
+            "launch_p95_seconds": percentile(0.95, values: launchSeconds),
+            "settle_seconds": 60,
+            "idle_sample_interval_seconds": 1,
+            "idle_sample_count": idleRSSKiB.count,
+            "idle_rss_mib": [
+                "min": mib(idleRSSKiB.min() ?? 0),
+                "p50": idleP50MiB,
+                "p95": idleP95MiB,
+                "max": mib(idleRSSKiB.max() ?? 0),
+            ],
+            "navigation_cycles": navigationRSSKiB.count,
+            "navigation_peak_rss_mib": mib(navigationRSSKiB.max() ?? 0),
+            "post_cycle_settle_seconds": 60,
+            "post_cycle_rss_mib": finalMiB,
+        ]
+        let receiptData = try JSONSerialization.data(
+            withJSONObject: receipt, options: [.prettyPrinted, .sortedKeys]
+        )
+        let receiptURL = URL(
+            fileURLWithPath: ProcessInfo.processInfo.environment[
+                "TAMFORGE_RESOURCE_RECEIPT_PATH"
+            ] ?? "/tmp/tamforge-native-resource-receipt.json"
+        )
+        try receiptData.write(to: receiptURL, options: .atomic)
+        let attachment = XCTAttachment(data: receiptData, uniformTypeIdentifier: "public.json")
+        attachment.name = "tamforge-native-resource-receipt"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        print("Native resource receipt: \(receiptURL.path)")
+    }
+
+    private func waitForTermination(_ app: XCUIApplication, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while app.state != .notRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        return app.state == .notRunning
+    }
+
+    private func tamForgeProcessID() throws -> Int32 {
+        let output = try command("/usr/bin/pgrep", ["-x", "TAMForge"])
+        let pids = output.split(separator: "\n").compactMap { Int32($0) }
+        return try XCTUnwrap(pids.max(), "TAMForge process was not found")
+    }
+
+    private func residentMemoryKiB(pid: Int32) throws -> Int {
+        let output = try command("/bin/ps", ["-o", "rss=", "-p", String(pid)])
+        return try XCTUnwrap(Int(output.trimmingCharacters(in: .whitespacesAndNewlines)))
+    }
+
+    private func command(_ executable: String, _ arguments: [String]) throws -> String {
+        let process = Process()
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        process.standardOutput = stdout
+        process.standardError = stderr
+        try process.run()
+        process.waitUntilExit()
+        let output = stdout.fileHandleForReading.readDataToEndOfFile()
+        let error = stderr.fileHandleForReading.readDataToEndOfFile()
+        XCTAssertEqual(
+            process.terminationStatus,
+            0,
+            String(data: error, encoding: .utf8) ?? "command failed"
+        )
+        return String(data: output, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    private func percentile<T: BinaryFloatingPoint>(_ fraction: T, values: [T]) -> T {
+        let sorted = values.sorted()
+        let index = max(0, min(sorted.count - 1, Int((fraction * T(sorted.count)).rounded(.up)) - 1))
+        return sorted[index]
+    }
+
+    private func percentile(_ fraction: Double, values: [Int]) -> Int {
+        let sorted = values.sorted()
+        let index = max(0, min(sorted.count - 1, Int(ceil(fraction * Double(sorted.count))) - 1))
+        return sorted[index]
+    }
+
+    private func mib(_ kibibytes: Int) -> Double { Double(kibibytes) / 1024.0 }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
     }
