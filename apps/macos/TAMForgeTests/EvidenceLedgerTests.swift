@@ -441,13 +441,15 @@ final class EvidenceLedgerTests: XCTestCase {
         let rendered = EvidenceLineageText.render(.object([
             "schema_version": .integer(1),
             "basis_code": .string("improving"),
+            "dimension_score_id": .integer(550),
             "event_ids": .array([.integer(50), .integer(9)]),
             "future_basis": .object(["quoted\"key": .string("kept")]),
+            "weight": .decimal(0.2),
         ]))
 
         XCTAssertEqual(
             rendered,
-            "Basis: \"improving\"\nEvidence events: [50, 9]\n\"future_basis\": {\"quoted\\\"key\": \"kept\"}\nSchema version: 1"
+            "Basis: \"improving\"\nDimension score: 550\nEvidence events: [50, 9]\n\"future_basis\": {\"quoted\\\"key\": \"kept\"}\nSchema version: 1\nWeight: 0.2"
         )
     }
 

@@ -459,6 +459,7 @@ enum EvidenceLineageText {
         "basis_code": "Basis",
         "availability": "Availability",
         "context": "Context",
+        "dimension_score_id": "Dimension score",
         "dimension_slug": "Dimension",
         "event_ids": "Evidence events",
         "observations": "Observations",
@@ -466,6 +467,7 @@ enum EvidenceLineageText {
         "score": "Score",
         "scores": "Scores",
         "schema_version": "Schema version",
+        "weight": "Weight",
     ]
 
     static func render(_ value: ActivityJSONValue) -> String {

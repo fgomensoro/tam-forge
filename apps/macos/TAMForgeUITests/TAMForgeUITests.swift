@@ -97,7 +97,7 @@ final class TAMForgeUITests: XCTestCase {
         XCTAssertTrue(textContaining("Qualifies", in: app).exists)
         let raw = app.disclosureTriangles["evidenceRawDimensions_50"]
         setDisclosure(raw, expanded: true, in: app)
-        XCTAssertTrue(textContaining("Customer impact is explicit", in: app).exists)
+        XCTAssertTrue(textContaining("Dimension score", in: app).exists)
         setDisclosure(event, expanded: false, in: app)
 
         let excluded = eventDisclosure(49, in: app)

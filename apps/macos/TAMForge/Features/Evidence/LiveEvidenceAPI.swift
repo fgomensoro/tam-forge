@@ -408,7 +408,13 @@ enum EvidenceResponseContract {
     private static let qualifyingModes: Set<String> = [
         "independent_practice", "timed_assessment", "mock_interview", "real_interview",
     ]
+    private static let evidenceModes: Set<String> = qualifyingModes.union([
+        "exposure_only", "guided_practice", "pipeline_only",
+    ])
     private static let qualifyingAssistance: Set<String> = ["no_ai", "ai_after_committed_attempt"]
+    private static let assistanceCodes: Set<String> = qualifyingAssistance.union([
+        "ai_hints_during_attempt", "ai_co_created", "ai_generated",
+    ])
 
     static func validSnapshotCodes(confidence: String, trend: String, recency: String) -> Bool {
         Self.confidence.contains(confidence) && Self.trend.contains(trend) && Self.recency.contains(recency)
@@ -421,14 +427,22 @@ enum EvidenceResponseContract {
         practiceMode: String,
         assistance: String
     ) -> Bool {
-        guard qualificationReasons.contains(reason), qualifies == (reason == "qualifies") else {
+        guard qualificationReasons.contains(reason),
+              evidenceModes.contains(practiceMode),
+              assistanceCodes.contains(assistance),
+              qualifies == (reason == "qualifies")
+        else {
             return false
         }
-        return !qualifies || (
-            attemptID != nil
-                && qualifyingModes.contains(practiceMode)
-                && qualifyingAssistance.contains(assistance)
-        )
+        if attemptID == nil { return reason == "missing_committed_attempt" }
+        if reason == "missing_committed_attempt" { return false }
+        if reason == "attempt_b" { return true }
+        if !qualifyingModes.contains(practiceMode) { return reason == "nonqualifying_mode" }
+        if reason == "nonqualifying_mode" { return false }
+        if !qualifyingAssistance.contains(assistance) {
+            return reason == "assisted_during_attempt"
+        }
+        return reason != "assisted_during_attempt"
     }
 }
 

@@ -229,9 +229,41 @@ final class NativeEvidenceAdapterTests: XCTestCase {
             reason: "qualifies", qualifies: true, attemptID: 81,
             practiceMode: "independent_practice", assistance: "no_ai"
         ))
-        XCTAssertTrue(EvidenceResponseContract.validQualification(
+        XCTAssertFalse(EvidenceResponseContract.validQualification(
             reason: "excluded_by_formula", qualifies: false, attemptID: nil,
             practiceMode: "guided_practice", assistance: "ai_during_attempt"
+        ))
+        XCTAssertFalse(EvidenceResponseContract.validQualification(
+            reason: "missing_committed_attempt", qualifies: false, attemptID: 81,
+            practiceMode: "independent_practice", assistance: "no_ai"
+        ))
+        XCTAssertFalse(EvidenceResponseContract.validQualification(
+            reason: "excluded_by_formula", qualifies: false, attemptID: 81,
+            practiceMode: "guided_practice", assistance: "no_ai"
+        ))
+        XCTAssertFalse(EvidenceResponseContract.validQualification(
+            reason: "excluded_by_formula", qualifies: false, attemptID: 81,
+            practiceMode: "independent_practice", assistance: "ai_hints_during_attempt"
+        ))
+        XCTAssertTrue(EvidenceResponseContract.validQualification(
+            reason: "attempt_b", qualifies: false, attemptID: 81,
+            practiceMode: "guided_practice", assistance: "ai_hints_during_attempt"
+        ))
+        XCTAssertTrue(EvidenceResponseContract.validQualification(
+            reason: "missing_committed_attempt", qualifies: false, attemptID: nil,
+            practiceMode: "independent_practice", assistance: "no_ai"
+        ))
+        XCTAssertTrue(EvidenceResponseContract.validQualification(
+            reason: "nonqualifying_mode", qualifies: false, attemptID: 81,
+            practiceMode: "guided_practice", assistance: "no_ai"
+        ))
+        XCTAssertTrue(EvidenceResponseContract.validQualification(
+            reason: "assisted_during_attempt", qualifies: false, attemptID: 81,
+            practiceMode: "independent_practice", assistance: "ai_hints_during_attempt"
+        ))
+        XCTAssertTrue(EvidenceResponseContract.validQualification(
+            reason: "mapping_condition_not_met", qualifies: false, attemptID: 81,
+            practiceMode: "independent_practice", assistance: "no_ai"
         ))
         XCTAssertFalse(EvidenceResponseContract.validQualification(
             reason: "Independent evidence", qualifies: true, attemptID: 81,

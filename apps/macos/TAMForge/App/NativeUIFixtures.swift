@@ -246,7 +246,7 @@ private final class NativeUIFixtureState: @unchecked Sendable {
         let snapshot: [String: Any] = [
             "id": 71, "formula_version": "seed-v1", "snapshot_date": "2026-08-27",
             "estimated_level": "2.410", "confidence": "low", "trend": "insufficient_evidence", "recency": "fresh",
-            "baseline_target_gap": "-0.410", "month_one_target_gap": "0.590", "final_target_gap": "1.090",
+            "baseline_target_gap": "-0.410", "month_one_target_gap": "0.090", "final_target_gap": "0.590",
             "total_effective_weight": "1.389375", "qualifying_event_count": 3, "exercise_type_count": 1,
             "last_strong_evidence_date": NSNull(),
             "manifest": [
@@ -262,7 +262,9 @@ private final class NativeUIFixtureState: @unchecked Sendable {
         return [
             "slug": english ? "tam_english" : "structured_troubleshooting",
             "name": english ? "TAM English" : refreshed ? "Structured troubleshooting refreshed" : "Structured troubleshooting",
-            "baseline": "2.000", "month_one_target": "3.000", "final_target": "3.500",
+            "baseline": english ? "1.000" : "2.000",
+            "month_one_target": english ? "2.000" : "2.500",
+            "final_target": english ? "2.750" : "3.000",
             "latest_snapshot": assessed ? snapshot : NSNull(),
         ]
     }
@@ -278,14 +280,13 @@ private final class NativeUIFixtureState: @unchecked Sendable {
         return [
             "id": id, "activity_id": 41, "attempt_id": 11, "skill_slug": "structured_troubleshooting",
             "exercise_type": "troubleshooting_case", "mapping_version": "seed-v1", "formula_version": "seed-v1",
-            "rubric_slug": "tam_case", "rubric_version": "seed-v1",
+            "rubric_slug": "portfolio_judgment", "rubric_version": "seed-v1",
             "evaluator": selfEvidence ? "self" : "human_coach", "practice_mode": "independent_practice",
             "assistance": "no_ai", "difficulty": "standard", "performance_score": "3.000",
             "skill_impact": "1.000", "effective_weight": effectiveWeight, "qualifying_for_level": !selfEvidence,
             "qualification_reason": selfEvidence ? "excluded_by_formula" : "qualifies",
             "raw_dimension_scores": ["schema_version": 1, "scores": [
-                ["dimension_slug": "diagnosis", "availability": "scored", "score": "3.000",
-                 "observations": ["Customer impact is explicit; next steps name an owner and a verification condition."]],
+                ["dimension_score_id": id + 500, "score": 3.0, "weight": 0.2],
             ]],
             "occurred_at": occurredAt,
         ]
