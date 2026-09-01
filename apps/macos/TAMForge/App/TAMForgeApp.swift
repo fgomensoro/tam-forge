@@ -66,10 +66,13 @@ private struct LocalResourceProbeView: View {
             .font(.system(size: 1))
             .frame(width: 1, height: 1)
             .task {
+                let clock = ContinuousClock()
+                var nextSample = clock.now
                 while !Task.isCancelled {
                     rssKiB = LocalResourceProbe.residentMemoryKiB() ?? rssKiB
                     samples.append(rssKiB)
-                    try? await Task.sleep(for: .seconds(1))
+                    nextSample = nextSample.advanced(by: .seconds(1))
+                    try? await clock.sleep(until: nextSample)
                 }
             }
     }

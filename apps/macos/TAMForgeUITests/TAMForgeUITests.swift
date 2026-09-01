@@ -632,7 +632,7 @@ final class TAMForgeUITests: XCTestCase {
         let idleStart = try rssSamples(resourceSamples, in: app).count
         Thread.sleep(forTimeInterval: 300)
         var allSamples = try rssSamples(resourceSamples, in: app)
-        let idleDeadline = Date().addingTimeInterval(10)
+        let idleDeadline = Date().addingTimeInterval(30)
         while allSamples.count < idleStart + 300 && Date() < idleDeadline {
             Thread.sleep(forTimeInterval: 1)
             allSamples = try rssSamples(resourceSamples, in: app)
