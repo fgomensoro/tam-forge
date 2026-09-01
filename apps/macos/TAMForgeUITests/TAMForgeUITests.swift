@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 final class TAMForgeUITests: XCTestCase {
@@ -621,6 +622,7 @@ final class TAMForgeUITests: XCTestCase {
         app.buttons["evidenceNavigation"].click()
         XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 10))
         let pid = try tamForgeProcessID()
+        _ = try residentMemoryKiB(pid: pid)
 
         Thread.sleep(forTimeInterval: 60)
         var idleRSSKiB: [Int] = []
@@ -693,6 +695,7 @@ final class TAMForgeUITests: XCTestCase {
         print("Native resource receipt: \(receiptURL.path)")
     }
 
+    @MainActor
     private func waitForTermination(_ app: XCUIApplication, timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while app.state != .notRunning && Date() < deadline {
@@ -702,9 +705,13 @@ final class TAMForgeUITests: XCTestCase {
     }
 
     private func tamForgeProcessID() throws -> Int32 {
-        let output = try command("/usr/bin/pgrep", ["-x", "TAMForge"])
-        let pids = output.split(separator: "\n").compactMap { Int32($0) }
-        return try XCTUnwrap(pids.max(), "TAMForge process was not found")
+        let application = try XCTUnwrap(
+            NSRunningApplication.runningApplications(
+                withBundleIdentifier: "com.fgomensoro.tamforge"
+            ).first,
+            "TAMForge process was not found"
+        )
+        return application.processIdentifier
     }
 
     private func residentMemoryKiB(pid: Int32) throws -> Int {
