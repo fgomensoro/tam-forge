@@ -34,9 +34,6 @@ APPROVED_COMPOSE: dict[str, object] = {
     },
     "volumes": {"tamforge-postgres": None, "tamforge-minio": None},
 }
-_STANDARD_TAG_PREFIX = "tag:yaml.org,2002:"
-
-
 @dataclass(frozen=True)
 class ComposeVerification:
     published_ports: tuple[str, ...]
@@ -77,13 +74,11 @@ def _reject_yaml_extensions(compose: str) -> None:
         if isinstance(event, AliasEvent) or getattr(event, "anchor", None):
             raise ValueError("YAML aliases and anchors are not supported")
         tag = getattr(event, "tag", None)
-        if tag is not None and not tag.startswith(_STANDARD_TAG_PREFIX):
-            raise ValueError("YAML custom tags are not supported")
+        if tag is not None:
+            raise ValueError("YAML tags are not supported")
 
 
 def _reject_duplicate_or_custom_nodes(node: Node) -> None:
-    if node.tag and not node.tag.startswith(_STANDARD_TAG_PREFIX):
-        raise ValueError("YAML custom tags are not supported")
     if isinstance(node, MappingNode):
         keys: set[tuple[str, str]] = set()
         for key, value in node.value:

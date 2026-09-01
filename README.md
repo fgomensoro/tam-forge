@@ -108,10 +108,12 @@ TAMFORGE_OBJECT_STORE_SECRET_KEY=tamforge-local \
   make e2e
 ```
 
-The durable backend journey uses `scripts/dev/seed_foundation_demo.py`. That helper
-refuses to run outside `TAMFORGE_ENV=test`, refuses any database other than the
-local `tamforge_test`, seeds data only, and does not emit browser cookies or add a
-test-login endpoint to the application.
+`make e2e` and CI invoke
+`apps/backend/tests/integration/foundation/test_month1_workspace.py` directly. That
+test creates its own durable journey state. `scripts/dev/seed_foundation_demo.py` is
+a separate data-only helper for explicitly requested isolated seed preparation; it
+refuses to run outside `TAMFORGE_ENV=test`, refuses any database other than the local
+`tamforge_test`, and does not emit browser cookies or add a test-login endpoint.
 
 GitHub Actions runs seven isolated gates: native macOS build/unit checks, native UI,
 backend unit checks, PostgreSQL integration tests, durable backend E2E, native OpenAPI

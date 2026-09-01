@@ -55,6 +55,15 @@ def test_accepts_safe_quoting_comments_and_inline_arrays() -> None:
     assert verify_compose_text(compose).minio_image == APPROVED_MINIO_IMAGE
 
 
+def test_rejects_explicit_standard_yaml_tags() -> None:
+    compose = APPROVED_COMPOSE.replace(
+        "image: pgvector/pgvector:pg16",
+        "image: !!str pgvector/pgvector:pg16",
+    )
+    with pytest.raises(ValueError, match="tags"):
+        verify_compose_text(compose)
+
+
 @pytest.mark.parametrize(
     "replacement",
     (
