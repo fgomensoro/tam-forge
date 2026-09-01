@@ -688,7 +688,9 @@ final class TAMForgeUITests: XCTestCase {
         let receiptData = try JSONSerialization.data(
             withJSONObject: receipt, options: [.prettyPrinted, .sortedKeys]
         )
-        let receiptURL = URL(fileURLWithPath: receiptPath)
+        let receiptURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            URL(fileURLWithPath: receiptPath).lastPathComponent
+        )
         try receiptData.write(to: receiptURL, options: .atomic)
         let attachment = XCTAttachment(data: receiptData, uniformTypeIdentifier: "public.json")
         attachment.name = "tamforge-native-resource-receipt"
