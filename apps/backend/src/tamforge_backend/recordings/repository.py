@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
+from typing import Literal, cast
 from uuid import UUID
 
 from sqlalchemy import or_, select
@@ -16,14 +17,17 @@ from ..models.base import utc_now
 from .contracts import timeline_sha256
 from .models import Recording, RecordingGap, RecordingPart, RecordingTrack
 from .schemas import (
+    CoverageStatus,
     RecordingCreateCommand,
     RecordingCreateResponse,
     RecordingPartReceipt,
     RecordingPartUploadMetadata,
     RecordingSealCommand,
     RecordingSealResponse,
+    RecordingState,
     RecordingStatusResponse,
     RecordingTrackStatus,
+    TrackKind,
 )
 from .service import RecordingConflict, RecordingNotFound
 
@@ -509,7 +513,7 @@ class SqlAlchemyRecordingRepository:
             }
             if {item.client_track_id for item in tracks} != stored_manifests.keys():
                 raise RecordingConflict("recording track manifests are incomplete")
-            final_state = (
+            final_state: Literal["stored", "stored_with_gaps"] = (
                 "stored_with_gaps" if command.coverage_status == "stored_with_gaps" else "stored"
             )
             now = utc_now()
@@ -525,12 +529,14 @@ class SqlAlchemyRecordingRepository:
                 track.manifest_sha256 = bytes.fromhex(digest)
                 track.manifest_byte_length = length
                 track.sealed_at = now
-            ordered_digests = tuple(stored_manifests[item.track_id][1] for item in command.tracks)
+            first_digest, second_digest = (
+                stored_manifests[item.track_id][1] for item in command.tracks
+            )
             result = RecordingSealResponse(
                 recording_id=command.recording_id,
                 state=final_state,
                 coverage_status=command.coverage_status,
-                track_manifest_sha256=ordered_digests,
+                track_manifest_sha256=(first_digest, second_digest),
                 audio_created_on_server=True,
                 transcript_lineage_accepted=False,
                 replayed=False,
@@ -686,12 +692,13 @@ class SqlAlchemyRecordingRepository:
             raise RecordingConflict("recording track aggregate is incomplete")
         return RecordingStatusResponse(
             recording_id=recording.client_recording_id,
-            state=recording.state,
-            coverage_status=recording.coverage_status,
+            # The migration's check constraints bound these persisted values.
+            state=cast(RecordingState, recording.state),
+            coverage_status=cast(CoverageStatus | None, recording.coverage_status),
             tracks=tuple(
                 RecordingTrackStatus(
                     track_id=track.client_track_id,
-                    kind=track.kind,
+                    kind=cast(TrackKind, track.kind),
                     high_water_sample=track.high_water_sample,
                     stored_part_count=track.stored_part_count,
                     gap_count=gap_counts.get(track.id, 0),
