@@ -312,6 +312,19 @@ actor RecordingUploadPipeline: RecordingUploading {
             return gates
         }
 
+        // Opening the reader verifies the complete sealed spool (authenticated
+        // state, exact gap journal, per-track checkpoints, structural trust)
+        // before any network work; unknown conversions also fail closed here.
+        let reader = try await EncryptedRecordingSpool.openRecordReader(
+            recordingID: recordingID,
+            rootURL: spoolFactory.rootURL,
+            keyStore: spoolFactory.keyStore
+        )
+        let inventory = reader.inventory
+        for version in inventory.conversionVersions {
+            _ = try RecordingConversionIdentifier.identifier(for: version)
+        }
+
         let journal = try RecordingUploadJournal(directoryURL: directory)
         let journalState = await journal.snapshot()
         if !journalState.createAccepted {
@@ -336,17 +349,18 @@ actor RecordingUploadPipeline: RecordingUploading {
         }
 
         let rootKey = try await spoolFactory.keyStore.load(recordingID: recordingID)
-        let reader = try await EncryptedRecordingSpool.openRecordReader(
-            recordingID: recordingID,
-            rootURL: spoolFactory.rootURL,
-            keyStore: spoolFactory.keyStore
-        )
         let assembly = RecordingUploadAssembly()
         let completed = Set((await journal.snapshot()).completedParts)
         var grouper = RecordingUploadPartGrouper()
+        var lineageByTrack: [RecordingTrackKind: RecordingSourceLineageCoalescer] = [:]
 
         while let record = try await reader.next() {
             try Task.checkCancellation()
+            // Lineage coalesces from original authenticated one-second
+            // records, before any upload-part grouping.
+            var coalescer = lineageByTrack[record.chunk.track, default: .init()]
+            try coalescer.append(record: record)
+            lineageByTrack[record.chunk.track] = coalescer
             if let group = grouper.append(record) {
                 try await uploadGroup(
                     group,
@@ -370,11 +384,7 @@ actor RecordingUploadPipeline: RecordingUploading {
                 progress: progress
             )
         }
-        let scan = await reader.summary()
-        guard !scan.ignoredIncompleteTail else {
-            throw RecordingUploadError.invalidCoverage
-        }
-        let allGaps = metadata.gaps + scan.corruptRanges
+        let allGaps = inventory.gaps + inventory.corruptRanges
         let manifests = try RecordingTrackKind.allCases.map { track in
             try RecordingTrackManifestPayload.make(
                 recordingID: recordingID,
@@ -387,6 +397,10 @@ actor RecordingUploadPipeline: RecordingUploading {
                         reason: $0.reason.rawValue
                     )
                 },
+                sourceLineage: {
+                    var coalescer = lineageByTrack[track, default: .init()]
+                    return coalescer.finish()
+                }(),
                 pcmSHA256: {
                     var hasher = assembly.hashers[track] ?? SHA256()
                     return hasher.finalize().hex

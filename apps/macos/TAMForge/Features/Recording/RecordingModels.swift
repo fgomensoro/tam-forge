@@ -259,7 +259,7 @@ protocol RecordingCaptureSource: Sendable {
 protocol RecordingSpoolWriting: Sendable {
     func append(_ chunk: RecordingPCMChunk) async throws
     func record(gap: RecordingGap) async throws
-    func seal(gaps: [RecordingGap]) async throws
+    func seal(gaps: [RecordingGap], startedAt: Date, endedAt: Date) async throws
 }
 
 protocol RecordingSpoolCreating: Sendable {
@@ -281,6 +281,22 @@ struct RecordingReleaseGates: Codable, Equatable, Sendable {
     var mayDeleteLocalSpool: Bool {
         audioCreatedOnServer && transcriptLineageAccepted
     }
+}
+
+enum RecordingUploadState: Equatable, Sendable {
+    case pending
+    case uploading(completedParts: Int)
+    case waitingForAuthentication
+    case waitingForNetwork
+    case waitingForTranscript
+    case needsAttention(String)
+}
+
+protocol RecordingUploading: Sendable {
+    func upload(
+        recordingID: UUID,
+        progress: @escaping @Sendable (Int) -> Void
+    ) async throws -> RecordingReleaseGates
 }
 
 enum RecordingDiskPolicy {

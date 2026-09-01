@@ -6,12 +6,145 @@ enum RecordingUploadError: Error, Equatable {
     case unsealedSpool
     case missingTimeline
     case invalidCoverage
+    case unsupportedConversion
     case fileChanged
     case unauthorized
     case offline
     case conflict
     case invalidResponse
     case server(statusCode: Int)
+}
+
+enum RecordingConversionIdentifier {
+    // Unknown local conversion versions can never be declared as v1; upload
+    // fails closed instead of guessing lineage.
+    static func identifier(for version: Int) throws -> String {
+        guard version == 1 else { throw RecordingUploadError.unsupportedConversion }
+        return "tamforge-pcm16-v1"
+    }
+}
+
+enum RecordingPartKeyEncoding {
+    // Canonical unpadded base64url for a 32-byte key: exactly 43 characters
+    // whose trailing bits round-trip; noncanonical trailing characters are
+    // rejected.
+    static func isCanonical(_ value: String) -> Bool {
+        guard value.count == 43 else { return false }
+        let padded = value
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+            + "="
+        guard let decoded = Data(base64Encoded: padded), decoded.count == 32 else { return false }
+        let reencoded = decoded.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        return reencoded == value
+    }
+}
+
+struct RecordingSourceLineagePayload: Codable, Equatable, Sendable {
+    let sampleStart: Int64
+    let sampleCount: Int
+    let sourceSampleRateHz: Int
+    let sourceChannelCount: Int
+    let deviceID: String
+    let route: String
+    let presentationTimeStart: Int64
+    let presentationTimeEnd: Int64
+    let presentationTimeTimescale: Int64
+    let conversionVersion: String
+
+    enum CodingKeys: String, CodingKey {
+        case sampleStart = "sample_start"
+        case sampleCount = "sample_count"
+        case sourceSampleRateHz = "source_sample_rate_hz"
+        case sourceChannelCount = "source_channel_count"
+        case deviceID = "device_id"
+        case route
+        case presentationTimeStart = "presentation_time_start"
+        case presentationTimeEnd = "presentation_time_end"
+        case presentationTimeTimescale = "presentation_time_timescale"
+        case conversionVersion = "conversion_version"
+    }
+}
+
+// Builds track lineage from each original authenticated record before upload
+// grouping. Only contiguous canonical coverage with identical source metadata
+// coalesces; gaps and any source change start a new segment. Lineage covers
+// audio only and computes its presentation end from the exact 48 kHz duration.
+struct RecordingSourceLineageCoalescer: Sendable {
+    private struct PendingSegment {
+        var sampleStart: Int64
+        var sampleCount: Int
+        var sourceSampleRateHz: Int
+        var sourceChannelCount: Int
+        var deviceID: String
+        var route: String
+        var presentationTimeStart: Int64
+        var conversionVersion: String
+    }
+
+    private var segments: [RecordingSourceLineagePayload] = []
+    private var pending: PendingSegment?
+
+    mutating func append(record: RecoveredSpoolRecord) throws {
+        let chunk = record.chunk
+        let conversion = try RecordingConversionIdentifier.identifier(
+            for: chunk.source.conversionVersion
+        )
+        guard let rate = Int(exactly: chunk.source.sampleRate.rounded()),
+              rate > 0,
+              chunk.source.presentationNanoseconds >= 0
+        else { throw RecordingUploadError.invalidCoverage }
+        if var current = pending,
+           current.sampleStart + Int64(current.sampleCount) == chunk.sampleStart,
+           current.sourceSampleRateHz == rate,
+           current.sourceChannelCount == chunk.source.channelCount,
+           current.deviceID == chunk.source.deviceID,
+           current.route == chunk.source.initialRoute,
+           current.conversionVersion == conversion {
+            current.sampleCount += chunk.sampleCount
+            pending = current
+            return
+        }
+        flushPending()
+        pending = .init(
+            sampleStart: chunk.sampleStart,
+            sampleCount: chunk.sampleCount,
+            sourceSampleRateHz: rate,
+            sourceChannelCount: chunk.source.channelCount,
+            deviceID: chunk.source.deviceID,
+            route: chunk.source.initialRoute,
+            presentationTimeStart: chunk.source.presentationNanoseconds,
+            conversionVersion: conversion
+        )
+    }
+
+    mutating func finish() -> [RecordingSourceLineagePayload] {
+        flushPending()
+        defer { segments.removeAll() }
+        return segments
+    }
+
+    private mutating func flushPending() {
+        guard let current = pending else { return }
+        pending = nil
+        segments.append(.init(
+            sampleStart: current.sampleStart,
+            sampleCount: current.sampleCount,
+            sourceSampleRateHz: current.sourceSampleRateHz,
+            sourceChannelCount: current.sourceChannelCount,
+            deviceID: current.deviceID,
+            route: current.route,
+            presentationTimeStart: current.presentationTimeStart,
+            presentationTimeEnd: current.presentationTimeStart
+                + Int64(current.sampleCount) * 1_000_000_000
+                / Int64(RecordingPCMFormat.canonicalSampleRate),
+            presentationTimeTimescale: 1_000_000_000,
+            conversionVersion: current.conversionVersion
+        ))
+    }
 }
 
 struct RecordingCanonicalFormatPayload: Codable, Equatable, Sendable {
@@ -91,6 +224,7 @@ struct RecordingTrackManifestPayload: Codable, Equatable, Sendable {
     let totalSampleCount: Int64
     let parts: [RecordingPartDescriptorPayload]
     let gaps: [RecordingGapPayload]
+    let sourceLineage: [RecordingSourceLineagePayload]
     let pcmSHA256: String
     let timelineSHA256: String
     let conversionVersion = "tamforge-pcm16-v1"
@@ -102,6 +236,7 @@ struct RecordingTrackManifestPayload: Codable, Equatable, Sendable {
         case totalSampleCount = "total_sample_count"
         case parts
         case gaps
+        case sourceLineage = "source_lineage"
         case pcmSHA256 = "pcm_sha256"
         case timelineSHA256 = "timeline_sha256"
         case conversionVersion = "conversion_version"
@@ -112,12 +247,16 @@ struct RecordingTrackManifestPayload: Codable, Equatable, Sendable {
         track: RecordingTrackKind,
         parts: [RecordingPartDescriptorPayload],
         gaps: [RecordingGapPayload],
+        sourceLineage: [RecordingSourceLineagePayload],
         pcmSHA256: String
     ) throws -> Self {
         let orderedParts = parts.sorted {
             ($0.sampleStart, $0.sequence) < ($1.sampleStart, $1.sequence)
         }
         let orderedGaps = gaps.sorted {
+            ($0.sampleStart, $0.sampleCount) < ($1.sampleStart, $1.sampleCount)
+        }
+        let orderedLineage = sourceLineage.sorted {
             ($0.sampleStart, $0.sampleCount) < ($1.sampleStart, $1.sampleCount)
         }
         var segments = orderedParts.map { ($0.sampleStart, $0.sampleStart + Int64($0.sampleCount)) }
@@ -135,19 +274,19 @@ struct RecordingTrackManifestPayload: Codable, Equatable, Sendable {
         guard cursor > 0,
             orderedParts.map(\.sequence) == Array(0..<orderedParts.count)
         else { throw RecordingUploadError.invalidCoverage }
+        try validateLineageCoverage(parts: orderedParts, lineage: orderedLineage)
+        guard orderedLineage.allSatisfy({ $0.conversionVersion == "tamforge-pcm16-v1" }) else {
+            throw RecordingUploadError.unsupportedConversion
+        }
         let trackID = RecordingTrackIdentity.id(recordingID: recordingID, track: track)
-        let timeline = RecordingTimelineManifestPayload(
+        let timelineHash = try timelineSHA256(
             trackID: trackID.uuidString.lowercased(),
             kind: track.rawValue,
             format: .init(channelCount: track.channelCount),
             totalSampleCount: cursor,
             parts: orderedParts,
             gaps: orderedGaps,
-            conversionVersion: "tamforge-pcm16-v1"
-        )
-        let timelineHash = try RecordingCanonicalJSON.sha256(
-            domain: "tamforge.recording.timeline.v1",
-            value: timeline
+            sourceLineage: orderedLineage
         )
         return .init(
             trackID: trackID.uuidString.lowercased(),
@@ -156,9 +295,90 @@ struct RecordingTrackManifestPayload: Codable, Equatable, Sendable {
             totalSampleCount: cursor,
             parts: orderedParts,
             gaps: orderedGaps,
+            sourceLineage: orderedLineage,
             pcmSHA256: pcmSHA256,
             timelineSHA256: timelineHash
         )
+    }
+
+    // The canonical timeline hash covers the whole manifest except both
+    // digests, exactly like the backend's timeline_hash_input.
+    static func timelineSHA256(of manifest: Self) throws -> String {
+        try timelineSHA256(
+            trackID: manifest.trackID,
+            kind: manifest.kind,
+            format: manifest.format,
+            totalSampleCount: manifest.totalSampleCount,
+            parts: manifest.parts,
+            gaps: manifest.gaps,
+            sourceLineage: manifest.sourceLineage
+        )
+    }
+
+    private static func timelineSHA256(
+        trackID: String,
+        kind: String,
+        format: RecordingCanonicalFormatPayload,
+        totalSampleCount: Int64,
+        parts: [RecordingPartDescriptorPayload],
+        gaps: [RecordingGapPayload],
+        sourceLineage: [RecordingSourceLineagePayload]
+    ) throws -> String {
+        try RecordingCanonicalJSON.sha256(
+            domain: "tamforge.recording.timeline.v1",
+            value: RecordingTimelineManifestPayload(
+                trackID: trackID,
+                kind: kind,
+                format: format,
+                totalSampleCount: totalSampleCount,
+                parts: parts,
+                gaps: gaps,
+                sourceLineage: sourceLineage,
+                conversionVersion: "tamforge-pcm16-v1"
+            )
+        )
+    }
+
+    // Mirrors the server rule: lineage covers every uploaded audio range
+    // exactly once, in order, and never overlaps declared gaps.
+    private static func validateLineageCoverage(
+        parts: [RecordingPartDescriptorPayload],
+        lineage: [RecordingSourceLineagePayload]
+    ) throws {
+        var audioRanges: [(start: Int64, end: Int64)] = []
+        for part in parts {
+            let end = part.sampleStart + Int64(part.sampleCount)
+            if let last = audioRanges.last, part.sampleStart <= last.end {
+                audioRanges[audioRanges.count - 1].end = Swift.max(last.end, end)
+            } else {
+                audioRanges.append((part.sampleStart, end))
+            }
+        }
+        guard !audioRanges.isEmpty else {
+            guard lineage.isEmpty else { throw RecordingUploadError.invalidCoverage }
+            return
+        }
+        guard !lineage.isEmpty else { throw RecordingUploadError.invalidCoverage }
+        var rangeIndex = 0
+        var cursor = audioRanges[0].start
+        for segment in lineage {
+            guard rangeIndex < audioRanges.count,
+                  segment.sampleStart == cursor,
+                  segment.sampleCount > 0
+            else { throw RecordingUploadError.invalidCoverage }
+            let segmentEnd = segment.sampleStart + Int64(segment.sampleCount)
+            guard segmentEnd <= audioRanges[rangeIndex].end else {
+                throw RecordingUploadError.invalidCoverage
+            }
+            cursor = segmentEnd
+            if cursor == audioRanges[rangeIndex].end {
+                rangeIndex += 1
+                if rangeIndex < audioRanges.count { cursor = audioRanges[rangeIndex].start }
+            }
+        }
+        guard rangeIndex == audioRanges.count else {
+            throw RecordingUploadError.invalidCoverage
+        }
     }
 }
 
@@ -169,6 +389,7 @@ private struct RecordingTimelineManifestPayload: Codable {
     let totalSampleCount: Int64
     let parts: [RecordingPartDescriptorPayload]
     let gaps: [RecordingGapPayload]
+    let sourceLineage: [RecordingSourceLineagePayload]
     let conversionVersion: String
 
     enum CodingKeys: String, CodingKey {
@@ -178,6 +399,7 @@ private struct RecordingTimelineManifestPayload: Codable {
         case totalSampleCount = "total_sample_count"
         case parts
         case gaps
+        case sourceLineage = "source_lineage"
         case conversionVersion = "conversion_version"
     }
 }
@@ -340,6 +562,10 @@ struct RecordingUploadPartBuilder: Sendable {
             outputByteCount: 44
         ).data
         let partKey = SymmetricKey(data: material.prefix(32))
+        let partKeyValue = partKey.data.base64URL
+        guard RecordingPartKeyEncoding.isCanonical(partKeyValue) else {
+            throw RecordingUploadError.invalidResponse
+        }
         let nonceData = Data(material.suffix(12))
         let nonce = try AES.GCM.Nonce(data: nonceData)
         let nonceValue = nonceData.base64URL
@@ -392,7 +618,7 @@ struct RecordingUploadPartBuilder: Sendable {
             plaintextSHA256: plaintextHash,
             ciphertextSHA256: ciphertext.sha256Hex,
             nonceBase64URL: nonceValue,
-            partKeyBase64URL: partKey.data.base64URL,
+            partKeyBase64URL: partKeyValue,
             fileURL: fileURL,
             fileIdentity: try .read(from: fileURL)
         )
@@ -583,7 +809,7 @@ enum RecordingCanonicalJSON {
     static func encode<Value: Encodable>(_ value: Value) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return try encoder.encode(value)
+        return try asciiEscaped(encoder.encode(value))
     }
 
     static func sha256<Value: Encodable>(domain: String, value: Value) throws -> String {
@@ -591,6 +817,33 @@ enum RecordingCanonicalJSON {
         data.append(0)
         data.append(try encode(value))
         return data.sha256Hex
+    }
+
+    // Match Python json.dumps(ensure_ascii=True): every scalar above 0x7f in a
+    // JSON string becomes a lowercase \uXXXX escape (surrogate pairs beyond
+    // the BMP), so both sides hash identical canonical bytes.
+    private static func asciiEscaped(_ encoded: Data) throws -> Data {
+        guard encoded.contains(where: { $0 > 0x7f }) else { return encoded }
+        guard let text = String(data: encoded, encoding: .utf8) else {
+            throw RecordingUploadError.invalidResponse
+        }
+        var output = String()
+        output.reserveCapacity(text.unicodeScalars.count)
+        for scalar in text.unicodeScalars {
+            if scalar.value <= 0x7f {
+                output.unicodeScalars.append(scalar)
+            } else if scalar.value > 0xffff {
+                let value = scalar.value - 0x10000
+                output += String(
+                    format: "\\u%04x\\u%04x",
+                    0xd800 + (value >> 10),
+                    0xdc00 + (value & 0x3ff)
+                )
+            } else {
+                output += String(format: "\\u%04x", scalar.value)
+            }
+        }
+        return Data(output.utf8)
     }
 }
 
