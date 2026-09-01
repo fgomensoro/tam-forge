@@ -118,11 +118,16 @@ actor NativeAuthenticationCoordinator {
             throw NativeAuthenticationError.revocationPending
         }
         if let accessToken,
-           let accessExpiresAt,
-           accessExpiresAt.timeIntervalSince(now()) > 30
+            let accessExpiresAt,
+            accessExpiresAt.timeIntervalSince(now()) > 30
         {
             return accessToken
         }
+        return try await rotateAccessToken()
+    }
+
+    func refreshedAccessTokenAfterUnauthorized() async throws -> String {
+        clearAccessToken()
         return try await rotateAccessToken()
     }
 
@@ -282,18 +287,18 @@ actor NativeAuthenticationCoordinator {
 
     static func exchangeCode(from callbackURL: URL) throws -> String {
         guard callbackURL.scheme == callbackScheme,
-              callbackURL.host == callbackHost,
-              callbackURL.path == callbackPath,
-              callbackURL.fragment == nil,
-              let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)
+            callbackURL.host == callbackHost,
+            callbackURL.path == callbackPath,
+            callbackURL.fragment == nil,
+            let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)
         else {
             throw NativeAuthenticationError.invalidCallback
         }
         let codes = (components.queryItems ?? []).filter { $0.name == "code" }
         guard codes.count == 1,
-              let code = codes[0].value,
-              isNativeOpaqueToken(code),
-              components.queryItems?.count == 1
+            let code = codes[0].value,
+            isNativeOpaqueToken(code),
+            components.queryItems?.count == 1
         else {
             throw NativeAuthenticationError.invalidCallback
         }
@@ -315,9 +320,9 @@ actor NativeAuthenticationCoordinator {
     private static func isUnauthorized(_ error: Error) -> Bool {
         guard let apiError = error as? NativeAPIError else { return false }
         return switch apiError {
-        case let .problem(problem):
+        case .problem(let problem):
             problem.status == 401
-        case let .malformedProblem(statusCode):
+        case .malformedProblem(let statusCode):
             statusCode == 401
         default:
             false
@@ -334,7 +339,7 @@ final class SystemOAuthSession: NSObject, NativeOAuthSession,
 
     func authenticate(url: URL, callbackScheme: String) async throws -> URL {
         guard session == nil,
-              let anchor = NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first
+            let anchor = NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first
         else {
             throw NativeAuthenticationError.browserUnavailable
         }
@@ -350,7 +355,7 @@ final class SystemOAuthSession: NSObject, NativeOAuthSession,
                     if let callbackURL {
                         continuation.resume(returning: callbackURL)
                     } else if let authError = error as? ASWebAuthenticationSessionError,
-                              authError.code == .canceledLogin
+                        authError.code == .canceledLogin
                     {
                         continuation.resume(throwing: NativeAuthenticationError.browserCancelled)
                     } else {
@@ -377,17 +382,18 @@ final class SystemOAuthSession: NSObject, NativeOAuthSession,
 
 func isNativeOpaqueToken(_ token: String) -> Bool {
     let bytes = Array(token.utf8)
-    return bytes.count == 43 && bytes.allSatisfy {
-        (65 ... 90).contains($0)
-            || (97 ... 122).contains($0)
-            || (48 ... 57).contains($0)
-            || $0 == 45
-            || $0 == 95
-    }
+    return bytes.count == 43
+        && bytes.allSatisfy {
+            (65...90).contains($0)
+                || (97...122).contains($0)
+                || (48...57).contains($0)
+                || $0 == 45
+                || $0 == 95
+        }
 }
 
-private extension Data {
-    func base64URLEncodedString() -> String {
+extension Data {
+    fileprivate func base64URLEncodedString() -> String {
         base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
