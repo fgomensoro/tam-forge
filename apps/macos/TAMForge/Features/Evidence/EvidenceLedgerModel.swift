@@ -132,7 +132,9 @@ final class EvidenceLedgerModel: ObservableObject {
     func retrySkills() async {
         guard active else { return }
         let generation = lifetime
-        let reload = selectedSkillSlug.map { SkillReload(slug: $0, request: skillRequest) }
+        let selectedSkill = selectedSkillSlug
+        if selectedSkill != nil { clearSkillPage(keepSelection: true) }
+        let reload = selectedSkill.map { SkillReload(slug: $0, request: skillRequest) }
         let loaded = await loadSkills(generation: generation)
         if loaded { await reloadSkillIfStillCurrent(reload, generation: generation) }
     }

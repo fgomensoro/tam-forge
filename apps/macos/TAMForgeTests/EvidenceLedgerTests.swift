@@ -273,6 +273,33 @@ final class EvidenceLedgerTests: XCTestCase {
         XCTAssertEqual(service.skillEvidenceRequests.map(\.cursor), [nil, nil])
     }
 
+    func testSuccessfulSkillsRetryReloadsInspectorReopenedAfterFailedRefresh() async {
+        let service = EvidenceServiceStub(
+            skillsResult: .success([assessedSkill()]),
+            portfolioResult: .success(portfolioPage()),
+            skillPageResults: [
+                .success(.init(items: [event(id: 50, skill: "incident_communication")], nextCursor: nil)),
+                .success(.init(items: [event(id: 49, skill: "incident_communication")], nextCursor: nil)),
+                .success(.init(items: [event(id: 48, skill: "incident_communication")], nextCursor: nil)),
+            ]
+        )
+        let model = EvidenceLedgerModel(service: service)
+
+        await model.open(activityID: nil)
+        await model.inspectSkill(slug: "incident_communication")
+        service.skillsResult = .failure(.unavailable)
+        await model.refresh()
+        await model.inspectSkill(slug: "incident_communication")
+
+        service.skillsResult = .success([assessedSkill(name: "Recovered skill")])
+        await model.retrySkills()
+
+        XCTAssertEqual(model.selectedSkill?.name, "Recovered skill")
+        XCTAssertEqual(model.skillInspectorState, .content)
+        XCTAssertEqual(model.skillPage?.items.map(\.id), [48])
+        XCTAssertEqual(service.skillEvidenceRequests.map(\.cursor), [nil, nil, nil])
+    }
+
     func testRefreshCannotCancelANewerSkillSelection() async {
         let skills = DeferredValues(values: [[
             assessedSkill(),
