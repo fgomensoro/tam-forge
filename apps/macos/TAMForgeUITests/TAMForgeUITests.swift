@@ -612,11 +612,9 @@ final class TAMForgeUITests: XCTestCase {
             }
             let startedAt = ContinuousClock.now
             app.launch()
-            app.activate()
             XCTAssertTrue(
                 app.buttons["todayNavigation"].waitForExistence(timeout: 15)
             )
-            app.activate()
             XCTAssertTrue(
                 textContaining("240 planned minutes", in: app)
                     .waitForExistence(timeout: 15)
@@ -636,16 +634,18 @@ final class TAMForgeUITests: XCTestCase {
         let resourceSamples = app.staticTexts["resourceRSSSamples"]
         XCTAssertTrue(resourceProbe.waitForExistence(timeout: 5))
         XCTAssertTrue(resourceSamples.waitForExistence(timeout: 5))
-        _ = try residentMemoryKiB(resourceProbe, in: app)
+        _ = try residentMemoryKiB(resourceProbe)
 
         Thread.sleep(forTimeInterval: 60)
-        let idleStart = try rssSamples(resourceSamples, in: app).count
+        let idleStart = try rssSamples(resourceSamples).count
         Thread.sleep(forTimeInterval: 300)
-        var allSamples = try rssSamples(resourceSamples, in: app)
+        // Reattach XCTest after five minutes without UI automation; sampling stays in-app.
+        app.activate()
+        var allSamples = try rssSamples(resourceSamples)
         let idleDeadline = Date().addingTimeInterval(30)
         while allSamples.count < idleStart + 300 && Date() < idleDeadline {
             Thread.sleep(forTimeInterval: 1)
-            allSamples = try rssSamples(resourceSamples, in: app)
+            allSamples = try rssSamples(resourceSamples)
         }
         XCTAssertGreaterThanOrEqual(allSamples.count, idleStart + 300)
         let idleRSSKiB = Array(allSamples[idleStart..<(idleStart + 300)])
@@ -661,10 +661,10 @@ final class TAMForgeUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts["evidenceTitle"].waitForExistence(timeout: 5))
             app.buttons["evidenceRefresh"].click()
             XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 5))
-            navigationRSSKiB.append(try residentMemoryKiB(resourceProbe, in: app))
+            navigationRSSKiB.append(try residentMemoryKiB(resourceProbe))
         }
         Thread.sleep(forTimeInterval: 60)
-        let finalRSSKiB = try residentMemoryKiB(resourceProbe, in: app)
+        let finalRSSKiB = try residentMemoryKiB(resourceProbe)
 
         let idleP50MiB = mib(percentile(0.50, values: idleRSSKiB))
         let idleP95MiB = mib(percentile(0.95, values: idleRSSKiB))
@@ -733,20 +733,14 @@ final class TAMForgeUITests: XCTestCase {
     }
 
     @MainActor
-    private func residentMemoryKiB(
-        _ probe: XCUIElement, in app: XCUIApplication
-    ) throws -> Int {
-        app.activate()
+    private func residentMemoryKiB(_ probe: XCUIElement) throws -> Int {
         XCTAssertTrue(probe.waitForExistence(timeout: 5))
         let rawValue = probe.value as? String ?? probe.label
         return try XCTUnwrap(Int(rawValue), "resource RSS probe was not numeric")
     }
 
     @MainActor
-    private func rssSamples(
-        _ probe: XCUIElement, in app: XCUIApplication
-    ) throws -> [Int] {
-        app.activate()
+    private func rssSamples(_ probe: XCUIElement) throws -> [Int] {
         XCTAssertTrue(probe.waitForExistence(timeout: 5))
         let rawValue = probe.value as? String ?? probe.label
         return rawValue.split(separator: ",").compactMap { Int($0) }
