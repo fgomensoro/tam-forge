@@ -40,7 +40,10 @@ the separately gated E10-I10 cutover. Server read models and commands remain aut
   controls, navigable forms, disabled-action gates and reduced-motion shell behavior.
   Evidence uses header traits and stable identifiers on the actual retry, paging,
   activity, manifest and event controls rather than on ancestor containers that hide
-  their descendants in the macOS accessibility tree. A retained dark-appearance,
+  their descendants in the macOS accessibility tree. Its header, skill, portfolio and
+  scoped-activity regions are explicit containment groups; UI automation verifies the
+  Command-R refresh shortcut, group membership and top-to-bottom landmark placement.
+  A retained dark-appearance,
   accessibility-extra-extra-extra-large screenshot at the minimum window size was
   manually inspected: the title hierarchy, score-scale explanation, assessed and
   unassessed cards, all three target gaps, focusable actions, wrapping and contrast
