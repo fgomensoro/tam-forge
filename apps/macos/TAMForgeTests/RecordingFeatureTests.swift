@@ -868,10 +868,14 @@ final class RecordingFeatureTests: XCTestCase {
     }
 
     func testPendingGapWritesCoalescesSaturatedDropsBeforeImmediateSeal() async throws {
-        let spool = OrderedFakeRecordingSpool()
+        let spool = GatedFakeRecordingSpool()
         let pendingWrites = PendingGapWrites()
 
-        for index in 0..<100 {
+        pendingWrites.register(gap: .init(
+            track: .systemAudio, sampleStart: 0, sampleCount: 4_800, reason: .callbackOverflow
+        ), spool: spool)
+        await spool.waitUntilFirstWrite()
+        for index in 1..<100 {
             pendingWrites.register(gap: .init(
                 track: .systemAudio,
                 sampleStart: Int64(index * 4_800),
@@ -879,7 +883,10 @@ final class RecordingFeatureTests: XCTestCase {
                 reason: .callbackOverflow
             ), spool: spool)
         }
+        // The worker is parked inside the first write, so every saturated
+        // drop coalesces into exactly one pending interval.
         XCTAssertEqual(pendingWrites.bufferedIntervalCount, 1)
+        await spool.releaseWrites()
         try await pendingWrites.flush()
         try await spool.seal(gaps: [])
 
@@ -888,7 +895,13 @@ final class RecordingFeatureTests: XCTestCase {
             .gap(.init(
                 track: .systemAudio,
                 sampleStart: 0,
-                sampleCount: 480_000,
+                sampleCount: 4_800,
+                reason: .callbackOverflow
+            )),
+            .gap(.init(
+                track: .systemAudio,
+                sampleStart: 4_800,
+                sampleCount: 475_200,
                 reason: .callbackOverflow
             )),
             .seal,
@@ -1347,6 +1360,43 @@ private actor OrderedFakeRecordingSpool: RecordingSpoolWriting {
     func record(gap: RecordingGap) async throws { recordedOperations.append(.gap(gap)) }
     func seal(gaps: [RecordingGap]) async throws { recordedOperations.append(.seal) }
     func operations() -> [Operation] { recordedOperations }
+}
+
+private actor GatedFakeRecordingSpool: RecordingSpoolWriting {
+    private var recordedOperations: [OrderedFakeRecordingSpool.Operation] = []
+    private var firstWriteStarted = false
+    private var writesReleased = false
+    private var firstWriteWaiter: CheckedContinuation<Void, Never>?
+    private var gate: CheckedContinuation<Void, Never>?
+
+    func append(_ chunk: RecordingPCMChunk) async throws {}
+
+    func record(gap: RecordingGap) async throws {
+        if !firstWriteStarted {
+            firstWriteStarted = true
+            firstWriteWaiter?.resume()
+            firstWriteWaiter = nil
+        }
+        if !writesReleased {
+            await withCheckedContinuation { continuation in gate = continuation }
+        }
+        recordedOperations.append(.gap(gap))
+    }
+
+    func seal(gaps: [RecordingGap]) async throws { recordedOperations.append(.seal) }
+
+    func waitUntilFirstWrite() async {
+        if firstWriteStarted { return }
+        await withCheckedContinuation { continuation in firstWriteWaiter = continuation }
+    }
+
+    func releaseWrites() {
+        writesReleased = true
+        gate?.resume()
+        gate = nil
+    }
+
+    func operations() -> [OrderedFakeRecordingSpool.Operation] { recordedOperations }
 }
 
 private actor FailingFakeRecordingSpool: RecordingSpoolWriting {
