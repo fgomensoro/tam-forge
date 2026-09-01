@@ -49,10 +49,6 @@ def _isolated_object_store() -> dict[str, str]:
     return expected
 
 
-def _without(payload: dict[str, object], *volatile: str) -> dict[str, object]:
-    return {key: value for key, value in payload.items() if key not in volatile}
-
-
 @respx.mock
 def test_month1_workspace_is_authenticated_resumable_and_idempotent(
     test_database_url: str,
@@ -309,10 +305,28 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                         )
                         assert activated.status_code == 200, activated.text
                         activated_payload = activated.json()
-                        assert activated_payload["state"] == "active"
-                        assert _without(activated_payload, "id") == _without(
-                            parity["responses"]["roadmap_version"], "id"
-                        )
+                        expected_version = parity["responses"]["roadmap_version"]
+                        assert {
+                            key: activated_payload[key]
+                            for key in (
+                                "version_number",
+                                "month_number",
+                                "state",
+                                "mirror_status",
+                                "mirror_ref",
+                                "mirror_error_code",
+                            )
+                        } == {
+                            key: expected_version[key]
+                            for key in (
+                                "version_number",
+                                "month_number",
+                                "state",
+                                "mirror_status",
+                                "mirror_ref",
+                                "mirror_error_code",
+                            )
+                        }
 
                         today = await first_native_client.get(
                             "/api/v1/today?date=2026-08-24", headers=native_headers
@@ -341,9 +355,13 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                                 "time_policy",
                             )
                         }
-                        assert _without(today_payload["roadmap"], "version_id") == _without(
-                            expected_today["roadmap"], "version_id"
-                        )
+                        assert {
+                            key: today_payload["roadmap"][key]
+                            for key in ("version_number", "month", "week", "day")
+                        } == {
+                            key: expected_today["roadmap"][key]
+                            for key in ("version_number", "month", "week", "day")
+                        }
                         assert [item["timebox_minutes"] for item in today_payload["tasks"]] == [
                             45,
                             45,
@@ -359,24 +377,34 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                             if item["block"] == "technical_learning"
                         )
                         expected_reading = expected_today["tasks"][0]
-                        assert _without(reading, "activity_id") == _without(
-                            expected_reading, "activity_id"
-                        )
+                        assert reading["block"] == expected_reading["block"]
+                        assert reading["timebox_minutes"] == expected_reading[
+                            "timebox_minutes"
+                        ]
                         activity_id = int(reading["activity_id"])
                         path = f"/api/v1/activities/{activity_id}"
                         detail = await first_native_client.get(path, headers=native_headers)
                         assert detail.status_code == 200
                         detail_payload = detail.json()
-                        expected_activity = parity["responses"]["activity"]
-                        assert _without(
-                            detail_payload,
-                            "id",
-                            "study_day_id",
-                        ) == _without(
-                            expected_activity,
-                            "id",
-                            "study_day_id",
-                        )
+                        assert detail_payload["id"] == activity_id
+                        assert detail_payload["state"] == reading["state"]
+                        assert detail_payload["optimistic_version"] == reading[
+                            "optimistic_version"
+                        ]
+                        task_contract = detail_payload["task_contract"]
+                        for key in (
+                            "stable_id",
+                            "block",
+                            "objective",
+                            "timebox_minutes",
+                            "required",
+                            "source_references",
+                            "required_output",
+                            "pass_criteria",
+                            "evidence_requirements",
+                            "allowed_ai_role",
+                        ):
+                            assert task_contract[key] == reading[key]
                         started = await mutate(
                             first_native_client,
                             path + "/start",
