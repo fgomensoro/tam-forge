@@ -623,15 +623,22 @@ final class TAMForgeUITests: XCTestCase {
         app.buttons["evidenceNavigation"].click()
         XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 10))
         let resourceProbe = app.staticTexts["resourceRSSKiB"]
+        let resourceSamples = app.staticTexts["resourceRSSSamples"]
         XCTAssertTrue(resourceProbe.waitForExistence(timeout: 5))
+        XCTAssertTrue(resourceSamples.waitForExistence(timeout: 5))
         _ = try residentMemoryKiB(resourceProbe, in: app)
 
         Thread.sleep(forTimeInterval: 60)
-        var idleRSSKiB: [Int] = []
-        for _ in 0..<300 {
-            idleRSSKiB.append(try residentMemoryKiB(resourceProbe, in: app))
+        let idleStart = try rssSamples(resourceSamples, in: app).count
+        Thread.sleep(forTimeInterval: 300)
+        var allSamples = try rssSamples(resourceSamples, in: app)
+        let idleDeadline = Date().addingTimeInterval(10)
+        while allSamples.count < idleStart + 300 && Date() < idleDeadline {
             Thread.sleep(forTimeInterval: 1)
+            allSamples = try rssSamples(resourceSamples, in: app)
         }
+        XCTAssertGreaterThanOrEqual(allSamples.count, idleStart + 300)
+        let idleRSSKiB = Array(allSamples[idleStart..<(idleStart + 300)])
 
         var navigationRSSKiB: [Int] = []
         for _ in 0..<20 {
@@ -712,9 +719,20 @@ final class TAMForgeUITests: XCTestCase {
     private func residentMemoryKiB(
         _ probe: XCUIElement, in app: XCUIApplication
     ) throws -> Int {
-        if app.state != .runningForeground { app.activate() }
+        app.activate()
+        XCTAssertTrue(probe.waitForExistence(timeout: 5))
         let rawValue = probe.value as? String ?? probe.label
         return try XCTUnwrap(Int(rawValue), "resource RSS probe was not numeric")
+    }
+
+    @MainActor
+    private func rssSamples(
+        _ probe: XCUIElement, in app: XCUIApplication
+    ) throws -> [Int] {
+        app.activate()
+        XCTAssertTrue(probe.waitForExistence(timeout: 5))
+        let rawValue = probe.value as? String ?? probe.label
+        return rawValue.split(separator: ",").compactMap { Int($0) }
     }
 
     private func hardwareModel() -> String {

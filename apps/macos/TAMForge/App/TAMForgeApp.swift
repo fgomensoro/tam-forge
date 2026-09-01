@@ -54,15 +54,21 @@ private enum LocalResourceProbe {
 
 private struct LocalResourceProbeView: View {
     @State private var rssKiB = LocalResourceProbe.residentMemoryKiB() ?? 0
+    @State private var samples: [Int] = []
 
     var body: some View {
-        Text(String(rssKiB))
+        ZStack {
+            Text(String(rssKiB))
+                .accessibilityIdentifier("resourceRSSKiB")
+            Text(samples.map(String.init).joined(separator: ","))
+                .accessibilityIdentifier("resourceRSSSamples")
+        }
             .font(.system(size: 1))
             .frame(width: 1, height: 1)
-            .accessibilityIdentifier("resourceRSSKiB")
             .task {
                 while !Task.isCancelled {
                     rssKiB = LocalResourceProbe.residentMemoryKiB() ?? rssKiB
+                    samples.append(rssKiB)
                     try? await Task.sleep(for: .seconds(1))
                 }
             }
