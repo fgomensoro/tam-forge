@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated, Literal, Self
 from uuid import UUID
 
@@ -17,11 +17,19 @@ MAX_PART_SAMPLES = SAMPLE_RATE_HZ * MAX_PART_SECONDS
 MAX_PARTS = MAX_RECORDING_SECONDS
 PCM_BYTES_PER_SAMPLE = 2
 AES_GCM_TAG_BYTES = 16
+MAX_SOURCE_SAMPLE_RATE_HZ = 384_000
+MAX_SOURCE_CHANNEL_COUNT = 32
+MAX_PRESENTATION_TIME_VALUE = 9_223_372_036_854_775_807
+MAX_PRESENTATION_TIME_TIMESCALE = 1_000_000_000
 
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 IdempotencyKey = Annotated[
     str,
     Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"),
+]
+ConversionVersion = Annotated[
+    str,
+    Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9._-]{0,63}$"),
 ]
 TrackKind = Literal["microphone", "system_audio"]
 CoverageStatus = Literal["complete", "stored_with_gaps"]
@@ -64,10 +72,7 @@ class RecordingTrackDeclaration(StrictModel):
     track_id: UUID
     kind: TrackKind
     format: CanonicalPCMFormat
-    conversion_version: Annotated[
-        str,
-        Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9._-]{0,63}$"),
-    ] = "tamforge-pcm16-v1"
+    conversion_version: ConversionVersion = "tamforge-pcm16-v1"
 
     @model_validator(mode="after")
     def validate_format(self) -> Self:
@@ -84,7 +89,7 @@ class RecordingCreateCommand(StrictModel):
     @model_validator(mode="after")
     def validate_tracks(self) -> Self:
         _validate_track_pair(self.tracks)
-        _require_aware(self.started_at, "started_at")
+        _require_utc(self.started_at, "started_at")
         return self
 
 
@@ -121,6 +126,31 @@ class RecordingGap(StrictModel):
         return self
 
 
+class RecordingSourceLineageSegment(StrictModel):
+    """One canonical audio range mapped to its captured source provenance."""
+
+    sample_start: Annotated[int, Field(ge=0, lt=MAX_TRACK_SAMPLES)]
+    sample_count: Annotated[int, Field(gt=0, le=MAX_TRACK_SAMPLES)]
+    source_sample_rate_hz: Annotated[int, Field(gt=0, le=MAX_SOURCE_SAMPLE_RATE_HZ)]
+    source_channel_count: Annotated[int, Field(ge=1, le=MAX_SOURCE_CHANNEL_COUNT)]
+    device_id: Annotated[str, Field(min_length=1, max_length=256)]
+    route: Annotated[str, Field(min_length=1, max_length=256)]
+    presentation_time_start: Annotated[int, Field(ge=0, le=MAX_PRESENTATION_TIME_VALUE)]
+    presentation_time_end: Annotated[int, Field(ge=0, le=MAX_PRESENTATION_TIME_VALUE)]
+    presentation_time_timescale: Annotated[
+        int, Field(gt=0, le=MAX_PRESENTATION_TIME_TIMESCALE)
+    ]
+    conversion_version: ConversionVersion
+
+    @model_validator(mode="after")
+    def validate_range_and_presentation_time(self) -> Self:
+        if self.sample_start + self.sample_count > MAX_TRACK_SAMPLES:
+            raise ValueError("source lineage range exceeds the recording limit")
+        if self.presentation_time_end <= self.presentation_time_start:
+            raise ValueError("source lineage presentation time must advance")
+        return self
+
+
 class RecordingTrackManifest(StrictModel):
     track_id: UUID
     kind: TrackKind
@@ -128,12 +158,12 @@ class RecordingTrackManifest(StrictModel):
     total_sample_count: Annotated[int, Field(gt=0, le=MAX_TRACK_SAMPLES)]
     parts: Annotated[tuple[RecordingPartDescriptor, ...], Field(max_length=MAX_PARTS)] = ()
     gaps: Annotated[tuple[RecordingGap, ...], Field(max_length=MAX_PARTS)] = ()
+    source_lineage: Annotated[
+        tuple[RecordingSourceLineageSegment, ...], Field(max_length=MAX_PARTS)
+    ] = ()
     pcm_sha256: Sha256
     timeline_sha256: Sha256
-    conversion_version: Annotated[
-        str,
-        Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9._-]{0,63}$"),
-    ]
+    conversion_version: ConversionVersion
 
     @model_validator(mode="after")
     def validate_track(self) -> Self:
@@ -161,6 +191,14 @@ class RecordingTrackManifest(StrictModel):
             cursor = end
         if cursor != self.total_sample_count:
             raise ValueError("parts and explicit gaps must cover the complete track")
+        _validate_source_lineage_coverage(self.parts, self.source_lineage)
+        if any(
+            segment.conversion_version != self.conversion_version
+            for segment in self.source_lineage
+        ):
+            raise ValueError(
+                "source lineage conversion version must match the track conversion version"
+            )
         return self
 
 
@@ -175,10 +213,12 @@ class RecordingSealCommand(StrictModel):
     @model_validator(mode="after")
     def validate_manifest(self) -> Self:
         _validate_track_pair(self.tracks)
-        _require_aware(self.started_at, "started_at")
-        _require_aware(self.ended_at, "ended_at")
+        _require_utc(self.started_at, "started_at")
+        _require_utc(self.ended_at, "ended_at")
         if self.ended_at < self.started_at:
             raise ValueError("ended_at cannot precede started_at")
+        if self.ended_at - self.started_at > timedelta(seconds=MAX_RECORDING_SECONDS):
+            raise ValueError("recording elapsed time exceeds the recording limit")
         expected_status: CoverageStatus = (
             "stored_with_gaps" if any(track.gaps for track in self.tracks) else "complete"
         )
@@ -261,6 +301,19 @@ class RecordingStatusResponse(StrictModel):
         _validate_track_pair(self.tracks)
         if self.transcript_lineage_accepted and not self.audio_created_on_server:
             raise ValueError("transcript lineage cannot precede durable server audio")
+        if self.state in {"reserved", "uploading", "sealing", "needs_attention"}:
+            if (
+                self.coverage_status is not None
+                or self.audio_created_on_server
+                or self.transcript_lineage_accepted
+            ):
+                raise ValueError("nonterminal recording status cannot claim durable audio coverage")
+            return self
+        expected_coverage: CoverageStatus = (
+            "complete" if self.state == "stored" else "stored_with_gaps"
+        )
+        if self.coverage_status != expected_coverage or not self.audio_created_on_server:
+            raise ValueError("stored recording status must agree with durable audio coverage")
         return self
 
 
@@ -275,8 +328,17 @@ class RecordingSealResponse(StrictModel):
     coverage_status: CoverageStatus
     track_manifest_sha256: Annotated[tuple[Sha256, Sha256], Field(min_length=2, max_length=2)]
     audio_created_on_server: Literal[True] = True
-    transcript_lineage_accepted: bool = False
+    transcript_lineage_accepted: Literal[False] = False
     replayed: bool
+
+    @model_validator(mode="after")
+    def validate_state_coverage(self) -> Self:
+        expected_coverage: CoverageStatus = (
+            "complete" if self.state == "stored" else "stored_with_gaps"
+        )
+        if self.coverage_status != expected_coverage:
+            raise ValueError("seal response state must agree with coverage status")
+        return self
 
 
 class RecordingProblem(StrictModel):
@@ -306,17 +368,91 @@ def _validate_track_pair(tracks: tuple[object, ...]) -> None:
         raise ValueError("track IDs must be unique")
 
 
-def _require_aware(value: datetime, field_name: str) -> None:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError(f"{field_name} must include a UTC offset")
+def _validate_source_lineage_coverage(
+    parts: tuple[RecordingPartDescriptor, ...],
+    source_lineage: tuple[RecordingSourceLineageSegment, ...],
+) -> None:
+    audio_ranges = _coalesce_ranges(
+        sorted((part.sample_start, part.sample_start + part.sample_count) for part in parts)
+    )
+    if not audio_ranges:
+        if source_lineage:
+            raise ValueError("source lineage cannot claim a track without uploaded audio")
+        return
+    if not source_lineage:
+        raise ValueError("source lineage must cover every uploaded audio range")
+
+    range_index = 0
+    cursor = audio_ranges[0][0]
+    for segment in source_lineage:
+        if range_index == len(audio_ranges):
+            raise ValueError("source lineage exceeds uploaded audio coverage")
+        if segment.sample_start != cursor:
+            raise ValueError("source lineage must be ordered and cover uploaded audio exactly once")
+        segment_end = segment.sample_start + segment.sample_count
+        expected_end = audio_ranges[range_index][1]
+        if segment_end > expected_end:
+            raise ValueError("source lineage cannot overlap declared gaps or audio ranges")
+        cursor = segment_end
+        if cursor == expected_end:
+            range_index += 1
+            if range_index < len(audio_ranges):
+                cursor = audio_ranges[range_index][0]
+    if range_index != len(audio_ranges):
+        raise ValueError("source lineage must cover every uploaded audio range")
+
+
+def _coalesce_ranges(ranges: list[tuple[int, int]]) -> tuple[tuple[int, int], ...]:
+    if not ranges:
+        return ()
+    coalesced: list[tuple[int, int]] = [ranges[0]]
+    for start, end in ranges[1:]:
+        previous_start, previous_end = coalesced[-1]
+        if start == previous_end:
+            coalesced[-1] = (previous_start, end)
+        else:
+            coalesced.append((start, end))
+    return tuple(coalesced)
+
+
+def _require_utc(value: datetime, field_name: str) -> None:
+    if value.tzinfo is None or value.utcoffset() != timedelta(0):
+        raise ValueError(f"{field_name} must be UTC")
+
+
+RECORDING_OPENAPI_MODELS: tuple[type[StrictModel], ...] = (
+    CanonicalPCMFormat,
+    RecordingTrackDeclaration,
+    RecordingCreateCommand,
+    RecordingCreateResponse,
+    RecordingPartDescriptor,
+    RecordingGap,
+    RecordingSourceLineageSegment,
+    RecordingTrackManifest,
+    RecordingSealCommand,
+    RecordingPartUploadMetadata,
+    RecordingPartCryptoHeaders,
+    RecordingPartReceipt,
+    RecordingTrackStatus,
+    RecordingStatusResponse,
+    PendingRecordingPage,
+    RecordingSealResponse,
+    RecordingProblem,
+)
 
 
 __all__ = [
     "AES_GCM_TAG_BYTES",
+    "ConversionVersion",
     "MAX_PART_SAMPLES",
+    "MAX_PRESENTATION_TIME_TIMESCALE",
+    "MAX_PRESENTATION_TIME_VALUE",
     "MAX_RECORDING_SECONDS",
+    "MAX_SOURCE_CHANNEL_COUNT",
+    "MAX_SOURCE_SAMPLE_RATE_HZ",
     "MAX_TRACK_SAMPLES",
     "PCM_BYTES_PER_SAMPLE",
+    "RECORDING_OPENAPI_MODELS",
     "CanonicalPCMFormat",
     "CoverageStatus",
     "GapReason",
@@ -332,6 +468,7 @@ __all__ = [
     "RecordingProblem",
     "RecordingSealCommand",
     "RecordingSealResponse",
+    "RecordingSourceLineageSegment",
     "RecordingState",
     "RecordingStatusResponse",
     "RecordingTrackDeclaration",

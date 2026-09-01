@@ -6,6 +6,14 @@ not wall-clock seconds, define ordering. A manifest is valid only when ordered p
 and explicit gaps cover each track exactly once from sample zero through
 `total_sample_count`.
 
+Each uploaded PCM range has ordered `source_lineage` coverage. A segment records its
+source sample rate/channels, device ID, route, exact presentation-time start/end and
+timescale, and conversion version. Its sample range maps canonical PCM to that source
+time interval. Segments cover uploaded audio exactly once, may split at a source,
+device, or route change, and never cover a declared gap. Gaps remain the only record
+of absent audio and carry their explicit reason. Every lineage conversion version must
+equal the track conversion version.
+
 ## Canonical bytes and hashes
 
 Canonical JSON uses UTF-8, lexicographically sorted object keys, compact separators,
@@ -23,6 +31,13 @@ byte:
 SHA-256 values are lowercase hexadecimal. PCM digests cover the exact canonical
 little-endian bytes, without a WAV header. Byte length must equal
 `sample_count * channel_count * 2`.
+
+Seal timestamps must use UTC and may span no more than 120 minutes. Nonterminal
+status projections cannot claim coverage, durable audio, or transcript acceptance.
+`stored` requires complete coverage and durable audio; `stored_with_gaps` requires
+the degraded coverage state and durable audio. A transcript acceptance requires
+durable audio, although only later work may report it. This batch's seal response
+always keeps `transcript_lineage_accepted` false.
 
 ## Encrypted part body
 

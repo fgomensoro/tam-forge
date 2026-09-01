@@ -32,6 +32,20 @@
         }
       ],
       "gaps": [],
+      "source_lineage": [
+        {
+          "sample_start": 0,
+          "sample_count": 96000,
+          "source_sample_rate_hz": 44100,
+          "source_channel_count": 1,
+          "device_id": "microphone:built-in",
+          "route": "Built-in Microphone",
+          "presentation_time_start": 0,
+          "presentation_time_end": 88200,
+          "presentation_time_timescale": 44100,
+          "conversion_version": "tamforge-pcm16-v1"
+        }
+      ],
       "pcm_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "timeline_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
       "conversion_version": "tamforge-pcm16-v1"
@@ -66,7 +80,33 @@
         {
           "sample_start": 48000,
           "sample_count": 4800,
-          "reason": "callback_overflow"
+          "reason": "route_change"
+        }
+      ],
+      "source_lineage": [
+        {
+          "sample_start": 0,
+          "sample_count": 48000,
+          "source_sample_rate_hz": 48000,
+          "source_channel_count": 2,
+          "device_id": "screen-capture:main",
+          "route": "display:main",
+          "presentation_time_start": 0,
+          "presentation_time_end": 48000,
+          "presentation_time_timescale": 48000,
+          "conversion_version": "tamforge-pcm16-v1"
+        },
+        {
+          "sample_start": 52800,
+          "sample_count": 43200,
+          "source_sample_rate_hz": 48000,
+          "source_channel_count": 2,
+          "device_id": "screen-capture:external",
+          "route": "display:external",
+          "presentation_time_start": 0,
+          "presentation_time_end": 43200,
+          "presentation_time_timescale": 48000,
+          "conversion_version": "tamforge-pcm16-v1"
         }
       ],
       "pcm_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
