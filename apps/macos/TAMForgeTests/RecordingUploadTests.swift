@@ -154,6 +154,16 @@ final class RecordingUploadTests: XCTestCase {
         let microphoneHash = sha256(Data(repeating: 1, count: 48 * 2))
         let systemHash = sha256(Data(repeating: 2, count: 48 * 2 * 2))
         let manifestHash = String(repeating: "a", count: 64)
+        let makeClient = {
+            LiveRecordingServerClient(
+                baseURL: URL(string: "https://api.example.test")!,
+                bearerToken: { .init(token: "live-token", sessionGeneration: 3) },
+                refreshBearer: { _ in
+                    throw NativeAuthenticationError.reauthenticationRequired
+                },
+                session: fixture.session()
+            )
+        }
 
         fixture.enqueue(.response(
             statusCode: 201,
@@ -161,11 +171,29 @@ final class RecordingUploadTests: XCTestCase {
                 #"{"schema_version":1,"recording_id":"\#(recordingID)","state":"reserved","replayed":false}"#.utf8
             )
         ))
-        for (trackID, hash) in [(microphoneID, microphoneHash), (systemID, systemHash)] {
+        // The server accepted this PUT, but the process lost its receipt and exits.
+        fixture.enqueue(.error(URLError(.networkConnectionLost)))
+        let interrupted = RecordingUploadPipeline(
+            spoolFactory: spool.factory,
+            server: makeClient()
+        )
+        await XCTAssertAsyncThrowsError {
+            _ = try await interrupted.upload(
+                recordingID: spool.recordingID,
+                progress: { _ in }
+            )
+        }
+        XCTAssertEqual(fixture.requests.map(\.httpMethod), ["POST", "PUT"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: spool.directory.path))
+
+        for (trackID, hash, replayed) in [
+            (microphoneID, microphoneHash, true),
+            (systemID, systemHash, false),
+        ] {
             fixture.enqueue(.response(
                 statusCode: 201,
                 body: Data(
-                    #"{"schema_version":1,"recording_id":"\#(recordingID)","track_id":"\#(trackID)","sequence":0,"sample_start":0,"sample_count":48,"plaintext_sha256":"\#(hash)","high_water_sample":48,"replayed":false}"#.utf8
+                    #"{"schema_version":1,"recording_id":"\#(recordingID)","track_id":"\#(trackID)","sequence":0,"sample_start":0,"sample_count":48,"plaintext_sha256":"\#(hash)","high_water_sample":48,"replayed":\#(replayed)}"#.utf8
                 )
             ))
         }
@@ -175,19 +203,27 @@ final class RecordingUploadTests: XCTestCase {
                 #"{"schema_version":1,"recording_id":"\#(recordingID)","state":"stored","coverage_status":"complete","track_manifest_sha256":["\#(manifestHash)","\#(manifestHash)"],"audio_created_on_server":true,"transcript_lineage_accepted":false,"replayed":false}"#.utf8
             )
         ))
-        let client = LiveRecordingServerClient(
-            baseURL: URL(string: "https://api.example.test")!,
-            bearerToken: { .init(token: "live-token", sessionGeneration: 3) },
-            refreshBearer: { _ in throw NativeAuthenticationError.reauthenticationRequired },
-            session: fixture.session()
+        let relaunched = RecordingUploadPipeline(
+            spoolFactory: spool.factory,
+            server: makeClient()
         )
-        let pipeline = RecordingUploadPipeline(spoolFactory: spool.factory, server: client)
-
-        let firstGates = try await pipeline.upload(
+        let firstGates = try await relaunched.upload(
             recordingID: spool.recordingID,
             progress: { _ in }
         )
-        XCTAssertEqual(fixture.requests.map(\.httpMethod), ["POST", "PUT", "PUT", "POST"])
+        XCTAssertEqual(
+            fixture.requests.map(\.httpMethod),
+            ["POST", "PUT", "PUT", "PUT", "POST"]
+        )
+        for header in [
+            "Idempotency-Key", "X-TAM-Plaintext-SHA256", "X-TAM-Ciphertext-SHA256",
+            "X-TAM-Part-Nonce", "X-TAM-Part-Key",
+        ] {
+            XCTAssertEqual(
+                fixture.requests[1].value(forHTTPHeaderField: header),
+                fixture.requests[2].value(forHTTPHeaderField: header)
+            )
+        }
         XCTAssertTrue(firstGates.audioCreatedOnServer)
         XCTAssertFalse(firstGates.transcriptLineageAccepted)
         XCTAssertTrue(FileManager.default.fileExists(atPath: spool.directory.path))
@@ -198,7 +234,11 @@ final class RecordingUploadTests: XCTestCase {
                 #"{"schema_version":1,"recording_id":"\#(recordingID)","state":"stored","coverage_status":"complete","tracks":[{"track_id":"\#(microphoneID)","kind":"microphone","high_water_sample":48,"stored_part_count":1,"gap_count":0,"manifest_sha256":"\#(manifestHash)"},{"track_id":"\#(systemID)","kind":"system_audio","high_water_sample":48,"stored_part_count":1,"gap_count":0,"manifest_sha256":"\#(manifestHash)"}],"audio_created_on_server":true,"transcript_lineage_accepted":true}"#.utf8
             )
         ))
-        let finalGates = try await pipeline.upload(
+        let statusRelaunch = RecordingUploadPipeline(
+            spoolFactory: spool.factory,
+            server: makeClient()
+        )
+        let finalGates = try await statusRelaunch.upload(
             recordingID: spool.recordingID,
             progress: { _ in }
         )
