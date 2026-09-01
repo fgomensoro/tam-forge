@@ -17,9 +17,9 @@ Run the default unit checks (Docker is not required):
 make check
 ```
 
-This runs backend lint/type checks and unit tests, web lint/type checks/tests/build,
-the generated OpenAPI-client drift guard, and the tracked secret/audio policy check.
-Every default Make target is non-Docker.
+This runs Compose safety, backend lint/type checks and unit tests, native-only OpenAPI
+drift, repository policy, and the native macOS check when Xcode is available. Every
+default Make target is non-Docker and has no Node runtime requirement.
 
 ## Native macOS shell
 
@@ -43,8 +43,7 @@ The GitHub Actions macOS job tests the unsigned CI build path separately.
 The macOS target generates its Swift request and response types at build time from
 `apps/macos/TAMForge/openapi.yaml`; generated Swift files remain in Xcode's build
 directory and are never hand-copied into the repository. The same command checks
-both that native input and the checked-in web types when the backend contract
-changes:
+that native input when the backend contract changes:
 
 ```bash
 uv run python scripts/ci/check_openapi.py --write
@@ -92,9 +91,9 @@ test covers the same access expectation locally but cannot prove production poli
 At-rest encryption and recovery-key ownership require a separate approved
 architecture decision and are not configured by the local object-store adapter.
 
-## Isolated integration and browser verification
+## Isolated integration and durable backend verification
 
-Integration and browser checks require the explicitly isolated `tamforge_test`
+Integration and durable backend E2E checks require the explicitly isolated `tamforge_test`
 database. They never create a database and never start Docker implicitly:
 
 ```bash
@@ -102,18 +101,22 @@ TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforg
   make integration
 
 TEST_DATABASE_URL=postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test \
+TAMFORGE_OBJECT_STORE_ENDPOINT=http://127.0.0.1:9000 \
+TAMFORGE_OBJECT_STORE_BUCKET=tam-forge-parity-test \
+TAMFORGE_OBJECT_STORE_ACCESS_KEY=tamforge \
+TAMFORGE_OBJECT_STORE_SECRET_KEY=tamforge-local \
   make e2e
 ```
 
-The browser journey uses `scripts/dev/seed_foundation_demo.py`. That helper
+The durable backend journey uses `scripts/dev/seed_foundation_demo.py`. That helper
 refuses to run outside `TAMFORGE_ENV=test`, refuses any database other than the
-local `tamforge_test`, and creates only a hashed, short-lived test session. It
-does not add a test-login endpoint to the application.
+local `tamforge_test`, seeds data only, and does not emit browser cookies or add a
+test-login endpoint to the application.
 
-GitHub Actions runs seven isolated gates: native macOS build/unit checks, backend
-unit checks, web checks, PostgreSQL integration tests, the Chromium learning journey,
-OpenAPI drift, and tracked secret/audio policy. CI receives no production credentials
-and does not deploy or merge anything.
+GitHub Actions runs seven isolated gates: native macOS build/unit checks, native UI,
+backend unit checks, PostgreSQL integration tests, durable backend E2E, native OpenAPI
+drift, and tracked secret/audio policy. CI receives no production credentials and does
+not deploy or merge anything.
 
 ## GitHub planning catalog
 

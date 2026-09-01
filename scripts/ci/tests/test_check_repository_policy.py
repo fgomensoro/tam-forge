@@ -46,3 +46,25 @@ def test_policy_rejects_non_placeholder_provider_token(monkeypatch, tmp_path) ->
     assert violations((PurePosixPath("unsafe.txt"),)) == (
         "GitHub token pattern in unsafe.txt",
     )
+
+
+def test_policy_rejects_reintroduced_product_node_runtime(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from scripts.ci import check_repository_policy
+
+    monkeypatch.setattr(check_repository_policy, "ROOT", tmp_path)
+    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "apps").mkdir()
+    (tmp_path / "apps" / "web").mkdir()
+    (tmp_path / "apps" / "web" / "main.tsx").write_text("export {}", encoding="utf-8")
+    (tmp_path / "Makefile").write_text("check:\n\tpnpm test\n", encoding="utf-8")
+    assert violations(
+        (
+            PurePosixPath("package.json"),
+            PurePosixPath("apps/web/main.tsx"),
+            PurePosixPath("Makefile"),
+        )
+    ) == (
+        "forbidden product Node runtime: package.json",
+        "forbidden product Node runtime: apps/web/main.tsx",
+        "forbidden product Node invocation in Makefile",
+    )
