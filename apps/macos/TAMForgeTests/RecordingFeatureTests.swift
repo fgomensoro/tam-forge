@@ -1383,7 +1383,9 @@ private actor GatedFakeRecordingSpool: RecordingSpoolWriting {
         recordedOperations.append(.gap(gap))
     }
 
-    func seal(gaps: [RecordingGap]) async throws { recordedOperations.append(.seal) }
+    func seal(gaps: [RecordingGap], startedAt: Date, endedAt: Date) async throws {
+        recordedOperations.append(.seal)
+    }
 
     func waitUntilFirstWrite() async {
         if firstWriteStarted { return }
