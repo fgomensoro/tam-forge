@@ -68,3 +68,69 @@ def test_policy_rejects_reintroduced_product_node_runtime(monkeypatch, tmp_path)
         "forbidden product Node runtime: apps/web/main.tsx",
         "forbidden product Node invocation in Makefile",
     )
+
+
+def test_policy_rejects_node_launchers_in_every_workflow_extension(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from scripts.ci import check_repository_policy
+
+    monkeypatch.setattr(check_repository_policy, "ROOT", tmp_path)
+    workflow_dir = tmp_path / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "release.yaml").write_text(
+        "jobs:\n  check:\n    steps:\n      - run: command npx verify\n",
+        encoding="utf-8",
+    )
+    (workflow_dir / "bypass.yml").write_text(
+        "jobs:\n  check:\n    steps:\n      - run: |\n"
+        "          env CI=1 yarn test\n",
+        encoding="utf-8",
+    )
+    assert violations(
+        (
+            PurePosixPath(".github/workflows/release.yaml"),
+            PurePosixPath(".github/workflows/bypass.yml"),
+        )
+    ) == (
+        "forbidden product Node invocation in .github/workflows/release.yaml",
+        "forbidden product Node invocation in .github/workflows/bypass.yml",
+    )
+
+
+def test_policy_rejects_every_node_launcher_from_make_recipes(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from scripts.ci import check_repository_policy
+
+    monkeypatch.setattr(check_repository_policy, "ROOT", tmp_path)
+    (tmp_path / "Makefile").write_text(
+        "check:\n"
+        "\tnode script.js\n"
+        "\tnpm test\n"
+        "\tpnpm test\n"
+        "\tnpx verify\n"
+        "\tyarn test\n"
+        "\tbun run check\n",
+        encoding="utf-8",
+    )
+    assert violations((PurePosixPath("Makefile"),)) == (
+        "forbidden product Node invocation in Makefile",
+    )
+
+
+def test_policy_ignores_node_words_outside_active_commands(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from scripts.ci import check_repository_policy
+
+    monkeypatch.setattr(check_repository_policy, "ROOT", tmp_path)
+    workflow_dir = tmp_path / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "notes.yaml").write_text(
+        "name: node migration\njobs:\n  check:\n    steps:\n      - name: npm is forbidden\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "Makefile").write_text(
+        "# pnpm is forbidden\ncheck:\n\t@echo native\n", encoding="utf-8"
+    )
+    assert violations(
+        (
+            PurePosixPath(".github/workflows/notes.yaml"),
+            PurePosixPath("Makefile"),
+        )
+    ) == ()

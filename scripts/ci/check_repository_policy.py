@@ -19,10 +19,12 @@ FORBIDDEN_PRODUCT_NODE_PATHS = frozenset(
     }
 )
 FORBIDDEN_PRODUCT_NODE_PREFIX = PurePosixPath("apps/web")
-ACTIVE_NODE_INVOCATION_FILES = frozenset(
-    {PurePosixPath("Makefile"), PurePosixPath(".github/workflows/ci.yml")}
+WORKFLOW_DIRECTORY = PurePosixPath(".github/workflows")
+WORKFLOW_SUFFIXES = frozenset({".yml", ".yaml"})
+NODE_LAUNCHER = re.compile(
+    rb"(?:^|[;&|()]\s*)(?:(?:[A-Za-z_][A-Za-z0-9_]*=\S+|command|env|exec|sudo|time)\s+)*(?:node|npm|pnpm|npx|yarn|bun)\b",
+    re.IGNORECASE,
 )
-NODE_INVOCATION = re.compile(rb"\b(?:node|npm|pnpm|playwright|vite)\b", re.IGNORECASE)
 SECRET_PATTERNS = (
     ("private key", re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")),
     ("Anthropic API key", re.compile(rb"sk-ant-[A-Za-z0-9_-]{20,}")),
@@ -52,6 +54,47 @@ def tracked_files() -> tuple[PurePosixPath, ...]:
     )
 
 
+def _is_node_invocation_file(relative: PurePosixPath) -> bool:
+    return relative == PurePosixPath("Makefile") or (
+        relative.parent == WORKFLOW_DIRECTORY and relative.suffix.lower() in WORKFLOW_SUFFIXES
+    )
+
+
+def _active_command_lines(relative: PurePosixPath, data: bytes) -> tuple[bytes, ...]:
+    lines = data.splitlines()
+    if relative.name == "Makefile":
+        return tuple(
+            line.lstrip(b"\t@").lstrip(b"@")
+            for line in lines
+            if line.startswith(b"\t") and not line.lstrip(b"\t@").startswith(b"#")
+        )
+
+    commands: list[bytes] = []
+    run_indent: int | None = None
+    for line in lines:
+        indentation = len(line) - len(line.lstrip(b" "))
+        stripped = line.strip()
+        if run_indent is not None:
+            if stripped and indentation <= run_indent:
+                run_indent = None
+            elif stripped and not stripped.startswith(b"#"):
+                commands.append(stripped)
+                continue
+        match = re.match(rb"^\s*(?:-\s*)?run\s*:\s*(.*)$", line)
+        if match is None:
+            continue
+        command = match.group(1).strip()
+        if command in {b"|", b">", b"|-", b">-", b"|+", b">+"}:
+            run_indent = indentation
+        elif command and not command.startswith(b"#"):
+            commands.append(command)
+    return tuple(commands)
+
+
+def _contains_node_launcher(relative: PurePosixPath, data: bytes) -> bool:
+    return any(NODE_LAUNCHER.search(line) for line in _active_command_lines(relative, data))
+
+
 def violations(paths: tuple[PurePosixPath, ...]) -> tuple[str, ...]:
     found: list[str] = []
     for relative in paths:
@@ -74,7 +117,7 @@ def violations(paths: tuple[PurePosixPath, ...]) -> tuple[str, ...]:
             continue
         if len(data) > 5 * 1024 * 1024 or b"\0" in data:
             continue
-        if relative in ACTIVE_NODE_INVOCATION_FILES and NODE_INVOCATION.search(data):
+        if _is_node_invocation_file(relative) and _contains_node_launcher(relative, data):
             found.append(f"forbidden product Node invocation in {relative}")
             continue
         for label, pattern in SECRET_PATTERNS:

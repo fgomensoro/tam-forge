@@ -3,7 +3,13 @@ from __future__ import annotations
 import pytest
 
 from scripts.ci.verify_bootstrap import verify_bootstrap
-from scripts.ci.verify_compose import APPROVED_MINIO_IMAGE, verify_compose_text
+from scripts.ci.verify_compose import (
+    APPROVED_MINIO_IMAGE,
+    MAX_COMPOSE_BYTES,
+    MAX_COMPOSE_NESTING_DEPTH,
+    MAX_COMPOSE_NODES,
+    verify_compose_text,
+)
 
 APPROVED_COMPOSE = f"""services:
   postgres:
@@ -62,6 +68,29 @@ def test_rejects_explicit_standard_yaml_tags() -> None:
     )
     with pytest.raises(ValueError, match="tags"):
         verify_compose_text(compose)
+
+
+def test_rejects_compose_larger_than_byte_cap() -> None:
+    compose = APPROVED_COMPOSE + "#" * (MAX_COMPOSE_BYTES - len(APPROVED_COMPOSE) + 1)
+    with pytest.raises(ValueError, match="byte size"):
+        verify_compose_text(compose)
+
+
+def test_rejects_compose_deeper_than_nesting_cap() -> None:
+    value = "leaf"
+    for _ in range(MAX_COMPOSE_NESTING_DEPTH + 1):
+        value = f"-\n  {value.replace(chr(10), chr(10) + '  ')}"
+    compose = "services:\n  postgres:\n    image:\n      " + value.replace(
+        "\n", "\n      "
+    )
+    with pytest.raises(ValueError, match="nesting depth"):
+        verify_compose_text(compose)
+
+
+def test_rejects_compose_with_more_nodes_than_cap() -> None:
+    values = "\n".join(f"  key-{index}: value" for index in range(MAX_COMPOSE_NODES))
+    with pytest.raises(ValueError, match="node count"):
+        verify_compose_text(f"services:\n{values}\n")
 
 
 @pytest.mark.parametrize(
