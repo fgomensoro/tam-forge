@@ -96,6 +96,29 @@ def test_policy_rejects_node_launchers_in_every_workflow_extension(monkeypatch, 
     )
 
 
+def test_policy_rejects_node_launcher_in_all_yaml_block_scalar_forms(
+    monkeypatch, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    from scripts.ci import check_repository_policy
+
+    monkeypatch.setattr(check_repository_policy, "ROOT", tmp_path)
+    workflow_dir = tmp_path / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True)
+    paths: list[PurePosixPath] = []
+    for index, indicator in enumerate(("|2", "|2-", "|-2", ">+2", "|2 # shell")):
+        name = f"block-{index}.yaml"
+        (workflow_dir / name).write_text(
+            f"jobs:\n  check:\n    steps:\n      - run: {indicator}\n"
+            "          command npm test\n",
+            encoding="utf-8",
+        )
+        paths.append(PurePosixPath(".github/workflows") / name)
+
+    assert violations(tuple(paths)) == tuple(
+        f"forbidden product Node invocation in {path}" for path in paths
+    )
+
+
 def test_policy_rejects_every_node_launcher_from_make_recipes(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
     from scripts.ci import check_repository_policy
 

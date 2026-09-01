@@ -25,6 +25,9 @@ NODE_LAUNCHER = re.compile(
     rb"(?:^|[;&|()]\s*)(?:(?:[A-Za-z_][A-Za-z0-9_]*=\S+|command|env|exec|sudo|time)\s+)*(?:node|npm|pnpm|npx|yarn|bun)\b",
     re.IGNORECASE,
 )
+YAML_BLOCK_SCALAR = re.compile(
+    rb"^[|>](?:[+-]?[1-9]?|[1-9][+-]?)(?:\s+#.*)?$"
+)
 SECRET_PATTERNS = (
     ("private key", re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")),
     ("Anthropic API key", re.compile(rb"sk-ant-[A-Za-z0-9_-]{20,}")),
@@ -84,7 +87,7 @@ def _active_command_lines(relative: PurePosixPath, data: bytes) -> tuple[bytes, 
         if match is None:
             continue
         command = match.group(1).strip()
-        if command in {b"|", b">", b"|-", b">-", b"|+", b">+"}:
+        if YAML_BLOCK_SCALAR.fullmatch(command):
             run_indent = indentation
         elif command and not command.startswith(b"#"):
             commands.append(command)
