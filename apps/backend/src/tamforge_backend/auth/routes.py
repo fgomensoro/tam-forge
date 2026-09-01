@@ -203,8 +203,26 @@ async def request_validation_exception_handler(
     """Keep native credentials out of FastAPI's default validation details."""
     if not isinstance(exc, RequestValidationError):
         raise exc
-    if not request.url.path.startswith("/api/v1/auth/native/"):
+    is_secret_bearing_request = request.url.path.startswith(
+        ("/api/v1/auth/native/", "/api/v1/recordings")
+    )
+    if not is_secret_bearing_request:
         return await default_request_validation_exception_handler(request, exc)
+    if request.url.path.startswith("/api/v1/recordings"):
+        problem = ProblemResponse(
+            type="https://tamforge.local/problems/invalid_recording_request",
+            title="Invalid recording request",
+            status=422,
+            detail="Recording request is invalid.",
+            code="invalid_recording_request",
+        )
+        response = JSONResponse(
+            problem.model_dump(),
+            status_code=422,
+            media_type="application/problem+json",
+        )
+        _prevent_storage(response)
+        return response
     problem = ProblemResponse(
         type="https://tamforge.local/problems/invalid_native_auth_request",
         title="Invalid authentication request",

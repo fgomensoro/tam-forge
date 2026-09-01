@@ -16,6 +16,9 @@ from .learning.service import ActivityCommandError
 from .notifications.routes import notification_exception_handler
 from .notifications.routes import router as notification_router
 from .notifications.service import NotificationError
+from .recordings.routes import recording_exception_handler
+from .recordings.routes import router as recording_router
+from .recordings.service import RecordingError
 from .roadmaps.ports import RoadmapWorkflowError
 from .roadmaps.routes import roadmap_exception_handler
 from .roadmaps.routes import router as roadmap_router
@@ -32,6 +35,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(evidence_router)
     app.include_router(notification_router)
     app.include_router(roadmap_router)
+    app.include_router(recording_router)
     app.include_router(today_router)
     app.add_exception_handler(AuthError, auth_exception_handler)
     app.add_exception_handler(InvalidOAuthState, auth_exception_handler)
@@ -40,5 +44,6 @@ def register_routes(app: FastAPI) -> None:
     app.add_exception_handler(EvidenceError, evidence_exception_handler)
     app.add_exception_handler(NotificationError, notification_exception_handler)
     app.add_exception_handler(RoadmapWorkflowError, roadmap_exception_handler)
+    app.add_exception_handler(RecordingError, recording_exception_handler)
     app.add_exception_handler(ObjectStoreError, roadmap_exception_handler)
     app.add_exception_handler(TodayError, today_exception_handler)

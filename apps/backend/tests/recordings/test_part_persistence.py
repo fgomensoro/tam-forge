@@ -15,22 +15,24 @@ from tamforge_backend.recordings.service import (
 
 
 def metadata(plaintext: bytes, ciphertext: bytes) -> RecordingPartUploadMetadata:
-    return RecordingPartUploadMetadata.model_validate({
-        "schema_version": 1,
-        "recording_id": "11111111-1111-4111-8111-111111111111",
-        "track_id": "22222222-2222-4222-8222-222222222222",
-        "track_kind": "microphone",
-        "format": {"channel_count": 1},
-        "sequence": 0,
-        "sample_start": 0,
-        "sample_count": len(plaintext) // 2,
-        "byte_length": len(plaintext),
-        "ciphertext_byte_length": len(ciphertext),
-        "plaintext_sha256": hashlib.sha256(plaintext).hexdigest(),
-        "ciphertext_sha256": hashlib.sha256(ciphertext).hexdigest(),
-        "nonce_base64url": base64.urlsafe_b64encode(b"n" * 12).rstrip(b"=").decode(),
-        "encryption_version": "aes-256-gcm-hkdf-sha256-v1",
-    })
+    return RecordingPartUploadMetadata.model_validate(
+        {
+            "schema_version": 1,
+            "recording_id": "11111111-1111-4111-8111-111111111111",
+            "track_id": "22222222-2222-4222-8222-222222222222",
+            "track_kind": "microphone",
+            "format": {"channel_count": 1},
+            "sequence": 0,
+            "sample_start": 0,
+            "sample_count": len(plaintext) // 2,
+            "byte_length": len(plaintext),
+            "ciphertext_byte_length": len(ciphertext),
+            "plaintext_sha256": hashlib.sha256(plaintext).hexdigest(),
+            "ciphertext_sha256": hashlib.sha256(ciphertext).hexdigest(),
+            "nonce_base64url": base64.urlsafe_b64encode(b"n" * 12).rstrip(b"=").decode(),
+            "encryption_version": "aes-256-gcm-hkdf-sha256-v1",
+        }
+    )
 
 
 def encrypted_part(plaintext: bytes) -> tuple[RecordingPartUploadMetadata, bytes, bytes]:

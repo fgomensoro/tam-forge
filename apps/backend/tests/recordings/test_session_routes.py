@@ -92,9 +92,9 @@ def owner(method: str = "bearer", owner_id: int = 7) -> AuthenticatedOwner:
 
 
 def client_for(identity: AuthenticatedOwner) -> tuple[TestClient, StubRecordingService]:
-    app = create_app(Settings(
-        environment="test", github_user_id=102269369, secure_cookies=False, _env_file=None
-    ))
+    app = create_app(
+        Settings(environment="test", github_user_id=102269369, secure_cookies=False, _env_file=None)
+    )
     service = StubRecordingService()
     app.dependency_overrides[get_authenticated_owner] = lambda: identity
     app.dependency_overrides[get_recording_service] = lambda: service
