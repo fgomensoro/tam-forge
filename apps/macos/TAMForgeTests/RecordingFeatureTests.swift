@@ -76,6 +76,7 @@ final class RecordingFeatureTests: XCTestCase {
     func testCapturePipelineCoalescesSubsecondBuffersIntoOneSecondRecord() throws {
         var pipeline = RecordingCapturePipeline()
         var events: [RecordingCaptureEvent] = []
+        _ = try pipeline.bufferSystemStartupAnchor(at: 1_000_000_000)
 
         for index in 0..<4 {
             events += try pipeline.accept(.fixture(
@@ -96,6 +97,7 @@ final class RecordingFeatureTests: XCTestCase {
 
     func testCapturePipelineFinishFlushesAcceptedFinalPartialWithoutLoss() throws {
         var pipeline = RecordingCapturePipeline()
+        _ = try pipeline.bufferSystemStartupAnchor(at: 1_000_000_000)
         let first = try pipeline.accept(.fixture(
             track: .microphone,
             presentationNanoseconds: 1_000_000_000,
@@ -123,6 +125,7 @@ final class RecordingFeatureTests: XCTestCase {
 
     func testCapturePipelineSplitsPartialOnSourceLineageChange() throws {
         var pipeline = RecordingCapturePipeline()
+        _ = try pipeline.bufferSystemStartupAnchor(at: 1_000_000_000)
         let first = try pipeline.accept(.fixture(
             track: .microphone,
             presentationNanoseconds: 1_000_000_000,
@@ -143,6 +146,7 @@ final class RecordingFeatureTests: XCTestCase {
 
     func testFailedRetainedSampleFlushesAudioAndEmitsExactSeparatedGaps() throws {
         var pipeline = RecordingCapturePipeline()
+        _ = try pipeline.bufferSystemStartupAnchor(at: 1_000_000_000)
         _ = try pipeline.accept(.fixture(
             track: .microphone,
             presentationNanoseconds: 1_000_000_000,
@@ -181,6 +185,7 @@ final class RecordingFeatureTests: XCTestCase {
     func testCapturePipelineThrottlesLevelsToCanonicalTenHertz() throws {
         var pipeline = RecordingCapturePipeline()
         var events: [RecordingCaptureEvent] = []
+        _ = try pipeline.bufferSystemStartupAnchor(at: 1_000_000_000)
 
         for index in 0...10 {
             events += try pipeline.accept(.fixture(
@@ -191,6 +196,65 @@ final class RecordingFeatureTests: XCTestCase {
         }
 
         XCTAssertEqual(events.recordingLevels.map { $0.normalized }, [0.0, 0.5, 1.0])
+    }
+
+    func testCapturePipelineUsesEarlierMicrophoneAnchorAfterSystemArrivesFirst() throws {
+        var pipeline = RecordingCapturePipeline()
+        let systemFirst = try pipeline.accept(.fixture(
+            track: .systemAudio,
+            presentationNanoseconds: 2_000_000_000,
+            sampleCount: 4_800
+        ), normalizedLevel: 0.25)
+
+        let replay = try pipeline.accept(.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 4_800
+        ), normalizedLevel: 0.5)
+        let final = pipeline.finish().recordingChunks
+
+        XCTAssertTrue(systemFirst.isEmpty)
+        XCTAssertEqual(replay.recordingGaps, [.init(
+            track: .systemAudio,
+            sampleStart: 0,
+            sampleCount: 48_000,
+            reason: .sourceDiscontinuity
+        )])
+        XCTAssertEqual(final.first { $0.track == .microphone }?.sampleStart, 0)
+        XCTAssertEqual(final.first { $0.track == .systemAudio }?.sampleStart, 48_000)
+    }
+
+    func testCapturePipelineFailsClosedWhenSecondTrackMissingAtStartupBound() throws {
+        var pipeline = RecordingCapturePipeline()
+        let first = try pipeline.accept(.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 48_000
+        ), normalizedLevel: 0.5)
+        let beyondBound = try pipeline.accept(.fixture(
+            track: .microphone,
+            presentationNanoseconds: 2_000_000_000,
+            sampleCount: 1
+        ), normalizedLevel: 0.5)
+
+        XCTAssertTrue(first.isEmpty)
+        XCTAssertTrue(beyondBound.recordingChunks.isEmpty)
+        XCTAssertEqual(beyondBound.recordingFailures, [.requiredTracksMissing])
+    }
+
+    func testCapturePipelineFinishFailsClosedWhenSecondTrackNeverAnchors() throws {
+        var pipeline = RecordingCapturePipeline()
+        let buffered = try pipeline.accept(.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 12_000
+        ), normalizedLevel: 0.5)
+
+        let final = pipeline.finish()
+
+        XCTAssertTrue(buffered.isEmpty)
+        XCTAssertTrue(final.recordingChunks.isEmpty)
+        XCTAssertEqual(final.recordingFailures, [.requiredTracksMissing])
     }
 
     func testBoundedQueueRejectsOverflowWithoutEvictingAcceptedAudio() {
@@ -297,6 +361,77 @@ final class RecordingFeatureTests: XCTestCase {
         )
     }
 
+    func testSealedSpoolDetectsAlignedLastRecordTruncation() async throws {
+        let root = try temporaryDirectory()
+        let keyStore = InMemoryRecordingKeyStore()
+        let recordingID = UUID()
+        let spool = try await EncryptedRecordingSpool.create(
+            recordingID: recordingID, rootURL: root, keyStore: keyStore
+        )
+        try await spool.append(.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 48_000
+        ))
+        try await spool.append(.fixture(
+            track: .microphone,
+            presentationNanoseconds: 2_000_000_000,
+            sampleCount: 48_000
+        ))
+        try await spool.append(.fixture(
+            track: .systemAudio,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 48_000
+        ))
+        try await spool.seal(gaps: [])
+
+        let trackURL = root.appendingPathComponent(recordingID.uuidString, isDirectory: true)
+            .appendingPathComponent("microphone.tfr")
+        let bytes = try Data(contentsOf: trackURL)
+        let firstLength = Int(bytes.prefix(4).reduce(0) { ($0 << 8) | Int($1) })
+        try Data(bytes.prefix(4 + firstLength)).write(to: trackURL, options: .atomic)
+
+        let recovered = try await EncryptedRecordingSpool.recover(
+            recordingID: recordingID, rootURL: root, keyStore: keyStore
+        )
+        XCTAssertFalse(recovered.ignoredIncompleteTail)
+        XCTAssertTrue(recovered.unrecoverableCorruptions.contains(.init(
+            track: .microphone,
+            byteOffset: nil,
+            reason: .sealedCheckpointMismatch
+        )))
+    }
+
+    func testSealedSpoolDetectsMissingExpectedTrackFile() async throws {
+        let root = try temporaryDirectory()
+        let keyStore = InMemoryRecordingKeyStore()
+        let recordingID = UUID()
+        let spool = try await EncryptedRecordingSpool.create(
+            recordingID: recordingID, rootURL: root, keyStore: keyStore
+        )
+        for track in RecordingTrackKind.allCases {
+            try await spool.append(.fixture(
+                track: track,
+                presentationNanoseconds: 1_000_000_000,
+                sampleCount: 48_000
+            ))
+        }
+        try await spool.seal(gaps: [])
+
+        let missingURL = root.appendingPathComponent(recordingID.uuidString, isDirectory: true)
+            .appendingPathComponent("system-audio.tfr")
+        try FileManager.default.removeItem(at: missingURL)
+
+        let recovered = try await EncryptedRecordingSpool.recover(
+            recordingID: recordingID, rootURL: root, keyStore: keyStore
+        )
+        XCTAssertTrue(recovered.unrecoverableCorruptions.contains(.init(
+            track: .systemAudio,
+            byteOffset: nil,
+            reason: .sealedCheckpointMismatch
+        )))
+    }
+
     func testSpoolChargesExactAudioAndGapJournalRecordBytesToReservation() async throws {
         let root = try temporaryDirectory()
         let keyStore = InMemoryRecordingKeyStore()
@@ -389,6 +524,7 @@ final class RecordingFeatureTests: XCTestCase {
         )
         XCTAssertEqual(recovered.corruptRanges.first?.sampleStart, 0)
         XCTAssertEqual(recovered.corruptRanges.first?.sampleCount, 48_000)
+        XCTAssertTrue(recovered.unrecoverableCorruptions.isEmpty)
     }
 
     func testSpoolHeaderTamperFailsMetadataAuthenticationWithoutReturningAudio() async throws {
@@ -961,6 +1097,34 @@ final class RecordingFeatureTests: XCTestCase {
         }
     }
 
+    func testCoordinatorMissingRequiredTrackNeverSeals() async {
+        let source = FakeRecordingCaptureSource(
+            finalEventOnStop: .failure(.requiredTracksMissing)
+        )
+        let spool = OrderedFakeRecordingSpool()
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: spool)
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: spoolFactory
+            )
+        }
+        await coordinator.start()
+
+        await coordinator.stop()
+
+        let operations = await spool.operations()
+        XCTAssertFalse(operations.contains(.seal))
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        let pendingIDs = await MainActor.run { coordinator.pendingRecordingIDs }
+        XCTAssertEqual(pendingIDs, createdIDs)
+        let phase = await MainActor.run { coordinator.phase }
+        guard case .needsAttention = phase else {
+            return XCTFail("missing startup track must preserve the unsealed spool")
+        }
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(
@@ -1025,6 +1189,18 @@ private extension RecordingPCMChunk {
             ),
             payload: Data(repeating: byte, count: sampleCount * channels * 2)
         )
+    }
+}
+
+private extension RecordingCapturePipeline {
+    mutating func bufferSystemStartupAnchor(
+        at presentationNanoseconds: Int64
+    ) throws -> [RecordingCaptureEvent] {
+        try acceptDroppedSourceInterval(.init(
+            track: .systemAudio,
+            startPresentationNanoseconds: presentationNanoseconds,
+            endPresentationNanoseconds: presentationNanoseconds + 1
+        ), reason: .callbackOverflow)
     }
 }
 

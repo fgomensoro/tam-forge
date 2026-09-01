@@ -23,6 +23,7 @@ enum RecordingSpoolCorruptionReason: Equatable, Sendable {
     case malformedState
     case malformedGapJournal
     case sealedIncompleteTail
+    case sealedCheckpointMismatch
 }
 
 struct RecordingSpoolUnrecoverableCorruption: Equatable, Sendable {
@@ -160,6 +161,7 @@ struct RecordingSpoolRecovery: Sendable {
 }
 
 actor EncryptedRecordingSpool: RecordingSpoolWriting {
+    private static let stateSchemaVersion = 3
     private static let magic: UInt32 = 0x5446_5231
     private static let version: UInt16 = 3
     private static let metadataHeaderBytes = 160
@@ -179,6 +181,7 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
     private let key: SymmetricKey
     private var reservation: SpoolDiskReservation?
     private var sequences: [RecordingTrackKind: Int] = [:]
+    private var terminalSampleEnds: [RecordingTrackKind: Int64] = [:]
     private var fileHandles: [RecordingTrackKind: FileHandle] = [:]
     private var gapJournalHandle: FileHandle?
     private var gapJournalEntriesByTrack: [RecordingTrackKind: Int] = [:]
@@ -212,7 +215,9 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
                 key: key,
                 reservation: reservation
             )
-            try await spool.persistState(sealed: false, gapJournalCount: 0)
+            try await spool.persistState(
+                sealed: false, gapJournalCount: 0, trackCheckpoints: []
+            )
             return spool
         } catch {
             try? await keyStore.delete(recordingID: recordingID)
@@ -238,7 +243,13 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
     func append(_ unvalidatedChunk: RecordingPCMChunk) async throws {
         guard !isSealed else { throw RecordingSpoolError.sealed }
         let chunk = try unvalidatedChunk.validated()
-        guard chunk.sampleCount <= RecordingPCMFormat.canonicalSampleRate else {
+        let (sampleEnd, sampleEndOverflow) = chunk.sampleStart.addingReportingOverflow(
+            Int64(chunk.sampleCount)
+        )
+        guard chunk.sampleCount <= RecordingPCMFormat.canonicalSampleRate,
+              !sampleEndOverflow,
+              sampleEnd <= RecordingDiskPolicy.maximumCanonicalSamples
+        else {
             throw RecordingSpoolError.invalidRecord
         }
         let deviceID = Data(chunk.source.deviceID.utf8)
@@ -273,6 +284,7 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
         try handle.write(contentsOf: record)
         try handle.synchronize()
         sequences[chunk.track] = sequence + 1
+        terminalSampleEnds[chunk.track] = sampleEnd
         storedBytes = nextStoredBytes
         try reservation?.shrink(by: chargedBytes)
     }
@@ -299,6 +311,9 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
         for gap in gaps {
             try persistGap(gap)
         }
+        for track in RecordingTrackKind.allCases {
+            _ = try fileHandle(for: track)
+        }
         for handle in fileHandles.values {
             try handle.synchronize()
             try handle.close()
@@ -307,9 +322,22 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
         try gapJournalHandle?.synchronize()
         try gapJournalHandle?.close()
         gapJournalHandle = nil
+        let checkpoints = try RecordingTrackKind.allCases.map { track in
+            let bytes = try Self.fileSize(directoryURL.appendingPathComponent(track.fileName))
+            return RecordingTrackCheckpoint(
+                track: track,
+                recordCount: sequences[track, default: 0],
+                fileByteLength: bytes,
+                terminalSampleEnd: terminalSampleEnds[track, default: 0]
+            )
+        }
         try reservation?.release()
         reservation = nil
-        try persistState(sealed: true, gapJournalCount: gapJournalCount)
+        try persistState(
+            sealed: true,
+            gapJournalCount: gapJournalCount,
+            trackCheckpoints: checkpoints
+        )
         isSealed = true
     }
 
@@ -344,10 +372,20 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
                 track: nil, byteOffset: nil, reason: .malformedGapJournal
             ))
         }
+        let sealedCheckpoints = Dictionary(uniqueKeysWithValues:
+            (stateResult.state?.trackCheckpoints ?? []).map { ($0.track, $0) }
+        )
         var ignoredTail = journalResult.ignoredIncompleteTail
         for track in RecordingTrackKind.allCases {
             let url = directory.appendingPathComponent(track.fileName)
-            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                if stateIsSealed {
+                    unrecoverable.append(.init(
+                        track: track, byteOffset: nil, reason: .sealedCheckpointMismatch
+                    ))
+                }
+                continue
+            }
             let result = try recoverTrack(
                 url: url,
                 expectedRecordingID: recordingID,
@@ -355,8 +393,16 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
                 key: key
             )
             records.append(contentsOf: result.records)
-            corrupt.append(contentsOf: result.corruptRanges)
             unrecoverable.append(contentsOf: result.unrecoverableCorruptions)
+            let checkpointMatches = !stateIsSealed
+                || sealedCheckpoints[track] == result.checkpoint
+            if checkpointMatches {
+                corrupt.append(contentsOf: result.corruptRanges)
+            } else {
+                unrecoverable.append(.init(
+                    track: track, byteOffset: nil, reason: .sealedCheckpointMismatch
+                ))
+            }
             if stateIsSealed, result.ignoredIncompleteTail {
                 unrecoverable.append(.init(
                     track: track, byteOffset: nil, reason: .sealedIncompleteTail
@@ -382,15 +428,17 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
         expectedRecordingID: UUID,
         expectedTrack: RecordingTrackKind,
         key: SymmetricKey
-    ) throws -> RecordingSpoolRecovery {
+    ) throws -> RecoveredTrack {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
+        let fileByteLength = try fileSize(url)
         var records: [RecoveredSpoolRecord] = []
         var corrupt: [RecordingGap] = []
         var unrecoverable: [RecordingSpoolUnrecoverableCorruption] = []
         var ignoredTail = false
         var expectedSequence = 0
         var byteOffset: Int64 = 0
+        var terminalSampleEnd: Int64 = 0
         while true {
             let lengthData = try handle.read(upToCount: 4) ?? Data()
             if lengthData.isEmpty { break }
@@ -432,6 +480,7 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
                     corrupt.append(gap)
                     expectedSequence += 1
                     byteOffset += 4 + Int64(length)
+                    terminalSampleEnd = gap.sampleStart + Int64(gap.sampleCount)
                     continue
                 }
                 unrecoverable.append(.init(
@@ -461,6 +510,7 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
             }
             expectedSequence += 1
             byteOffset += 4 + Int64(length)
+            terminalSampleEnd = parsed.sampleEnd
             do {
                 let sealed = try AES.GCM.SealedBox(combined: body.dropFirst(headerBytes))
                 let plaintext = try AES.GCM.open(sealed, using: key, authenticating: headerData)
@@ -517,13 +567,14 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
         }
         return .init(
             records: records,
-            gaps: [],
             corruptRanges: corrupt,
             unrecoverableCorruptions: unrecoverable,
             ignoredIncompleteTail: ignoredTail,
-            sealed: false,
-            releaseGates: .init(
-                audioCreatedOnServer: false, transcriptLineageAccepted: false
+            checkpoint: .init(
+                track: expectedTrack,
+                recordCount: expectedSequence,
+                fileByteLength: fileByteLength,
+                terminalSampleEnd: terminalSampleEnd
             )
         )
     }
@@ -547,6 +598,9 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
               let sampleCount = headerData.fixedWidth(at: 36, as: UInt32.self),
               sampleCount > 0,
               sampleCount <= RecordingPCMFormat.canonicalSampleRate,
+              !boundedSampleStart.addingReportingOverflow(Int64(sampleCount)).overflow,
+              boundedSampleStart + Int64(sampleCount)
+                <= RecordingDiskPolicy.maximumCanonicalSamples,
               let payloadLength = headerData.fixedWidth(at: 40, as: UInt32.self),
               payloadLength == sampleCount * UInt32(
                 Int(headerData[7]) * RecordingPCMFormat.bytesPerSample
@@ -578,15 +632,6 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
             let envelope = try JSONDecoder().decode(
                 AuthenticatedSpoolState.self, from: Data(contentsOf: url)
             )
-            guard envelope.state.schemaVersion == 2,
-                  envelope.state.recordingID == recordingID,
-                  envelope.state.gapJournalCount >= 0,
-                  envelope.state.gapJournalCount <= RecordingDiskPolicy.maximumGapEntries
-            else {
-                return .init(state: nil, unrecoverableCorruption: .init(
-                    track: nil, byteOffset: nil, reason: .malformedState
-                ))
-            }
             let stateData = try JSONEncoder.recording.encode(envelope.state)
             let authenticationKey = stateAuthenticationKey(
                 rootKey: key, recordingID: recordingID
@@ -600,6 +645,30 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
                     track: nil, byteOffset: nil, reason: .malformedState
                 ))
             }
+            let checkpoints = envelope.state.trackCheckpoints
+            let checkpointTracks = Set(checkpoints.map(\.track))
+            let checkpointsAreValid = checkpoints.allSatisfy {
+                $0.recordCount >= 0
+                    && $0.fileByteLength >= 0
+                    && $0.terminalSampleEnd >= 0
+                    && ($0.recordCount == 0
+                        ? $0.fileByteLength == 0 && $0.terminalSampleEnd == 0
+                        : $0.fileByteLength > 0 && $0.terminalSampleEnd > 0)
+            }
+            guard envelope.state.schemaVersion == stateSchemaVersion,
+                  envelope.state.recordingID == recordingID,
+                  envelope.state.gapJournalCount >= 0,
+                  envelope.state.gapJournalCount <= RecordingDiskPolicy.maximumGapEntries,
+                  checkpointsAreValid,
+                  envelope.state.sealed
+                    ? checkpoints.count == RecordingTrackKind.allCases.count
+                        && checkpointTracks == Set(RecordingTrackKind.allCases)
+                    : checkpoints.isEmpty
+            else {
+                return .init(state: nil, unrecoverableCorruption: .init(
+                    track: nil, byteOffset: nil, reason: .malformedState
+                ))
+            }
             return .init(state: envelope.state)
         } catch {
             return .init(state: nil, unrecoverableCorruption: .init(
@@ -608,12 +677,17 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
         }
     }
 
-    private func persistState(sealed: Bool, gapJournalCount: Int) throws {
+    private func persistState(
+        sealed: Bool,
+        gapJournalCount: Int,
+        trackCheckpoints: [RecordingTrackCheckpoint]
+    ) throws {
         let state = RecordingSpoolState(
-            schemaVersion: 2,
+            schemaVersion: Self.stateSchemaVersion,
             recordingID: recordingID,
             sealed: sealed,
             gapJournalCount: gapJournalCount,
+            trackCheckpoints: trackCheckpoints,
             releaseGates: .init(
                 audioCreatedOnServer: false, transcriptLineageAccepted: false
             )
@@ -784,7 +858,7 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
     ) -> SymmetricKey {
         HKDF<SHA256>.deriveKey(
             inputKeyMaterial: rootKey,
-            salt: Data("tamforge.recording.spool-state.v1".utf8),
+            salt: Data("tamforge.recording.spool-state.v2".utf8),
             info: Data(recordingID.uuidString.utf8),
             outputByteCount: 32
         )
@@ -846,6 +920,14 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
         try FileManager.default.setAttributes(
             [.posixPermissions: 0o700], ofItemAtPath: url.path
         )
+    }
+
+    private static func fileSize(_ url: URL) throws -> Int64 {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        guard let size = attributes[.size] as? NSNumber else {
+            throw RecordingSpoolError.invalidRecord
+        }
+        return size.int64Value
     }
 
     private static func header(
@@ -929,6 +1011,12 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
               let presentation = data.fixedWidth(at: 56, as: UInt64.self)
         else { throw RecordingSpoolError.invalidRecord }
         let channels = Int(data[7])
+        guard let boundedSampleStart = Int64(exactly: sampleStart) else {
+            throw RecordingSpoolError.invalidRecord
+        }
+        let (sampleEnd, sampleEndOverflow) = boundedSampleStart.addingReportingOverflow(
+            Int64(sampleCount)
+        )
         guard channels == (track == .microphone ? 1 : 2),
               sampleCount > 0,
               sampleCount <= RecordingPCMFormat.canonicalSampleRate,
@@ -938,7 +1026,8 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
               conversionVersion > 0,
               Int(deviceLength) <= maximumDeviceIDBytes,
               Int(routeLength) <= maximumRouteBytes,
-              let boundedSampleStart = Int64(exactly: sampleStart)
+              !sampleEndOverflow,
+              sampleEnd <= RecordingDiskPolicy.maximumCanonicalSamples
         else { throw RecordingSpoolError.invalidRecord }
         return .init(
             recordingID: recordingID,
@@ -946,6 +1035,7 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
             canonicalChannels: channels,
             sequence: Int(sequence),
             sampleStart: boundedSampleStart,
+            sampleEnd: sampleEnd,
             sampleCount: Int(sampleCount),
             payloadLength: Int(payloadLength),
             sourceSampleRate: Int(sourceRate),
@@ -967,6 +1057,7 @@ private struct ParsedSpoolHeader {
     let canonicalChannels: Int
     let sequence: Int
     let sampleStart: Int64
+    let sampleEnd: Int64
     let sampleCount: Int
     let payloadLength: Int
     let sourceSampleRate: Int
@@ -985,7 +1076,15 @@ private struct RecordingSpoolState: Codable {
     let recordingID: UUID
     let sealed: Bool
     let gapJournalCount: Int
+    let trackCheckpoints: [RecordingTrackCheckpoint]
     let releaseGates: RecordingReleaseGates
+}
+
+private struct RecordingTrackCheckpoint: Codable, Equatable {
+    let track: RecordingTrackKind
+    let recordCount: Int
+    let fileByteLength: Int64
+    let terminalSampleEnd: Int64
 }
 
 private struct AuthenticatedSpoolState: Codable {
@@ -1031,6 +1130,14 @@ private struct RecoveredSpoolState {
         self.state = state
         self.unrecoverableCorruption = unrecoverableCorruption
     }
+}
+
+private struct RecoveredTrack {
+    let records: [RecoveredSpoolRecord]
+    let corruptRanges: [RecordingGap]
+    let unrecoverableCorruptions: [RecordingSpoolUnrecoverableCorruption]
+    let ignoredIncompleteTail: Bool
+    let checkpoint: RecordingTrackCheckpoint
 }
 
 private final class SpoolDiskReservation: @unchecked Sendable {
