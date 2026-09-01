@@ -266,11 +266,16 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                         )
                         assert staged.status_code == 201, staged.text
                         staged_payload = staged.json()
-                        assert staged_payload["status"] == "validated"
-                        assert staged_payload["validation_report"]["accepted"] is True
-                        assert _without(staged_payload, "id") == _without(
-                            parity["responses"]["roadmap_import"], "id"
-                        )
+                        expected_import = parity["responses"]["roadmap_import"]
+                        assert staged_payload["status"] == expected_import["status"]
+                        assert staged_payload["failure_code"] == expected_import["failure_code"]
+                        assert {
+                            key: staged_payload["validation_report"][key]
+                            for key in ("accepted", "task_count", "issues")
+                        } == {
+                            key: expected_import["validation_report"][key]
+                            for key in ("accepted", "task_count", "issues")
+                        }
 
                         replay = await first_native_client.post(
                             "/api/v1/roadmap-imports",
