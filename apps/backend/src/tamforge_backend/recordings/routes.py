@@ -169,11 +169,14 @@ async def upload_recording_part(
     track_id: UUID,
     sequence: Annotated[int, Path(ge=0, le=7199)],
     idempotency_key: Annotated[IdempotencyKey, Header(alias="Idempotency-Key")],
-    schema_version: Annotated[Literal[1], Header(alias="X-TAM-Recording-Schema")],
+    # Integer-literal header params never validate: HTTP headers arrive as
+    # strings and pydantic does not coerce str into int literals. Parse plain
+    # ints here; RecordingPartUploadMetadata below enforces the exact values.
+    schema_version: Annotated[int, Header(alias="X-TAM-Recording-Schema")],
     track_kind: Annotated[TrackKind, Header(alias="X-TAM-Track-Kind")],
     sample_encoding: Annotated[Literal["pcm_s16le"], Header(alias="X-TAM-Sample-Encoding")],
-    sample_rate_hz: Annotated[Literal[48_000], Header(alias="X-TAM-Sample-Rate")],
-    channel_count: Annotated[Literal[1, 2], Header(alias="X-TAM-Channel-Count")],
+    sample_rate_hz: Annotated[int, Header(alias="X-TAM-Sample-Rate")],
+    channel_count: Annotated[int, Header(alias="X-TAM-Channel-Count")],
     header_sequence: Annotated[int, Header(alias="X-TAM-Part-Sequence")],
     sample_start: Annotated[int, Header(alias="X-TAM-Sample-Start")],
     sample_count: Annotated[int, Header(alias="X-TAM-Sample-Count")],
