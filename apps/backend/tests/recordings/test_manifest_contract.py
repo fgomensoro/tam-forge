@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
-
 from tamforge_backend.recordings.contracts import (
     canonical_json_bytes,
     part_aad_bytes,
@@ -114,6 +113,7 @@ def test_part_aad_and_timeline_hash_inputs_are_deterministic_and_domain_separate
             "sample_start": 0,
             "sample_count": 48000,
             "byte_length": 96000,
+            "ciphertext_byte_length": 96016,
             "plaintext_sha256": "a" * 64,
             "ciphertext_sha256": "b" * 64,
             "nonce_base64url": "AAAAAAAAAAAAAAAA",
