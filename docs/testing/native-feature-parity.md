@@ -48,6 +48,30 @@ deployed server during CI. The native lane proves macOS behavior and exact HTTP
 contracts; the Linux lane proves native bearer authentication and durable
 PostgreSQL/MinIO behavior through the same FastAPI routes and shared scenario.
 
+## Local 8 GB resource receipt
+
+The opt-in receipt passed on `da4b5463e80a2e10596c343f0f1b3730dadb8c9a`
+using a Mac14,7 with 8 GiB RAM and macOS 26.3 (25D125). The ad-hoc signed DEBUG
+shared-parity fixture completed five usable cold launches, a 60-second settle, 300
+RSS samples on an absolute one-second schedule, 20 Today/Evidence/refresh cycles and
+a final 60-second settle. The JSON is retained as
+`tamforge-native-resource-receipt` in
+`/tmp/tamforge-native-resource-da4b546.xcresult`.
+
+| Measurement | Result |
+| --- | ---: |
+| Cold launch p50 / p95 | 4.486 s / 7.116 s |
+| Idle RSS min / p50 / p95 / max | 8.516 / 17.891 / 31.781 / 48.813 MiB |
+| Navigation-cycle peak RSS | 58.172 MiB |
+| Post-cycle RSS after 60 s | 21.750 MiB |
+
+The locked idle p95 gate is 180 MiB; the observed 31.781 MiB passed. The post-cycle
+gate is idle p95 + 20 MiB (51.781 MiB); the observed 21.750 MiB passed. The test ran
+for 578.804 seconds with one pass and zero failures or skips. This receipt measures
+the native UI under the shared fixture, not local ASR, recording or live-server work.
+Its RSS probe exists only under `DEBUG`; the separate Release gate proves the probe
+and all other fixture hooks are absent from the distributable app.
+
 ## Evidence boundaries
 
 - Native UI journeys use a DEBUG-only `URLProtocol` fixture, the real SwiftUI views,
