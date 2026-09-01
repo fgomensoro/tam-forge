@@ -10,6 +10,7 @@ actor ScreenCaptureAudioSource: RecordingCaptureSource {
 
     func start(
         microphoneID: String?,
+        initialRoute: String,
         receive: @escaping @Sendable (RecordingCaptureEvent) -> Void
     ) async throws {
         guard stream == nil else { return }
@@ -36,6 +37,7 @@ actor ScreenCaptureAudioSource: RecordingCaptureSource {
         let delegate = ScreenCaptureStreamDelegate(receive: receive)
         let output = ScreenCaptureAudioOutput(
             microphoneID: microphoneID ?? "system-default-microphone",
+            initialRoute: initialRoute,
             receive: receive
         )
         let stream = SCStream(filter: filter, configuration: configuration, delegate: delegate)
@@ -93,16 +95,19 @@ private final class ScreenCaptureAudioOutput: NSObject, SCStreamOutput, @uncheck
         label: "com.fgomensoro.tamforge.recording.processing",
         qos: .userInitiated
     )
-    private let handoff = BoundedCaptureQueue<RetainedAudioSample>(capacity: 16)
+    private let handoff = BoundedCaptureHandoffQueue(capacity: 16)
     private let microphoneID: String
+    private let initialRoute: String
     private let receive: @Sendable (RecordingCaptureEvent) -> Void
     private var timeline = RecordingTimelineAssembler()
 
     init(
         microphoneID: String,
+        initialRoute: String,
         receive: @escaping @Sendable (RecordingCaptureEvent) -> Void
     ) {
         self.microphoneID = microphoneID
+        self.initialRoute = initialRoute
         self.receive = receive
     }
 
@@ -123,29 +128,49 @@ private final class ScreenCaptureAudioOutput: NSObject, SCStreamOutput, @uncheck
         guard sampleBuffer.isValid, sampleBuffer.dataReadiness == .ready else { return }
         let retained = RetainedAudioSample(track: track, sampleBuffer: sampleBuffer)
         guard handoff.offer(retained) else {
+            guard let dropped = RecordingDroppedSourceRange(
+                sampleBuffer: sampleBuffer, track: track
+            ) else {
+                receive(.failure(.conversionFailed))
+                return
+            }
+            handoff.record(dropped: dropped)
+            scheduleHandoffDrain()
             receive(.failure(.callbackOverflow))
             return
         }
+        scheduleHandoffDrain()
+    }
+
+    private func scheduleHandoffDrain() {
+        guard handoff.scheduleDrainIfNeeded() else { return }
         processingQueue.async { [weak self] in self?.drainHandoff() }
     }
 
     private func drainHandoff() {
-        for sample in handoff.drain() {
-            do {
-                let converted = try convert(sample)
-                let accepted = try timeline.accept(converted)
-                if let gap = accepted.gap { receive(.gap(gap)) }
-                for chunk in accepted.chunk.oneSecondChunks() {
-                    receive(.chunk(chunk))
+        while let batch = handoff.takeDrainBatch() {
+            for item in batch {
+                do {
+                    switch item {
+                    case let .retained(sample):
+                        let converted = try convert(sample)
+                        let accepted = try timeline.accept(converted)
+                        if let gap = accepted.gap { receive(.gap(gap)) }
+                        for chunk in accepted.chunk.oneSecondChunks() {
+                            receive(.chunk(chunk))
+                        }
+                        receive(.level(
+                            track: sample.track,
+                            normalized: accepted.chunk.payload.normalizedPCM16Level
+                        ))
+                    case let .dropped(range):
+                        for gap in try timeline.accept(droppedSourceInterval: range) { receive(.gap(gap)) }
+                    }
+                } catch let failure as RecordingCaptureFailure {
+                    receive(.failure(failure))
+                } catch {
+                    receive(.failure(.conversionFailed))
                 }
-                receive(.level(
-                    track: sample.track,
-                    normalized: accepted.chunk.payload.normalizedPCM16Level
-                ))
-            } catch let failure as RecordingCaptureFailure {
-                receive(.failure(failure))
-            } catch {
-                receive(.failure(.conversionFailed))
             }
         }
     }
@@ -220,6 +245,10 @@ private final class ScreenCaptureAudioOutput: NSObject, SCStreamOutput, @uncheck
                 sampleRate: sourceFormat.sampleRate,
                 channelCount: sourceChannels,
                 deviceID: sample.track == .microphone ? microphoneID : "system-audio",
+                initialRoute: sample.track == .microphone
+                    ? initialRoute
+                    : "ScreenCaptureKit authorized system mix",
+                conversionVersion: 1,
                 presentationNanoseconds: presentation
             ),
             payload: payload
@@ -227,13 +256,99 @@ private final class ScreenCaptureAudioOutput: NSObject, SCStreamOutput, @uncheck
     }
 }
 
-private final class RetainedAudioSample: @unchecked Sendable {
+final class RetainedAudioSample: @unchecked Sendable {
     let track: RecordingTrackKind
     let sampleBuffer: CMSampleBuffer
 
     init(track: RecordingTrackKind, sampleBuffer: CMSampleBuffer) {
         self.track = track
         self.sampleBuffer = sampleBuffer
+    }
+}
+
+enum CaptureHandoff: Sendable {
+    case retained(RetainedAudioSample)
+    case dropped(RecordingDroppedSourceInterval)
+}
+
+final class BoundedCaptureHandoffQueue: @unchecked Sendable {
+    private let lock = NSLock()
+    private let capacity: Int
+    private var retained: [RetainedAudioSample] = []
+    private var droppedByTrack: [RecordingTrackKind: RecordingDroppedSourceInterval] = [:]
+    private var drainScheduled = false
+
+    init(capacity: Int) {
+        precondition(capacity > 0)
+        self.capacity = capacity
+        retained.reserveCapacity(capacity)
+    }
+
+    func offer(_ sample: RetainedAudioSample) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard retained.count < capacity else { return false }
+        retained.append(sample)
+        return true
+    }
+
+    // At most one metadata-only interval survives per track, independent of source rate.
+    func record(dropped range: RecordingDroppedSourceRange) {
+        guard let interval = RecordingDroppedSourceInterval(range: range) else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        droppedByTrack[interval.track] = droppedByTrack[interval.track]
+            .map { $0.merged(with: interval) } ?? interval
+    }
+
+    // At most one processing block is queued while capture callbacks keep arriving.
+    func scheduleDrainIfNeeded() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !drainScheduled else { return false }
+        drainScheduled = true
+        return true
+    }
+
+    var isDrainScheduled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return drainScheduled
+    }
+
+    // Keeps the worker registered while it processes batches. It clears the
+    // schedule atomically only after observing the queue empty.
+    func takeDrainBatch() -> [CaptureHandoff]? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !retained.isEmpty || !droppedByTrack.isEmpty else {
+            drainScheduled = false
+            return nil
+        }
+        let samples = retained.map(CaptureHandoff.retained)
+        let dropped = droppedByTrack.values
+            .sorted { $0.startPresentationNanoseconds < $1.startPresentationNanoseconds }
+            .map(CaptureHandoff.dropped)
+        retained.removeAll(keepingCapacity: true)
+        droppedByTrack.removeAll(keepingCapacity: true)
+        return samples + dropped
+    }
+}
+
+private extension RecordingDroppedSourceRange {
+    init?(sampleBuffer: CMSampleBuffer, track: RecordingTrackKind) {
+        guard let description = sampleBuffer.formatDescription,
+              let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(description),
+              sampleBuffer.numSamples > 0
+        else { return nil }
+        let sampleRate = Int(streamDescription.pointee.mSampleRate.rounded())
+        guard sampleRate > 0 else { return nil }
+        self.init(
+            track: track,
+            presentationNanoseconds: sampleBuffer.presentationTimeStamp.convertedNanoseconds,
+            sourceSampleCount: sampleBuffer.numSamples,
+            sourceSampleRate: sampleRate
+        )
     }
 }
 

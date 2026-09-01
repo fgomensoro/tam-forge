@@ -65,7 +65,63 @@ struct RecordingSourceLineage: Codable, Equatable, Sendable {
     let sampleRate: Double
     let channelCount: Int
     let deviceID: String
+    // Capture reconfiguration must create a new value; records never merge lineage.
+    let initialRoute: String
+    let conversionVersion: Int
     let presentationNanoseconds: Int64
+}
+
+struct RecordingDroppedSourceRange: Equatable, Sendable {
+    let track: RecordingTrackKind
+    let presentationNanoseconds: Int64
+    let sourceSampleCount: Int
+    let sourceSampleRate: Int
+}
+
+struct RecordingDroppedSourceInterval: Equatable, Sendable {
+    let track: RecordingTrackKind
+    let startPresentationNanoseconds: Int64
+    let endPresentationNanoseconds: Int64
+
+    init(
+        track: RecordingTrackKind,
+        startPresentationNanoseconds: Int64,
+        endPresentationNanoseconds: Int64
+    ) {
+        self.track = track
+        self.startPresentationNanoseconds = startPresentationNanoseconds
+        self.endPresentationNanoseconds = endPresentationNanoseconds
+    }
+
+    init?(range: RecordingDroppedSourceRange) {
+        guard range.sourceSampleCount > 0,
+              range.sourceSampleRate > 0,
+              let sourceSampleCount = Int64(exactly: range.sourceSampleCount)
+        else { return nil }
+        let (scaledDuration, overflow) = sourceSampleCount
+            .multipliedReportingOverflow(by: 1_000_000_000)
+        guard !overflow else { return nil }
+        let (end, endOverflow) = range.presentationNanoseconds.addingReportingOverflow(
+            scaledDuration / Int64(range.sourceSampleRate)
+        )
+        guard !endOverflow, end >= range.presentationNanoseconds else { return nil }
+        track = range.track
+        startPresentationNanoseconds = range.presentationNanoseconds
+        endPresentationNanoseconds = end
+    }
+
+    func merged(with next: Self) -> Self {
+        precondition(track == next.track)
+        return .init(
+            track: track,
+            startPresentationNanoseconds: Swift.min(
+                startPresentationNanoseconds, next.startPresentationNanoseconds
+            ),
+            endPresentationNanoseconds: Swift.max(
+                endPresentationNanoseconds, next.endPresentationNanoseconds
+            )
+        )
+    }
 }
 
 struct RecordingPCMChunk: Equatable, Sendable {
@@ -193,6 +249,7 @@ protocol RecordingPreflighting: Sendable {
 protocol RecordingCaptureSource: Sendable {
     func start(
         microphoneID: String?,
+        initialRoute: String,
         receive: @escaping @Sendable (RecordingCaptureEvent) -> Void
     ) async throws
     func stop() async throws
@@ -200,7 +257,7 @@ protocol RecordingCaptureSource: Sendable {
 
 protocol RecordingSpoolWriting: Sendable {
     func append(_ chunk: RecordingPCMChunk) async throws
-    func record(gap: RecordingGap) async
+    func record(gap: RecordingGap) async throws
     func seal(gaps: [RecordingGap]) async throws
 }
 
