@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import plistlib
+import stat
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,19 @@ FORBIDDEN_COMPONENTS = frozenset(
     }
 )
 FORBIDDEN_LINK_MARKERS = ("chromium", "electron", "node", "postgres", "python")
+ALLOWED_BINARY_PATHS = (Path("Contents/MacOS/TAMForge"),)
+MACH_O_MAGICS = frozenset(
+    {
+        b"\xce\xfa\xed\xfe",  # MH_MAGIC, little-endian
+        b"\xcf\xfa\xed\xfe",  # MH_MAGIC_64, little-endian
+        b"\xfe\xed\xfa\xce",  # MH_CIGAM, big-endian
+        b"\xfe\xed\xfa\xcf",  # MH_CIGAM_64, big-endian
+        b"\xca\xfe\xba\xbe",  # FAT_MAGIC, big-endian
+        b"\xca\xfe\xba\xbf",  # FAT_MAGIC_64, big-endian
+        b"\xbe\xba\xfe\xca",  # FAT_CIGAM, little-endian
+        b"\xbf\xba\xfe\xca",  # FAT_CIGAM_64, little-endian
+    }
+)
 
 
 class NativeBundleError(RuntimeError):
@@ -47,6 +61,29 @@ def _plist(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise NativeBundleError("Release Info.plist is not a dictionary")
     return payload
+
+
+def _is_executable_or_macho(path: Path) -> bool:
+    try:
+        mode = path.stat().st_mode
+        with path.open("rb") as payload:
+            magic = payload.read(4)
+    except OSError:
+        return False
+    return bool(mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)) or magic in MACH_O_MAGICS
+
+
+def _binary_payloads(app: Path) -> tuple[Path, ...]:
+    return tuple(
+        path
+        for path in sorted(item for item in app.rglob("*") if item.is_file())
+        if _is_executable_or_macho(path)
+    )
+
+
+def _allowed_binary_payloads(app: Path) -> tuple[Path, ...]:
+    allowed = {app / relative for relative in ALLOWED_BINARY_PATHS}
+    return tuple(path for path in _binary_payloads(app) if path in allowed)
 
 
 def bundle_violations(app: Path, *, linked_libraries: str = "") -> tuple[str, ...]:
@@ -64,7 +101,7 @@ def bundle_violations(app: Path, *, linked_libraries: str = "") -> tuple[str, ..
         if info.get(key) != expected:
             violations.append(f"Release Info.plist {key} is not {expected}")
 
-    executable = app / "Contents" / "MacOS" / "TAMForge"
+    executable = app / ALLOWED_BINARY_PATHS[0]
     if not executable.is_file() or not os.access(executable, os.X_OK):
         violations.append("Release executable is missing or not executable")
     macos_files = (
@@ -74,6 +111,14 @@ def bundle_violations(app: Path, *, linked_libraries: str = "") -> tuple[str, ..
     )
     if macos_files != ["TAMForge"]:
         violations.append(f"Release MacOS payload drifted: {macos_files}")
+
+    allowed_binaries = {app / relative for relative in ALLOWED_BINARY_PATHS}
+    for path in _binary_payloads(app):
+        if path not in allowed_binaries:
+            violations.append(
+                "unexpected executable or Mach-O payload: "
+                f"{path.relative_to(app)}"
+            )
 
     for path in sorted(item for item in app.rglob("*") if item.is_file()):
         relative = path.relative_to(app)
@@ -111,12 +156,18 @@ def _run(command: list[str]) -> str:
 
 
 def check_bundle(app: Path, *, require_ad_hoc: bool) -> None:
-    executable = app / "Contents" / "MacOS" / "TAMForge"
     _run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)])
     signature_details = _run(["codesign", "-dv", "--verbose=4", str(app)])
     if require_ad_hoc and "Signature=adhoc" not in signature_details:
         raise NativeBundleError("Release app does not have the required ad-hoc signature")
-    links = _run(["otool", "-L", str(executable)])
+    violations = bundle_violations(app)
+    if violations:
+        raise NativeBundleError("; ".join(violations))
+
+    links = "\n".join(
+        _run(["otool", "-L", str(binary)])
+        for binary in _allowed_binary_payloads(app)
+    )
     violations = bundle_violations(app, linked_libraries=links)
     if violations:
         raise NativeBundleError("; ".join(violations))

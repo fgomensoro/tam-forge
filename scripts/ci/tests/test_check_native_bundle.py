@@ -4,7 +4,8 @@ import os
 import plistlib
 from pathlib import Path
 
-from scripts.ci.check_native_bundle import bundle_violations
+from scripts.ci import check_native_bundle
+from scripts.ci.check_native_bundle import NativeBundleError, bundle_violations, check_bundle
 
 
 def _app(tmp_path: Path) -> Path:
@@ -65,3 +66,66 @@ def test_unexpected_second_product_executable_is_rejected(tmp_path: Path) -> Non
 
     assert "Release MacOS payload drifted: ['TAMForge', 'postgres']" in violations
     assert "forbidden embedded runtime: Contents/MacOS/postgres" in violations
+
+
+def test_executable_and_macho_outside_macos_are_rejected(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+    executable = app / "Contents" / "Resources" / "Telemetry"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("#!/bin/sh\n", encoding="utf-8")
+    executable.chmod(0o755)
+    macho = app / "Contents" / "Helpers" / "Metadata"
+    macho.parent.mkdir(parents=True)
+    macho.write_bytes(b"\xcf\xfa\xed\xfe payload")
+
+    violations = bundle_violations(app)
+
+    assert "unexpected executable or Mach-O payload: Contents/Resources/Telemetry" in violations
+    assert "unexpected executable or Mach-O payload: Contents/Helpers/Metadata" in violations
+
+
+def test_checker_inspects_only_allowed_binary_dependencies(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    app = _app(tmp_path)
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str]) -> str:
+        calls.append(command)
+        if command[0] == "codesign" and "-dv" in command:
+            return "Signature=adhoc"
+        return "/usr/lib/libSystem.B.dylib"
+
+    monkeypatch.setattr(check_native_bundle, "_run", fake_run)  # type: ignore[attr-defined]
+
+    check_bundle(app, require_ad_hoc=True)
+
+    assert calls[-1] == [
+        "otool",
+        "-L",
+        str(app / "Contents" / "MacOS" / "TAMForge"),
+    ]
+
+
+def test_checker_does_not_inspect_rejected_binary(tmp_path: Path, monkeypatch: object) -> None:
+    app = _app(tmp_path)
+    helper = app / "Contents" / "Resources" / "Telemetry"
+    helper.parent.mkdir(parents=True)
+    helper.write_text("#!/bin/sh\n", encoding="utf-8")
+    helper.chmod(0o755)
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str]) -> str:
+        calls.append(command)
+        return "Signature=adhoc"
+
+    monkeypatch.setattr(check_native_bundle, "_run", fake_run)  # type: ignore[attr-defined]
+
+    try:
+        check_bundle(app, require_ad_hoc=True)
+    except NativeBundleError as exc:
+        assert "Contents/Resources/Telemetry" in str(exc)
+    else:
+        raise AssertionError("unexpected binary payload was accepted")
+
+    assert all(command[0] != "otool" for command in calls)
