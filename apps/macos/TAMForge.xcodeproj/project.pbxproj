@@ -10,6 +10,8 @@
 		F40000000000000000000001 /* NativeParityFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40000000000000000000011 /* NativeParityFixtureTests.swift */; };
 		F40000000000000000000002 /* foundation-journey-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = F40000000000000000000012 /* foundation-journey-v1.json */; };
 		F40000000000000000000003 /* foundation-journey-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = F40000000000000000000012 /* foundation-journey-v1.json */; };
+		F40000000000000000000004 /* month-v1.zip in Resources */ = {isa = PBXBuildFile; fileRef = F40000000000000000000013 /* month-v1.zip */; };
+		F40000000000000000000005 /* NativeParityUIFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40000000000000000000014 /* NativeParityUIFixture.swift */; };
 		E30000000000000000000001 /* EvidenceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000061 /* EvidenceModels.swift */; };
 		E30000000000000000000021 /* EvidenceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000061 /* EvidenceModels.swift */; };
 		E30000000000000000000002 /* LiveEvidenceAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000062 /* LiveEvidenceAPI.swift */; };
@@ -106,6 +108,8 @@
 /* Begin PBXFileReference section */
 		F40000000000000000000011 /* NativeParityFixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeParityFixtureTests.swift; sourceTree = "<group>"; };
 		F40000000000000000000012 /* foundation-journey-v1.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../tests/fixtures/native-parity/foundation-journey-v1.json"; sourceTree = SOURCE_ROOT; };
+		F40000000000000000000013 /* month-v1.zip */ = {isa = PBXFileReference; lastKnownFileType = archive.zip; path = "../backend/tests/fixtures/roadmaps/month-v1.zip"; sourceTree = SOURCE_ROOT; };
+		F40000000000000000000014 /* NativeParityUIFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeParityUIFixture.swift; sourceTree = "<group>"; };
 		E30000000000000000000061 /* EvidenceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvidenceModels.swift; sourceTree = "<group>"; };
 		E30000000000000000000062 /* LiveEvidenceAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveEvidenceAPI.swift; sourceTree = "<group>"; };
 		E30000000000000000000063 /* EvidenceLedgerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvidenceLedgerModel.swift; sourceTree = "<group>"; };
@@ -247,6 +251,7 @@
 			children = (
 				A10000000000000000000012 /* TAMForgeUITests.swift */,
 				F40000000000000000000012 /* foundation-journey-v1.json */,
+				F40000000000000000000013 /* month-v1.zip */,
 			);
 			path = TAMForgeUITests;
 			sourceTree = "<group>";
@@ -266,6 +271,7 @@
 			children = (
 				A10000000000000000000011 /* TAMForgeApp.swift */,
 				E20000000000000000000079 /* NativeUIFixtures.swift */,
+				F40000000000000000000014 /* NativeParityUIFixture.swift */,
 				C10000000000000000000015 /* ShellSessionModel.swift */,
 			);
 			path = App;
@@ -496,6 +502,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F40000000000000000000003 /* foundation-journey-v1.json in Resources */,
+				F40000000000000000000004 /* month-v1.zip in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -526,6 +533,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E30000000000000000000001 /* EvidenceModels.swift in Sources */,
+				F40000000000000000000005 /* NativeParityUIFixture.swift in Sources */,
 				E30000000000000000000002 /* LiveEvidenceAPI.swift in Sources */,
 				E30000000000000000000003 /* EvidenceLedgerModel.swift in Sources */,
 				E30000000000000000000004 /* EvidenceLedgerView.swift in Sources */,

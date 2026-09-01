@@ -122,6 +122,12 @@ def validate_fixture(value: dict[str, Any], *, root: Path = ROOT) -> None:
         raise FixtureError("native parity mandatory self-review drifted")
     if not any(item.latest_snapshot is None for item in skills.items):
         raise FixtureError("native parity requires an unassessed skill")
+    assessed = next(
+        (item.latest_snapshot for item in skills.items if item.latest_snapshot is not None),
+        None,
+    )
+    if assessed is None or assessed.qualifying_event_count != 3 or len(assessed.manifest) != 5:
+        raise FixtureError("native parity assessed skill lineage drifted")
     if (
         not notifications.items
         or notifications.items[0].notification_type != "feedback_ready"

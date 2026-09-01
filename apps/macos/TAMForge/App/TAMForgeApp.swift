@@ -175,7 +175,15 @@ private final class NativeWorkspaceState: ObservableObject {
     let timerJournal: any ActivityTimerJournaling
 
     init(services: NativeFeatureServices) {
+#if DEBUG
+        if let fixedNow = NativeParityUIFixture.fixedNow() {
+            today = TodayViewModel(client: services.today, now: { fixedNow })
+        } else {
+            today = TodayViewModel(client: services.today)
+        }
+#else
         today = TodayViewModel(client: services.today)
+#endif
         notifications = NotificationViewModel(client: services.notifications)
         roadmaps = RoadmapAdministrationModel(service: services.roadmaps)
         evidence = EvidenceLedgerModel(service: services.evidence)

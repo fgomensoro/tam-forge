@@ -2,6 +2,130 @@ import XCTest
 
 final class TAMForgeUITests: XCTestCase {
     @MainActor
+    func testNativeFoundationParityJourney() throws {
+        let fixtureURL = try XCTUnwrap(
+            Bundle(for: Self.self).url(forResource: "foundation-journey-v1", withExtension: "json")
+        )
+        let packageURL = try XCTUnwrap(
+            Bundle(for: Self.self).url(forResource: "month-v1", withExtension: "zip")
+        )
+        let fixtureData = try Data(contentsOf: fixtureURL)
+        let fixture = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: fixtureData) as? [String: Any]
+        )
+        let journey = try XCTUnwrap(fixture["journey"] as? [String: Any])
+        let output = try XCTUnwrap(journey["output"] as? [String: Any])
+        let selfReview = try XCTUnwrap(journey["self_review"] as? [String: Any])
+
+        let app = launchWorkspace(
+            extra: ["-ui-test-parity-journey"],
+            environment: ["TAMFORGE_UI_FIXTURE_BASE64": fixtureData.base64EncodedString()]
+        )
+
+        app.buttons["roadmapsNavigation"].click()
+        chooseRoadmapPackage(packageURL, in: app)
+        app.buttons["Review package"].click()
+        XCTAssertTrue(app.staticTexts["Validation passed"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["158 tasks"].exists)
+        let confirmation = app.checkBoxes["roadmapApprovalConfirmation"]
+        reveal(confirmation, in: app, scrollIdentifier: "roadmapWorkspaceScroll")
+        confirmation.click()
+        let approve = app.buttons["Approve roadmap"]
+        reveal(approve, in: app, scrollIdentifier: "roadmapWorkspaceScroll")
+        approve.click()
+        let activate = app.buttons["Activate Month 1"]
+        XCTAssertTrue(activate.waitForExistence(timeout: 10))
+        reveal(activate, in: app, scrollIdentifier: "roadmapWorkspaceScroll")
+        activate.click()
+        XCTAssertTrue(app.staticTexts["Month 1 is active"].waitForExistence(timeout: 10))
+
+        app.buttons["todayNavigation"].click()
+        XCTAssertTrue(textContaining("240 planned minutes", in: app).waitForExistence(timeout: 10))
+        XCTAssertTrue(textContaining("45 minutes", in: app).exists)
+        app.buttons["todayContinueButton"].click()
+        XCTAssertTrue(app.buttons["Start activity"].waitForExistence(timeout: 10))
+        app.buttons["Start activity"].click()
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 10))
+        app.buttons["Pause"].click()
+        XCTAssertTrue(app.buttons["Resume"].waitForExistence(timeout: 10))
+        app.buttons["todayNavigation"].click()
+        app.buttons["todayContinueButton"].click()
+        XCTAssertTrue(app.buttons["Resume"].waitForExistence(timeout: 10))
+        app.buttons["Resume"].click()
+        let hideSource = app.buttons["Hide source"]
+        reveal(hideSource, in: app)
+        hideSource.click()
+        XCTAssertTrue(app.staticTexts["Closed-source mode is active. Recall from memory before reopening material."].waitForExistence(timeout: 10))
+
+        let outputFields: [(String, Any?)] = [
+            ("Audience", output["audience"]),
+            ("Key idea 1", (output["key_ideas"] as? [String])?[safe: 0]),
+            ("Key idea 2", (output["key_ideas"] as? [String])?[safe: 1]),
+            ("Key idea 3", (output["key_ideas"] as? [String])?[safe: 2]),
+            ("Boundary or failure mode", output["boundary_or_failure"]),
+            ("TAM or customer example", output["tam_customer_example"]),
+            ("Unresolved question", output["unresolved_question"]),
+        ]
+        for (label, rawValue) in outputFields {
+            let editor = app.textViews[label]
+            reveal(editor, in: app)
+            editor.click()
+            editor.typeText(try XCTUnwrap(rawValue as? String))
+        }
+        let immutable = app.checkBoxes["activityImmutabilityAcknowledgment"]
+        reveal(immutable, in: app)
+        immutable.click()
+        let commit = app.buttons["Commit Attempt A"]
+        reveal(commit, in: app)
+        XCTAssertTrue(commit.isEnabled)
+        commit.click()
+        XCTAssertTrue(app.staticTexts["Attempt A is committed and read-only."].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Commit Attempt A"].exists)
+
+        let reviewFields: [(String, String)] = [
+            ("Main answer or decision", "main_answer"),
+            ("What I did well", "did_well"),
+            ("Where structure was weak", "structure_weakness"),
+            ("Where I became vague", "vague_points"),
+            ("Where I hesitated", "hesitation_points"),
+            ("What I will change", "change_next"),
+        ]
+        for (label, key) in reviewFields {
+            let editor = app.textViews[label]
+            reveal(editor, in: app)
+            editor.click()
+            editor.typeText(try XCTUnwrap(selfReview[key] as? String))
+        }
+        let score = app.popUpButtons["activitySelfScore"]
+        reveal(score, in: app)
+        score.click()
+        app.menuItems["3"].click()
+        let submit = app.buttons["Submit self-review"]
+        reveal(submit, in: app)
+        submit.click()
+        XCTAssertTrue(app.staticTexts["activitySelfReviewSummary"].waitForExistence(timeout: 10))
+        XCTAssertEqual(
+            app.staticTexts["activitySelfReviewSummary"].value as? String,
+            "Your score: 3 / 4. AI analysis has not been requested."
+        )
+
+        app.buttons["evidenceNavigation"].click()
+        XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 10))
+        XCTAssertEqual(textsContaining("streak", in: app).count, 0)
+        XCTAssertEqual(textsContaining("recording count", in: app).count, 0)
+        XCTAssertEqual(textsContaining("transcript word count", in: app).count, 0)
+
+        app.buttons["notificationToggle"].click()
+        let markRead = app.buttons.matching(
+            NSPredicate(format: "label == %@", "Mark Feedback ready as read")
+        ).firstMatch
+        XCTAssertTrue(markRead.waitForExistence(timeout: 10))
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(markRead.waitForNonExistence(timeout: 10))
+        XCTAssertEqual(app.buttons["notificationToggle"].label, "Notifications")
+    }
+
+    @MainActor
     func testEvidenceIsReachableFromSidebar() {
         let app = launchWorkspace()
         let evidence = app.buttons["evidenceNavigation"]
@@ -416,13 +540,30 @@ final class TAMForgeUITests: XCTestCase {
     }
 
     @MainActor
-    private func launchWorkspace(extra: [String] = []) -> XCUIApplication {
+    private func launchWorkspace(
+        extra: [String] = [], environment: [String: String] = [:]
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-ApplePersistenceIgnoreState", "YES", "-ui-test-signed-in", "-ui-test-native-features"] + extra
+        for (key, value) in environment { app.launchEnvironment[key] = value }
         app.launch()
         XCTAssertTrue(app.buttons["todayNavigation"].waitForExistence(timeout: 5))
         app.activate()
         return app
+    }
+
+    @MainActor
+    private func chooseRoadmapPackage(_ package: URL, in app: XCUIApplication) {
+        let choose = app.buttons["Choose ZIP or folder"]
+        XCTAssertTrue(choose.waitForExistence(timeout: 5))
+        choose.click()
+        app.typeKey("g", modifierFlags: [.command, .shift])
+        let location = app.textFields.firstMatch
+        XCTAssertTrue(location.waitForExistence(timeout: 5))
+        location.typeText(package.path)
+        app.typeKey(.return, modifierFlags: [])
+        app.windows["open-panel"].buttons["OKButton"].click()
+        XCTAssertTrue(app.buttons["Review package"].waitForExistence(timeout: 5))
     }
 
     override func setUpWithError() throws {
@@ -491,5 +632,11 @@ final class TAMForgeUITests: XCTestCase {
         XCTAssertTrue(signOut.waitForExistence(timeout: 5))
         signOut.click()
         XCTAssertTrue(app.buttons["signInButton"].waitForExistence(timeout: 5))
+    }
+}
+
+private extension Array {
+    subscript(safe index: Index) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }

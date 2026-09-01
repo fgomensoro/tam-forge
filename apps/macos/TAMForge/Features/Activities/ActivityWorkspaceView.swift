@@ -326,6 +326,8 @@ struct ActivityWorkspaceView: View {
                 Picker("My self-score", selection: $review.selfScore) {
                     ForEach(0...4, id: \.self) { Text("\($0)").tag($0) }
                 }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("activitySelfScore")
                 Button("Submit self-review") { Task { await model.submitSelfReview(review) } }
                     .disabled(!review.isComplete || !model.canMutate)
             }

@@ -177,15 +177,35 @@
             "last_strong_evidence_date": null,
             "manifest": [
               {
+                "event_id": 9,
+                "effective_weight": "0.617500",
+                "inclusion_code": "included"
+              },
+              {
+                "event_id": 10,
+                "effective_weight": "0.617500",
+                "inclusion_code": "included"
+              },
+              {
                 "event_id": 50,
                 "effective_weight": "0.154375",
                 "inclusion_code": "discounted_same_day"
+              },
+              {
+                "event_id": 49,
+                "effective_weight": "0.000",
+                "inclusion_code": "excluded_nonqualifying"
+              },
+              {
+                "event_id": 39,
+                "effective_weight": "0.000",
+                "inclusion_code": "excluded_nonqualifying"
               }
             ],
             "confidence_basis": {
               "schema_version": 1,
               "basis_code": "low_weight",
-              "event_ids": [50]
+              "event_ids": [9, 10, 50]
             },
             "trend_basis": {
               "schema_version": 1,

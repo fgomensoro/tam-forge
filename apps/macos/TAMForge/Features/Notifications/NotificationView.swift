@@ -109,6 +109,7 @@ private struct NotificationListView: View {
                                 }
                                 .disabled(model.pendingReadIDs.contains(item.id))
                                 .accessibilityLabel("Mark \(presentation.title) as read")
+                                .keyboardShortcut(.defaultAction)
                             }
                         }
                         .padding(.vertical, 4)
