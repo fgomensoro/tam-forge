@@ -1317,6 +1317,8 @@ private actor RecoveryTrackingSpoolFactory: RecordingSpoolCreating {
     let spool: any RecordingSpoolWriting
     private(set) var createdRecordingIDs: [UUID] = []
 
+    init(spool: any RecordingSpoolWriting) { self.spool = spool }
+
     func create(recordingID: UUID) async throws -> any RecordingSpoolWriting {
         createdRecordingIDs.append(recordingID)
         return spool
