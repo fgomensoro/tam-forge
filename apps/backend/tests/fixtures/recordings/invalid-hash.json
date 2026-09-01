@@ -1,0 +1,7 @@
+{
+  "sequence": 0,
+  "sample_start": 0,
+  "sample_count": 48000,
+  "byte_length": 96000,
+  "plaintext_sha256": "NOT-A-SHA256"
+}
