@@ -108,6 +108,10 @@ jobs:
     env:
       DATABASE_URL: postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test
       TEST_DATABASE_URL: postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge_test
+      TAMFORGE_OBJECT_STORE_ENDPOINT: http://127.0.0.1:9000
+      TAMFORGE_OBJECT_STORE_BUCKET: tam-forge-parity-test
+      TAMFORGE_OBJECT_STORE_ACCESS_KEY: tamforge
+      TAMFORGE_OBJECT_STORE_SECRET_KEY: tamforge-local
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -118,6 +122,23 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
       - run: uv sync --all-packages --all-extras --frozen
+      - name: Start isolated MinIO for durable parity
+        run: >-
+          docker run --detach --rm --name tam-forge-parity-minio
+          --publish 127.0.0.1:9000:9000
+          --env MINIO_ROOT_USER=tamforge
+          --env MINIO_ROOT_PASSWORD=tamforge-local
+          minio/minio:RELEASE.2024-06-13T22-53-53Z
+          server /data
+      - name: Wait for isolated MinIO
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:9000/minio/health/live >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
       - run: uv run alembic -c apps/backend/alembic.ini upgrade head
       - run: uv run pytest -m integration apps/backend/tests/integration -q
 
