@@ -23,4 +23,8 @@ private func generatedRecordingContract() {
         Components.Schemas.RecordingSourceLineageSegment.self
     let _: Components.Schemas.RecordingStatusResponse.Type =
         Components.Schemas.RecordingStatusResponse.self
+    let _: KeyPath<Components.Schemas.RecordingSealResponse, Bool> =
+        \.audioCreatedOnServer
+    let _: KeyPath<Components.Schemas.RecordingSealResponse, Bool> =
+        \.transcriptLineageAccepted
 }

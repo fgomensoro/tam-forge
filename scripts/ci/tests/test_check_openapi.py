@@ -9,9 +9,7 @@ from pathlib import Path
 
 from tamforge_backend.recordings.schemas import RECORDING_OPENAPI_MODELS
 
-FROZEN_E10_I04_OPENAPI_SHA256 = (
-    "af6b5c53c00cabe887ce2b79805e9df3c1f72d0b0889b2c3416454196dad1726"
-)
+FROZEN_E10_I04_OPENAPI_SHA256 = "3669cd8af29a1e2ca874a59d4d633ea8d1f120d3fb9fdb8d71fb6816c78e17eb"
 
 
 def _check_openapi_module() -> object:
@@ -121,6 +119,16 @@ def test_recording_contract_components_are_checked_in_without_placeholder_routes
 
     assert expected_components <= generated_schemas.keys()
     assert expected_components <= native_schemas.keys()
+    assert {
+        "audio_created_on_server",
+        "transcript_lineage_accepted",
+    } <= set(generated_schemas["RecordingSealResponse"]["required"])
+    assert (
+        generated_schemas["RecordingPartCryptoHeaders"]["properties"]["part_key_base64url"][
+            "pattern"
+        ]
+        == r"^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+    )
     assert {name: native_schemas[name] for name in expected_components} == {
         name: checked_in_schemas[name] for name in expected_components
     }
@@ -145,6 +153,8 @@ def test_generated_swift_contract_references_key_recording_components() -> None:
         "RecordingStatusResponse",
     ):
         assert f"Components.Schemas.{component}" in contract
+    assert "\\.audioCreatedOnServer" in contract
+    assert "\\.transcriptLineageAccepted" in contract
 
 
 def _nullable_union_paths(

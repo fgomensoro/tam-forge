@@ -14,10 +14,12 @@ from tamforge_backend.recordings.contracts import (
 )
 from tamforge_backend.recordings.schemas import (
     RecordingGap,
+    RecordingPartCryptoHeaders,
     RecordingPartDescriptor,
     RecordingPartUploadMetadata,
     RecordingSealCommand,
     RecordingSealResponse,
+    RecordingSourceLineageSegment,
     RecordingStatusResponse,
 )
 
@@ -92,6 +94,15 @@ def test_manifest_rejects_missing_duplicate_or_overlapping_coverage() -> None:
         RecordingSealCommand.model_validate(hidden_hole)
 
 
+def test_part_sequence_order_must_match_timeline_order() -> None:
+    payload = load_fixture("recording-manifest-v1.json")
+    payload["tracks"][0]["parts"][0]["sample_start"] = 48_000  # type: ignore[index]
+    payload["tracks"][0]["parts"][1]["sample_start"] = 0  # type: ignore[index]
+
+    with pytest.raises(ValidationError):
+        RecordingSealCommand.model_validate(payload)
+
+
 def test_coverage_status_cannot_hide_explicit_gaps() -> None:
     payload = load_fixture("recording-manifest-v1.json")
     payload["coverage_status"] = "complete"
@@ -135,6 +146,28 @@ def test_source_lineage_exactly_covers_uploaded_audio_not_declared_gaps() -> Non
     ] = "tamforge-pcm16-v2"
     with pytest.raises(ValidationError):
         RecordingSealCommand.model_validate(mismatched_conversion)
+
+
+def test_source_lineage_presentation_duration_matches_canonical_samples() -> None:
+    resampled = {
+        "sample_start": 0,
+        "sample_count": 96_000,
+        "source_sample_rate_hz": 44_100,
+        "source_channel_count": 1,
+        "device_id": "microphone:built-in",
+        "route": "Built-in Microphone",
+        "presentation_time_start": 0,
+        "presentation_time_end": 88_200,
+        "presentation_time_timescale": 44_100,
+        "conversion_version": "tamforge-pcm16-v1",
+    }
+    assert RecordingSourceLineageSegment.model_validate(resampled).sample_count == 96_000
+
+    absurd_duration = deepcopy(resampled)
+    absurd_duration["presentation_time_end"] = 1
+    absurd_duration["presentation_time_timescale"] = 1_000_000_000
+    with pytest.raises(ValidationError):
+        RecordingSourceLineageSegment.model_validate(absurd_duration)
 
 
 def test_seal_timestamps_must_be_utc_and_within_recording_cap() -> None:
@@ -260,6 +293,12 @@ def test_seal_response_state_coverage_and_transcript_gate_agree() -> None:
     }
     assert RecordingSealResponse.model_validate(response).state == "stored"
 
+    for required_gate in ("audio_created_on_server", "transcript_lineage_accepted"):
+        missing_gate = deepcopy(response)
+        missing_gate.pop(required_gate)
+        with pytest.raises(ValidationError):
+            RecordingSealResponse.model_validate(missing_gate)
+
     wrong_coverage = deepcopy(response)
     wrong_coverage["coverage_status"] = "stored_with_gaps"
     with pytest.raises(ValidationError):
@@ -274,6 +313,26 @@ def test_seal_response_state_coverage_and_transcript_gate_agree() -> None:
     transcript_accepted["transcript_lineage_accepted"] = True
     with pytest.raises(ValidationError):
         RecordingSealResponse.model_validate(transcript_accepted)
+
+
+def test_part_crypto_key_requires_exact_unpadded_base64url_and_stays_redacted() -> None:
+    valid_key = "A" * 40 + "_-A"
+    headers = RecordingPartCryptoHeaders.model_validate({"part_key_base64url": valid_key})
+
+    assert headers.part_key_base64url.get_secret_value() == valid_key
+    assert valid_key not in repr(headers)
+
+    for invalid_key in (
+        "A" * 42,
+        "A" * 44,
+        "+" + "A" * 42,
+        "/" + "A" * 42,
+        "A" * 42 + "=",
+        "A" * 42 + "B",
+    ):
+        with pytest.raises(ValidationError) as error:
+            RecordingPartCryptoHeaders.model_validate({"part_key_base64url": invalid_key})
+        assert invalid_key not in str(error.value)
 
 
 def test_part_aad_and_timeline_hash_inputs_are_deterministic_and_domain_separated() -> None:
@@ -306,9 +365,7 @@ def test_part_aad_and_timeline_hash_inputs_are_deterministic_and_domain_separate
     assert first == part_aad_bytes(metadata)
     assert first.startswith(b"tamforge.recording.part-aad.v1\0")
     assert b"ciphertext_sha256" not in first
-    assert timeline_hash_input(manifest.tracks[0]).startswith(
-        b"tamforge.recording.timeline.v1\0"
-    )
+    assert timeline_hash_input(manifest.tracks[0]).startswith(b"tamforge.recording.timeline.v1\0")
     assert timeline_hash_input(manifest.tracks[0]) != first
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 from scripts.ci.check_repository_policy import violations
 
@@ -30,9 +30,7 @@ def test_policy_allows_placeholders_and_source_files(monkeypatch, tmp_path) -> N
         "TOKEN = 'ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'\n",
         encoding="utf-8",
     )
-    assert violations(
-        (PurePosixPath(".env.example"), PurePosixPath("server.py"))
-    ) == ()
+    assert violations((PurePosixPath(".env.example"), PurePosixPath("server.py"))) == ()
 
 
 def test_policy_rejects_non_placeholder_provider_token(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -43,9 +41,7 @@ def test_policy_rejects_non_placeholder_provider_token(monkeypatch, tmp_path) ->
         "ghp_" + "AbCdEfGhIjKlMnOpQrStUvWxYz123456",
         encoding="utf-8",
     )
-    assert violations((PurePosixPath("unsafe.txt"),)) == (
-        "GitHub token pattern in unsafe.txt",
-    )
+    assert violations((PurePosixPath("unsafe.txt"),)) == ("GitHub token pattern in unsafe.txt",)
 
 
 def test_policy_rejects_reintroduced_product_node_runtime(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -81,8 +77,7 @@ def test_policy_rejects_node_launchers_in_every_workflow_extension(monkeypatch, 
         encoding="utf-8",
     )
     (workflow_dir / "bypass.yml").write_text(
-        "jobs:\n  check:\n    steps:\n      - run: |\n"
-        "          env CI=1 yarn test\n",
+        "jobs:\n  check:\n    steps:\n      - run: |\n" "          env CI=1 yarn test\n",
         encoding="utf-8",
     )
     assert violations(
@@ -96,9 +91,7 @@ def test_policy_rejects_node_launchers_in_every_workflow_extension(monkeypatch, 
     )
 
 
-def test_policy_rejects_node_launcher_in_all_yaml_block_scalar_forms(
-    monkeypatch, tmp_path
-) -> None:  # type: ignore[no-untyped-def]
+def test_policy_rejects_node_launcher_in_all_yaml_block_scalar_forms(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
     from scripts.ci import check_repository_policy
 
     monkeypatch.setattr(check_repository_policy, "ROOT", tmp_path)
@@ -151,9 +144,20 @@ def test_policy_ignores_node_words_outside_active_commands(monkeypatch, tmp_path
     (tmp_path / "Makefile").write_text(
         "# pnpm is forbidden\ncheck:\n\t@echo native\n", encoding="utf-8"
     )
-    assert violations(
-        (
-            PurePosixPath(".github/workflows/notes.yaml"),
-            PurePosixPath("Makefile"),
+    assert (
+        violations(
+            (
+                PurePosixPath(".github/workflows/notes.yaml"),
+                PurePosixPath("Makefile"),
+            )
         )
-    ) == ()
+        == ()
+    )
+
+
+def test_ci_runs_recording_contract_tests_and_remains_node_free() -> None:
+    root = Path(__file__).parents[3]
+    workflow = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "apps/backend/tests/recordings" in workflow
+    assert violations((PurePosixPath(".github/workflows/ci.yml"),)) == ()

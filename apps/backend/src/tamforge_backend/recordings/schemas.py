@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 from typing import Annotated, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 SCHEMA_VERSION = 1
 SAMPLE_RATE_HZ = 48_000
@@ -21,6 +22,8 @@ MAX_SOURCE_SAMPLE_RATE_HZ = 384_000
 MAX_SOURCE_CHANNEL_COUNT = 32
 MAX_PRESENTATION_TIME_VALUE = 9_223_372_036_854_775_807
 MAX_PRESENTATION_TIME_TIMESCALE = 1_000_000_000
+PART_KEY_BASE64URL_PATTERN = r"^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+PART_KEY_BASE64URL_RE = re.compile(PART_KEY_BASE64URL_PATTERN)
 
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 IdempotencyKey = Annotated[
@@ -137,9 +140,7 @@ class RecordingSourceLineageSegment(StrictModel):
     route: Annotated[str, Field(min_length=1, max_length=256)]
     presentation_time_start: Annotated[int, Field(ge=0, le=MAX_PRESENTATION_TIME_VALUE)]
     presentation_time_end: Annotated[int, Field(ge=0, le=MAX_PRESENTATION_TIME_VALUE)]
-    presentation_time_timescale: Annotated[
-        int, Field(gt=0, le=MAX_PRESENTATION_TIME_TIMESCALE)
-    ]
+    presentation_time_timescale: Annotated[int, Field(gt=0, le=MAX_PRESENTATION_TIME_TIMESCALE)]
     conversion_version: ConversionVersion
 
     @model_validator(mode="after")
@@ -148,6 +149,16 @@ class RecordingSourceLineageSegment(StrictModel):
             raise ValueError("source lineage range exceeds the recording limit")
         if self.presentation_time_end <= self.presentation_time_start:
             raise ValueError("source lineage presentation time must advance")
+        presentation_ticks = self.presentation_time_end - self.presentation_time_start
+        # Equivalent to a duration error of at most 1 / 48,000 seconds.
+        duration_error = abs(
+            presentation_ticks * SAMPLE_RATE_HZ
+            - self.sample_count * self.presentation_time_timescale
+        )
+        if duration_error > self.presentation_time_timescale:
+            raise ValueError(
+                "source lineage presentation duration must match canonical sample count"
+            )
         return self
 
 
@@ -170,6 +181,11 @@ class RecordingTrackManifest(StrictModel):
         _validate_track_format(self.kind, self.format)
         if tuple(part.sequence for part in self.parts) != tuple(range(len(self.parts))):
             raise ValueError("part sequences must be contiguous and ordered from zero")
+        if any(
+            current.sample_start < previous.sample_start + previous.sample_count
+            for previous, current in zip(self.parts, self.parts[1:], strict=False)
+        ):
+            raise ValueError("part ranges must be chronological in sequence order")
         for part in self.parts:
             expected_bytes = part.sample_count * self.format.channel_count * PCM_BYTES_PER_SAMPLE
             if part.byte_length != expected_bytes:
@@ -193,8 +209,7 @@ class RecordingTrackManifest(StrictModel):
             raise ValueError("parts and explicit gaps must cover the complete track")
         _validate_source_lineage_coverage(self.parts, self.source_lineage)
         if any(
-            segment.conversion_version != self.conversion_version
-            for segment in self.source_lineage
+            segment.conversion_version != self.conversion_version for segment in self.source_lineage
         ):
             raise ValueError(
                 "source lineage conversion version must match the track conversion version"
@@ -263,7 +278,23 @@ class RecordingPartUploadMetadata(StrictModel):
 
 
 class RecordingPartCryptoHeaders(StrictModel):
-    part_key_base64url: Annotated[SecretStr, Field(min_length=43, max_length=43)]
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    part_key_base64url: Annotated[
+        SecretStr,
+        Field(
+            min_length=43,
+            max_length=43,
+            json_schema_extra={"pattern": PART_KEY_BASE64URL_PATTERN},
+        ),
+    ]
+
+    @field_validator("part_key_base64url")
+    @classmethod
+    def validate_part_key_base64url(cls, value: SecretStr) -> SecretStr:
+        if PART_KEY_BASE64URL_RE.fullmatch(value.get_secret_value()) is None:
+            raise ValueError("part key must be an unpadded base64url 32-byte value")
+        return value
 
 
 class RecordingPartReceipt(StrictModel):
@@ -327,8 +358,8 @@ class RecordingSealResponse(StrictModel):
     state: Literal["stored", "stored_with_gaps"]
     coverage_status: CoverageStatus
     track_manifest_sha256: Annotated[tuple[Sha256, Sha256], Field(min_length=2, max_length=2)]
-    audio_created_on_server: Literal[True] = True
-    transcript_lineage_accepted: Literal[False] = False
+    audio_created_on_server: Literal[True]
+    transcript_lineage_accepted: Literal[False]
     replayed: bool
 
     @model_validator(mode="after")
