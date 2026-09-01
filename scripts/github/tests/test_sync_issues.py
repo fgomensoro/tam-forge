@@ -224,20 +224,31 @@ def test_native_catalog_has_e10_and_routes_every_executable_child(
     assert all(
         issue.execution is not None and issue.execution.is_executable
         for issue in manifest.children
-        if issue.key not in historical_keys | {"E10-I09", "E10-I10"}
+        if issue.key not in historical_keys
     )
     assert all(
-        issues[key].execution is not None and not issues[key].execution.is_executable
+        issues[key].execution is not None and issues[key].execution.is_executable
         for key in ("E10-I09", "E10-I10")
     )
+    for key, model in (
+        ("E10-I09", "gpt-5.6-terra"),
+        ("E10-I10", "gpt-5.6-sol"),
+    ):
+        execution = issues[key].execution
+        assert execution is not None
+        assert (execution.model, execution.effort) == (model, "xhigh")
+        assert issues[key].plan == (
+            "docs/superpowers/plans/2026-08-31-tam-forge-native-macos-batch-02.md"
+        )
+        assert any("plan is locked" in gate for gate in execution.dispatch_gate)
     executable_routes = [
         (issue.execution.model, issue.execution.effort)
         for issue in manifest.children
         if issue.execution is not None and issue.execution.is_executable
     ]
-    assert len(executable_routes) == 96
-    assert executable_routes.count(("gpt-5.6-sol", "xhigh")) == 60
-    assert executable_routes.count(("gpt-5.6-terra", "xhigh")) == 32
+    assert len(executable_routes) == 98
+    assert executable_routes.count(("gpt-5.6-sol", "xhigh")) == 61
+    assert executable_routes.count(("gpt-5.6-terra", "xhigh")) == 33
     assert executable_routes.count(("gpt-5.6-terra", "high")) == 4
     assert all(
         any("gpt-5.6-sol / ultra" in gate for gate in issue.execution.dispatch_gate)

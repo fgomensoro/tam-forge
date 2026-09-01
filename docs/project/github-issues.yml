@@ -77,13 +77,7 @@ execution:
     - E2-I11
     - E2-I12
     reason: Closed GitHub history; never dispatch, recreate, or rewrite.
-  deferred:
-  - keys:
-    - E10-I09
-    - E10-I10
-    reason: Native parity and React cutover require a later architecture batch.
-    dispatch_gate:
-    - A later gpt-5.6-sol / ultra plan is locked after E10-I06 through E10-I08 completion evidence.
+  deferred: []
   routes:
   - keys:
     - E1-I06
@@ -2619,12 +2613,26 @@ issues:
   - E10-I06
   - E10-I08
   acceptance:
-  - 'Deferred: a later native-parity plan must define evidence-ledger acceptance and verification before dispatch.'
+  - Native Evidence shows server-authoritative skill estimates, unassessed states, confidence/trend bases, manifest used weights and complete score lineage without recalculating scores.
+  - Skill/activity evidence and separate portfolio history use bounded cursor pages, lazy inspection, scoped Today routing and independent retryable section states.
+  - Generated API adapters, stale-response/session clearing, accessibility and native UI regression tests pass; PR A has exact-head review, required CI and merge evidence.
   privacy_impact: medium
   verification:
-  - Deferred pending later gpt-5.6-sol / ultra plan
-  plan: docs/superpowers/plans/2026-08-28-tam-forge-native-macos-batch-01.md
-  task: Deferred pending later gpt-5.6-sol / ultra plan
+  - xcodebuild -jobs 2 -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination platform=macOS -only-testing:TAMForgeTests/NativeEvidenceAdapterTests -only-testing:TAMForgeTests/EvidenceLedgerTests test
+  - Native evidence and shell UI journeys plus required CI; see Batch 02 section 5.
+  plan: docs/superpowers/plans/2026-08-31-tam-forge-native-macos-batch-02.md
+  task: '3. Ticket #125 — evidence ledger'
+  execution:
+    owner: subagent
+    model: gpt-5.6-terra
+    effort: xhigh
+    reason: Bounded read-only production feature with fixed generated contracts; Sol xhigh owns shared shell and session integration.
+    dispatch_gate:
+    - Batch 02 gpt-5.6-sol / ultra plan is locked, questions resolved, and the user has switched the coordinator to Sol xhigh and replied continue.
+    - E10-I06 and E10-I08 are merged with completion evidence; worker file scope excludes shared shell/session files.
+    escalation_triggers:
+    - Shared API/auth/session, scoring, privacy or concurrency contracts exceed the locked slice; return ownership to Sol xhigh.
+    - New architecture or material decisions require Ultra re-planning; tests or CI cannot establish acceptance.
 - key: E10-I10
   title: Prove native parity and remove React/Vite/Node from runtime and CI
   epic: E10
@@ -2638,9 +2646,25 @@ issues:
   - E10-I08
   - E10-I09
   acceptance:
-  - 'Deferred: a later native-parity plan must define final cutover evidence before dispatch.'
+  - A signed parity checklist maps every retired browser workflow assertion to native UI and durable backend integration evidence against shared synthetic fixture contracts.
+  - Replacement checks pass in PR B before PR C removes tracked React/Vite/Node product runtime/tooling; required checks and backend security coverage are not weakened.
+  - Native unit/UI, backend unit/security/integration, OpenAPI drift, repository policy, Release bundle checks, accessibility and M2 idle/launch evidence pass on the exact final head.
+  - CI, Makefile and maintained docs no longer require product Node/pnpm tooling; production configuration, recording, ASR and distribution remain separate gates.
   privacy_impact: high
   verification:
-  - Deferred pending later gpt-5.6-sol / ultra plan
-  plan: docs/superpowers/plans/2026-08-28-tam-forge-native-macos-batch-01.md
-  task: Deferred pending later gpt-5.6-sol / ultra plan
+  - make check
+  - Native UI, Release bundle, shared-fixture and isolated integration checks; see Batch 02 sections 4 and 5.
+  - Exact-final-head parity checklist, independent review and all required CI before merge.
+  plan: docs/superpowers/plans/2026-08-31-tam-forge-native-macos-batch-02.md
+  task: '4. Ticket #126 — parity before removal'
+  execution:
+    owner: coordinator
+    model: gpt-5.6-sol
+    effort: xhigh
+    reason: Coupled client cutover, fixture authentication boundaries, release checks and CI replacement require coordinator ownership.
+    dispatch_gate:
+    - Batch 02 gpt-5.6-sol / ultra plan is locked and execution handoff is confirmed; E10-I06 through E10-I09 have merged completion evidence.
+    - PR B replacement parity checks pass before PR C web removal; required-check policy is verified without bypass or assumed authority to change it.
+    escalation_triggers:
+    - New production, destructive, paid-runner, privacy or branch-protection action requires user direction.
+    - Replacement verification cannot prove parity, required CI is missing, or architecture departs from the locked plan; retain web and re-plan if material.

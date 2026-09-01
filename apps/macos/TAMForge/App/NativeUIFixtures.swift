@@ -32,11 +32,25 @@ private final class NativeUIFixtureState: @unchecked Sendable {
     private var roadmapState: String?
     private var dayClosed = false
     private let closingDay = ProcessInfo.processInfo.arguments.contains("-ui-test-daily-close")
+    private let reviewingEvidence = ProcessInfo.processInfo.arguments.contains("-ui-test-evidence-route")
+    private let emptyEvidence = ProcessInfo.processInfo.arguments.contains("-ui-test-empty-evidence")
+    private let keyboardEvidenceRefresh = ProcessInfo.processInfo.arguments.contains("-ui-test-evidence-keyboard-refresh")
+    private var failSkillsOnce = ProcessInfo.processInfo.arguments.contains("-ui-test-evidence-retry")
+    private var skillListRequests = 0
     private let stamp = "2026-08-27T20:00:00Z"
 
     func response(for request: URLRequest) throws -> Data {
         try lock.withLock {
+            guard let url = request.url,
+                  NativeUIFixtureRequestValidator.hasExpectedOrigin(
+                    url,
+                    environment: AppEnvironment.selected(from: ProcessInfo.processInfo.environment)
+                  )
+            else { throw URLError(.badURL) }
             let path = request.url?.path ?? ""
+            if let evidence = try evidenceResponse(for: request) {
+                return try JSONSerialization.data(withJSONObject: evidence)
+            }
             let value: Any
             switch path {
             case "/api/v1/today":
@@ -107,9 +121,9 @@ private final class NativeUIFixtureState: @unchecked Sendable {
             "optimistic_version": activityVersion,
         ]
         let action: [String: Any] = [
-            "kind": closingDay ? "close_day" : activityState == "output_committed" ? "complete_self_review" : "resume_activity",
+            "kind": reviewingEvidence ? "review_feedback" : closingDay ? "close_day" : activityState == "output_committed" ? "complete_self_review" : "resume_activity",
             "target_id": closingDay ? 70 : 41,
-            "label": closingDay ? "Close study day" : "Continue customer update", "allowed_ai_role": "none",
+            "label": reviewingEvidence ? "Review activity evidence" : closingDay ? "Close study day" : "Continue customer update", "allowed_ai_role": "none",
         ]
         return [
             "local_date": localDate, "timezone": "America/Los_Angeles", "day_id": 8,
@@ -158,6 +172,124 @@ private final class NativeUIFixtureState: @unchecked Sendable {
     private func activitySummary() -> [String: Any] {
         // Command receipts use ActivityResponse, which rejects detail-only properties.
         activity().filter { !["task_contract", "committed_output", "self_review"].contains($0.key) }
+    }
+
+    /// Synthetic read contracts only. Unsupported scopes, methods and cursors fail closed.
+    private func evidenceResponse(for request: URLRequest) throws -> Any? {
+        let path = request.url?.path ?? ""
+        let skillPath = "/api/v1/skills/structured_troubleshooting"
+        let paths = ["/api/v1/skills", skillPath, "\(skillPath)/evidence",
+                     "/api/v1/skills/tam_english", "/api/v1/skills/tam_english/evidence",
+                     "/api/v1/activities/41/evidence", "/api/v1/portfolio-judgment"]
+        guard paths.contains(path) else { return nil }
+        guard request.httpMethod == "GET", request.httpBody == nil, request.httpBodyStream == nil,
+              request.value(forHTTPHeaderField: "Authorization") == "Bearer ui-test-only",
+              let url = request.url,
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw URLError(.badServerResponse)
+        }
+        let paginated = path.hasSuffix("/evidence") || path == "/api/v1/portfolio-judgment"
+        let cursor: Int?
+        do {
+            cursor = try NativeEvidenceFixtureQuery.cursor(from: url, paginated: paginated)
+        } catch {
+            throw URLError(.badServerResponse)
+        }
+        switch path {
+        case "/api/v1/skills":
+            skillListRequests += 1
+            if failSkillsOnce {
+                failSkillsOnce = false
+                throw URLError(.notConnectedToInternet)
+            }
+            let refreshed = keyboardEvidenceRefresh && skillListRequests > 1
+            return ["items": [evidenceSkill(refreshed: refreshed), evidenceSkill(english: true)]]
+        case skillPath:
+            return evidenceSkill()
+        case "/api/v1/skills/tam_english":
+            return evidenceSkill(english: true)
+        case "/api/v1/portfolio-judgment":
+            guard cursor == nil || cursor == 91 else { throw URLError(.badServerResponse) }
+            if emptyEvidence { return ["items": [], "next_cursor": NSNull()] }
+            let score: [String: Any] = [
+                "id": cursor == nil ? 91 : 90, "activity_id": 41, "attempt_id": 11,
+                "formula_version": "seed-v1", "rubric_version": "seed-v1", "total_score": "14.000",
+                "components": [
+                    ["slug": "impact_risk_assessment", "score": "3.000"],
+                    ["slug": "explicit_prioritization", "score": "2.000"],
+                    ["slug": "delegation_ownership", "score": "2.000"],
+                    ["slug": "communication_control", "score": "2.000"],
+                    ["slug": "proactive_work_protection", "score": "1.000"],
+                    ["slug": "evidence_based_reprioritization", "score": "2.000"],
+                    ["slug": "english_clarity", "score": "2.000"],
+                ],
+                "trend_basis": ["schema_version": 1, "basis_code": "first_score", "event_ids": []],
+                "scored_at": stamp,
+            ]
+            let nextCursor: Any = cursor == nil ? 91 : NSNull()
+            return ["items": [score], "next_cursor": nextCursor]
+        default:
+            guard cursor == nil || cursor == 49 else { throw URLError(.badServerResponse) }
+            if emptyEvidence || path.contains("tam_english") {
+                return ["items": [], "next_cursor": NSNull()]
+            }
+            let events = cursor == nil
+                ? [evidenceEvent(id: 50), evidenceEvent(id: 49)]
+                : [evidenceEvent(id: 39), evidenceEvent(id: 10), evidenceEvent(id: 9)]
+            let nextCursor: Any = cursor == nil ? 49 : NSNull()
+            return ["items": events, "next_cursor": nextCursor]
+        }
+    }
+
+    private func evidenceSkill(english: Bool = false, refreshed: Bool = false) -> [String: Any] {
+        let assessed = !english && !emptyEvidence
+        let snapshot: [String: Any] = [
+            "id": 71, "formula_version": "seed-v1", "snapshot_date": "2026-08-27",
+            "estimated_level": "2.410", "confidence": "low", "trend": "insufficient_evidence", "recency": "fresh",
+            "baseline_target_gap": "-0.410", "month_one_target_gap": "0.090", "final_target_gap": "0.590",
+            "total_effective_weight": "1.389375", "qualifying_event_count": 3, "exercise_type_count": 1,
+            "last_strong_evidence_date": NSNull(),
+            "manifest": [
+                ["event_id": 9, "effective_weight": "0.617500", "inclusion_code": "included"],
+                ["event_id": 10, "effective_weight": "0.617500", "inclusion_code": "included"],
+                ["event_id": 50, "effective_weight": "0.154375", "inclusion_code": "discounted_same_day"],
+                ["event_id": 49, "effective_weight": "0.000", "inclusion_code": "excluded_nonqualifying"],
+                ["event_id": 39, "effective_weight": "0.000", "inclusion_code": "excluded_nonqualifying"],
+            ],
+            "confidence_basis": ["schema_version": 1, "basis_code": "low_weight", "event_ids": [9, 10, 50]],
+            "trend_basis": ["schema_version": 1, "basis_code": "too_few_events", "event_ids": []],
+        ]
+        return [
+            "slug": english ? "tam_english" : "structured_troubleshooting",
+            "name": english ? "TAM English" : refreshed ? "Structured troubleshooting refreshed" : "Structured troubleshooting",
+            "baseline": english ? "1.000" : "2.000",
+            "month_one_target": english ? "2.000" : "2.500",
+            "final_target": english ? "2.750" : "3.000",
+            "latest_snapshot": assessed ? snapshot : NSNull(),
+        ]
+    }
+
+    private func evidenceEvent(id: Int) -> [String: Any] {
+        let selfEvidence = id == 49 || id == 39
+        let effectiveWeight = selfEvidence ? "0.390000" : "0.617500"
+        let occurredAt = switch id {
+        case 9: "2026-08-27T18:00:00Z"
+        case 10: "2026-08-27T19:00:00Z"
+        default: stamp
+        }
+        return [
+            "id": id, "activity_id": 41, "attempt_id": 11, "skill_slug": "structured_troubleshooting",
+            "exercise_type": "troubleshooting_case", "mapping_version": "seed-v1", "formula_version": "seed-v1",
+            "rubric_slug": "portfolio_judgment", "rubric_version": "seed-v1",
+            "evaluator": selfEvidence ? "self" : "human_coach", "practice_mode": "independent_practice",
+            "assistance": "no_ai", "difficulty": "standard", "performance_score": "3.000",
+            "skill_impact": "1.000", "effective_weight": effectiveWeight, "qualifying_for_level": !selfEvidence,
+            "qualification_reason": selfEvidence ? "excluded_by_formula" : "qualifies",
+            "raw_dimension_scores": ["schema_version": 1, "scores": [
+                ["dimension_score_id": id + 500, "score": 3.0, "weight": 0.2],
+            ]],
+            "occurred_at": occurredAt,
+        ]
     }
 }
 #endif

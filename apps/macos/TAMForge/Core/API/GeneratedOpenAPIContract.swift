@@ -5,4 +5,10 @@ private func generatedRequiredNullableContract() {
     let _: KeyPath<Components.Schemas.TodayResponse, Int?> = \.dayId
     let _: KeyPath<Components.Schemas.TodayResponse, Components.Schemas.TodayResponse.PrimaryContinuePayload?> = \.primaryContinue
     let _: KeyPath<Components.Schemas.NotificationPage, Int?> = \.nextCursor
+    let _: KeyPath<
+        Components.Schemas.SkillSummaryResponse,
+        Components.Schemas.SkillSummaryResponse.LatestSnapshotPayload?
+    > = \.latestSnapshot
+    let _: KeyPath<Components.Schemas.EvidenceEventPage, Int?> = \.nextCursor
+    let _: KeyPath<Components.Schemas.PortfolioHistoryResponse, Int?> = \.nextCursor
 }

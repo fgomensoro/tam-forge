@@ -10,9 +10,9 @@ struct TAMForgeApp: App {
 #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         let nativeFeatures: Set<NativeFeature> = arguments.contains("-ui-test-signed-in")
-            && !arguments.contains("-ui-test-native-features") ? [] : [.today, .roadmaps]
+            && !arguments.contains("-ui-test-native-features") ? [] : [.today, .roadmaps, .evidence]
 #else
-        let nativeFeatures: Set<NativeFeature> = [.today, .roadmaps]
+        let nativeFeatures: Set<NativeFeature> = [.today, .roadmaps, .evidence]
 #endif
         self.init(dependencies: .live(
             environment: .selected(from: ProcessInfo.processInfo.environment),
@@ -86,6 +86,7 @@ private struct NativeFeatureServices {
     let notifications: any NotificationServicing
     let roadmaps: any RoadmapServicing
     let activities: any ActivityAPI
+    let evidence: any EvidenceServicing
 }
 
 @MainActor
@@ -132,7 +133,8 @@ private final class NativeShellComposition: ObservableObject {
                 baseURL: dependencies.environment.apiBaseURL, bearerToken: bearerToken,
                 session: httpSession, onUnauthorizedForRequest: onUnauthorizedForRequest
             ),
-            activities: LiveActivityAPI(transport: transport)
+            activities: LiveActivityAPI(transport: transport),
+            evidence: LiveEvidenceAPI(transport: transport)
         )
     }
 
@@ -168,6 +170,7 @@ private final class NativeWorkspaceState: ObservableObject {
     let today: TodayViewModel
     let notifications: NotificationViewModel
     let roadmaps: RoadmapAdministrationModel
+    let evidence: EvidenceLedgerModel
     let drafts = InMemoryActivityDraftStore()
     let timerJournal: any ActivityTimerJournaling
 
@@ -175,6 +178,7 @@ private final class NativeWorkspaceState: ObservableObject {
         today = TodayViewModel(client: services.today)
         notifications = NotificationViewModel(client: services.notifications)
         roadmaps = RoadmapAdministrationModel(service: services.roadmaps)
+        evidence = EvidenceLedgerModel(service: services.evidence)
 #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("-ui-test-signed-in") || arguments.contains("-ui-test-signed-out") {
@@ -195,7 +199,6 @@ private struct NativeWorkspaceView: View {
     let services: NativeFeatureServices
     @StateObject private var state: NativeWorkspaceState
     @State private var focusSelfReview = false
-    @State private var showingEvidenceNotice = false
 
     init(dependencies: AppDependencies, session: ShellSessionModel, services: NativeFeatureServices) {
         self.dependencies = dependencies
@@ -214,6 +217,12 @@ private struct NativeWorkspaceView: View {
                 if dependencies.nativeFeatures.contains(.roadmaps) {
                     Button { session.select(.roadmaps) } label: { Label("Roadmaps", systemImage: "map") }
                         .accessibilityIdentifier("roadmapsNavigation")
+                }
+                if dependencies.nativeFeatures.contains(.evidence) {
+                    Button { session.select(.evidence(activityID: nil)) } label: {
+                        Label("Evidence", systemImage: "list.bullet.rectangle")
+                    }
+                    .accessibilityIdentifier("evidenceNavigation")
                 }
             }
             .navigationTitle("TAM Forge")
@@ -242,12 +251,21 @@ private struct NativeWorkspaceView: View {
             await state.today.load()
             guard !Task.isCancelled else { return }
             await state.notifications.load()
+            guard !Task.isCancelled else { return }
+            if case .evidence = session.selectedRoute {
+                await state.evidence.refresh()
+            } else {
+                state.evidence.markStale()
+            }
         }
-        .alert("Evidence review", isPresented: $showingEvidenceNotice) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Native evidence review is part of the next migration. Your saved feedback remains on the server. You can continue other assigned activities from Today.")
+        .onChange(of: session.selectedRoute) { oldRoute, newRoute in
+            guard case .evidence = oldRoute else { return }
+            if case .evidence = newRoute { return }
+            state.evidence.deactivate()
         }
+        // Close this generation on logout/expiry. A fresh sign-in gets a new model;
+        // canceled or noncooperative reads cannot publish into the retired workspace.
+        .onDisappear { state.evidence.reset() }
     }
 
     @ViewBuilder
@@ -257,6 +275,16 @@ private struct NativeWorkspaceView: View {
             TodayView(model: state.today, onNavigate: navigate)
         case .roadmaps where dependencies.nativeFeatures.contains(.roadmaps):
             RoadmapAdministrationView(model: state.roadmaps)
+        case let .evidence(identifier) where dependencies.nativeFeatures.contains(.evidence):
+            EvidenceLedgerView(
+                model: state.evidence,
+                onOpenActivity: { identifier in
+                    focusSelfReview = false
+                    session.select(.activity(identifier))
+                },
+                onShowAll: { session.select(.evidence(activityID: nil)) }
+            )
+            .task(id: identifier) { await state.evidence.open(activityID: identifier) }
         case let .activity(identifier) where dependencies.nativeFeatures.contains(.today):
             NativeActivityScreen(
                 activityID: identifier, api: services.activities, drafts: state.drafts,
@@ -274,8 +302,8 @@ private struct NativeWorkspaceView: View {
         case let .activity(identifier, focus):
             focusSelfReview = focus == .selfReview
             session.select(.activity(identifier))
-        case .evidence:
-            showingEvidenceNotice = true
+        case let .evidence(identifier):
+            session.select(.evidence(activityID: identifier))
         case .dailyClose:
             break // Today owns the daily-close form and command.
         }

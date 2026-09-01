@@ -2,6 +2,217 @@ import XCTest
 
 final class TAMForgeUITests: XCTestCase {
     @MainActor
+    func testEvidenceIsReachableFromSidebar() {
+        let app = launchWorkspace()
+        let evidence = app.buttons["evidenceNavigation"]
+        XCTAssertTrue(evidence.waitForExistence(timeout: 5))
+        evidence.click()
+        XCTAssertTrue(app.staticTexts["evidenceTitle"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testTodayEvidenceKeepsActivityContextAndSignOutClearsIt() {
+        let app = launchWorkspace(extra: ["-ui-test-evidence-route"])
+        app.buttons["todayContinueButton"].click()
+        let openActivity = app.buttons["evidenceOpenActivity"]
+        XCTAssertTrue(openActivity.waitForExistence(timeout: 5))
+        openActivity.click()
+        // The fixture accepts only activity 41: a lost or changed target cannot load it.
+        XCTAssertTrue(app.buttons["Start activity"].waitForExistence(timeout: 5))
+        app.buttons["todayNavigation"].click()
+        XCTAssertTrue(app.buttons["todayContinueButton"].waitForExistence(timeout: 5))
+        app.buttons["todayContinueButton"].click()
+        XCTAssertTrue(openActivity.waitForExistence(timeout: 5))
+        app.buttons["evidenceAllActivities"].click()
+        XCTAssertTrue(openActivity.waitForNonExistence(timeout: 5))
+
+        app.buttons["todayNavigation"].click()
+        XCTAssertTrue(app.buttons["todayContinueButton"].waitForExistence(timeout: 5))
+        app.buttons["todayContinueButton"].click()
+        XCTAssertTrue(openActivity.waitForExistence(timeout: 5))
+        app.buttons["signOutButton"].click()
+        XCTAssertTrue(app.buttons["signInButton"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["evidenceTitle"].exists)
+        app.buttons["signInButton"].click()
+        XCTAssertTrue(app.buttons["todayNavigation"].waitForExistence(timeout: 5))
+        app.buttons["evidenceNavigation"].click()
+        XCTAssertTrue(app.staticTexts["evidenceTitle"].waitForExistence(timeout: 5))
+        XCTAssertFalse(openActivity.exists)
+    }
+
+    @MainActor
+    func testEvidenceSkillsCanRetryWithoutHidingPortfolio() {
+        let app = launchWorkspace(extra: ["-ui-test-evidence-retry"])
+        app.buttons["evidenceNavigation"].click()
+        let retry = app.buttons["evidenceRetrySkills"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5))
+        XCTAssertEqual(retry.label, "Retry skill estimates")
+        let portfolioScore = textContaining("14.000 / 20", in: app)
+        XCTAssertTrue(portfolioScore.waitForExistence(timeout: 5))
+        retry.click()
+        XCTAssertTrue(app.staticTexts["Structured troubleshooting"].waitForExistence(timeout: 5))
+        XCTAssertTrue(retry.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(portfolioScore.exists)
+    }
+
+    @MainActor
+    func testEvidenceKeepsSkillAndPortfolioScalesSeparateAndMissingIsNotZero() {
+        let app = launchWorkspace()
+        app.buttons["evidenceNavigation"].click()
+
+        XCTAssertTrue(app.staticTexts["evidenceTitle"].waitForExistence(timeout: 5))
+        XCTAssertTrue(textContaining("2.410 / 4", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(textContaining("14.000 / 20", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 5))
+        XCTAssertTrue(textContaining("Missing evidence is not zero", in: app).exists)
+        XCTAssertTrue(textContaining("Baseline gap", in: app).exists)
+        XCTAssertTrue(textContaining("Final target gap", in: app).exists)
+        XCTAssertEqual(textsContaining("streak", in: app).count, 0)
+        XCTAssertEqual(textsContaining("recording count", in: app).count, 0)
+        XCTAssertEqual(textsContaining("transcript word count", in: app).count, 0)
+    }
+
+    @MainActor
+    func testEvidenceSkillLineageAndBoundedPagingRemainInspectable() {
+        let app = launchWorkspace()
+        app.buttons["evidenceNavigation"].click()
+        let inspect = app.buttons["evidenceInspectSkill_structured_troubleshooting"]
+        reveal(inspect, in: app, scrollIdentifier: "evidenceLedger")
+        app.activate()
+        inspect.click()
+
+        let older = app.buttons["evidenceSkillOlder"]
+        XCTAssertTrue(older.waitForExistence(timeout: 5))
+        XCTAssertEqual(older.label, "Older skill evidence")
+        let manifest = app.disclosureTriangles["evidenceManifest"]
+        setDisclosure(manifest, expanded: true, in: app)
+        XCTAssertTrue(textContaining("Used weight 0.154375 · Event weight 0.617500", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(textContaining("Outside this page; browse older evidence", in: app).exists)
+
+        let event = eventDisclosure(50, in: app)
+        XCTAssertTrue(textContaining("Structured troubleshooting ·", in: app).waitForExistence(timeout: 5))
+        setDisclosure(event, expanded: true, in: app)
+        XCTAssertTrue(textContaining("human coach", in: app).exists)
+        XCTAssertTrue(textContaining("no ai", in: app).exists)
+        XCTAssertTrue(textContaining("Qualifies", in: app).exists)
+        let raw = app.disclosureTriangles["evidenceRawDimensions_50"]
+        setDisclosure(raw, expanded: true, in: app)
+        XCTAssertTrue(textContaining("Dimension score", in: app).exists)
+        setDisclosure(event, expanded: false, in: app)
+
+        let excluded = eventDisclosure(49, in: app)
+        setDisclosure(excluded, expanded: true, in: app)
+        XCTAssertTrue(textContaining("Excluded from level", in: app).exists)
+        XCTAssertTrue(textContaining("Excluded by formula", in: app).exists)
+        setDisclosure(excluded, expanded: false, in: app)
+
+        reveal(older, in: app, scrollIdentifier: "evidenceLedger")
+        app.activate()
+        older.click()
+        XCTAssertTrue(app.staticTexts["Evidence event 39"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Evidence event 50"].exists)
+        let newest = app.buttons["evidenceSkillNewest"]
+        XCTAssertTrue(newest.waitForExistence(timeout: 5))
+        XCTAssertEqual(newest.label, "Newest skill evidence")
+        reveal(newest, in: app, scrollIdentifier: "evidenceLedger")
+        app.activate()
+        newest.click()
+        XCTAssertTrue(app.staticTexts["Evidence event 50"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testEvidencePortfolioAndActivityPagingDoNotLoseAllEvidenceRoute() {
+        let app = launchWorkspace()
+        app.buttons["evidenceNavigation"].click()
+
+        let portfolioOlder = app.buttons["evidencePortfolioOlder"]
+        XCTAssertTrue(portfolioOlder.waitForExistence(timeout: 5))
+        XCTAssertEqual(portfolioOlder.label, "Older portfolio history")
+        reveal(portfolioOlder, in: app, scrollIdentifier: "evidenceLedger")
+        portfolioOlder.click()
+        XCTAssertTrue(app.descendants(matching: .any)["evidencePortfolio_90"].waitForExistence(timeout: 5))
+        let portfolioNewest = app.buttons["evidencePortfolioNewest"]
+        XCTAssertTrue(portfolioNewest.waitForExistence(timeout: 5))
+        XCTAssertEqual(portfolioNewest.label, "Newest portfolio history")
+        reveal(portfolioNewest, in: app, scrollIdentifier: "evidenceLedger")
+        portfolioNewest.click()
+        XCTAssertTrue(app.descendants(matching: .any)["evidencePortfolio_91"].waitForExistence(timeout: 5))
+
+        let inspect = app.buttons["evidenceInspectPortfolio_91"]
+        reveal(inspect, in: app, scrollIdentifier: "evidenceLedger")
+        inspect.click()
+        let activityOlder = app.buttons["evidenceActivityOlder"]
+        XCTAssertTrue(activityOlder.waitForExistence(timeout: 5))
+        XCTAssertEqual(activityOlder.label, "Older activity evidence")
+        reveal(activityOlder, in: app, scrollIdentifier: "evidenceLedger")
+        activityOlder.click()
+        XCTAssertTrue(app.staticTexts["Evidence event 39"].waitForExistence(timeout: 5))
+
+        let allEvidence = app.buttons["evidenceAllActivitiesFromInspector"]
+        reveal(allEvidence, in: app, scrollIdentifier: "evidenceLedger")
+        allEvidence.click()
+        XCTAssertTrue(app.descendants(matching: .any)["evidenceActivityHistory"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["evidenceTitle"].exists)
+    }
+
+    @MainActor
+    func testEvidenceEmptyStateNeverInventsZero() {
+        let app = launchWorkspace(extra: ["-ui-test-empty-evidence", "-ui-test-evidence-route"])
+        app.buttons["todayContinueButton"].click()
+
+        XCTAssertTrue(app.staticTexts["evidenceTitle"].waitForExistence(timeout: 5))
+        XCTAssertTrue(textContaining("No qualifying evidence is recorded for this activity", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(textsContaining("Not assessed", in: app).count, 1)
+        XCTAssertEqual(textsContaining("0 / 4", in: app).count, 0)
+        XCTAssertTrue(app.buttons["evidenceOpenActivity"].exists)
+    }
+
+    @MainActor
+    func testEvidenceRendersInDarkAppearanceWithLargeTextAndReducedScrollingMotion() {
+        let app = launchWorkspace(extra: [
+            "-AppleInterfaceStyle", "Dark",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge",
+            "-NSScrollAnimationEnabled", "NO",
+        ])
+        app.buttons["evidenceNavigation"].click()
+
+        XCTAssertTrue(app.staticTexts["evidenceTitle"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["evidenceRefresh"].isEnabled)
+        let inspect = app.buttons["evidenceInspectSkill_structured_troubleshooting"]
+        reveal(inspect, in: app, scrollIdentifier: "evidenceLedger")
+        XCTAssertTrue(inspect.isHittable)
+        capture("Evidence dark large text", app: app)
+    }
+
+    @MainActor
+    func testEvidenceKeyboardRefreshAndAccessibilityReadingOrder() {
+        let app = launchWorkspace(extra: ["-ui-test-evidence-keyboard-refresh"])
+        app.buttons["evidenceNavigation"].click()
+
+        XCTAssertTrue(app.staticTexts["evidenceTitle"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Structured troubleshooting"].waitForExistence(timeout: 5))
+        app.typeKey("r", modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts["Structured troubleshooting refreshed"].waitForExistence(timeout: 5))
+
+        let skillGroup = app.groups["evidenceSkill_structured_troubleshooting"]
+        let portfolioGroup = app.groups["evidencePortfolio_91"]
+        XCTAssertTrue(skillGroup.staticTexts["evidenceSkillName_structured_troubleshooting"].exists)
+        XCTAssertTrue(portfolioGroup.staticTexts["Portfolio judgment"].exists)
+
+        let landmarks = [
+            app.staticTexts["evidenceTitle"],
+            app.staticTexts["evidenceIntro"],
+            app.staticTexts["Skill estimates"],
+            app.staticTexts["evidenceSkillName_structured_troubleshooting"],
+            app.staticTexts["Portfolio history"],
+        ]
+        XCTAssertTrue(landmarks.allSatisfy(\.exists), "Expected all Evidence landmarks in the accessibility tree")
+        let topEdges = landmarks.map { $0.frame.minY }
+        XCTAssertEqual(topEdges, topEdges.sorted(), "Evidence landmarks must follow their visual reading order")
+    }
+
+    @MainActor
     func testApplicationCannotOpenAnIndependentSecondWorkspace() {
         let app = launchWorkspace()
         XCTAssertEqual(app.windows.count, 1)
@@ -60,9 +271,11 @@ final class TAMForgeUITests: XCTestCase {
 
     @MainActor
     private func reveal(_ element: XCUIElement, in app: XCUIApplication, scrollIdentifier: String = "activityWorkspaceScroll") {
+        app.activate()
         let scroll = app.scrollViews[scrollIdentifier]
         XCTAssertTrue(scroll.waitForExistence(timeout: 5))
         for _ in 0..<12 {
+            app.activate()
             if element.exists && element.isHittable && scroll.frame.contains(element.frame) { return }
             scroll.scroll(byDeltaX: 0, deltaY: -350)
         }
@@ -76,6 +289,47 @@ final class TAMForgeUITests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    @MainActor
+    private func setDisclosure(_ element: XCUIElement, expanded: Bool, in app: XCUIApplication) {
+        reveal(element, in: app, scrollIdentifier: "evidenceLedger")
+        let target = expanded ? "1" : "0"
+        if disclosureValue(element) != target {
+            app.activate()
+            let chevronOffset = min(0.5, 24 / max(element.frame.width, 1))
+            element.coordinate(withNormalizedOffset: CGVector(dx: chevronOffset, dy: 0.5)).click()
+        }
+        XCTAssertEqual(disclosureValue(element), target)
+    }
+
+    @MainActor
+    private func disclosureValue(_ element: XCUIElement) -> String {
+        if let value = element.value as? String { return value }
+        if let value = element.value as? NSNumber { return value.stringValue }
+        return ""
+    }
+
+    @MainActor
+    private func eventDisclosure(_ id: Int, in app: XCUIApplication) -> XCUIElement {
+        app.disclosureTriangles.matching(NSPredicate(
+            format: "label BEGINSWITH[c] %@",
+            "Evidence event \(id),"
+        )).firstMatch
+    }
+
+    @MainActor
+    private func textsContaining(_ value: String, in app: XCUIApplication) -> XCUIElementQuery {
+        app.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS[c] %@ OR value CONTAINS[c] %@",
+            value,
+            value
+        ))
+    }
+
+    @MainActor
+    private func textContaining(_ value: String, in app: XCUIApplication) -> XCUIElement {
+        textsContaining(value, in: app).firstMatch
     }
 
     @MainActor
@@ -167,6 +421,7 @@ final class TAMForgeUITests: XCTestCase {
         app.launchArguments = ["-ApplePersistenceIgnoreState", "YES", "-ui-test-signed-in", "-ui-test-native-features"] + extra
         app.launch()
         XCTAssertTrue(app.buttons["todayNavigation"].waitForExistence(timeout: 5))
+        app.activate()
         return app
     }
 
@@ -231,6 +486,7 @@ final class TAMForgeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["noNativeFeatures"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["todayNavigation"].exists)
         XCTAssertFalse(app.buttons["roadmapsNavigation"].exists)
+        XCTAssertFalse(app.buttons["evidenceNavigation"].exists)
         let signOut = app.buttons["signOutButton"]
         XCTAssertTrue(signOut.waitForExistence(timeout: 5))
         signOut.click()

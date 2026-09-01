@@ -1,8 +1,8 @@
-# Native feature parity — Batch 01
+# Native feature parity
 
-Scope: E10-I06 (#122), E10-I07 (#123), and E10-I08 (#124). The reference client
-remains `apps/web/src/features/{today,notifications,roadmaps,activities}` until
-the separately planned cutover. Server read models and commands remain authoritative.
+Scope: E10-I06–E10-I09 (#122–#125). The reference client remains
+`apps/web/src/features/{today,notifications,roadmaps,activities,evidence}` until
+the separately gated E10-I10 cutover. Server read models and commands remain authoritative.
 
 | Surface | Native behavior | Verification |
 | --- | --- | --- |
@@ -18,6 +18,10 @@ the separately planned cutover. Server read models and commands remain authorita
 | Artifact lifecycle | Bounded temporary staging, file-backed upload, presign/PUT/confirm, cancel and indeterminate reconciliation | `ActivityArtifactUploadTests` |
 | Session boundaries | One workspace window; bearer acquisition failures never send anonymous requests; stale 401 callbacks cannot expire a later sign-in; fresh private state after sign-in | Transport/shell tests, single-window and sign-out UI journeys |
 | API schema | Generated `Components.Schemas` at HTTP boundaries with explicit UI-domain projections; local Codable fixture/draft models are not an alternate wire contract | Generated adapter tests; OpenAPI drift check |
+| Skill evidence | Server-provided baseline, targets, nullable `/4` estimate, gaps, confidence, trend, recency and exact Decimal strings; missing evidence is never zero | `NativeEvidenceAdapterTests`, `EvidenceLedgerTests`; native Evidence UI journey |
+| Calculation ledger | Manifest inclusion/exclusion and used weight remain distinct from raw event weight; basis and nested raw dimensions stay inspectable; absent page events are identified without guessed values | Evidence adapter/model tests; skill disclosure and pagination UI journey |
+| Activity evidence | Today preserves the exact activity scope; one bounded page, retry-safe Older/Newest replacement, lineage and evaluator/assistance details; All evidence clears private scope | Evidence route/model tests; scoped Evidence/sign-out UI journey |
+| Portfolio history | Independent server-provided `/20` total, all seven components, trend basis and versions remain usable even when skill loading fails | Independent-state model test; section-specific retry UI journey |
 
 ## Evidence boundaries
 
@@ -34,15 +38,24 @@ the separately planned cutover. Server read models and commands remain authorita
   command and unchanged FastAPI contract.
 - Native accessibility evidence covers labeled editors, keyboard-usable native
   controls, navigable forms, disabled-action gates and reduced-motion shell behavior.
-  Automated accessibility queries are not a claim of a complete human VoiceOver audit.
+  Evidence uses header traits and stable identifiers on the actual retry, paging,
+  activity, manifest and event controls rather than on ancestor containers that hide
+  their descendants in the macOS accessibility tree. Its header, skill, portfolio and
+  scoped-activity regions are explicit containment groups; UI automation verifies the
+  Command-R refresh shortcut, group membership and top-to-bottom landmark placement.
+  A retained dark-appearance,
+  accessibility-extra-extra-extra-large screenshot at the minimum window size was
+  manually inspected: the title hierarchy, score-scale explanation, assessed and
+  unassessed cards, all three target gaps, focusable actions, wrapping and contrast
+  remained legible without clipped controls. Automated accessibility queries and this
+  visual inspection are not a claim of a complete human VoiceOver audit.
 - Activity output reads have a 96 MiB collection ceiling to accommodate the server's
   largest text contract and JSON escaping. Ordinary responses retain a 2 MiB ceiling;
   problems retain 64 KiB. These are limits, not reserved memory. Artifact bytes remain
   file-backed rather than being placed in a `Data` payload.
-- Evidence browsing (E10-I09), React removal/distribution cutover (E10-I10), recording,
-  local ASR, and live server configuration are outside this PR. The shell gives an
-  explicit notice for the not-yet-migrated evidence destination. It does not claim the
-  recording or English-analysis pipeline is implemented.
+- React removal/distribution cutover (E10-I10), recording, local ASR, and live server
+  configuration remain outside the Evidence PR. Evidence is a read-only server ledger;
+  it does not claim the recording or English-analysis pipeline is implemented.
 - The checked-in API hosts remain `.invalid` pending an approved deployment/configuration
   step. A passing build or merged PR is not a usable production deployment.
 

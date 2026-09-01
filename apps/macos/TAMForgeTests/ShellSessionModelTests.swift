@@ -62,6 +62,31 @@ final class ShellSessionModelTests: XCTestCase {
         XCTAssertEqual(model.selectedRoute, .today)
     }
 
+    func testEvidenceDestinationRestoresAsNonsensitiveRoute() {
+        let model = ShellSessionModel(actions: .authenticatedForTests, statusStream: nil)
+
+        model.restoreRoute(from: "evidence")
+
+        XCTAssertEqual(model.restorationRouteID, "evidence")
+        XCTAssertEqual(model.selectedRoute, .evidence(activityID: nil))
+
+        model.select(.evidence(activityID: 41))
+        XCTAssertEqual(model.restorationRouteID, "evidence")
+        model.restoreRoute(from: "evidence/41")
+        XCTAssertEqual(model.selectedRoute, .today)
+    }
+
+    func testSignOutClearsPrivateEvidenceRoute() async {
+        let model = ShellSessionModel(actions: .authenticatedForTests, statusStream: nil)
+        await model.restore()
+        model.select(.evidence(activityID: 41))
+
+        model.signOut()
+
+        XCTAssertEqual(model.selectedRoute, .today)
+        XCTAssertEqual(model.phase, .signedOut(.signedOut))
+    }
+
     func testBannersUseSafeUserFacingStates() async {
         let model = ShellSessionModel(actions: .authenticatedForTests, statusStream: nil)
         await model.restore()
