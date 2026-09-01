@@ -347,6 +347,8 @@ private extension RecordingCaptureFailure {
             "Capture stream stopped"
         case .silentInput:
             "No audio signal detected"
+        case .requiredTracksMissing:
+            "A required audio track never produced data"
         }
     }
 }

@@ -139,6 +139,9 @@ final class RecordingCoordinator: ObservableObject {
     private var durationLimitTask: Task<Void, Never>?
     private var accumulatedGaps: [RecordingGap] = []
     private var activeStorageFailure: Error?
+    // Terminal coverage loss (a required track never anchored). The unsealed
+    // spool must drain and stay recoverable; it can never seal.
+    private var fatalCaptureFailure: RecordingCaptureFailure?
 
     init(
         preflight: any RecordingPreflighting = LiveRecordingPreflight(),
@@ -176,6 +179,7 @@ final class RecordingCoordinator: ObservableObject {
         health = RecordingHealth()
         accumulatedGaps.removeAll(keepingCapacity: true)
         activeStorageFailure = nil
+        fatalCaptureFailure = nil
         let result = await preflight.run()
         guard case let .ready(snapshot) = result else {
             if case let .blocked(failure) = result { phase = .blocked(failure) }
@@ -270,6 +274,10 @@ final class RecordingCoordinator: ObservableObject {
         }
         do {
             try await finishEventStreamAndPendingGaps()
+            guard fatalCaptureFailure == nil else {
+                await abandonActiveSpool(recordingID: recordingID)
+                return
+            }
             try await spool?.seal(gaps: [])
             spool = nil
             await refreshPendingRecordings()
@@ -342,7 +350,13 @@ final class RecordingCoordinator: ObservableObject {
                 track.warning = failure
                 health[trackKind] = track
             }
-            if failure != .callbackOverflow { await failActiveRecording(message: "Capture interrupted") }
+            if failure == .requiredTracksMissing { fatalCaptureFailure = failure }
+            if failure != .callbackOverflow {
+                let message = failure == .requiredTracksMissing
+                    ? "Recording never received both required audio tracks"
+                    : "Capture interrupted"
+                await failActiveRecording(message: message)
+            }
         }
     }
 
@@ -385,6 +399,10 @@ final class RecordingCoordinator: ObservableObject {
                 return
             }
             guard sourceStopped else {
+                await abandonActiveSpool(recordingID: recordingID)
+                return
+            }
+            guard fatalCaptureFailure == nil else {
                 await abandonActiveSpool(recordingID: recordingID)
                 return
             }

@@ -103,11 +103,172 @@ struct RecordingTimelineAssembler: Sendable {
 }
 
 struct RecordingCapturePipeline: Sendable {
+    // Startup keeps at most one canonical second of audio, one second of
+    // presentation span, and a fixed event count per track while waiting for
+    // both required tracks to provide a timeline anchor.
+    private static let maximumStartupAudioSamplesPerTrack = RecordingPCMFormat.canonicalSampleRate
+    private static let maximumStartupSpanNanoseconds: Int64 = 1_000_000_000
+    private static let maximumStartupInputsPerTrack = 256
+
     private var timeline = RecordingTimelineAssembler()
     private var accumulator = RecordingChunkAccumulator()
     private var levelThrottle = RecordingLevelThrottle()
+    // nil means both anchors arrived and the gate is open.
+    private var startupInputs: [StartupInput]? = []
+    private var startupUsageByTrack: [RecordingTrackKind: StartupTrackUsage] = [:]
+    private var startupFailed = false
 
     mutating func accept(
+        _ chunk: RecordingPCMChunk,
+        normalizedLevel: Double
+    ) throws -> [RecordingCaptureEvent] {
+        try gated(
+            .chunk(chunk, normalizedLevel: normalizedLevel),
+            track: chunk.track,
+            anchor: chunk.presentationNanoseconds,
+            audioSamples: chunk.sampleCount
+        )
+    }
+
+    mutating func acceptDroppedSourceInterval(
+        _ interval: RecordingDroppedSourceInterval,
+        reason: RecordingGapReason
+    ) throws -> [RecordingCaptureEvent] {
+        try gated(
+            .droppedInterval(interval, reason: reason),
+            track: interval.track,
+            anchor: interval.startPresentationNanoseconds,
+            audioSamples: 0
+        )
+    }
+
+    mutating func acceptFailure(
+        droppedSourceRange range: RecordingDroppedSourceRange,
+        reason: RecordingGapReason,
+        failure: RecordingCaptureFailure
+    ) throws -> [RecordingCaptureEvent] {
+        guard let interval = RecordingDroppedSourceInterval(range: range) else {
+            throw RecordingTimelineError.invalidDroppedSourceRange
+        }
+        return try acceptFailure(
+            droppedSourceInterval: interval, reason: reason, failure: failure
+        )
+    }
+
+    mutating func acceptFailure(
+        droppedSourceInterval interval: RecordingDroppedSourceInterval,
+        reason: RecordingGapReason,
+        failure: RecordingCaptureFailure
+    ) throws -> [RecordingCaptureEvent] {
+        try gated(
+            .failure(interval, reason: reason, failure: failure),
+            track: interval.track,
+            anchor: interval.startPresentationNanoseconds,
+            audioSamples: 0
+        )
+    }
+
+    mutating func finish() -> [RecordingCaptureEvent] {
+        guard !startupFailed else { return [] }
+        guard startupInputs == nil else {
+            failStartup()
+            return [.failure(.requiredTracksMissing)]
+        }
+        return accumulator.finish().map { .chunk($0) }
+    }
+
+    private enum StartupInputKind {
+        case chunk(RecordingPCMChunk, normalizedLevel: Double)
+        case droppedInterval(RecordingDroppedSourceInterval, reason: RecordingGapReason)
+        case failure(
+            RecordingDroppedSourceInterval,
+            reason: RecordingGapReason,
+            failure: RecordingCaptureFailure
+        )
+    }
+
+    private struct StartupInput {
+        let anchor: Int64
+        let insertionIndex: Int
+        let kind: StartupInputKind
+    }
+
+    private struct StartupTrackUsage {
+        var inputCount = 0
+        var audioSamples = 0
+        var minimumAnchor: Int64
+        var maximumAnchor: Int64
+    }
+
+    private mutating func gated(
+        _ kind: StartupInputKind,
+        track: RecordingTrackKind,
+        anchor: Int64,
+        audioSamples: Int
+    ) throws -> [RecordingCaptureEvent] {
+        guard !startupFailed else { return [] }
+        guard var inputs = startupInputs else {
+            return try process(kind)
+        }
+        var usage = startupUsageByTrack[track]
+            ?? StartupTrackUsage(minimumAnchor: anchor, maximumAnchor: anchor)
+        usage.minimumAnchor = Swift.min(usage.minimumAnchor, anchor)
+        usage.maximumAnchor = Swift.max(usage.maximumAnchor, anchor)
+        usage.inputCount += 1
+        usage.audioSamples += audioSamples
+        let (span, spanOverflow) = usage.maximumAnchor
+            .subtractingReportingOverflow(usage.minimumAnchor)
+        guard !spanOverflow,
+              span <= Self.maximumStartupSpanNanoseconds,
+              usage.inputCount <= Self.maximumStartupInputsPerTrack,
+              usage.audioSamples <= Self.maximumStartupAudioSamplesPerTrack
+        else {
+            failStartup()
+            return [.failure(.requiredTracksMissing)]
+        }
+        inputs.append(.init(anchor: anchor, insertionIndex: inputs.count, kind: kind))
+        startupUsageByTrack[track] = usage
+        guard startupUsageByTrack.count == RecordingTrackKind.allCases.count else {
+            startupInputs = inputs
+            return []
+        }
+        // Both tracks anchored: the minimum buffered anchor replayed first
+        // initializes the shared origin independent of callback order.
+        startupInputs = nil
+        startupUsageByTrack = [:]
+        let ordered = inputs.sorted {
+            if $0.anchor != $1.anchor { return $0.anchor < $1.anchor }
+            return $0.insertionIndex < $1.insertionIndex
+        }
+        var events: [RecordingCaptureEvent] = []
+        for input in ordered {
+            events.append(contentsOf: try process(input.kind))
+        }
+        return events
+    }
+
+    private mutating func failStartup() {
+        startupFailed = true
+        startupInputs = nil
+        startupUsageByTrack = [:]
+    }
+
+    private mutating func process(
+        _ kind: StartupInputKind
+    ) throws -> [RecordingCaptureEvent] {
+        switch kind {
+        case let .chunk(chunk, normalizedLevel):
+            return try process(chunk, normalizedLevel: normalizedLevel)
+        case let .droppedInterval(interval, reason):
+            return try process(droppedSourceInterval: interval, reason: reason)
+        case let .failure(interval, reason, failure):
+            var events = try process(droppedSourceInterval: interval, reason: reason)
+            events.append(.failure(failure))
+            return events
+        }
+    }
+
+    private mutating func process(
         _ chunk: RecordingPCMChunk,
         normalizedLevel: Double
     ) throws -> [RecordingCaptureEvent] {
@@ -128,8 +289,8 @@ struct RecordingCapturePipeline: Sendable {
         return events
     }
 
-    mutating func acceptDroppedSourceInterval(
-        _ interval: RecordingDroppedSourceInterval,
+    private mutating func process(
+        droppedSourceInterval interval: RecordingDroppedSourceInterval,
         reason: RecordingGapReason
     ) throws -> [RecordingCaptureEvent] {
         var events = accumulator.flush(track: interval.track).map {
@@ -139,33 +300,6 @@ struct RecordingCapturePipeline: Sendable {
             droppedSourceInterval: interval, reason: reason
         ).map { .gap($0) })
         return events
-    }
-
-    mutating func acceptFailure(
-        droppedSourceRange range: RecordingDroppedSourceRange,
-        reason: RecordingGapReason,
-        failure: RecordingCaptureFailure
-    ) throws -> [RecordingCaptureEvent] {
-        guard let interval = RecordingDroppedSourceInterval(range: range) else {
-            throw RecordingTimelineError.invalidDroppedSourceRange
-        }
-        var events = try acceptDroppedSourceInterval(interval, reason: reason)
-        events.append(.failure(failure))
-        return events
-    }
-
-    mutating func acceptFailure(
-        droppedSourceInterval interval: RecordingDroppedSourceInterval,
-        reason: RecordingGapReason,
-        failure: RecordingCaptureFailure
-    ) throws -> [RecordingCaptureEvent] {
-        var events = try acceptDroppedSourceInterval(interval, reason: reason)
-        events.append(.failure(failure))
-        return events
-    }
-
-    mutating func finish() -> [RecordingCaptureEvent] {
-        accumulator.finish().map { .chunk($0) }
     }
 }
 

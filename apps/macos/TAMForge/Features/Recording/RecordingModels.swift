@@ -194,6 +194,7 @@ enum RecordingCaptureFailure: Error, Equatable, Sendable {
     case conversionFailed
     case streamStopped
     case silentInput
+    case requiredTracksMissing
 }
 
 struct RecordingMicrophone: Identifiable, Equatable, Sendable {
