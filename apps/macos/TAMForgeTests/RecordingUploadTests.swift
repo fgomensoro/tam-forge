@@ -46,6 +46,16 @@ final class RecordingUploadTests: XCTestCase {
         XCTAssertThrowsError(try second.verifyFileIdentity())
     }
 
+    func testPartKeyEncodingRejectsNoncanonicalTrailingCharacter() {
+        let canonical = String(repeating: "A", count: 43)
+        XCTAssertTrue(RecordingPartKeyEncoding.isCanonical(canonical))
+        XCTAssertFalse(RecordingPartKeyEncoding.isCanonical(
+            String(repeating: "A", count: 42) + "B"
+        ))
+        XCTAssertFalse(RecordingPartKeyEncoding.isCanonical(canonical + "="))
+        XCTAssertFalse(RecordingPartKeyEncoding.isCanonical(String(repeating: "A", count: 42)))
+    }
+
     func testGrouperEmitsSixtySecondAndPartialPartsWithoutCrossingTrackBoundaries() throws {
         let recordingID = UUID()
         var grouper = RecordingUploadPartGrouper(maximumSampleCount: 48 * 60)
@@ -64,6 +74,95 @@ final class RecordingUploadTests: XCTestCase {
         XCTAssertEqual(groups.map(\.chunk.sampleCount), [48 * 60, 48])
         XCTAssertEqual(groups.map(\.chunk.sampleStart), [0, Int64(48 * 60)])
         XCTAssertEqual(groups.map(\.payload.count), [48 * 60 * 2, 48 * 2])
+    }
+
+    func testLineageCoalescesContiguousEqualSourceAndSplitsOnRouteChange() throws {
+        let recordingID = UUID()
+        var coalescer = RecordingSourceLineageCoalescer()
+
+        try coalescer.append(record: recoveredRecord(
+            recordingID: recordingID, track: .microphone, sampleStart: 0
+        ))
+        try coalescer.append(record: recoveredRecord(
+            recordingID: recordingID, track: .microphone, sampleStart: 48,
+            presentationNanoseconds: 1_001_000_000
+        ))
+        try coalescer.append(record: recoveredRecord(
+            recordingID: recordingID, track: .microphone, sampleStart: 96,
+            presentationNanoseconds: 1_002_000_000, route: "Different Route"
+        ))
+        // A gap always splits lineage because coverage is no longer contiguous.
+        try coalescer.append(record: recoveredRecord(
+            recordingID: recordingID, track: .microphone, sampleStart: 240,
+            presentationNanoseconds: 1_005_000_000, route: "Different Route"
+        ))
+        let segments = coalescer.finish()
+
+        XCTAssertEqual(segments.map(\.sampleStart), [0, 96, 240])
+        XCTAssertEqual(segments.map(\.sampleCount), [96, 48, 48])
+        XCTAssertEqual(
+            segments.map(\.route),
+            ["Fixture Route", "Different Route", "Different Route"]
+        )
+        XCTAssertEqual(segments.map(\.presentationTimeStart), [
+            1_000_000_000, 1_002_000_000, 1_005_000_000,
+        ])
+        XCTAssertEqual(
+            segments.map(\.presentationTimeTimescale),
+            [1_000_000_000, 1_000_000_000, 1_000_000_000]
+        )
+    }
+
+    func testLineagePresentationEndUsesExactCanonicalDuration() throws {
+        var coalescer = RecordingSourceLineageCoalescer()
+        try coalescer.append(record: recoveredRecord(
+            recordingID: UUID(), track: .microphone, sampleStart: 0
+        ))
+        let segments = coalescer.finish()
+
+        XCTAssertEqual(
+            segments.map { $0.presentationTimeEnd - $0.presentationTimeStart },
+            [Int64(48) * 1_000_000_000 / 48_000]
+        )
+        XCTAssertEqual(segments.map(\.conversionVersion), ["tamforge-pcm16-v1"])
+    }
+
+    func testLineageFailsClosedOnUnknownConversionVersion() throws {
+        var coalescer = RecordingSourceLineageCoalescer()
+        XCTAssertThrowsError(try coalescer.append(record: recoveredRecord(
+            recordingID: UUID(), track: .microphone, sampleStart: 0, conversionVersion: 2
+        )))
+    }
+
+    func testCanonicalJSONEscapesNonASCIIExactlyLikeThePythonContract() throws {
+        let encoded = try RecordingCanonicalJSON.encode([
+            "route": "Kopfhörer",
+            "clef": "𝄞",
+        ])
+        let text = try XCTUnwrap(String(data: encoded, encoding: .utf8))
+
+        XCTAssertEqual(text, #"{"clef":"\ud834\udd1e","route":"Kopfh\u00f6rer"}"#)
+        XCTAssertTrue(encoded.allSatisfy { $0 < 0x80 })
+    }
+
+    func testTimelineHashMatchesBackendGoldenFixture() throws {
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("backend/tests/fixtures/recordings/recording-manifest-v1.json")
+        let manifest = try JSONDecoder().decode(
+            GoldenManifestFixture.self,
+            from: Data(contentsOf: fixtureURL)
+        )
+
+        XCTAssertEqual(manifest.tracks.count, 2)
+        for track in manifest.tracks {
+            XCTAssertEqual(
+                try RecordingTrackManifestPayload.timelineSHA256(of: track),
+                track.timelineSHA256
+            )
+        }
     }
 
     func testJournalReconstructsInflightAsPendingWithoutPersistingHeaders() async throws {
@@ -275,6 +374,117 @@ final class RecordingUploadTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.directory.path))
     }
 
+    func testSealCommandCarriesSourceLineageForUploadedAudioOnly() async throws {
+        let fixture = try await sealedSpool()
+        let server = FakeRecordingServer()
+        let pipeline = RecordingUploadPipeline(spoolFactory: fixture.factory, server: server)
+
+        _ = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
+
+        let sealCommands = await server.sealCommands
+        let command = try XCTUnwrap(sealCommands.first)
+        XCTAssertEqual(command.coverageStatus, "complete")
+        XCTAssertEqual(command.tracks.map(\.kind), ["microphone", "system_audio"])
+        for track in command.tracks {
+            XCTAssertEqual(track.sourceLineage.map(\.sampleStart), [0])
+            XCTAssertEqual(track.sourceLineage.map(\.sampleCount), [48])
+            XCTAssertEqual(track.sourceLineage.map(\.conversionVersion), ["tamforge-pcm16-v1"])
+            XCTAssertEqual(track.sourceLineage.map(\.presentationTimeTimescale), [1_000_000_000])
+        }
+    }
+
+    func testReaderBlocksUploadBeforeAnyServerCallOnSealedAlignedTruncation() async throws {
+        let fixture = try await sealedSpool()
+        let trackURL = fixture.directory.appendingPathComponent("microphone.tfr")
+        let bytes = try Data(contentsOf: trackURL)
+        let firstLength = Int(bytes.prefix(4).reduce(0) { ($0 << 8) | Int($1) })
+        // Keep zero complete records: drop the whole aligned record suffix.
+        XCTAssertEqual(bytes.count, 4 + firstLength)
+        try Data().write(to: trackURL, options: .atomic)
+        let server = FakeRecordingServer()
+        let pipeline = RecordingUploadPipeline(spoolFactory: fixture.factory, server: server)
+
+        await XCTAssertAsyncThrowsError {
+            _ = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
+        }
+
+        let createCalls = await server.createCalls
+        let uploadAttempts = await server.uploadAttempts
+        XCTAssertEqual(createCalls, 0)
+        XCTAssertEqual(uploadAttempts, 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.directory.path))
+    }
+
+    func testReaderBlocksUploadOnMissingSealedTrackFile() async throws {
+        let fixture = try await sealedSpool()
+        try FileManager.default.removeItem(
+            at: fixture.directory.appendingPathComponent("system-audio.tfr")
+        )
+        let server = FakeRecordingServer()
+        let pipeline = RecordingUploadPipeline(spoolFactory: fixture.factory, server: server)
+
+        await XCTAssertAsyncThrowsError {
+            _ = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
+        }
+
+        let createCalls = await server.createCalls
+        XCTAssertEqual(createCalls, 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.directory.path))
+    }
+
+    func testCorruptCiphertextWithMatchingCheckpointBecomesExplicitManifestGap() async throws {
+        let fixture = try await sealedSpool()
+        let trackURL = fixture.directory.appendingPathComponent("system-audio.tfr")
+        var bytes = try Data(contentsOf: trackURL)
+        bytes[bytes.index(before: bytes.endIndex)] ^= 0xff
+        try bytes.write(to: trackURL, options: .atomic)
+        let server = FakeRecordingServer()
+        let pipeline = RecordingUploadPipeline(spoolFactory: fixture.factory, server: server)
+
+        let gates = try await pipeline.upload(
+            recordingID: fixture.recordingID, progress: { _ in }
+        )
+
+        XCTAssertTrue(gates.audioCreatedOnServer)
+        let uploaded = await server.uploadedParts
+        XCTAssertEqual(uploaded.map(\.track), [.microphone])
+        let sealCommands = await server.sealCommands
+        let command = try XCTUnwrap(sealCommands.first)
+        XCTAssertEqual(command.coverageStatus, "stored_with_gaps")
+        let system = try XCTUnwrap(command.tracks.first { $0.kind == "system_audio" })
+        XCTAssertTrue(system.parts.isEmpty)
+        XCTAssertEqual(system.gaps.map(\.sampleStart), [0])
+        XCTAssertEqual(system.gaps.map(\.sampleCount), [48])
+        XCTAssertEqual(system.gaps.map(\.reason), ["corrupt_spool_record"])
+        XCTAssertTrue(system.sourceLineage.isEmpty)
+        let microphone = try XCTUnwrap(command.tracks.first { $0.kind == "microphone" })
+        XCTAssertEqual(microphone.sourceLineage.map(\.sampleCount), [48])
+    }
+
+    func testUploadFailsClosedOnUnknownConversionVersionBeforeAnyServerCall() async throws {
+        let root = try temporaryDirectory()
+        let keyStore = UploadTestKeyStore()
+        let factory = EncryptedRecordingSpoolFactory(
+            rootURL: root,
+            keyStore: keyStore,
+            reservationBytes: 0
+        )
+        let recordingID = UUID()
+        let spool = try await factory.create(recordingID: recordingID)
+        try await spool.append(try chunk(track: .microphone, conversionVersion: 2))
+        try await spool.append(try chunk(track: .systemAudio))
+        try await spool.seal(gaps: [], startedAt: Date(), endedAt: Date())
+        let server = FakeRecordingServer()
+        let pipeline = RecordingUploadPipeline(spoolFactory: factory, server: server)
+
+        await XCTAssertAsyncThrowsError {
+            _ = try await pipeline.upload(recordingID: recordingID, progress: { _ in })
+        }
+
+        let createCalls = await server.createCalls
+        XCTAssertEqual(createCalls, 0)
+    }
+
     func testRelaunchUsesServerStatusAndReleasesOnlyAfterTranscriptLineage() async throws {
         let fixture = try await sealedSpool()
         let server = FakeRecordingServer()
@@ -373,6 +583,50 @@ final class RecordingUploadTests: XCTestCase {
                 track: .microphone,
                 parts: [descriptor],
                 gaps: [],
+                sourceLineage: [],
+                pcmSHA256: String(repeating: "b", count: 64)
+            ))
+    }
+
+    func testManifestRejectsLineageThatDoesNotCoverUploadedAudioExactly() throws {
+        let recordingID = UUID()
+        let descriptor = RecordingPartDescriptorPayload(
+            sequence: 0,
+            sampleStart: 0,
+            sampleCount: 48_000,
+            byteLength: 96_000,
+            plaintextSHA256: String(repeating: "a", count: 64)
+        )
+
+        XCTAssertThrowsError(
+            try RecordingTrackManifestPayload.make(
+                recordingID: recordingID,
+                track: .microphone,
+                parts: [descriptor],
+                gaps: [],
+                sourceLineage: [],
+                pcmSHA256: String(repeating: "b", count: 64)
+            ))
+        XCTAssertThrowsError(
+            try RecordingTrackManifestPayload.make(
+                recordingID: recordingID,
+                track: .microphone,
+                parts: [descriptor],
+                gaps: [],
+                sourceLineage: [
+                    .init(
+                        sampleStart: 0,
+                        sampleCount: 24_000,
+                        sourceSampleRateHz: 48_000,
+                        sourceChannelCount: 1,
+                        deviceID: "fixture-microphone",
+                        route: "Fixture Route",
+                        presentationTimeStart: 0,
+                        presentationTimeEnd: 500_000_000,
+                        presentationTimeTimescale: 1_000_000_000,
+                        conversionVersion: "tamforge-pcm16-v1"
+                    )
+                ],
                 pcmSHA256: String(repeating: "b", count: 64)
             ))
     }
@@ -406,19 +660,32 @@ final class RecordingUploadTests: XCTestCase {
     private func recoveredRecord(
         recordingID: UUID,
         track: RecordingTrackKind,
-        sampleStart: Int64 = 0
+        sampleStart: Int64 = 0,
+        presentationNanoseconds: Int64 = 1_000_000_000,
+        route: String = "Fixture Route",
+        conversionVersion: Int = 1
     ) throws -> RecoveredSpoolRecord {
-        var chunk = try chunk(track: track)
+        var chunk = try chunk(
+            track: track,
+            presentationNanoseconds: presentationNanoseconds,
+            route: route,
+            conversionVersion: conversionVersion
+        )
         chunk.sampleStart = sampleStart
         return .init(recordingID: recordingID, sequence: 0, payload: chunk.payload, chunk: chunk)
     }
 
-    private func chunk(track: RecordingTrackKind) throws -> RecordingPCMChunk {
+    private func chunk(
+        track: RecordingTrackKind,
+        presentationNanoseconds: Int64 = 1_000_000_000,
+        route: String = "Fixture Route",
+        conversionVersion: Int = 1
+    ) throws -> RecordingPCMChunk {
         let channels = track == .microphone ? 1 : 2
         let samples = 48
         return .init(
             track: track,
-            presentationNanoseconds: 1_000_000_000,
+            presentationNanoseconds: presentationNanoseconds,
             sampleStart: 0,
             sampleCount: samples,
             format: try RecordingPCMFormat(track: track, channelCount: channels),
@@ -426,7 +693,9 @@ final class RecordingUploadTests: XCTestCase {
                 sampleRate: 48_000,
                 channelCount: channels,
                 deviceID: "fixture-\(track.rawValue)",
-                presentationNanoseconds: 1_000_000_000
+                initialRoute: route,
+                conversionVersion: conversionVersion,
+                presentationNanoseconds: presentationNanoseconds
             ),
             payload: Data(repeating: track == .microphone ? 1 : 2, count: samples * channels * 2)
         )
@@ -445,6 +714,10 @@ final class RecordingUploadTests: XCTestCase {
     private func sha256(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
+}
+
+private struct GoldenManifestFixture: Decodable {
+    let tracks: [RecordingTrackManifestPayload]
 }
 
 private struct UploadFixture {
@@ -474,6 +747,8 @@ private actor UploadTestKeyStore: RecordingKeyStoring {
 private actor FakeRecordingServer: RecordingServerServicing {
     private(set) var uploadedParts: [RecordingPreparedPart] = []
     private(set) var uploadAttempts = 0
+    private(set) var createCalls = 0
+    private(set) var sealCommands: [RecordingSealPayload] = []
     private let failureOnUploadAttempt: Int?
     private let uploadFailure: RecordingUploadError
     private let blockUploads: Bool
@@ -490,6 +765,7 @@ private actor FakeRecordingServer: RecordingServerServicing {
     }
 
     func create(_ command: RecordingCreatePayload, idempotencyKey: String) async throws {
+        createCalls += 1
         guard let id = UUID(uuidString: command.recordingID) else {
             throw RecordingUploadError.invalidResponse
         }
@@ -514,6 +790,7 @@ private actor FakeRecordingServer: RecordingServerServicing {
         guard let id = UUID(uuidString: command.recordingID) else {
             throw RecordingUploadError.invalidResponse
         }
+        sealCommands.append(command)
         let status = RecordingServerStatus(
             recordingID: id,
             audioCreatedOnServer: true,

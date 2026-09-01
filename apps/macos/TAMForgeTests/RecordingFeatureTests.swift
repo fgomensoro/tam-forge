@@ -335,7 +335,7 @@ final class RecordingFeatureTests: XCTestCase {
         )
         try await spool.append(first)
         try await spool.append(second)
-        try await spool.seal(gaps: [])
+        try await spool.seal(gaps: [], startedAt: Date(), endedAt: Date())
 
         let clean = try await EncryptedRecordingSpool.recover(
             recordingID: recordingID, rootURL: root, keyStore: keyStore
@@ -383,7 +383,7 @@ final class RecordingFeatureTests: XCTestCase {
             presentationNanoseconds: 1_000_000_000,
             sampleCount: 48_000
         ))
-        try await spool.seal(gaps: [])
+        try await spool.seal(gaps: [], startedAt: Date(), endedAt: Date())
 
         let trackURL = root.appendingPathComponent(recordingID.uuidString, isDirectory: true)
             .appendingPathComponent("microphone.tfr")
@@ -416,7 +416,7 @@ final class RecordingFeatureTests: XCTestCase {
                 sampleCount: 48_000
             ))
         }
-        try await spool.seal(gaps: [])
+        try await spool.seal(gaps: [], startedAt: Date(), endedAt: Date())
 
         let missingURL = root.appendingPathComponent(recordingID.uuidString, isDirectory: true)
             .appendingPathComponent("system-audio.tfr")
@@ -511,7 +511,7 @@ final class RecordingFeatureTests: XCTestCase {
             sampleCount: 48_000
         )
         try await spool.append(chunk)
-        try await spool.seal(gaps: [])
+        try await spool.seal(gaps: [], startedAt: Date(), endedAt: Date())
 
         let trackURL = root.appendingPathComponent(recordingID.uuidString, isDirectory: true)
             .appendingPathComponent("system-audio.tfr")
@@ -539,7 +539,7 @@ final class RecordingFeatureTests: XCTestCase {
             presentationNanoseconds: 1_000_000_000,
             sampleCount: 48_000
         ))
-        try await spool.seal(gaps: [])
+        try await spool.seal(gaps: [], startedAt: Date(), endedAt: Date())
 
         let trackURL = root.appendingPathComponent(recordingID.uuidString, isDirectory: true)
             .appendingPathComponent("microphone.tfr")
@@ -602,7 +602,7 @@ final class RecordingFeatureTests: XCTestCase {
         )
         try await spool.record(gap: firstGap)
         try await spool.record(gap: secondGap)
-        try await spool.seal(gaps: [])
+        try await spool.seal(gaps: [], startedAt: Date(), endedAt: Date())
 
         let journalURL = root.appendingPathComponent(recordingID.uuidString, isDirectory: true)
             .appendingPathComponent("gaps.tfj")
@@ -772,7 +772,7 @@ final class RecordingFeatureTests: XCTestCase {
             presentationNanoseconds: 1_000_000_000,
             sampleCount: 48_000
         ))
-        try await spool.seal(gaps: [])
+        try await spool.seal(gaps: [], startedAt: Date(), endedAt: Date())
 
         let recovered = try await EncryptedRecordingSpool.recover(
             recordingID: recordingID, rootURL: root, keyStore: keyStore
@@ -888,7 +888,7 @@ final class RecordingFeatureTests: XCTestCase {
         XCTAssertEqual(pendingWrites.bufferedIntervalCount, 1)
         await spool.releaseWrites()
         try await pendingWrites.flush()
-        try await spool.seal(gaps: [])
+        try await spool.seal(gaps: [], startedAt: Date(), endedAt: Date())
 
         let operations = await spool.operations()
         XCTAssertEqual(operations, [
@@ -1344,7 +1344,7 @@ private actor RecoveryTrackingSpoolFactory: RecordingSpoolCreating {
 private actor FakeRecordingSpool: RecordingSpoolWriting {
     func append(_ chunk: RecordingPCMChunk) async throws {}
     func record(gap: RecordingGap) async throws {}
-    func seal(gaps: [RecordingGap]) async throws {}
+    func seal(gaps: [RecordingGap], startedAt: Date, endedAt: Date) async throws {}
 }
 
 private actor OrderedFakeRecordingSpool: RecordingSpoolWriting {
@@ -1358,7 +1358,7 @@ private actor OrderedFakeRecordingSpool: RecordingSpoolWriting {
 
     func append(_ chunk: RecordingPCMChunk) async throws { recordedOperations.append(.chunk(chunk)) }
     func record(gap: RecordingGap) async throws { recordedOperations.append(.gap(gap)) }
-    func seal(gaps: [RecordingGap]) async throws { recordedOperations.append(.seal) }
+    func seal(gaps: [RecordingGap], startedAt: Date, endedAt: Date) async throws { recordedOperations.append(.seal) }
     func operations() -> [Operation] { recordedOperations }
 }
 
@@ -1407,7 +1407,7 @@ private actor FailingFakeRecordingSpool: RecordingSpoolWriting {
         recordAttempts += 1
         throw RecordingSpoolError.invalidRecord
     }
-    func seal(gaps: [RecordingGap]) async throws {}
+    func seal(gaps: [RecordingGap], startedAt: Date, endedAt: Date) async throws {}
 }
 
 private actor WriteFailingRecordingSpool: RecordingSpoolWriting {
@@ -1429,5 +1429,5 @@ private actor WriteFailingRecordingSpool: RecordingSpoolWriting {
         if failure == .gap { throw RecordingSpoolError.invalidRecord }
     }
 
-    func seal(gaps: [RecordingGap]) async throws { sealAttempts += 1 }
+    func seal(gaps: [RecordingGap], startedAt: Date, endedAt: Date) async throws { sealAttempts += 1 }
 }
