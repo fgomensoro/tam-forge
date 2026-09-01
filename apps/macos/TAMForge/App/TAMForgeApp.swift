@@ -9,7 +9,6 @@ struct TAMForgeApp: App {
         // One startup sweep; live uploads are protected by their OS-held file locks.
         _ = try? ActivityStagedFileStore().cleanupAbandonedCopies()
 #if DEBUG
-        LocalResourceSampler.startIfRequested()
         let arguments = ProcessInfo.processInfo.arguments
         let nativeFeatures: Set<NativeFeature> = arguments.contains("-ui-test-signed-in")
             && !arguments.contains("-ui-test-native-features") ? [] : [.today, .roadmaps, .evidence]
@@ -31,28 +30,12 @@ struct TAMForgeApp: App {
 }
 
 #if DEBUG
-private enum LocalResourceSampler {
-    static func startIfRequested(
-        environment: [String: String] = ProcessInfo.processInfo.environment
-    ) {
-        guard let path = environment["TAMFORGE_RESOURCE_RECEIPT_SAMPLES_PATH"] else { return }
-        let url = URL(fileURLWithPath: path)
-        try? FileManager.default.removeItem(at: url)
-        FileManager.default.createFile(atPath: path, contents: nil)
-
-        Task.detached(priority: .utility) {
-            guard let handle = try? FileHandle(forWritingTo: url) else { return }
-            defer { try? handle.close() }
-            while !Task.isCancelled {
-                if let rssKiB = residentMemoryKiB() {
-                    try? handle.write(contentsOf: Data("\(rssKiB)\n".utf8))
-                }
-                try? await Task.sleep(for: .seconds(1))
-            }
-        }
+private enum LocalResourceProbe {
+    static var isRequested: Bool {
+        ProcessInfo.processInfo.environment["TAMFORGE_RESOURCE_RECEIPT"] == "1"
     }
 
-    private static func residentMemoryKiB() -> Int? {
+    static func residentMemoryKiB() -> Int? {
         var info = mach_task_basic_info()
         var count = mach_msg_type_number_t(
             MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size
@@ -66,6 +49,23 @@ private enum LocalResourceSampler {
         }
         guard status == KERN_SUCCESS else { return nil }
         return Int(info.resident_size / 1024)
+    }
+}
+
+private struct LocalResourceProbeView: View {
+    @State private var rssKiB = LocalResourceProbe.residentMemoryKiB() ?? 0
+
+    var body: some View {
+        Text(String(rssKiB))
+            .font(.system(size: 1))
+            .frame(width: 1, height: 1)
+            .accessibilityIdentifier("resourceRSSKiB")
+            .task {
+                while !Task.isCancelled {
+                    rssKiB = LocalResourceProbe.residentMemoryKiB() ?? rssKiB
+                    try? await Task.sleep(for: .seconds(1))
+                }
+            }
     }
 }
 #endif
@@ -119,6 +119,11 @@ private struct NativeSessionView: View {
         }
         .onChange(of: model.restorationRouteID) { _, value in restoredRouteID = value }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: model.banner)
+#if DEBUG
+        .overlay(alignment: .bottomTrailing) {
+            if LocalResourceProbe.isRequested { LocalResourceProbeView() }
+        }
+#endif
     }
 }
 

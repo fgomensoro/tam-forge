@@ -579,7 +579,6 @@ final class TAMForgeUITests: XCTestCase {
             JSONSerialization.jsonObject(with: configData) as? [String: String]
         )
         let receiptPath = try XCTUnwrap(config["receipt_path"])
-        let samplesPath = receiptPath + ".rss"
         let gitSHA = try XCTUnwrap(config["git_sha"])
         let fixtureURL = try XCTUnwrap(
             Bundle(for: Self.self).url(
@@ -596,7 +595,7 @@ final class TAMForgeUITests: XCTestCase {
         ]
         app.launchEnvironment["TAMFORGE_UI_FIXTURE_BASE64"] =
             fixtureData.base64EncodedString()
-        app.launchEnvironment["TAMFORGE_RESOURCE_RECEIPT_SAMPLES_PATH"] = samplesPath
+        app.launchEnvironment["TAMFORGE_RESOURCE_RECEIPT"] = "1"
 
         var launchSeconds: [Double] = []
         for _ in 0..<5 {
@@ -623,18 +622,19 @@ final class TAMForgeUITests: XCTestCase {
 
         app.buttons["evidenceNavigation"].click()
         XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 10))
-        _ = try XCTUnwrap(waitForRSSSamples(at: samplesPath, minimumCount: 1, timeout: 5))
+        let resourceProbe = app.staticTexts["resourceRSSKiB"]
+        XCTAssertTrue(resourceProbe.waitForExistence(timeout: 5))
+        _ = try residentMemoryKiB(resourceProbe, in: app)
 
         Thread.sleep(forTimeInterval: 60)
-        let idleStart = rssSamples(at: samplesPath).count
-        let afterIdle = try XCTUnwrap(
-            waitForRSSSamples(at: samplesPath, minimumCount: idleStart + 300, timeout: 310)
-        )
-        let idleRSSKiB = Array(afterIdle[idleStart..<(idleStart + 300)])
+        var idleRSSKiB: [Int] = []
+        for _ in 0..<300 {
+            idleRSSKiB.append(try residentMemoryKiB(resourceProbe, in: app))
+            Thread.sleep(forTimeInterval: 1)
+        }
 
         var navigationRSSKiB: [Int] = []
         for _ in 0..<20 {
-            let cycleStart = rssSamples(at: samplesPath).count
             app.buttons["todayNavigation"].click()
             XCTAssertTrue(
                 textContaining("240 planned minutes", in: app)
@@ -644,16 +644,10 @@ final class TAMForgeUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts["evidenceTitle"].waitForExistence(timeout: 5))
             app.buttons["evidenceRefresh"].click()
             XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 5))
-            let afterCycle = try XCTUnwrap(
-                waitForRSSSamples(at: samplesPath, minimumCount: cycleStart + 1, timeout: 5)
-            )
-            navigationRSSKiB.append(try XCTUnwrap(afterCycle.last))
+            navigationRSSKiB.append(try residentMemoryKiB(resourceProbe, in: app))
         }
-        let postCycleStart = rssSamples(at: samplesPath).count
-        let afterPostCycle = try XCTUnwrap(
-            waitForRSSSamples(at: samplesPath, minimumCount: postCycleStart + 60, timeout: 70)
-        )
-        let finalRSSKiB = try XCTUnwrap(afterPostCycle.last)
+        Thread.sleep(forTimeInterval: 60)
+        let finalRSSKiB = try residentMemoryKiB(resourceProbe, in: app)
 
         let idleP50MiB = mib(percentile(0.50, values: idleRSSKiB))
         let idleP95MiB = mib(percentile(0.95, values: idleRSSKiB))
@@ -712,22 +706,13 @@ final class TAMForgeUITests: XCTestCase {
         return app.state == .notRunning
     }
 
-    private func rssSamples(at path: String) -> [Int] {
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
-              let text = String(data: data, encoding: .utf8) else { return [] }
-        return text.split(separator: "\n").compactMap { Int($0) }
-    }
-
-    private func waitForRSSSamples(
-        at path: String, minimumCount: Int, timeout: TimeInterval
-    ) -> [Int]? {
-        let deadline = Date().addingTimeInterval(timeout)
-        var samples = rssSamples(at: path)
-        while samples.count < minimumCount && Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.1)
-            samples = rssSamples(at: path)
-        }
-        return samples.count >= minimumCount ? samples : nil
+    @MainActor
+    private func residentMemoryKiB(
+        _ probe: XCUIElement, in app: XCUIApplication
+    ) throws -> Int {
+        if app.state != .runningForeground { app.activate() }
+        let rawValue = probe.value as? String ?? probe.label
+        return try XCTUnwrap(Int(rawValue), "resource RSS probe was not numeric")
     }
 
     private func hardwareModel() -> String {
@@ -735,9 +720,8 @@ final class TAMForgeUITests: XCTestCase {
         guard sysctlbyname("hw.model", nil, &size, nil, 0) == 0 else { return "unknown" }
         var value = [CChar](repeating: 0, count: size)
         guard sysctlbyname("hw.model", &value, &size, nil, 0) == 0 else { return "unknown" }
-        return value.withUnsafeBufferPointer {
-            String(decodingCString: $0.baseAddress!, as: UTF8.self)
-        }
+        let bytes = value.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+        return String(decoding: bytes, as: UTF8.self)
     }
 
     private func percentile<T: BinaryFloatingPoint>(_ fraction: T, values: [T]) -> T {
