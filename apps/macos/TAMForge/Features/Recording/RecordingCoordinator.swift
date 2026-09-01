@@ -43,10 +43,7 @@ final class PendingGapWrites: @unchecked Sendable {
 
     func flush() async throws {
         while true {
-            lock.lock()
-            let activeWorker = worker
-            let failure = storageFailure
-            lock.unlock()
+            let (activeWorker, failure) = lock.withLock { (worker, storageFailure) }
             if let activeWorker {
                 try await activeWorker.value
                 continue
@@ -67,29 +64,33 @@ final class PendingGapWrites: @unchecked Sendable {
         await Task.yield()
         do {
             while true {
-                lock.lock()
-                guard !pending.isEmpty else {
-                    // Clear under this lock: a later synchronous registration starts its worker.
-                    worker = nil
-                    lock.unlock()
-                    return
-                }
-                let batch = pending.values.sorted {
-                    if $0.track.rawValue != $1.track.rawValue {
-                        return $0.track.rawValue < $1.track.rawValue
+                let batch: [RecordingGap]? = lock.withLock {
+                    guard !pending.isEmpty else {
+                        // Clear under this lock: a later synchronous registration
+                        // starts its worker.
+                        worker = nil
+                        return nil
                     }
-                    if $0.sampleStart != $1.sampleStart { return $0.sampleStart < $1.sampleStart }
-                    return $0.reason.rawValue < $1.reason.rawValue
+                    let sorted = pending.values.sorted {
+                        if $0.track.rawValue != $1.track.rawValue {
+                            return $0.track.rawValue < $1.track.rawValue
+                        }
+                        if $0.sampleStart != $1.sampleStart {
+                            return $0.sampleStart < $1.sampleStart
+                        }
+                        return $0.reason.rawValue < $1.reason.rawValue
+                    }
+                    pending.removeAll(keepingCapacity: true)
+                    return sorted
                 }
-                pending.removeAll(keepingCapacity: true)
-                lock.unlock()
+                guard let batch else { return }
                 for gap in batch { try await spool.record(gap: gap) }
             }
         } catch {
-            lock.lock()
-            if storageFailure == nil { storageFailure = error }
-            worker = nil
-            lock.unlock()
+            lock.withLock {
+                if storageFailure == nil { storageFailure = error }
+                worker = nil
+            }
             throw error
         }
     }
