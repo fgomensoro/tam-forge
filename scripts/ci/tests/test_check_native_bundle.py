@@ -93,6 +93,78 @@ def test_apple_swift_compatibility_library_is_allowed(tmp_path: Path) -> None:
     assert bundle_violations(app) == ()
 
 
+def test_checker_rejects_compatibility_library_trusted_only_by_filename(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    app = _app(tmp_path)
+    compatibility = app / "Contents" / "Frameworks" / "libswiftCompatibilitySpan.dylib"
+    compatibility.parent.mkdir(parents=True)
+    compatibility.write_bytes(b"\xcf\xfa\xed\xfe attacker payload")
+
+    def fake_run(command: list[str]) -> str:
+        if command[:3] == ["codesign", "-dv", "--verbose=4"]:
+            if command[-1] == str(app):
+                return "Signature=adhoc"
+            return "Signature=adhoc\nIdentifier=attacker.library"
+        if command[:2] == ["xcrun", "--find"]:
+            return str(tmp_path / "Xcode.xctoolchain" / "usr" / "bin" / "swiftc")
+        return ""
+
+    monkeypatch.setattr(check_native_bundle, "_run", fake_run)  # type: ignore[attr-defined]
+
+    try:
+        check_bundle(app, require_ad_hoc=True)
+    except NativeBundleError as exc:
+        assert "identifier is not trusted" in str(exc)
+        assert "does not match the signed Xcode toolchain" in str(exc)
+    else:
+        raise AssertionError("filename-only compatibility payload was accepted")
+
+
+def test_checker_accepts_compatibility_library_matching_signed_xcode_copy(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    app = _app(tmp_path)
+    compatibility = app / "Contents" / "Frameworks" / "libswiftCompatibilitySpan.dylib"
+    compatibility.parent.mkdir(parents=True)
+    compatibility.write_bytes(b"\xcf\xfa\xed\xfe Apple Swift compatibility")
+    toolchain = tmp_path / "Xcode.xctoolchain"
+    swiftc = toolchain / "usr" / "bin" / "swiftc"
+    source = (
+        toolchain
+        / "usr"
+        / "lib"
+        / "swift-6.2"
+        / "macosx"
+        / "libswiftCompatibilitySpan.dylib"
+    )
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"signed source")
+    uuid_details = "UUID: 35FDD7FE-B26C-3F04-AA72-2DB973F905B1 (arm64) payload"
+
+    def fake_run(command: list[str]) -> str:
+        if command[:3] == ["codesign", "-dv", "--verbose=4"]:
+            if command[-1] == str(app):
+                return "Signature=adhoc"
+            if command[-1] == str(source):
+                return (
+                    "Identifier=com.apple.dt.runtime.swiftCompatibilitySpan\n"
+                    "TeamIdentifier=59GAB85EFG"
+                )
+            return "Identifier=com.apple.dt.runtime.swiftCompatibilitySpan"
+        if command[:2] == ["otool", "-D"]:
+            return "/usr/lib/swift/libswiftCompatibilitySpan.dylib"
+        if command[:2] == ["xcrun", "--find"]:
+            return str(swiftc)
+        if command[:2] == ["dwarfdump", "--uuid"]:
+            return uuid_details
+        return "/usr/lib/libSystem.B.dylib"
+
+    monkeypatch.setattr(check_native_bundle, "_run", fake_run)  # type: ignore[attr-defined]
+
+    check_bundle(app, require_ad_hoc=True)
+
+
 def test_checker_inspects_only_allowed_binary_dependencies(
     tmp_path: Path, monkeypatch: object
 ) -> None:

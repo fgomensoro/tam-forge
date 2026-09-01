@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import plistlib
+import re
 import stat
 import subprocess
 from pathlib import Path
@@ -38,6 +39,10 @@ ALLOWED_BINARY_PATHS = (
     Path("Contents/MacOS/TAMForge"),
     Path("Contents/Frameworks/libswiftCompatibilitySpan.dylib"),
 )
+SWIFT_COMPATIBILITY_PATH = ALLOWED_BINARY_PATHS[1]
+SWIFT_COMPATIBILITY_IDENTIFIER = "com.apple.dt.runtime.swiftCompatibilitySpan"
+SWIFT_COMPATIBILITY_INSTALL_NAME = "/usr/lib/swift/libswiftCompatibilitySpan.dylib"
+APPLE_DEVELOPER_TEAM_IDENTIFIER = "59GAB85EFG"
 MACH_O_MAGICS = frozenset(
     {
         b"\xce\xfa\xed\xfe",  # MH_MAGIC, little-endian
@@ -142,9 +147,9 @@ def bundle_violations(app: Path, *, linked_libraries: str = "") -> tuple[str, ..
                 )
 
     lowered_links = linked_libraries.casefold()
-    for marker in FORBIDDEN_LINK_MARKERS:
-        if marker in lowered_links:
-            violations.append(f"forbidden linked runtime: {marker}")
+    for link_marker in FORBIDDEN_LINK_MARKERS:
+        if link_marker in lowered_links:
+            violations.append(f"forbidden linked runtime: {link_marker}")
     return tuple(violations)
 
 
@@ -158,6 +163,59 @@ def _run(command: list[str]) -> str:
     return completed.stdout + completed.stderr
 
 
+def _mach_o_uuids(details: str) -> frozenset[tuple[str, str]]:
+    return frozenset(
+        (match.group(2), match.group(1).upper())
+        for match in re.finditer(
+            r"UUID: ([0-9A-Fa-f-]+) \(([^)]+)\)",
+            details,
+        )
+    )
+
+
+def _swift_compatibility_violations(app: Path) -> tuple[str, ...]:
+    bundled = app / SWIFT_COMPATIBILITY_PATH
+    if not bundled.is_file():
+        return ()
+
+    violations: list[str] = []
+    bundled_signature = _run(["codesign", "-dv", "--verbose=4", str(bundled)])
+    if f"Identifier={SWIFT_COMPATIBILITY_IDENTIFIER}" not in bundled_signature:
+        violations.append("Swift compatibility library identifier is not trusted")
+
+    install_names = {
+        line.strip() for line in _run(["otool", "-D", str(bundled)]).splitlines()
+    }
+    if SWIFT_COMPATIBILITY_INSTALL_NAME not in install_names:
+        violations.append("Swift compatibility library install name is not trusted")
+
+    swiftc = Path(_run(["xcrun", "--find", "swiftc"]).strip())
+    toolchain = swiftc.parents[2] if len(swiftc.parents) >= 3 else Path()
+    candidates = tuple(
+        sorted(
+            toolchain.glob(
+                "usr/lib/swift-*/macosx/libswiftCompatibilitySpan.dylib"
+            )
+        )
+    )
+    trusted_uuids: set[frozenset[tuple[str, str]]] = set()
+    for candidate in candidates:
+        signature = _run(["codesign", "-dv", "--verbose=4", str(candidate)])
+        if (
+            f"Identifier={SWIFT_COMPATIBILITY_IDENTIFIER}" in signature
+            and f"TeamIdentifier={APPLE_DEVELOPER_TEAM_IDENTIFIER}" in signature
+        ):
+            trusted_uuids.add(
+                _mach_o_uuids(_run(["dwarfdump", "--uuid", str(candidate)]))
+            )
+    bundled_uuids = _mach_o_uuids(_run(["dwarfdump", "--uuid", str(bundled)]))
+    if not bundled_uuids or bundled_uuids not in trusted_uuids:
+        violations.append(
+            "Swift compatibility library does not match the signed Xcode toolchain"
+        )
+    return tuple(violations)
+
+
 def check_bundle(app: Path, *, require_ad_hoc: bool) -> None:
     _run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)])
     signature_details = _run(["codesign", "-dv", "--verbose=4", str(app)])
@@ -166,6 +224,10 @@ def check_bundle(app: Path, *, require_ad_hoc: bool) -> None:
     violations = bundle_violations(app)
     if violations:
         raise NativeBundleError("; ".join(violations))
+
+    compatibility_violations = _swift_compatibility_violations(app)
+    if compatibility_violations:
+        raise NativeBundleError("; ".join(compatibility_violations))
 
     links = "\n".join(
         _run(["otool", "-L", str(binary)])

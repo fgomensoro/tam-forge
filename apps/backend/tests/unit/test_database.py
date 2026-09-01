@@ -251,6 +251,7 @@ def test_test_database_url_validation_accepts_only_the_named_test_database() -> 
         "postgresql+asyncpg://tamforge:secret@[::1]:54329/tamforge_test",
         "postgresql+asyncpg://tamforge:secret@host1,host2:54329/tamforge_test",
         "postgresql+asyncpg://tamforge:secret@127.0.0.1/tamforge_test",
+        "postgresql+asyncpg://tamforge:secret@127.0.0.1:5432/tamforge_test",
         "postgresql+asyncpg://tamforge:secret@127.0.0.1:0/tamforge_test",
         "postgresql+asyncpg://tamforge:secret@127.0.0.1:65536/tamforge_test",
         (
