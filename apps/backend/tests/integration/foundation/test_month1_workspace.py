@@ -617,7 +617,8 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                             "/api/v1/portfolio-judgment", headers=native_headers
                         )
                         assert portfolio.status_code == 200
-                        assert len(portfolio.json()["items"]) == 1
+                        assert portfolio.json()["items"] == []
+                        assert portfolio.json()["next_cursor"] is None
 
                         notifications = await final_native_client.get(
                             "/api/v1/notifications", headers=native_headers
