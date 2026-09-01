@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 import json
 import os
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import cast
@@ -25,19 +25,6 @@ ROOT = Path(__file__).parents[5]
 FIXTURE = ROOT / "apps" / "backend" / "tests" / "fixtures" / "roadmaps" / "month-v1.zip"
 PARITY_FIXTURE = (
     ROOT / "tests" / "fixtures" / "native-parity" / "foundation-journey-v1.json"
-)
-ACTIVITY_RESPONSE_FIELDS = (
-    "id",
-    "study_day_id",
-    "state",
-    "optimistic_version",
-    "classification",
-    "stronger_evidence_id",
-    "activity_focused_seconds",
-    "day_focused_minutes",
-    "hard_stop_recommended",
-    "open_timer",
-    "source_hidden",
 )
 TODAY_VOLATILE_FIELDS = frozenset(
     {"source_updated_at", "read_model_version", "etag"}
@@ -102,7 +89,20 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
     )
     from tamforge_backend.evidence.seed import seed_config
     from tamforge_backend.evidence.service import EvidenceService
-    from tamforge_backend.learning.models import ActivityInstance, Attempt, SelfReview
+    from tamforge_backend.learning.models import (
+        ActivityInstance,
+        ActivityTimerSession,
+        Attempt,
+        SelfReview,
+        StudyDay,
+    )
+    from tamforge_backend.learning.schemas import (
+        ActivityDetailResponse,
+        ActivityResponse,
+        CommittedOutputSummary,
+        SelfReviewSummary,
+        TimerResponse,
+    )
     from tamforge_backend.main import create_app
     from tamforge_backend.notifications.models import Notification, OutboxEvent
     from tamforge_backend.notifications.repository import SqlAlchemyNotificationRepository
@@ -242,10 +242,9 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                 )
 
             async def assert_activity_response(
-                client: AsyncClient,
                 response: httpx.Response,
                 *,
-                activity_path: str,
+                expected_activity_id: int,
                 expected_state: str,
                 expected_version: int,
                 expected_source_hidden: bool,
@@ -253,19 +252,50 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
             ) -> dict[str, object]:
                 assert response.status_code == 200, response.text
                 payload = cast(dict[str, object], response.json())
-                detail_response = await client.get(
-                    activity_path,
-                    headers=native_headers,
-                )
-                assert detail_response.status_code == 200, detail_response.text
-                detail_payload = detail_response.json()
-                assert payload == {
-                    key: detail_payload[key] for key in ACTIVITY_RESPONSE_FIELDS
-                }
-                assert payload["state"] == expected_state
-                assert payload["optimistic_version"] == expected_version
-                assert payload["source_hidden"] is expected_source_hidden
-                assert (payload["open_timer"] is not None) is timer_open
+                async with factory() as session:
+                    activity = await session.get(ActivityInstance, expected_activity_id)
+                    assert activity is not None
+                    study_day = await session.get(StudyDay, activity.study_day_id)
+                    assert study_day is not None
+                    timers = tuple(
+                        (
+                            await session.scalars(
+                                select(ActivityTimerSession)
+                                .where(
+                                    ActivityTimerSession.activity_instance_id
+                                    == expected_activity_id
+                                )
+                                .order_by(ActivityTimerSession.id)
+                            )
+                        ).all()
+                    )
+                open_timers = tuple(item for item in timers if item.ended_at is None)
+                assert len(open_timers) == int(timer_open)
+                open_timer = open_timers[0] if open_timers else None
+                expected_payload = ActivityResponse(
+                    id=expected_activity_id,
+                    study_day_id=study_day.id,
+                    state=expected_state,
+                    optimistic_version=expected_version,
+                    classification=activity.classification,
+                    stronger_evidence_id=activity.stronger_evidence_activity_id,
+                    activity_focused_seconds=sum(item.counted_seconds for item in timers),
+                    day_focused_minutes=study_day.focused_minutes,
+                    hard_stop_recommended=study_day.focused_minutes >= 255,
+                    open_timer=(
+                        None
+                        if open_timer is None
+                        else TimerResponse(
+                            id=open_timer.id,
+                            started_at=open_timer.started_at,
+                            last_heartbeat_at=open_timer.last_heartbeat_at,
+                            counted_seconds=open_timer.counted_seconds,
+                            last_client_sequence=open_timer.last_client_sequence,
+                        )
+                    ),
+                    source_hidden=expected_source_hidden,
+                ).model_dump(mode="json")
+                assert payload == expected_payload
                 return payload
 
             try:
@@ -601,9 +631,8 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                             "foundation-start",
                         )
                         started_payload = await assert_activity_response(
-                            first_native_client,
                             started,
-                            activity_path=path,
+                            expected_activity_id=activity_id,
                             expected_state="active",
                             expected_version=2,
                             expected_source_hidden=False,
@@ -617,9 +646,8 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                             "foundation-pause",
                         )
                         paused_payload = await assert_activity_response(
-                            first_native_client,
                             paused,
-                            activity_path=path,
+                            expected_activity_id=activity_id,
                             expected_state="paused",
                             expected_version=3,
                             expected_source_hidden=False,
@@ -638,9 +666,8 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                             "foundation-resume",
                         )
                         resumed_payload = await assert_activity_response(
-                            resumed_native_client,
                             resumed,
-                            activity_path=path,
+                            expected_activity_id=activity_id,
                             expected_state="active",
                             expected_version=4,
                             expected_source_hidden=False,
@@ -654,9 +681,8 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                             "foundation-hide",
                         )
                         await assert_activity_response(
-                            resumed_native_client,
                             hidden,
-                            activity_path=path,
+                            expected_activity_id=activity_id,
                             expected_state="active",
                             expected_version=5,
                             expected_source_hidden=True,
@@ -777,6 +803,81 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                             "attempt_id": committed_payload["attempt_id"],
                             **parity["journey"]["self_review"],
                         }
+                        async with factory() as session:
+                            persisted_activity = await session.get(
+                                ActivityInstance,
+                                activity_id,
+                            )
+                            persisted_day = await session.get(StudyDay, day_id)
+                            persisted_attempt = await session.get(
+                                Attempt,
+                                committed_payload["attempt_id"],
+                            )
+                            persisted_review = await session.get(
+                                SelfReview,
+                                reviewed_payload["self_review_id"],
+                            )
+                            persisted_timers = tuple(
+                                (
+                                    await session.scalars(
+                                        select(ActivityTimerSession).where(
+                                            ActivityTimerSession.activity_instance_id
+                                            == activity_id
+                                        )
+                                    )
+                                ).all()
+                            )
+                        assert persisted_activity is not None
+                        assert persisted_day is not None
+                        assert persisted_attempt is not None
+                        assert persisted_review is not None
+                        expected_final_detail = ActivityDetailResponse(
+                            id=activity_id,
+                            study_day_id=day_id,
+                            state="self_review_complete",
+                            optimistic_version=7,
+                            classification=persisted_activity.classification,
+                            stronger_evidence_id=(
+                                persisted_activity.stronger_evidence_activity_id
+                            ),
+                            activity_focused_seconds=sum(
+                                item.counted_seconds for item in persisted_timers
+                            ),
+                            day_focused_minutes=persisted_day.focused_minutes,
+                            hard_stop_recommended=persisted_day.focused_minutes >= 255,
+                            open_timer=None,
+                            source_hidden=True,
+                            task_contract=detail_payload["task_contract"],
+                            committed_output=CommittedOutputSummary(
+                                attempt_id=persisted_attempt.id,
+                                attempt_kind=persisted_attempt.attempt_kind,
+                                commitment_sha256=(
+                                    persisted_attempt.commitment_hash.hex()
+                                ),
+                                contract_payload=json.loads(
+                                    persisted_attempt.original_text or ""
+                                ),
+                                artifact_ids=(),
+                                committed_at=persisted_attempt.committed_at,
+                            ),
+                            self_review=SelfReviewSummary(
+                                id=persisted_review.id,
+                                attempt_id=persisted_review.attempt_id,
+                                self_score=persisted_review.self_score,
+                                main_answer=persisted_review.main_answer,
+                                did_well=persisted_review.did_well,
+                                structure_weakness=(
+                                    persisted_review.structure_weakness
+                                ),
+                                vague_points=persisted_review.vague_points,
+                                hesitation_points=persisted_review.hesitation_points,
+                                change_next=persisted_review.change_next,
+                                submitted_at=persisted_review.submitted_at,
+                            ),
+                        )
+                        assert final_detail_payload == (
+                            expected_final_detail.model_dump(mode="json")
+                        )
 
                     async with factory() as session:
                         async with transaction_scope(session):
@@ -809,7 +910,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                         evaluator="ai_rubric_reviewer",
                         difficulty="standard",
                         ai_role="reviewer",
-                        evaluated_at=datetime.now(UTC),
+                        evaluated_at=datetime.fromisoformat(parity["fixed_now"]),
                         artifact_ids=(),
                         observation_ids=(),
                         transcript_available=False,
@@ -862,13 +963,29 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                         if item.latest_snapshot is not None
                     )
                     assert len(measured) == len(applicable)
-                    assert all(
-                        {
-                            item.event_id
-                            for item in skill.latest_snapshot.manifest
-                        }.issubset(set(evidence.evidence_event_ids))
+                    assert {item.slug for item in measured} == {
+                        item.skill_slug for item in applicable
+                    }
+                    manifest_ids_by_skill = {
+                        skill.slug: tuple(
+                            item.event_id for item in skill.latest_snapshot.manifest
+                        )
                         for skill in measured
+                    }
+                    assert all(
+                        len(event_ids) == 1
+                        for event_ids in manifest_ids_by_skill.values()
                     )
+                    manifested_event_ids = tuple(
+                        event_id
+                        for event_ids in manifest_ids_by_skill.values()
+                        for event_id in event_ids
+                    )
+                    assert len(set(manifested_event_ids)) == len(manifested_event_ids)
+                    assert set(manifested_event_ids) == set(evidence.evidence_event_ids)
+                    assert {
+                        skill.latest_snapshot.id for skill in measured
+                    } == set(evidence.snapshot_ids)
 
                     expected_notification = parity["responses"]["notifications"][
                         "items"
@@ -911,7 +1028,40 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                             "/api/v1/skills", headers=native_headers
                         )
                         assert skills.status_code == 200
-                        assert skills.json() == first_projection.model_dump(mode="json")
+                        skills_payload = skills.json()
+                        assert skills_payload == first_projection.model_dump(mode="json")
+                        actual_skills_by_slug = {
+                            item["slug"]: item for item in skills_payload["items"]
+                        }
+                        for fixture_skill in parity["responses"]["skills"]["items"]:
+                            actual_skill = actual_skills_by_slug[fixture_skill["slug"]]
+                            assert {
+                                key: value
+                                for key, value in actual_skill.items()
+                                if key != "latest_snapshot"
+                            } == {
+                                key: value
+                                for key, value in fixture_skill.items()
+                                if key != "latest_snapshot"
+                            }
+                        for skill_slug, manifest_ids in manifest_ids_by_skill.items():
+                            evidence_page = await final_native_client.get(
+                                f"/api/v1/skills/{skill_slug}/evidence",
+                                headers=native_headers,
+                            )
+                            assert evidence_page.status_code == 200, evidence_page.text
+                            evidence_page_payload = evidence_page.json()
+                            assert evidence_page_payload["next_cursor"] is None
+                            assert tuple(
+                                item["id"] for item in evidence_page_payload["items"]
+                            ) == manifest_ids
+                            assert all(
+                                item["skill_slug"] == skill_slug
+                                and item["activity_id"] == activity_id
+                                and item["attempt_id"]
+                                == committed_payload["attempt_id"]
+                                for item in evidence_page_payload["items"]
+                            )
                         expected_unassessed = next(
                             item
                             for item in parity["responses"]["skills"]["items"]

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import plistlib
 import re
+import shutil
 import stat
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -150,7 +153,30 @@ def bundle_violations(app: Path, *, linked_libraries: str = "") -> tuple[str, ..
     for link_marker in FORBIDDEN_LINK_MARKERS:
         if link_marker in lowered_links:
             violations.append(f"forbidden linked runtime: {link_marker}")
+    for library in _linked_library_paths(linked_libraries):
+        if not _is_standalone_library_reference(library):
+            violations.append(f"non-standalone linked library: {library}")
     return tuple(violations)
+
+
+def _linked_library_paths(details: str) -> tuple[str, ...]:
+    libraries: list[str] = []
+    for raw_line in details.splitlines():
+        line = raw_line.strip()
+        if not line or line.endswith(":"):
+            continue
+        libraries.append(line.split(" (compatibility version", 1)[0])
+    return tuple(libraries)
+
+
+def _is_standalone_library_reference(library: str) -> bool:
+    if "/../" in library or library.endswith("/.."):
+        return False
+    return (
+        library.startswith("/System/Library/Frameworks/")
+        or library.startswith("/usr/lib/")
+        or library == "@rpath/libswiftCompatibilitySpan.dylib"
+    )
 
 
 def _run(command: list[str]) -> str:
@@ -171,6 +197,15 @@ def _mach_o_uuids(details: str) -> frozenset[tuple[str, str]]:
             details,
         )
     )
+
+
+def _signature_stripped_sha256(path: Path) -> str:
+    with tempfile.TemporaryDirectory(prefix="tamforge-native-bundle-") as directory:
+        unsigned = Path(directory) / path.name
+        shutil.copy2(path, unsigned)
+        _run(["codesign", "--remove-signature", str(unsigned)])
+        with unsigned.open("rb") as payload:
+            return hashlib.file_digest(payload, "sha256").hexdigest()
 
 
 def _swift_compatibility_violations(app: Path) -> tuple[str, ...]:
@@ -199,6 +234,7 @@ def _swift_compatibility_violations(app: Path) -> tuple[str, ...]:
         )
     )
     trusted_uuids: set[frozenset[tuple[str, str]]] = set()
+    trusted_digests: set[str] = set()
     for candidate in candidates:
         signature = _run(["codesign", "-dv", "--verbose=4", str(candidate)])
         if (
@@ -208,10 +244,15 @@ def _swift_compatibility_violations(app: Path) -> tuple[str, ...]:
             trusted_uuids.add(
                 _mach_o_uuids(_run(["dwarfdump", "--uuid", str(candidate)]))
             )
+            trusted_digests.add(_signature_stripped_sha256(candidate))
     bundled_uuids = _mach_o_uuids(_run(["dwarfdump", "--uuid", str(bundled)]))
     if not bundled_uuids or bundled_uuids not in trusted_uuids:
         violations.append(
             "Swift compatibility library does not match the signed Xcode toolchain"
+        )
+    if _signature_stripped_sha256(bundled) not in trusted_digests:
+        violations.append(
+            "Swift compatibility library content differs from the signed Xcode toolchain"
         )
     return tuple(violations)
 

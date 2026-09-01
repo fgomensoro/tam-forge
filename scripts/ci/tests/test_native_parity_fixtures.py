@@ -69,3 +69,24 @@ def test_shared_fixture_rejects_public_schema_drift() -> None:
 
     with pytest.raises(ValueError, match="Extra inputs are not permitted"):
         validate_fixture(fixture)
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("estimated_level",), "2.411"),
+        (("confidence_basis", "basis_code"), "high_weight"),
+        (("manifest", 0, "event_id"), 999),
+    ],
+)
+def test_shared_fixture_rejects_assessed_skill_business_or_lineage_drift(
+    path: tuple[object, ...], value: object
+) -> None:
+    fixture = deepcopy(load_fixture())
+    target = fixture["responses"]["skills"]["items"][0]["latest_snapshot"]
+    for component in path[:-1]:
+        target = target[component]
+    target[path[-1]] = value
+
+    with pytest.raises(FixtureError, match="assessed skill lineage"):
+        validate_fixture(fixture)

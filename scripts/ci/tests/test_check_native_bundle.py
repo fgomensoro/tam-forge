@@ -54,6 +54,20 @@ def test_embedded_web_and_python_runtimes_are_rejected(tmp_path: Path) -> None:
         in violations
     )
     assert "forbidden linked runtime: python" in violations
+    assert "non-standalone linked library: @rpath/Python.framework/Python" in violations
+
+
+def test_non_system_linked_library_is_rejected(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+
+    violations = bundle_violations(
+        app,
+        linked_libraries="/usr/local/lib/libnotstandalone.dylib (compatibility version 1.0.0)",
+    )
+
+    assert violations == (
+        "non-standalone linked library: /usr/local/lib/libnotstandalone.dylib",
+    )
 
 
 def test_unexpected_second_product_executable_is_rejected(tmp_path: Path) -> None:
@@ -139,7 +153,7 @@ def test_checker_accepts_compatibility_library_matching_signed_xcode_copy(
         / "libswiftCompatibilitySpan.dylib"
     )
     source.parent.mkdir(parents=True)
-    source.write_bytes(b"signed source")
+    source.write_bytes(b"\xcf\xfa\xed\xfe Apple Swift compatibility")
     uuid_details = "UUID: 35FDD7FE-B26C-3F04-AA72-2DB973F905B1 (arm64) payload"
 
     def fake_run(command: list[str]) -> str:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,11 @@ def validate_fixture(value: dict[str, Any], *, root: Path = ROOT) -> None:
     from tamforge_backend.evidence.schemas import (
         PortfolioHistoryResponse,
         SkillListResponse,
+    )
+    from tamforge_backend.evidence.scoring import (
+        SCORE_QUANTUM,
+        WEIGHT_QUANTUM,
+        calculate_effective_weight,
     )
     from tamforge_backend.learning.schemas import ActivityDetailResponse
     from tamforge_backend.notifications.schemas import NotificationPage
@@ -187,13 +193,108 @@ def validate_fixture(value: dict[str, Any], *, root: Path = ROOT) -> None:
         "self_score",
     }:
         raise FixtureError("native parity mandatory self-review drifted")
-    if not any(item.latest_snapshot is None for item in skills.items):
-        raise FixtureError("native parity requires an unassessed skill")
-    assessed = next(
-        (item.latest_snapshot for item in skills.items if item.latest_snapshot is not None),
-        None,
+    troubleshooting = bundle.skill("structured_troubleshooting")
+    english = bundle.skill("tam_english")
+    formula = bundle.formula
+    full_weight = calculate_effective_weight(
+        skill_impact=Decimal("1"),
+        practice_mode="independent_practice",
+        assistance="no_ai",
+        evaluator="human_coach",
+        difficulty="standard",
+        formula=formula,
+    ).effective_weight
+    discounted_weight = (full_weight * formula.same_day_repetition_factor).quantize(
+        WEIGHT_QUANTUM,
+        rounding=ROUND_HALF_UP,
     )
-    if assessed is None or assessed.qualifying_event_count != 3 or len(assessed.manifest) != 5:
+    total_weight = full_weight * 2 + discounted_weight
+    estimate = (
+        (
+            troubleshooting.baseline * formula.prior_weight
+            + Decimal("3") * total_weight
+        )
+        / (formula.prior_weight + total_weight)
+    ).quantize(SCORE_QUANTUM, rounding=ROUND_HALF_UP)
+    expected_skills = {
+        "items": [
+            {
+                "slug": troubleshooting.slug,
+                "name": troubleshooting.name,
+                "baseline": f"{troubleshooting.baseline:.3f}",
+                "month_one_target": f"{troubleshooting.month_one_target:.3f}",
+                "final_target": f"{troubleshooting.final_target:.3f}",
+                "latest_snapshot": {
+                    "id": 71,
+                    "formula_version": formula.version,
+                    "snapshot_date": value["fixed_now"][:10],
+                    "estimated_level": f"{estimate:.3f}",
+                    "confidence": "low",
+                    "trend": "insufficient_evidence",
+                    "recency": "fresh",
+                    "baseline_target_gap": (
+                        f"{troubleshooting.baseline - estimate:.3f}"
+                    ),
+                    "month_one_target_gap": (
+                        f"{troubleshooting.month_one_target - estimate:.3f}"
+                    ),
+                    "final_target_gap": (
+                        f"{troubleshooting.final_target - estimate:.3f}"
+                    ),
+                    "total_effective_weight": f"{total_weight:.6f}",
+                    "qualifying_event_count": 3,
+                    "exercise_type_count": 1,
+                    "last_strong_evidence_date": None,
+                    "manifest": [
+                        {
+                            "event_id": 9,
+                            "effective_weight": f"{full_weight:.6f}",
+                            "inclusion_code": "included",
+                        },
+                        {
+                            "event_id": 10,
+                            "effective_weight": f"{full_weight:.6f}",
+                            "inclusion_code": "included",
+                        },
+                        {
+                            "event_id": 50,
+                            "effective_weight": f"{discounted_weight:.6f}",
+                            "inclusion_code": "discounted_same_day",
+                        },
+                        {
+                            "event_id": 49,
+                            "effective_weight": "0.000",
+                            "inclusion_code": "excluded_nonqualifying",
+                        },
+                        {
+                            "event_id": 39,
+                            "effective_weight": "0.000",
+                            "inclusion_code": "excluded_nonqualifying",
+                        },
+                    ],
+                    "confidence_basis": {
+                        "schema_version": 1,
+                        "basis_code": "low_weight",
+                        "event_ids": [9, 10, 50],
+                    },
+                    "trend_basis": {
+                        "schema_version": 1,
+                        "basis_code": "too_few_events",
+                        "event_ids": [],
+                    },
+                },
+            },
+            {
+                "slug": english.slug,
+                "name": english.name,
+                "baseline": f"{english.baseline:.3f}",
+                "month_one_target": f"{english.month_one_target:.3f}",
+                "final_target": f"{english.final_target:.3f}",
+                "latest_snapshot": None,
+            },
+        ]
+    }
+    if skills.model_dump(mode="json") != expected_skills:
         raise FixtureError("native parity assessed skill lineage drifted")
     exercise_type = activity.task_contract.exercise_type
     if exercise_type is None:
