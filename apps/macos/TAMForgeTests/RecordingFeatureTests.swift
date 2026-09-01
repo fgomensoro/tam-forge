@@ -1298,7 +1298,7 @@ private actor FakeRecordingSpoolFactory: RecordingSpoolCreating {
 
     func create(recordingID: UUID) async throws -> any RecordingSpoolWriting {
         createdRecordingIDs.append(recordingID)
-        FakeRecordingSpool()
+        return FakeRecordingSpool()
     }
 
     func pendingRecordingIDs() async -> [UUID] { [] }
