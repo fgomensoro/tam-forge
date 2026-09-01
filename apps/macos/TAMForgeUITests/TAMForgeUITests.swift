@@ -1,4 +1,5 @@
 import Darwin
+import CryptoKit
 import XCTest
 
 final class TAMForgeUITests: XCTestCase {
@@ -579,7 +580,8 @@ final class TAMForgeUITests: XCTestCase {
             JSONSerialization.jsonObject(with: configData) as? [String: String]
         )
         let receiptPath = try XCTUnwrap(config["receipt_path"])
-        let gitSHA = try XCTUnwrap(config["git_sha"])
+        let sourceGitSHA = try XCTUnwrap(config["git_sha"])
+        let expectedExecutableSHA256 = try XCTUnwrap(config["expected_executable_sha256"])
         let fixtureURL = try XCTUnwrap(
             Bundle(for: Self.self).url(
                 forResource: "foundation-journey-v1", withExtension: "json"
@@ -619,6 +621,9 @@ final class TAMForgeUITests: XCTestCase {
                 Double(duration.seconds) + Double(duration.attoseconds) / 1_000_000_000_000_000_000
             )
         }
+        let launchedAppIdentity = try verifiedLaunchedAppIdentity(
+            expectedExecutableSHA256: expectedExecutableSHA256
+        )
 
         app.buttons["evidenceNavigation"].click()
         XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 10))
@@ -667,8 +672,15 @@ final class TAMForgeUITests: XCTestCase {
         )
 
         let receipt: [String: Any] = [
-            "schema_version": 1,
-            "git_sha": gitSHA,
+            "schema_version": 2,
+            "source_git_sha": sourceGitSHA,
+            "measured_app_identity": [
+                "bundle_identifier": launchedAppIdentity.bundleIdentifier,
+                "process_identifier": launchedAppIdentity.processIdentifier,
+                "executable_name": launchedAppIdentity.executableName,
+                "executable_sha256": launchedAppIdentity.executableSHA256,
+                "expected_executable_sha256": expectedExecutableSHA256.lowercased(),
+            ],
             "scenario": "DEBUG shared parity fixture; Today and Evidence usable",
             "build": "ad-hoc signed macOS app; xcodebuild -jobs 2",
             "hardware_model": hardwareModel(),
@@ -733,6 +745,54 @@ final class TAMForgeUITests: XCTestCase {
         XCTAssertTrue(probe.waitForExistence(timeout: 5))
         let rawValue = probe.value as? String ?? probe.label
         return rawValue.split(separator: ",").compactMap { Int($0) }
+    }
+
+    private func verifiedLaunchedAppIdentity(
+        expectedExecutableSHA256: String
+    ) throws -> LaunchedAppIdentity {
+        guard expectedExecutableSHA256.range(
+            of: "^[0-9A-Fa-f]{64}$", options: .regularExpression
+        ) != nil else {
+            throw LocalResourceReceiptIdentityError.invalidExpectedExecutableSHA256
+        }
+
+        let bundleIdentifier = "com.fgomensoro.tamforge"
+        let runningApps = NSRunningApplication.runningApplications(
+            withBundleIdentifier: bundleIdentifier
+        )
+        guard runningApps.count == 1, let runningApp = runningApps.first else {
+            throw LocalResourceReceiptIdentityError.ambiguousLaunchedApp(
+                bundleIdentifier: bundleIdentifier,
+                processIdentifiers: runningApps.map(\.processIdentifier)
+            )
+        }
+        let executableURL = try XCTUnwrap(
+            runningApp.executableURL,
+            "launched TAM Forge process has no executable URL"
+        )
+        let executableSHA256 = try sha256(of: executableURL)
+        guard executableSHA256.caseInsensitiveCompare(expectedExecutableSHA256) == .orderedSame else {
+            throw LocalResourceReceiptIdentityError.executableSHA256Mismatch(
+                expected: expectedExecutableSHA256.lowercased(), actual: executableSHA256
+            )
+        }
+        return LaunchedAppIdentity(
+            bundleIdentifier: bundleIdentifier,
+            processIdentifier: runningApp.processIdentifier,
+            executableName: executableURL.lastPathComponent,
+            executableSHA256: executableSHA256
+        )
+    }
+
+    private func sha256(of fileURL: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: fileURL)
+        defer { try? handle.close() }
+
+        var hasher = SHA256()
+        while let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty {
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     private func hardwareModel() -> String {
@@ -824,6 +884,30 @@ final class TAMForgeUITests: XCTestCase {
         XCTAssertTrue(signOut.waitForExistence(timeout: 5))
         signOut.click()
         XCTAssertTrue(app.buttons["signInButton"].waitForExistence(timeout: 5))
+    }
+}
+
+private struct LaunchedAppIdentity {
+    let bundleIdentifier: String
+    let processIdentifier: pid_t
+    let executableName: String
+    let executableSHA256: String
+}
+
+private enum LocalResourceReceiptIdentityError: LocalizedError {
+    case invalidExpectedExecutableSHA256
+    case ambiguousLaunchedApp(bundleIdentifier: String, processIdentifiers: [pid_t])
+    case executableSHA256Mismatch(expected: String, actual: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidExpectedExecutableSHA256:
+            return "resource receipt config expected_executable_sha256 must be a 64-character hexadecimal SHA-256"
+        case let .ambiguousLaunchedApp(bundleIdentifier, processIdentifiers):
+            return "expected exactly one launched \(bundleIdentifier) process, found PIDs \(processIdentifiers)"
+        case let .executableSHA256Mismatch(expected, actual):
+            return "launched executable SHA-256 mismatch: expected \(expected), got \(actual)"
+        }
     }
 }
 
