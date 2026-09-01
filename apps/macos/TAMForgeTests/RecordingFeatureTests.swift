@@ -113,6 +113,55 @@ final class RecordingFeatureTests: XCTestCase {
         XCTAssertEqual(recovered.corruptRanges.first?.sampleCount, 48_000)
     }
 
+    func testSpoolAADTamperFailsAuthenticationWithoutReturningAudio() async throws {
+        let root = try temporaryDirectory()
+        let keyStore = InMemoryRecordingKeyStore()
+        let recordingID = UUID()
+        let spool = try await EncryptedRecordingSpool.create(
+            recordingID: recordingID, rootURL: root, keyStore: keyStore
+        )
+        try await spool.append(.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 48_000
+        ))
+        try await spool.seal(gaps: [])
+
+        let trackURL = root.appendingPathComponent(recordingID.uuidString, isDirectory: true)
+            .appendingPathComponent("microphone.tfr")
+        var bytes = try Data(contentsOf: trackURL)
+        bytes[64] ^= 0xff // Length prefix + authenticated device-identity hash field.
+        try bytes.write(to: trackURL, options: .atomic)
+
+        let recovered = try await EncryptedRecordingSpool.recover(
+            recordingID: recordingID, rootURL: root, keyStore: keyStore
+        )
+        XCTAssertTrue(recovered.records.isEmpty)
+        XCTAssertEqual(recovered.corruptRanges.count, 1)
+    }
+
+    func testExplicitDiscardRemovesEncryptedSpoolAndKey() async throws {
+        let root = try temporaryDirectory()
+        let keyStore = InMemoryRecordingKeyStore()
+        let factory = EncryptedRecordingSpoolFactory(
+            rootURL: root, keyStore: keyStore, reservationBytes: 0
+        )
+        let recordingID = UUID()
+        _ = try await factory.create(recordingID: recordingID)
+
+        try await factory.discard(recordingID: recordingID)
+
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: root.appendingPathComponent(recordingID.uuidString).path
+        ))
+        do {
+            _ = try await keyStore.load(recordingID: recordingID)
+            XCTFail("discard must crypto-shred the recording key")
+        } catch RecordingSpoolError.missingKey {
+            // Expected.
+        }
+    }
+
     func testDiskPolicyKeepsReserveAndBothCaps() {
         XCTAssertNil(RecordingDiskPolicy.failure(
             availableBytes: 11 * RecordingDiskPolicy.gibibyte,
@@ -152,10 +201,12 @@ final class RecordingFeatureTests: XCTestCase {
 
         await coordinator.start()
         await coordinator.start()
-        XCTAssertEqual(await source.startCount, 1)
+        let startCount = await source.startCount
+        XCTAssertEqual(startCount, 1)
         await coordinator.stop()
         await coordinator.stop()
-        XCTAssertEqual(await source.stopCount, 1)
+        let stopCount = await source.stopCount
+        XCTAssertEqual(stopCount, 1)
     }
 
     private func temporaryDirectory() throws -> URL {
@@ -230,6 +281,9 @@ private actor FakeRecordingSpoolFactory: RecordingSpoolCreating {
     func create(recordingID: UUID) async throws -> any RecordingSpoolWriting {
         FakeRecordingSpool()
     }
+
+    func pendingRecordingIDs() async -> [UUID] { [] }
+    func discard(recordingID: UUID) async throws {}
 }
 
 private actor FakeRecordingSpool: RecordingSpoolWriting {

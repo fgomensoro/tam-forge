@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RecordingView: View {
     @ObservedObject var coordinator: RecordingCoordinator
+    @State private var pendingDiscardID: UUID?
 
     var body: some View {
         ScrollView {
@@ -15,10 +16,27 @@ struct RecordingView: View {
                     preflightSummary(snapshot)
                 }
                 captureHealth
+                if !coordinator.pendingRecordingIDs.isEmpty { pendingRecovery }
             }
             .padding()
         }
         .accessibilityIdentifier("recordingScreen")
+        .confirmationDialog(
+            "Discard encrypted recording?",
+            isPresented: Binding(
+                get: { pendingDiscardID != nil },
+                set: { if !$0 { pendingDiscardID = nil } }
+            )
+        ) {
+            Button("Discard permanently", role: .destructive) {
+                guard let recordingID = pendingDiscardID else { return }
+                pendingDiscardID = nil
+                Task { await coordinator.discardPending(recordingID: recordingID, confirmed: true) }
+            }
+            Button("Cancel", role: .cancel) { pendingDiscardID = nil }
+        } message: {
+            Text("This crypto-shreds the local key and removes the encrypted spool. It cannot be undone.")
+        }
     }
 
     private var header: some View {
@@ -161,12 +179,30 @@ struct RecordingView: View {
         .accessibilityIdentifier("recordingCaptureHealth")
     }
 
+    private var pendingRecovery: some View {
+        GroupBox("Pending encrypted recordings") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("TAM Forge retained these recordings for recovery. They are never deleted automatically.")
+                    .foregroundStyle(.secondary)
+                ForEach(coordinator.pendingRecordingIDs, id: \.self) { recordingID in
+                    HStack {
+                        Text(recordingID.uuidString).font(.caption).textSelection(.enabled)
+                        Spacer()
+                        Button("Discard", role: .destructive) { pendingDiscardID = recordingID }
+                            .accessibilityLabel("Discard pending encrypted recording")
+                    }
+                }
+            }
+        }
+        .accessibilityIdentifier("recordingPendingRecovery")
+    }
+
     private func trackHealth(
         _ title: String,
         track: RecordingTrackHealth,
         identifier: String
     ) -> some View {
-        let level = max(0, min(track.normalizedLevel, 1))
+        let level = Swift.max(0, Swift.min(track.normalizedLevel, 1))
         let percentage = Int((level * 100).rounded())
         let status = track.statusMessage
 
@@ -177,7 +213,9 @@ struct RecordingView: View {
                 Text("\(percentage)%").monospacedDigit().foregroundStyle(.secondary)
             }
             ProgressView(value: level, total: 1)
-            Text(status).font(.caption).foregroundStyle(track.warning == nil ? .secondary : .orange)
+            Text(status).font(.caption).foregroundStyle(
+                track.warning == nil ? Color.secondary : Color.orange
+            )
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("\(identifier)Health")
@@ -227,6 +265,12 @@ struct RecordingGlobalStatusView: View {
                 Text(coordinator.health.routeDescription.isEmpty ? "Recording route pending" : coordinator.health.routeDescription)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                if case .recording = coordinator.phase {
+                    Button("Stop") { Task { await coordinator.stop() } }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        .accessibilityIdentifier("recordingGlobalStopButton")
+                }
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 10)
@@ -301,6 +345,8 @@ private extension RecordingCaptureFailure {
             "Audio conversion failed"
         case .streamStopped:
             "Capture stream stopped"
+        case .silentInput:
+            "No audio signal detected"
         }
     }
 }
