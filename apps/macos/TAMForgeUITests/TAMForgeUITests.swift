@@ -568,9 +568,17 @@ final class TAMForgeUITests: XCTestCase {
 
     @MainActor
     func testLocalNativeResourceReceipt() throws {
-        guard ProcessInfo.processInfo.environment["TAMFORGE_RUN_RESOURCE_RECEIPT"] == "1" else {
+        let configURL = URL(
+            fileURLWithPath: "/tmp/tamforge-native-resource-receipt-config.json"
+        )
+        guard let configData = try? Data(contentsOf: configURL) else {
             throw XCTSkip("opt-in local 8-minute resource receipt")
         }
+        let config = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: configData) as? [String: String]
+        )
+        let receiptPath = try XCTUnwrap(config["receipt_path"])
+        let gitSHA = try XCTUnwrap(config["git_sha"])
         let fixtureURL = try XCTUnwrap(
             Bundle(for: Self.self).url(
                 forResource: "foundation-journey-v1", withExtension: "json"
@@ -644,8 +652,7 @@ final class TAMForgeUITests: XCTestCase {
 
         let receipt: [String: Any] = [
             "schema_version": 1,
-            "git_sha": ProcessInfo.processInfo.environment["TAMFORGE_RESOURCE_GIT_SHA"]
-                ?? "unknown",
+            "git_sha": gitSHA,
             "scenario": "DEBUG shared parity fixture; Today and Evidence usable",
             "build": "ad-hoc signed macOS app; xcodebuild -jobs 2",
             "hardware_model": try command("/usr/sbin/sysctl", ["-n", "hw.model"]),
@@ -672,11 +679,7 @@ final class TAMForgeUITests: XCTestCase {
         let receiptData = try JSONSerialization.data(
             withJSONObject: receipt, options: [.prettyPrinted, .sortedKeys]
         )
-        let receiptURL = URL(
-            fileURLWithPath: ProcessInfo.processInfo.environment[
-                "TAMFORGE_RESOURCE_RECEIPT_PATH"
-            ] ?? "/tmp/tamforge-native-resource-receipt.json"
-        )
+        let receiptURL = URL(fileURLWithPath: receiptPath)
         try receiptData.write(to: receiptURL, options: .atomic)
         let attachment = XCTAttachment(data: receiptData, uniformTypeIdentifier: "public.json")
         attachment.name = "tamforge-native-resource-receipt"
