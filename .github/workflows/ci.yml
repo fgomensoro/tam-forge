@@ -22,13 +22,25 @@ jobs:
       - name: Build native macOS shell
         # The Apple build-tool plugin is exactly pinned in the project and Package.resolved.
         run: >-
-          xcodebuild -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge
+          xcodebuild -jobs 2 -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge
           -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
       - name: Test native client transport
         run: >-
-          xcodebuild -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge
+          xcodebuild -jobs 2 -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge
           -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
           -only-testing:TAMForgeTests test
+      - name: Build signed standalone Release app
+        run: >-
+          xcodebuild -jobs 2 -skipPackagePluginValidation
+          -project apps/macos/TAMForge.xcodeproj -scheme TAMForge
+          -configuration Release -destination 'platform=macOS'
+          -derivedDataPath "$RUNNER_TEMP/TAMForgeRelease"
+          CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual build
+      - name: Verify Release signature, contents, and fixture exclusion
+        run: >-
+          python3 scripts/ci/check_native_bundle.py
+          "$RUNNER_TEMP/TAMForgeRelease/Build/Products/Release/TAMForge.app"
+          --require-ad-hoc
 
   native-ui:
     runs-on: macos-26
