@@ -102,6 +102,67 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         await assertInvalidResponse { _ = try await api.fetchPortfolioHistory(cursor: nil) }
     }
 
+    func testRejectsSnapshotAndEventValuesOutsideBackendRanges() async {
+        for body in [
+            replacing(skillsBody(snapshot: snapshotBody()), [("\"baseline_target_gap\":\"2.125\"", "\"baseline_target_gap\":\"4.001\"")]),
+            replacing(skillsBody(snapshot: snapshotBody()), [("\"total_effective_weight\":\"1.250\"", "\"total_effective_weight\":\"-0.001\"")]),
+            replacing(skillsBody(snapshot: snapshotBody()), [("\"effective_weight\":\"0.125\"", "\"effective_weight\":\"1.501\"")]),
+        ] {
+            let fixture = URLProtocolFixture()
+            fixture.enqueue(.response(statusCode: 200, body: body))
+            await assertInvalidResponse { _ = try await LiveEvidenceAPI(transport: transport(fixture)).listSkills() }
+        }
+
+        for body in [
+            replacing(evidencePageBody(nextCursor: nil), [("\"skill_impact\":\"0.500\"", "\"skill_impact\":\"0\"")]),
+            replacing(evidencePageBody(nextCursor: nil), [("\"skill_impact\":\"0.500\"", "\"skill_impact\":\"1.001\"")]),
+            replacing(evidencePageBody(nextCursor: nil), [("\"effective_weight\":\"0.875\"", "\"effective_weight\":\"-0.001\"")]),
+            replacing(evidencePageBody(nextCursor: nil), [("\"effective_weight\":\"0.875\"", "\"effective_weight\":\"1.501\"")]),
+        ] {
+            let fixture = URLProtocolFixture()
+            fixture.enqueue(.response(statusCode: 200, body: body))
+            await assertInvalidResponse {
+                _ = try await LiveEvidenceAPI(transport: transport(fixture))
+                    .fetchSkillEvidence(slug: "incident_communication", cursor: nil)
+            }
+        }
+    }
+
+    func testAcceptsSnapshotAndEventBackendRangeBoundaries() async throws {
+        let fixture = URLProtocolFixture()
+        fixture.enqueue(.response(statusCode: 200, body: replacing(
+            skillsBody(snapshot: snapshotBody()),
+            [
+                ("\"baseline_target_gap\":\"2.125\"", "\"baseline_target_gap\":\"-4\""),
+                ("\"month_one_target_gap\":\"1.125\"", "\"month_one_target_gap\":\"4\""),
+                ("\"total_effective_weight\":\"1.250\"", "\"total_effective_weight\":\"0\""),
+                ("\"effective_weight\":\"0.125\"", "\"effective_weight\":\"1.5\""),
+            ]
+        )))
+        fixture.enqueue(.response(statusCode: 200, body: replacing(
+            evidencePageBody(nextCursor: nil),
+            [
+                ("\"skill_impact\":\"0.500\"", "\"skill_impact\":\"0.000001\""),
+                ("\"effective_weight\":\"0.875\"", "\"effective_weight\":\"0\""),
+            ]
+        )))
+        fixture.enqueue(.response(statusCode: 200, body: replacing(
+            evidencePageBody(nextCursor: nil),
+            [("\"effective_weight\":\"0.875\"", "\"effective_weight\":\"1.5\"")]
+        )))
+        let api = LiveEvidenceAPI(transport: transport(fixture))
+
+        let skills = try await api.listSkills()
+        let zeroWeight = try await api.fetchSkillEvidence(slug: "incident_communication", cursor: nil)
+        let maximumWeight = try await api.fetchSkillEvidence(slug: "incident_communication", cursor: nil)
+
+        XCTAssertEqual(skills[0].snapshot?.baselineTargetGap, "-4")
+        XCTAssertEqual(skills[0].snapshot?.manifest[0].usedWeight, "1.5")
+        XCTAssertEqual(zeroWeight.items[0].skillImpact, "0.000001")
+        XCTAssertEqual(zeroWeight.items[0].effectiveWeight, "0")
+        XCTAssertEqual(maximumWeight.items[0].effectiveWeight, "1.5")
+    }
+
     func testAdapterCodeContractRejectsValuesTheBackendCannotProduce() {
         XCTAssertTrue(EvidenceResponseContract.validSnapshotCodes(
             confidence: "medium", trend: "improving", recency: "fresh"
@@ -263,6 +324,10 @@ final class NativeEvidenceAdapterTests: XCTestCase {
 
     private func replacing(_ data: Data, _ old: String, _ new: String) -> Data {
         Data(String(decoding: data, as: UTF8.self).replacingOccurrences(of: old, with: new).utf8)
+    }
+
+    private func replacing(_ data: Data, _ replacements: [(String, String)]) -> Data {
+        replacements.reduce(data) { replacing($0, $1.0, $1.1) }
     }
 
     private func waitForRequests(_ count: Int, in fixture: URLProtocolFixture) async -> Bool {

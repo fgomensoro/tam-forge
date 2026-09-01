@@ -175,6 +175,80 @@ final class EvidenceLedgerTests: XCTestCase {
         XCTAssertEqual(model.skillInspectorState, .idle)
     }
 
+    func testSuccessfulSkillsRetryReloadsInspectorClearedByFailedRefresh() async {
+        let service = EvidenceServiceStub(
+            skillsResult: .success([assessedSkill()]),
+            portfolioResult: .success(portfolioPage()),
+            skillPageResults: [
+                .success(.init(items: [event(id: 50, skill: "incident_communication")], nextCursor: nil)),
+                .success(.init(items: [event(id: 49, skill: "incident_communication")], nextCursor: nil)),
+            ]
+        )
+        let model = EvidenceLedgerModel(service: service)
+
+        await model.open(activityID: nil)
+        await model.inspectSkill(slug: "incident_communication")
+        service.skillsResult = .failure(.unavailable)
+        await model.refresh()
+
+        service.skillsResult = .success([assessedSkill(name: "Recovered skill")])
+        await model.retrySkills()
+
+        XCTAssertEqual(model.skillState, .content)
+        XCTAssertEqual(model.selectedSkillSlug, "incident_communication")
+        XCTAssertEqual(model.selectedSkill?.name, "Recovered skill")
+        XCTAssertEqual(model.skillInspectorState, .content)
+        XCTAssertEqual(model.skillPage?.items.map(\.id), [49])
+        XCTAssertEqual(service.skillEvidenceRequests.map(\.cursor), [nil, nil])
+    }
+
+    func testRefreshCannotCancelANewerSkillSelection() async {
+        let skills = DeferredValues(values: [[
+            assessedSkill(),
+            assessedSkill(name: "Technical depth", slug: "technical_depth"),
+        ]])
+        let portfolio = DeferredValues(values: [
+            EvidencePortfolioPage(items: [], nextCursor: nil),
+            EvidencePortfolioPage(items: [], nextCursor: nil),
+        ])
+        let firstSkill = DeferredValues(values: [
+            EvidenceEventPage(items: [event(id: 50, skill: "incident_communication")], nextCursor: nil),
+        ])
+        let newerSkill = DeferredValues<EvidenceEventPage>()
+        let service = DeferredEvidenceService(
+            skills: skills,
+            portfolio: portfolio,
+            skillPages: [
+                "incident_communication": firstSkill,
+                "technical_depth": newerSkill,
+            ]
+        )
+        let model = EvidenceLedgerModel(service: service)
+        await model.open(activityID: nil)
+        await model.inspectSkill(slug: "incident_communication")
+
+        let refresh = Task { await model.refresh() }
+        defer { refresh.cancel() }
+        await assertCall(skills, count: 2)
+        let selection = Task { await model.inspectSkill(slug: "technical_depth") }
+        defer { selection.cancel() }
+        await assertCall(newerSkill, count: 1)
+        await firstSkill.resolve(.init(items: [event(id: 48, skill: "incident_communication")], nextCursor: nil))
+        await skills.resolve([
+            assessedSkill(),
+            assessedSkill(name: "Technical depth", slug: "technical_depth"),
+        ], call: 2)
+        await refresh.value
+        await newerSkill.resolve(.init(items: [event(id: 49, skill: "technical_depth")], nextCursor: nil))
+        await selection.value
+
+        let staleReloadCount = await firstSkill.currentCallCount()
+        XCTAssertEqual(staleReloadCount, 1)
+        XCTAssertEqual(model.selectedSkillSlug, "technical_depth")
+        XCTAssertEqual(model.skillPage?.items.map(\.id), [49])
+        XCTAssertEqual(model.skillInspectorState, .content)
+    }
+
     func testNewDestinationDiscardsCancellationResistantRefreshCompletion() async {
         let skills = DeferredValues<[EvidenceSkill]>()
         let portfolio = DeferredValues<EvidencePortfolioPage>()
@@ -320,9 +394,12 @@ final class EvidenceLedgerTests: XCTestCase {
         .init(slug: "incident_communication", name: "Incident communication", baseline: "1", monthOneTarget: "2", finalTarget: "4", snapshot: nil)
     }
 
-    private func assessedSkill(name: String = "Incident communication") -> EvidenceSkill {
+    private func assessedSkill(
+        name: String = "Incident communication",
+        slug: String = "incident_communication"
+    ) -> EvidenceSkill {
         .init(
-            slug: "incident_communication", name: name, baseline: "1", monthOneTarget: "2", finalTarget: "4",
+            slug: slug, name: name, baseline: "1", monthOneTarget: "2", finalTarget: "4",
             snapshot: .init(
                 id: 71, formulaVersion: "formula-v1", snapshotDate: "2026-08-31", estimatedLevel: "3.125",
                 confidence: "medium", trend: "improving", recency: "fresh", baselineTargetGap: "2.125",
@@ -381,6 +458,8 @@ private actor DeferredValues<Value: Sendable> {
         }
         return true
     }
+
+    func currentCallCount() -> Int { callCount }
 
     func resolve(_ value: Value, call: Int? = nil) {
         if let call {

@@ -205,10 +205,12 @@ private extension EvidenceSnapshot {
         try EvidenceDecimal.validate([value.estimatedLevel], within: Decimal(0) ... Decimal(4))
         try EvidenceDecimal.validate([
             value.baselineTargetGap, value.monthOneTargetGap,
-            value.finalTargetGap, value.totalEffectiveWeight,
-        ])
+            value.finalTargetGap,
+        ], within: Decimal(-4) ... Decimal(4))
+        let totalEffectiveWeight = try EvidenceDecimal.parse(value.totalEffectiveWeight)
         let manifest = try value.manifest.map(EvidenceManifestEntry.init(api:))
         guard value.id > 0, value.qualifyingEventCount >= 0, value.exerciseTypeCount >= 0,
+              totalEffectiveWeight >= 0,
               EvidenceResponseContract.validSnapshotCodes(
                 confidence: value.confidence, trend: value.trend, recency: value.recency
               ),
@@ -238,7 +240,10 @@ private extension EvidenceSnapshot {
 
 private extension EvidenceManifestEntry {
     init(api value: Components.Schemas.SnapshotManifestItem) throws {
-        try EvidenceDecimal.validate([value.effectiveWeight])
+        try EvidenceDecimal.validate(
+            [value.effectiveWeight],
+            within: Decimal(0) ... EvidenceDecimal.maximumEventWeight
+        )
         guard value.eventId > 0 else { throw EvidenceAdapterError.invalidSchemaValue }
         self.init(eventID: value.eventId, usedWeight: value.effectiveWeight, inclusionCode: value.inclusionCode.rawValue)
     }
@@ -253,8 +258,13 @@ private extension EvidenceEventPage {
 private extension EvidenceEvent {
     init(api value: Components.Schemas.EvidenceEventResponse) throws {
         try EvidenceDecimal.validate([value.performanceScore], within: Decimal(0) ... Decimal(4))
-        try EvidenceDecimal.validate([value.skillImpact, value.effectiveWeight])
+        let skillImpact = try EvidenceDecimal.parse(value.skillImpact, within: Decimal(0) ... Decimal(1))
+        try EvidenceDecimal.validate(
+            [value.effectiveWeight],
+            within: Decimal(0) ... EvidenceDecimal.maximumEventWeight
+        )
         guard value.id > 0, value.activityId > 0, value.attemptId.map({ $0 > 0 }) ?? true,
+              skillImpact > 0,
               LiveEvidenceAPI.isValidSlug(value.skillSlug),
               EvidenceResponseContract.validQualification(
                 reason: value.qualificationReason, qualifies: value.qualifyingForLevel
@@ -321,6 +331,10 @@ private extension EvidencePortfolioScore {
 }
 
 private enum EvidenceDecimal {
+    static let maximumEventWeight = Decimal(
+        string: "1.5",
+        locale: Locale(identifier: "en_US_POSIX")
+    )!
     private static let pattern = try! NSRegularExpression(
         pattern: "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)$"
     )
