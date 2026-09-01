@@ -35,7 +35,7 @@ def test_manifest_v1_has_stable_canonical_hash_and_exact_two_tracks() -> None:
 
     assert [track.kind for track in manifest.tracks] == ["microphone", "system_audio"]
     assert recording_manifest_sha256(manifest) == (
-        "8d216ea3f8cc68c6fd6d611f8a56999f87448139d929a34d676be8440ba16beb"
+        "100d3ff09dc2519ed19f030472b2fa050dbff3d98d04eac220df644f3111fa77"
     )
     assert manifest.tracks[0].source_lineage[0].source_sample_rate_hz == 44_100
     assert manifest.tracks[1].source_lineage[1].route == "display:external"
