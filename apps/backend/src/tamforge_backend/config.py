@@ -43,20 +43,15 @@ class Settings(BaseSettings):
         "object_store_secret_key": "TAMFORGE_OBJECT_STORE_SECRET_KEY",
         "object_store_max_upload_bytes": "TAMFORGE_OBJECT_STORE_MAX_UPLOAD_BYTES",
         "object_store_memory_spool_bytes": "TAMFORGE_OBJECT_STORE_MEMORY_SPOOL_BYTES",
-        "object_store_max_concurrent_uploads": (
-            "TAMFORGE_OBJECT_STORE_MAX_CONCURRENT_UPLOADS"
-        ),
+        "object_store_max_concurrent_uploads": ("TAMFORGE_OBJECT_STORE_MAX_CONCURRENT_UPLOADS"),
         "github_client_id": "TAMFORGE_GITHUB_CLIENT_ID",
         "github_client_secret": "TAMFORGE_GITHUB_CLIENT_SECRET",
         "github_roadmap_mirror_token": "TAMFORGE_GITHUB_ROADMAP_MIRROR_TOKEN",
-        "github_roadmap_mirror_repository": (
-            "TAMFORGE_GITHUB_ROADMAP_MIRROR_REPOSITORY"
-        ),
+        "github_roadmap_mirror_repository": ("TAMFORGE_GITHUB_ROADMAP_MIRROR_REPOSITORY"),
         "github_roadmap_mirror_branch": "TAMFORGE_GITHUB_ROADMAP_MIRROR_BRANCH",
-        "github_roadmap_mirror_base_branch": (
-            "TAMFORGE_GITHUB_ROADMAP_MIRROR_BASE_BRANCH"
-        ),
+        "github_roadmap_mirror_base_branch": ("TAMFORGE_GITHUB_ROADMAP_MIRROR_BASE_BRANCH"),
         "roadmap_config_dir": "TAMFORGE_ROADMAP_CONFIG_DIR",
+        "roadmap_releases_dir": "TAMFORGE_ROADMAP_RELEASES_DIR",
         "session_signing_secret": "TAMFORGE_SESSION_SIGNING_SECRET",
         "github_user_id": "TAMFORGE_GITHUB_USER_ID",
         "github_callback_url": "TAMFORGE_GITHUB_CALLBACK_URL",
@@ -81,9 +76,7 @@ class Settings(BaseSettings):
         validation_alias="TAMFORGE_ENV",
     )
     database_url: SecretStr = Field(
-        default=SecretStr(
-            "postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge"
-        ),
+        default=SecretStr("postgresql+asyncpg://tamforge:tamforge@127.0.0.1:54329/tamforge"),
         validation_alias="TAMFORGE_DATABASE_URL",
     )
     object_store_endpoint: str = Field(
@@ -163,6 +156,10 @@ class Settings(BaseSettings):
     roadmap_config_dir: Path = Field(
         default=Path("config"),
         validation_alias="TAMFORGE_ROADMAP_CONFIG_DIR",
+    )
+    roadmap_releases_dir: Path = Field(
+        default=Path("config/releases"),
+        validation_alias="TAMFORGE_ROADMAP_RELEASES_DIR",
     )
     session_signing_secret: SecretStr = Field(
         default=SecretStr(""),
@@ -323,9 +320,8 @@ class Settings(BaseSettings):
     def _validate_production_session_secret(self) -> None:
         token = self.session_signing_secret.get_secret_value()
         lowered = token.lower()
-        if (
-            not _SESSION_SECRET_PATTERN.fullmatch(token)
-            or any(placeholder in lowered for placeholder in _SESSION_SECRET_PLACEHOLDERS)
+        if not _SESSION_SECRET_PATTERN.fullmatch(token) or any(
+            placeholder in lowered for placeholder in _SESSION_SECRET_PLACEHOLDERS
         ):
             raise ValueError("production session signing secret must use token_urlsafe(32)")
 

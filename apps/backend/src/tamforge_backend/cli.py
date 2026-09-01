@@ -27,6 +27,9 @@ def _parser() -> argparse.ArgumentParser:
     mode.add_argument("--apply", action="store_true")
     validate_roadmap = commands.add_parser("validate-roadmap-map")
     validate_roadmap.add_argument("--config", type=Path, required=True)
+    validate_release = commands.add_parser("validate-roadmap-release")
+    validate_release.add_argument("--release-dir", type=Path, required=True)
+    validate_release.add_argument("--legacy-config-dir", type=Path, required=True)
     return parser
 
 
@@ -39,6 +42,8 @@ def _async_url(raw_url: str) -> str:
 
 async def _apply(config_dir: Path, raw_url: str) -> SeedResult:
     bundle = load_config_bundle(config_dir)
+    if bundle.roadmap_schema_version == 2:
+        raise SeedConfigError("roadmap-only release cannot seed scoring")
     engine = create_async_engine(_async_url(raw_url))
     factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
@@ -65,6 +70,29 @@ def main(argv: list[str] | None = None) -> int:
                 "weekday_days": sum(day % 6 != 0 for day in study_days),
                 "saturdays": sum(day % 6 == 0 for day in study_days),
                 "total_minutes": sum(task.timebox_minutes for task in bundle.roadmap_tasks),
+            }
+        elif args.command == "validate-roadmap-release":
+            bundle = load_config_bundle(
+                args.legacy_config_dir,
+                roadmap_tasks_path=(args.release_dir / "tam-roadmap-task-map.yaml"),
+            )
+            if bundle.roadmap_schema_version != 2:
+                raise ConfigError("roadmap release must use schema version 2")
+            study_days = {task.day for task in bundle.roadmap_tasks}
+            coverage = bundle.coverage
+            if coverage is None:  # pragma: no cover - schema v2 requires coverage
+                raise ConfigError("roadmap release coverage is required")
+            payload = {
+                "roadmap_schema_version": bundle.roadmap_schema_version,
+                "roadmap_version": bundle.roadmap_version,
+                "program_key": bundle.program.program_key,
+                "study_days": len(study_days),
+                "weekday_days": sum(day % 6 != 0 for day in study_days),
+                "saturdays": sum(day % 6 == 0 for day in study_days),
+                "nominal_minutes": sum(task.timebox_minutes for task in bundle.roadmap_tasks),
+                "interview_questions": len(bundle.interview_queue),
+                "coverage_requirements": len(coverage.requirements),
+                "coverage_assignments": len(coverage.assignments),
             }
         elif args.command == "seed-config" and not args.apply:
             bundle = load_config_bundle(args.config_dir)

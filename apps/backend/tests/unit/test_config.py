@@ -359,6 +359,13 @@ def test_field_name_constructor_injection_remains_available() -> None:
     assert settings.secure_cookies is False
 
 
+def test_roadmap_release_registry_has_a_separate_default_directory() -> None:
+    settings = Settings(environment="test", _env_file=None)
+
+    assert settings.roadmap_config_dir == Path("config")
+    assert settings.roadmap_releases_dir == Path("config/releases")
+
+
 def test_explicit_dotenv_source_uses_only_canonical_environment_name(tmp_path: Path) -> None:
     env_file = tmp_path / "settings.env"
     env_file.write_text("TAMFORGE_ENV=test\nENVIRONMENT=production\n", encoding="utf-8")

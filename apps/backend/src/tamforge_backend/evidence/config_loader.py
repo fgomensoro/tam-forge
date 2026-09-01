@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal, DecimalException
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 from yaml.composer import ComposerError
 from yaml.constructor import ConstructorError
 from yaml.events import AliasEvent
@@ -21,7 +23,12 @@ from .config_models import (
     ConfigBundle,
     ExerciseTypeConfig,
     ExerciseTypesFile,
+    RoadmapCalendarConfig,
+    RoadmapProgramConfig,
+    RoadmapTaskConfig,
     RoadmapTaskMapFile,
+    RoadmapTaskMapV2File,
+    RoadmapTaskV2Config,
     RubricsFile,
     SkillConfig,
     SkillsFile,
@@ -41,6 +48,59 @@ _MAX_YAML_NODES = 20_000
 
 class ConfigError(ValueError):
     """Configuration failed strict parsing or cross-file linking."""
+
+
+@dataclass(frozen=True, slots=True)
+class RoadmapReleaseRegistry:
+    """Exact, non-recursive index of validated roadmap releases."""
+
+    _by_version: MappingProxyType[str, ConfigBundle]
+
+    @classmethod
+    def load(
+        cls,
+        *,
+        legacy_config_dir: Path,
+        releases_dir: Path,
+    ) -> RoadmapReleaseRegistry:
+        bundles = [load_config_bundle(legacy_config_dir)]
+        try:
+            children = sorted(path for path in releases_dir.iterdir() if path.is_dir())
+        except FileNotFoundError:
+            children = []
+        except OSError as exc:
+            raise ConfigError(f"{releases_dir}: unable to read release registry") from exc
+        for child in children:
+            if not (child / _FILES["roadmap_tasks"]).is_file():
+                continue
+            bundles.append(load_config_bundle(child))
+
+        by_version: dict[str, ConfigBundle] = {}
+        by_hash: dict[bytes, str] = {}
+        for bundle in bundles:
+            if bundle.roadmap_version in by_version:
+                raise ConfigError(f"duplicate roadmap version {bundle.roadmap_version!r}")
+            prior_version = by_hash.get(bundle.content_hash)
+            if prior_version is not None:
+                raise ConfigError(
+                    "duplicate roadmap content hash for "
+                    f"{prior_version!r} and {bundle.roadmap_version!r}"
+                )
+            by_version[bundle.roadmap_version] = bundle
+            by_hash[bundle.content_hash] = bundle.roadmap_version
+        return cls(_by_version=MappingProxyType(by_version))
+
+    def resolve(self, *, roadmap_version: str, content_hash: str) -> ConfigBundle:
+        bundle = self._by_version.get(roadmap_version)
+        if bundle is None or bundle.content_hash.hex() != content_hash:
+            raise ConfigError("exact roadmap release key and content hash are required")
+        return bundle
+
+
+class _RoadmapSchemaProbe(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    schema_version: int
 
 
 class _LocatedDict(dict[str, Any]):
@@ -201,14 +261,10 @@ def _load_yaml[Model: BaseModel](path: Path, model: type[Model]) -> tuple[Model,
         target = _descend(raw, tuple(error["loc"]))
         line, column = _location(target)
         field = ".".join(str(part) for part in error["loc"])
-        raise ConfigError(
-            f"{path}:{line}:{column}: {field}: {error['msg']}"
-        ) from exc
+        raise ConfigError(f"{path}:{line}:{column}: {field}: {error['msg']}") from exc
 
 
-def _unique(
-    values: tuple[Any, ...], attribute: str, *, path: Path, raw_items: object
-) -> None:
+def _unique(values: tuple[Any, ...], attribute: str, *, path: Path, raw_items: object) -> None:
     seen: set[str] = set()
     source_items = raw_items if isinstance(raw_items, list) else []
     for index, value in enumerate(values):
@@ -245,6 +301,8 @@ def _canonical(value: object) -> object:
         return [_canonical(item) for item in value]
     if isinstance(value, Decimal):
         return _decimal_text(value)
+    if isinstance(value, date):
+        return value.isoformat()
     return value
 
 
@@ -252,7 +310,7 @@ def _canonical_payload(
     skills: SkillsFile,
     exercises: ExerciseTypesFile,
     rubrics: RubricsFile,
-    roadmap: RoadmapTaskMapFile,
+    roadmap: RoadmapTaskMapFile | RoadmapTaskMapV2File,
 ) -> dict[str, Any]:
     skill_payload = skills.model_dump(mode="python", by_alias=True)
     skill_payload["skills"] = sorted(skill_payload["skills"], key=lambda item: item["slug"])
@@ -264,12 +322,8 @@ def _canonical_payload(
             item["skill_impacts"], key=lambda impact: impact["skill_slug"]
         )
         item["tags"] = sorted(item["tags"])
-        item["allowed_domain_competencies"] = sorted(
-            item["allowed_domain_competencies"]
-        )
-        item["allowed_story_competencies"] = sorted(
-            item["allowed_story_competencies"]
-        )
+        item["allowed_domain_competencies"] = sorted(item["allowed_domain_competencies"])
+        item["allowed_story_competencies"] = sorted(item["allowed_story_competencies"])
         item["composite_metrics"] = sorted(
             item["composite_metrics"], key=lambda metric: metric["metric_slug"]
         )
@@ -331,11 +385,15 @@ def _link_exercises(
         unknown_tags = set(exercise.tags) - config.supporting_tags
         if unknown_tags:
             raise _at(path, source, f"unknown tag {sorted(unknown_tags)[0]!r}")
-        if exercise.slug in {
-            "official_reading",
-            "company_product_research",
-            "application_or_outreach",
-        } and exercise.impacts:
+        if (
+            exercise.slug
+            in {
+                "official_reading",
+                "company_product_research",
+                "application_or_outreach",
+            }
+            and exercise.impacts
+        ):
             raise _at(path, source, f"{exercise.slug} must not impact skills")
         english = exercise.skill_impacts.get("tam_english")
         if english is not None and english.condition not in {
@@ -433,9 +491,7 @@ def _link_tasks(
         totals[(task.week, task.day)] = totals.get((task.week, task.day), 0) + task.timebox_minutes
 
     expected_days = {
-        (week, day)
-        for week in range(1, 5)
-        for day in range((week - 1) * 6 + 1, week * 6 + 1)
+        (week, day) for week in range(1, 5) for day in range((week - 1) * 6 + 1, week * 6 + 1)
     }
     if totals.keys() != expected_days:
         raise _at(path, raw, "task map must define all 24 Month 1 study days")
@@ -463,9 +519,7 @@ def _link_tasks(
             raise _at(path, raw, f"weekday {day} must use the exact block shape")
 
     task_by_id = {task.stable_id: task for task in config.tasks}
-    reconciliation_items = (
-        raw.get("reconciliations", []) if isinstance(raw, dict) else []
-    )
+    reconciliation_items = raw.get("reconciliations", []) if isinstance(raw, dict) else []
     _unique(
         config.reconciliations,
         "slug",
@@ -473,11 +527,7 @@ def _link_tasks(
         raw_items=reconciliation_items,
     )
     for index, reconciliation in enumerate(config.reconciliations):
-        source = (
-            reconciliation_items[index]
-            if index < len(reconciliation_items)
-            else raw
-        )
+        source = reconciliation_items[index] if index < len(reconciliation_items) else raw
         target_task = task_by_id.get(reconciliation.target_task_id)
         if target_task is None:
             raise _at(path, source, "reconciliation target task does not exist")
@@ -508,7 +558,18 @@ def load_config_bundle(
     skills_file, skills_raw = _load_yaml(paths["skills"], SkillsFile)
     exercise_file, exercise_raw = _load_yaml(paths["exercise_types"], ExerciseTypesFile)
     rubrics_file, rubrics_raw = _load_yaml(paths["rubrics"], RubricsFile)
-    roadmap_file, roadmap_raw = _load_yaml(paths["roadmap_tasks"], RoadmapTaskMapFile)
+    roadmap_probe, _ = _load_yaml(paths["roadmap_tasks"], _RoadmapSchemaProbe)
+    if roadmap_probe.schema_version not in {1, 2}:
+        raise ConfigError(
+            f"{paths['roadmap_tasks']}:1:1: unsupported roadmap schema version "
+            f"{roadmap_probe.schema_version}"
+        )
+    roadmap_file: RoadmapTaskMapFile | RoadmapTaskMapV2File
+    roadmap_raw: object
+    if roadmap_probe.schema_version == 1:
+        roadmap_file, roadmap_raw = _load_yaml(paths["roadmap_tasks"], RoadmapTaskMapFile)
+    else:
+        roadmap_file, roadmap_raw = _load_yaml(paths["roadmap_tasks"], RoadmapTaskMapV2File)
 
     return _build_bundle(
         skills_file,
@@ -559,7 +620,7 @@ def _build_bundle(
     skills_file: SkillsFile,
     exercise_file: ExerciseTypesFile,
     rubrics_file: RubricsFile,
-    roadmap_file: RoadmapTaskMapFile,
+    roadmap_file: RoadmapTaskMapFile | RoadmapTaskMapV2File,
     *,
     raws: dict[str, object],
     paths: dict[str, Path],
@@ -569,14 +630,13 @@ def _build_bundle(
     rubrics_raw = raws["rubrics"]
     roadmap_raw = raws["roadmap_tasks"]
 
-    versions = {
+    scoring_versions = {
         skills_file.schema_version,
         exercise_file.schema_version,
         rubrics_file.schema_version,
-        roadmap_file.schema_version,
     }
-    if len(versions) != 1:
-        raise _at(paths["skills"], skills_raw, "schema versions must match")
+    if len(scoring_versions) != 1:
+        raise _at(paths["skills"], skills_raw, "scoring schema versions must match")
     if skills_file.config_version != rubrics_file.config_version:
         raise _at(paths["rubrics"], rubrics_raw, "config versions must match")
     release_versions = {
@@ -601,31 +661,82 @@ def _build_bundle(
     _link_exercises(exercise_file, exercise_raw, paths["exercise_types"], skills)
     _link_rubrics(rubrics_file, rubrics_raw, paths["rubrics"])
     exercises = {item.slug: item for item in exercise_file.exercise_types}
-    _link_tasks(roadmap_file, roadmap_raw, paths["roadmap_tasks"], exercises)
+    if isinstance(roadmap_file, RoadmapTaskMapFile):
+        _link_tasks(roadmap_file, roadmap_raw, paths["roadmap_tasks"], exercises)
+    else:
+        for task in roadmap_file.tasks:
+            if task.exercise_type not in exercises:
+                raise _at(
+                    paths["roadmap_tasks"],
+                    roadmap_raw,
+                    f"unknown exercise type {task.exercise_type!r}",
+                )
 
-    canonical_payload = _canonical_payload(
-        skills_file, exercise_file, rubrics_file, roadmap_file
-    )
+    canonical_payload = _canonical_payload(skills_file, exercise_file, rubrics_file, roadmap_file)
     canonical_payload_json = _payload_json(canonical_payload)
     content_hash = hashlib.sha256(canonical_payload_json.encode("utf-8")).digest()
     version_key = f"{skills_file.config_version}-{content_hash.hex()[:12]}"
+    roadmap_tasks: tuple[RoadmapTaskConfig | RoadmapTaskV2Config, ...] = tuple(roadmap_file.tasks)
     sorted_tasks = tuple(
         sorted(
-            roadmap_file.tasks,
+            roadmap_tasks,
             key=lambda task: (task.week, task.day, task.order, task.stable_id),
         )
     )
     return ConfigBundle(
-        schema_version=versions.pop(),
+        schema_version=scoring_versions.pop(),
+        roadmap_schema_version=roadmap_file.schema_version,
         config_version=skills_file.config_version,
         skills=skills_file.skills,
         exercise_types=exercise_file.exercise_types,
         formula=rubrics_file.formula,
         rubrics=rubrics_file.rubrics,
         roadmap_version=roadmap_file.roadmap_version,
-        roadmap_contracts=MappingProxyType(dict(roadmap_file.contracts)),
+        roadmap_contracts=MappingProxyType(
+            dict(roadmap_file.contracts)
+            if isinstance(roadmap_file.contracts, dict)
+            else roadmap_file.contracts.model_dump(mode="python")
+        ),
         reconciliations=roadmap_file.reconciliations,
         roadmap_tasks=sorted_tasks,
+        program=(
+            roadmap_file.program
+            if isinstance(roadmap_file, RoadmapTaskMapV2File)
+            else RoadmapProgramConfig.model_construct(
+                program_key="tam_phase_1",
+                display_name="Month 1",
+                target_label="Month 1 target",
+                nominal_weeks=4,
+            )
+        ),
+        lineage=(roadmap_file.lineage if isinstance(roadmap_file, RoadmapTaskMapV2File) else None),
+        calendar=(
+            roadmap_file.calendar
+            if isinstance(roadmap_file, RoadmapTaskMapV2File)
+            else RoadmapCalendarConfig.model_construct(
+                anchor_date=date.min,
+                nominal_end_date=date.max,
+                weekday_minutes=240,
+                saturday_minutes=120,
+                sunday_minutes=0,
+                ordinary_interview_minutes=0,
+                pipeline_minutes=30,
+                roadmap_minutes=0,
+                close_minutes=15,
+            )
+        ),
+        week7=(roadmap_file.week7 if isinstance(roadmap_file, RoadmapTaskMapV2File) else None),
+        interview_queue=(
+            roadmap_file.interview_queue if isinstance(roadmap_file, RoadmapTaskMapV2File) else ()
+        ),
+        english_dimensions=(
+            roadmap_file.english_dimensions
+            if isinstance(roadmap_file, RoadmapTaskMapV2File)
+            else None
+        ),
+        coverage=(
+            roadmap_file.coverage if isinstance(roadmap_file, RoadmapTaskMapV2File) else None
+        ),
         content_hash=content_hash,
         version_key=version_key,
         _skills_by_slug=immutable_index(skills_file.skills, "slug"),
