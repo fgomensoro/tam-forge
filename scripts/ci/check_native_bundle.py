@@ -34,7 +34,10 @@ FORBIDDEN_COMPONENTS = frozenset(
     }
 )
 FORBIDDEN_LINK_MARKERS = ("chromium", "electron", "node", "postgres", "python")
-ALLOWED_BINARY_PATHS = (Path("Contents/MacOS/TAMForge"),)
+ALLOWED_BINARY_PATHS = (
+    Path("Contents/MacOS/TAMForge"),
+    Path("Contents/Frameworks/libswiftCompatibilitySpan.dylib"),
+)
 MACH_O_MAGICS = frozenset(
     {
         b"\xce\xfa\xed\xfe",  # MH_MAGIC, little-endian

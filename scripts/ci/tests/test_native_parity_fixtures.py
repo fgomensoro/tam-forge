@@ -31,6 +31,38 @@ def test_shared_fixture_rejects_cross_response_relationship_drift() -> None:
         validate_fixture(fixture)
 
 
+def test_shared_fixture_rejects_real_roadmap_projection_drift() -> None:
+    fixture = deepcopy(load_fixture())
+    fixture["responses"]["roadmap_version"]["version_key"] = "month-1-v1"
+
+    with pytest.raises(FixtureError, match="roadmap projection"):
+        validate_fixture(fixture)
+
+
+def test_shared_fixture_rejects_impossible_portfolio_evidence() -> None:
+    fixture = deepcopy(load_fixture())
+    fixture["responses"]["portfolio"]["items"] = [
+        {
+            "id": 91,
+            "activity_id": 41,
+            "attempt_id": 11,
+            "formula_version": "seed-v1",
+            "rubric_version": "seed-v1",
+            "total_score": "14.000",
+            "components": [],
+            "trend_basis": {
+                "schema_version": 1,
+                "basis_code": "first_score",
+                "event_ids": [],
+            },
+            "scored_at": "2026-08-24T20:00:00Z",
+        }
+    ]
+
+    with pytest.raises(FixtureError, match="portfolio relationship"):
+        validate_fixture(fixture)
+
+
 def test_shared_fixture_rejects_public_schema_drift() -> None:
     fixture = deepcopy(load_fixture())
     fixture["responses"]["today"]["unexpected"] = True

@@ -24,12 +24,15 @@ def load_fixture(path: Path = DEFAULT_FIXTURE) -> dict[str, Any]:
 
 
 def validate_fixture(value: dict[str, Any], *, root: Path = ROOT) -> None:
+    from tamforge_backend.evidence.config_loader import load_config_bundle
     from tamforge_backend.evidence.schemas import (
         PortfolioHistoryResponse,
         SkillListResponse,
     )
     from tamforge_backend.learning.schemas import ActivityDetailResponse
     from tamforge_backend.notifications.schemas import NotificationPage
+    from tamforge_backend.roadmaps.package import inspect_zip_stream
+    from tamforge_backend.roadmaps.parser import parse_roadmap
     from tamforge_backend.roadmaps.routes import (
         RoadmapImportResponse,
         RoadmapVersionResponse,
@@ -71,13 +74,63 @@ def validate_fixture(value: dict[str, Any], *, root: Path = ROOT) -> None:
     }
     if set(responses) != expected_responses:
         raise FixtureError("native parity response records drifted")
-    RoadmapImportResponse.model_validate(responses["roadmap_import"])
-    RoadmapVersionResponse.model_validate(responses["roadmap_version"])
+    roadmap_import = RoadmapImportResponse.model_validate(responses["roadmap_import"])
+    roadmap_version = RoadmapVersionResponse.model_validate(responses["roadmap_version"])
     today = TodayResponse.model_validate(responses["today"])
     activity = ActivityDetailResponse.model_validate(responses["activity"])
     notifications = NotificationPage.model_validate(responses["notifications"])
     skills = SkillListResponse.model_validate(responses["skills"])
-    PortfolioHistoryResponse.model_validate(responses["portfolio"])
+    portfolio = PortfolioHistoryResponse.model_validate(responses["portfolio"])
+
+    bundle = load_config_bundle(root / "config")
+    with inspect_zip_stream((package,)) as inspected:
+        if not inspected.accepted:
+            raise FixtureError("native parity source package is not accepted")
+        parsed = parse_roadmap(
+            files={
+                item.manifest.path: item.staged_path.read_bytes()
+                for item in inspected.files
+            },
+            config=bundle,
+        )
+    expected_reading = next(
+        (
+            item
+            for item in parsed.tasks
+            if item.week == 1 and item.day == 1 and item.block == "technical_learning"
+        ),
+        None,
+    )
+    report = roadmap_import.validation_report
+    summary = _object(roadmap_import.semantic_diff.get("summary"), "semantic_diff.summary")
+    if (
+        expected_reading is None
+        or roadmap_version.version_key != parsed.roadmap_version
+        or today.roadmap.version_key != parsed.roadmap_version
+        or report
+        != {
+            "schema_version": 1,
+            "accepted": True,
+            "normalized_hash": parsed.normalized_hash,
+            "task_count": len(parsed.tasks),
+            "resource_count": len(parsed.resources),
+            "exit_criterion_count": len(parsed.exit_criteria),
+            "issues": [],
+        }
+        or summary
+        != {
+            "added": (
+                len(parsed.tasks)
+                + len(parsed.contracts)
+                + len(parsed.resources)
+                + len(parsed.exit_criteria)
+            ),
+            "changed": 0,
+            "removed": 0,
+            "unchanged": 0,
+        }
+    ):
+        raise FixtureError("native parity roadmap projection drifted")
 
     reading = next((item for item in today.tasks if item.block == "technical_learning"), None)
     if (
@@ -88,6 +141,20 @@ def validate_fixture(value: dict[str, Any], *, root: Path = ROOT) -> None:
         or reading.activity_id != activity.id
         or reading.objective != activity.task_contract.objective
         or activity.task_contract.block != "technical_learning"
+        or reading.roadmap_order != expected_reading.order
+        or reading.stable_id != expected_reading.stable_id
+        or reading.objective != expected_reading.objective
+        or tuple((item.path, item.anchor) for item in reading.source_references)
+        != ((expected_reading.source_path, expected_reading.source_heading),)
+        or tuple(reading.required_output) != expected_reading.required_output
+        or tuple(reading.pass_criteria) != expected_reading.pass_criteria
+        or tuple(reading.evidence_requirements) != expected_reading.evidence_requirements
+        or reading.allowed_ai_role != expected_reading.allowed_ai_role
+        or activity.task_contract.exercise_type != expected_reading.exercise_type
+        or activity.task_contract.mapping_version != expected_reading.mapping_version
+        or tuple(step.model_dump(mode="json") for step in activity.task_contract.procedure)
+        != tuple(step.to_dict() for step in expected_reading.procedure)
+        or tuple(activity.task_contract.constraints) != expected_reading.constraints
     ):
         raise FixtureError("native parity Today/activity relationship drifted")
 
@@ -128,6 +195,12 @@ def validate_fixture(value: dict[str, Any], *, root: Path = ROOT) -> None:
     )
     if assessed is None or assessed.qualifying_event_count != 3 or len(assessed.manifest) != 5:
         raise FixtureError("native parity assessed skill lineage drifted")
+    exercise_type = activity.task_contract.exercise_type
+    if exercise_type is None:
+        raise FixtureError("native parity activity exercise type is missing")
+    exercise = bundle.exercise(exercise_type)
+    if portfolio.items or "portfolio_judgment" in exercise.composite_metric_weights:
+        raise FixtureError("native parity portfolio relationship drifted")
     if (
         not notifications.items
         or notifications.items[0].notification_type != "feedback_ready"

@@ -36,6 +36,10 @@ struct NotificationPage: Codable, Equatable, Sendable {
     var allowedItems: [TAMForgeNotification] {
         items.filter { $0.presentation != nil }
     }
+
+    var defaultActionNotificationID: Int? {
+        allowedItems.first(where: { $0.readAt == nil })?.id
+    }
 }
 
 struct NotificationPresentation: Equatable, Sendable {

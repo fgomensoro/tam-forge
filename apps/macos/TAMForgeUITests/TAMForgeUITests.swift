@@ -110,6 +110,11 @@ final class TAMForgeUITests: XCTestCase {
             app.staticTexts["activitySelfReviewSummary"].value as? String,
             "Your score: 3 / 4. AI analysis has not been requested."
         )
+        XCTAssertEqual(textsContaining("Attempt C", in: app).count, 0)
+        XCTAssertEqual(
+            app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Attempt C")).count,
+            0
+        )
 
         app.buttons["evidenceNavigation"].click()
         XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 10))

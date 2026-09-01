@@ -27,9 +27,15 @@ models and commands remain authoritative.
 
 One synthetic scenario is checked at
 `tests/fixtures/native-parity/foundation-journey-v1.json`. Its source ZIP digest and
-byte count are bound to the real Month 1 package; FastAPI/Pydantic validates every
+byte count are bound to the real Month 1 package. Roadmap version, validation counts,
+hash, selected task, source references and complete activity contract are regenerated
+from that package and compared with the fixture. FastAPI/Pydantic validates every
 shared response, and Swift decodes the same copied bytes through generated OpenAPI
-types. The copy is drift-checked and exists only in test bundles.
+types. The synthetic fixture intentionally contains one client-visible activity and
+an empty portfolio for its non-portfolio exercise. The durable server journey is
+separate: it compares every business field from the real seven-task Today response,
+retains cross-response IDs, and reads persisted state through fresh sessions. The
+fixture copy is drift-checked and exists only in test bundles.
 
 | Former browser journey assertion | Native client evidence | Durable server evidence |
 | --- | --- | --- |
@@ -50,27 +56,21 @@ PostgreSQL/MinIO behavior through the same FastAPI routes and shared scenario.
 
 ## Local 8 GB resource receipt
 
-The opt-in receipt passed on `da4b5463e80a2e10596c343f0f1b3730dadb8c9a`
-using a Mac14,7 with 8 GiB RAM and macOS 26.3 (25D125). The ad-hoc signed DEBUG
-shared-parity fixture completed five usable cold launches, a 60-second settle, 300
-RSS samples on an absolute one-second schedule, 20 Today/Evidence/refresh cycles and
-a final 60-second settle. The JSON is retained as
-`tamforge-native-resource-receipt` in
-`/tmp/tamforge-native-resource-da4b546.xcresult`.
+The opt-in receipt runs only against an explicitly selected DEBUG app executable. It
+requires the expected SHA-256, discovers the single launched TAM Forge process,
+hashes that process's executable before measurement, and records both hashes, bundle
+identifier, process identifier and executable name in a schema-v2 JSON receipt.
+Source Git SHA is retained as metadata but is not accepted as proof of app identity.
 
-| Measurement | Result |
-| --- | ---: |
-| Cold launch p50 / p95 | 4.486 s / 7.116 s |
-| Idle RSS min / p50 / p95 / max | 8.516 / 17.891 / 31.781 / 48.813 MiB |
-| Navigation-cycle peak RSS | 58.172 MiB |
-| Post-cycle RSS after 60 s | 21.750 MiB |
-
-The locked idle p95 gate is 180 MiB; the observed 31.781 MiB passed. The post-cycle
-gate is idle p95 + 20 MiB (51.781 MiB); the observed 21.750 MiB passed. The test ran
-for 578.804 seconds with one pass and zero failures or skips. This receipt measures
-the native UI under the shared fixture, not local ASR, recording or live-server work.
-Its RSS probe exists only under `DEBUG`; the separate Release gate proves the probe
-and all other fixture hooks are absent from the distributable app.
+The measurement performs five usable cold launches, a 60-second settle, 300 RSS
+samples on an absolute one-second schedule, 20 Today/Evidence/refresh cycles and a
+final 60-second settle. Idle p95 must remain at or below 180 MiB; post-cycle RSS must
+remain at or below idle p95 + 20 MiB. Exact-head values and the retained xcresult
+belong in the PR evidence because they change per build. Any older receipt without
+the measured executable identity is historical only and cannot satisfy this gate.
+This measures native UI under the shared fixture, not local ASR, recording or
+live-server work. The RSS probe exists only under `DEBUG`; the separate Release gate
+proves the probe and all other fixture hooks are absent from the distributable app.
 
 ## Evidence boundaries
 

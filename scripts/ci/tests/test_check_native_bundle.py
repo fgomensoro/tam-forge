@@ -84,6 +84,15 @@ def test_executable_and_macho_outside_macos_are_rejected(tmp_path: Path) -> None
     assert "unexpected executable or Mach-O payload: Contents/Helpers/Metadata" in violations
 
 
+def test_apple_swift_compatibility_library_is_allowed(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+    compatibility = app / "Contents" / "Frameworks" / "libswiftCompatibilitySpan.dylib"
+    compatibility.parent.mkdir(parents=True)
+    compatibility.write_bytes(b"\xcf\xfa\xed\xfe Apple Swift compatibility")
+
+    assert bundle_violations(app) == ()
+
+
 def test_checker_inspects_only_allowed_binary_dependencies(
     tmp_path: Path, monkeypatch: object
 ) -> None:
@@ -100,11 +109,7 @@ def test_checker_inspects_only_allowed_binary_dependencies(
 
     check_bundle(app, require_ad_hoc=True)
 
-    assert calls[-1] == [
-        "otool",
-        "-L",
-        str(app / "Contents" / "MacOS" / "TAMForge"),
-    ]
+    assert calls[-1] == ["otool", "-L", str(app / "Contents" / "MacOS" / "TAMForge")]
 
 
 def test_checker_does_not_inspect_rejected_binary(tmp_path: Path, monkeypatch: object) -> None:

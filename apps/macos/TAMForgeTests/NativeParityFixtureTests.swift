@@ -38,7 +38,8 @@ final class NativeParityFixtureTests: XCTestCase {
         XCTAssertTrue(skills.items.contains(where: { $0.latestSnapshot == nil }))
         XCTAssertEqual(skills.items.first?.latestSnapshot?.value1.manifest.count, 5)
         XCTAssertEqual(skills.items.first?.latestSnapshot?.value1.qualifyingEventCount, 3)
-        XCTAssertEqual(portfolio.items.first?.totalScore, "14.000")
+        XCTAssertTrue(portfolio.items.isEmpty)
+        XCTAssertNil(portfolio.nextCursor)
     }
 
     func testSharedFixtureCarriesOneExactIndependentJourney() throws {

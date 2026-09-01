@@ -13,23 +13,26 @@
       "status": "validated",
       "failure_code": null,
       "validation_report": {
+        "schema_version": 1,
         "accepted": true,
+        "normalized_hash": "44162f9a90e9fb5870d0279e5ebaefed9bb9e76baf126f37b2796c394a3f12c9",
         "task_count": 158,
-        "resource_count": 0,
-        "exit_criterion_count": 1,
+        "resource_count": 3,
+        "exit_criterion_count": 2,
         "issues": []
       },
       "semantic_diff": {
         "summary": {
-          "added": 158,
+          "added": 321,
           "changed": 0,
-          "removed": 0
+          "removed": 0,
+          "unchanged": 0
         }
       }
     },
     "roadmap_version": {
       "id": 8,
-      "version_key": "month-1-v1",
+      "version_key": "month-1-v2",
       "version_number": 1,
       "month_number": 1,
       "state": "active",
@@ -45,7 +48,7 @@
       "day_status": "planned",
       "roadmap": {
         "version_id": 8,
-        "version_key": "month-1-v1",
+        "version_key": "month-1-v2",
         "version_number": 1,
         "month": 1,
         "week": 1,
@@ -69,22 +72,39 @@
       "tasks": [
         {
           "activity_id": 41,
-          "roadmap_order": 1,
-          "stable_id": "integration-reading",
+          "roadmap_order": 2,
+          "stable_id": "m1-w1-d01-technical",
           "block": "technical_learning",
           "state": "ready",
-          "objective": "Explain HTTP status versus business outcome from memory.",
+          "objective": "Read A1–A3; produce a request/response map and error matrix for the assigned HTTP status codes.",
           "timebox_minutes": 45,
           "source_references": [
             {
-              "path": "TAM Practice/Docs/http-status.md",
-              "anchor": "failure-boundaries"
+              "path": "Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md",
+              "anchor": "Day 1 — Baseline and HTTP"
             }
           ],
-          "required_output": ["Independent closed-source recall"],
-          "pass_criteria": ["Separate transport status from business outcome"],
-          "allowed_ai_role": "none",
-          "evidence_requirements": ["Attempt A", "Mandatory self-review"],
+          "required_output": [
+            "Committed closed-source recall note with three key ideas",
+            "one boundary or failure mode",
+            "one TAM or customer example",
+            "and one unresolved question.",
+            "Application artifact named in the task objective.",
+            "Teach-back explanation."
+          ],
+          "pass_criteria": [
+            "Use only the assigned documentation during focused reading.",
+            "Hide the source before recall and commit the learner-authored note before AI evaluation.",
+            "Explain the concept accurately without replacing the note with an AI summary."
+          ],
+          "allowed_ai_role": "tutor",
+          "evidence_requirements": [
+            "Assigned source reference.",
+            "Original closed-source recall note.",
+            "Application artifact.",
+            "Teach-back.",
+            "Commitment timestamp and unresolved question."
+          ],
           "required": true,
           "optimistic_version": 1
         }
@@ -96,8 +116,8 @@
       "primary_continue": {
         "kind": "start_activity",
         "target_id": 41,
-        "label": "Start technical reading",
-        "allowed_ai_role": "none"
+        "label": "Start next required activity",
+        "allowed_ai_role": "tutor"
       },
       "source_updated_at": "2026-08-24T19:00:00Z",
       "read_model_version": "native-parity-v1",
@@ -116,23 +136,49 @@
       "open_timer": null,
       "source_hidden": false,
       "task_contract": {
-        "stable_id": "integration-reading",
+        "stable_id": "m1-w1-d01-technical",
         "block": "technical_learning",
-        "objective": "Explain HTTP status versus business outcome from memory.",
+        "objective": "Read A1–A3; produce a request/response map and error matrix for the assigned HTTP status codes.",
         "timebox_minutes": 45,
         "required": true,
         "source_references": [
           {
-            "path": "TAM Practice/Docs/http-status.md",
-            "anchor": "failure-boundaries"
+            "path": "Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md",
+            "anchor": "Day 1 — Baseline and HTTP"
           }
         ],
-        "required_output": ["Independent closed-source recall"],
-        "pass_criteria": ["Separate transport status from business outcome"],
-        "evidence_requirements": ["Attempt A", "Mandatory self-review"],
-        "allowed_ai_role": "none",
-        "procedure": [],
-        "constraints": ["Hide the source before committing Attempt A."],
+        "required_output": [
+          "Committed closed-source recall note with three key ideas",
+          "one boundary or failure mode",
+          "one TAM or customer example",
+          "and one unresolved question.",
+          "Application artifact named in the task objective.",
+          "Teach-back explanation."
+        ],
+        "pass_criteria": [
+          "Use only the assigned documentation during focused reading.",
+          "Hide the source before recall and commit the learner-authored note before AI evaluation.",
+          "Explain the concept accurately without replacing the note with an AI summary."
+        ],
+        "evidence_requirements": [
+          "Assigned source reference.",
+          "Original closed-source recall note.",
+          "Application artifact.",
+          "Teach-back.",
+          "Commitment timestamp and unresolved question."
+        ],
+        "allowed_ai_role": "tutor",
+        "procedure": [
+          {"phase": "preview", "minutes": 2, "requirement": "Preview the objective."},
+          {"phase": "focused_reading", "minutes": 20, "requirement": "Read only the assigned documentation."},
+          {"phase": "closed_source_recall", "minutes": 8, "requirement": "Hide the source and write the required recall note."},
+          {"phase": "application", "minutes": 10, "requirement": "Apply the concept to the assigned TAM context."},
+          {"phase": "teach_back", "minutes": 5, "requirement": "Explain the concept aloud or in writing."}
+        ],
+        "constraints": [
+          "AI evaluates only after the recall note is committed.",
+          "AI must not replace the learner-authored note with a generated summary."
+        ],
         "exercise_type": "integration_diagram_and_explanation",
         "mapping_version": "seed-v1"
       },
@@ -224,34 +270,7 @@
         }
       ]
     },
-    "portfolio": {
-      "items": [
-        {
-          "id": 91,
-          "activity_id": 41,
-          "attempt_id": 11,
-          "formula_version": "seed-v1",
-          "rubric_version": "seed-v1",
-          "total_score": "14.000",
-          "components": [
-            {"slug": "impact_risk_assessment", "score": "3.000"},
-            {"slug": "explicit_prioritization", "score": "2.000"},
-            {"slug": "delegation_ownership", "score": "2.000"},
-            {"slug": "communication_control", "score": "2.000"},
-            {"slug": "proactive_work_protection", "score": "1.000"},
-            {"slug": "evidence_based_reprioritization", "score": "2.000"},
-            {"slug": "english_clarity", "score": "2.000"}
-          ],
-          "trend_basis": {
-            "schema_version": 1,
-            "basis_code": "first_score",
-            "event_ids": []
-          },
-          "scored_at": "2026-08-24T20:00:00Z"
-        }
-      ],
-      "next_cursor": null
-    }
+    "portfolio": {"items": [], "next_cursor": null}
   },
   "journey": {
     "activity_states": [
@@ -265,7 +284,7 @@
     "output": {
       "contract_version": 1,
       "kind": "reading",
-      "prompt": "Explain HTTP status versus business outcome from memory.",
+      "prompt": "Read A1–A3; produce a request/response map and error matrix for the assigned HTTP status codes.",
       "audience": "Technical hiring manager",
       "time_limit_minutes": 45,
       "key_ideas": [

@@ -62,7 +62,11 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
     from tamforge_backend.auth.models import CommandReceipt
     from tamforge_backend.auth.service import AuthService
     from tamforge_backend.config import APPROVED_GITHUB_USER_ID, Settings
-    from tamforge_backend.database import database_url_to_sync, transaction_scope
+    from tamforge_backend.database import (
+        database_url_to_sync,
+        transaction_scope,
+        validate_test_database_url,
+    )
     from tamforge_backend.evidence.config_loader import load_config_bundle
     from tamforge_backend.evidence.models import RubricEvaluation, SkillEvidenceEvent
     from tamforge_backend.evidence.repository import SqlAlchemyEvidenceRepository
@@ -77,7 +81,11 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
     from tamforge_backend.main import create_app
     from tamforge_backend.notifications.models import Notification, OutboxEvent
     from tamforge_backend.notifications.repository import SqlAlchemyNotificationRepository
+    from tamforge_backend.roadmaps.contracts import ParsedRoadmap
+    from tamforge_backend.roadmaps.diff import diff_roadmaps
     from tamforge_backend.roadmaps.models import RoadmapImport
+    from tamforge_backend.roadmaps.package import inspect_zip_stream
+    from tamforge_backend.roadmaps.parser import parse_roadmap
     from tamforge_backend.storage.s3 import S3ObjectStore
 
     object_store = _isolated_object_store()
@@ -87,6 +95,40 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
         "path": "apps/backend/tests/fixtures/roadmaps/month-v1.zip",
         "sha256": hashlib.sha256(package_bytes).hexdigest(),
         "byte_length": len(package_bytes),
+    }
+    validate_test_database_url(test_database_url)
+    bundle = load_config_bundle(ROOT / "config")
+    with inspect_zip_stream((package_bytes,)) as inspected_package:
+        assert inspected_package.accepted
+        expected_roadmap = parse_roadmap(
+            files={
+                item.manifest.path: item.staged_path.read_bytes()
+                for item in inspected_package.files
+            },
+            config=bundle,
+        )
+    empty_roadmap = ParsedRoadmap(
+        schema_version=expected_roadmap.schema_version,
+        roadmap_version=expected_roadmap.roadmap_version,
+        tasks=(),
+        contracts=(),
+        resources=(),
+        exit_criteria=(),
+        normalized_hash="0" * 64,
+    )
+    expected_import_response = {
+        "status": "validated",
+        "validation_report": {
+            "schema_version": 1,
+            "accepted": True,
+            "normalized_hash": expected_roadmap.normalized_hash,
+            "task_count": len(expected_roadmap.tasks),
+            "resource_count": len(expected_roadmap.resources),
+            "exit_criterion_count": len(expected_roadmap.exit_criteria),
+            "issues": [],
+        },
+        "semantic_diff": diff_roadmaps(empty_roadmap, expected_roadmap).to_dict(),
+        "failure_code": None,
     }
     migration = Config("apps/backend/alembic.ini")
     migration.attributes["database_url"] = test_database_url
@@ -118,7 +160,6 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
         async def exercise() -> None:
             engine = create_async_engine(async_url)
             factory = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
-            bundle = load_config_bundle(ROOT / "config")
             settings = Settings(
                 environment="test",
                 database_url=async_url.render_as_string(hide_password=False),
@@ -262,16 +303,11 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                         )
                         assert staged.status_code == 201, staged.text
                         staged_payload = staged.json()
-                        expected_import = parity["responses"]["roadmap_import"]
-                        assert staged_payload["status"] == expected_import["status"]
-                        assert staged_payload["failure_code"] == expected_import["failure_code"]
                         assert {
-                            key: staged_payload["validation_report"][key]
-                            for key in ("accepted", "task_count", "issues")
-                        } == {
-                            key: expected_import["validation_report"][key]
-                            for key in ("accepted", "task_count", "issues")
-                        }
+                            key: value
+                            for key, value in staged_payload.items()
+                            if key != "id"
+                        } == expected_import_response
 
                         replay = await first_native_client.post(
                             "/api/v1/roadmap-imports",
@@ -305,27 +341,18 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                         )
                         assert activated.status_code == 200, activated.text
                         activated_payload = activated.json()
-                        expected_version = parity["responses"]["roadmap_version"]
                         assert {
-                            key: activated_payload[key]
-                            for key in (
-                                "version_number",
-                                "month_number",
-                                "state",
-                                "mirror_status",
-                                "mirror_ref",
-                                "mirror_error_code",
-                            )
+                            key: value
+                            for key, value in activated_payload.items()
+                            if key != "id"
                         } == {
-                            key: expected_version[key]
-                            for key in (
-                                "version_number",
-                                "month_number",
-                                "state",
-                                "mirror_status",
-                                "mirror_ref",
-                                "mirror_error_code",
-                            )
+                            "version_key": expected_roadmap.roadmap_version,
+                            "version_number": 1,
+                            "month_number": 1,
+                            "state": "active",
+                            "mirror_status": "not_required",
+                            "mirror_ref": None,
+                            "mirror_error_code": None,
                         }
 
                         today = await first_native_client.get(
@@ -356,55 +383,133 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                             )
                         }
                         assert {
-                            key: today_payload["roadmap"][key]
-                            for key in ("version_number", "month", "week", "day")
+                            key: value
+                            for key, value in today_payload["roadmap"].items()
+                            if key != "version_id"
                         } == {
-                            key: expected_today["roadmap"][key]
-                            for key in ("version_number", "month", "week", "day")
+                            "version_key": expected_roadmap.roadmap_version,
+                            "version_number": 1,
+                            "month": 1,
+                            "week": 1,
+                            "day": 1,
                         }
-                        assert [item["timebox_minutes"] for item in today_payload["tasks"]] == [
-                            45,
-                            45,
-                            30,
-                            10,
-                            60,
-                            35,
-                            15,
+                        expected_day_tasks = tuple(
+                            task
+                            for task in expected_roadmap.tasks
+                            if task.week == 1 and task.day == 1
+                        )
+                        assert len(today_payload["tasks"]) == len(expected_day_tasks) == 7
+                        for actual_task, expected_task in zip(
+                            today_payload["tasks"], expected_day_tasks, strict=True
+                        ):
+                            assert {
+                                key: value
+                                for key, value in actual_task.items()
+                                if key != "activity_id"
+                            } == {
+                                "roadmap_order": expected_task.order,
+                                "stable_id": expected_task.stable_id,
+                                "block": expected_task.block,
+                                "state": "ready",
+                                "objective": expected_task.objective,
+                                "timebox_minutes": expected_task.timebox_minutes,
+                                "source_references": [
+                                    {
+                                        "path": expected_task.source_path,
+                                        "anchor": expected_task.source_heading,
+                                    }
+                                ],
+                                "required_output": list(expected_task.required_output),
+                                "pass_criteria": list(expected_task.pass_criteria),
+                                "allowed_ai_role": expected_task.allowed_ai_role,
+                                "evidence_requirements": list(
+                                    expected_task.evidence_requirements
+                                ),
+                                "required": expected_task.required,
+                                "optimistic_version": 1,
+                            }
+                        actual_tasks_by_block = {
+                            item["block"]: item for item in today_payload["tasks"]
+                        }
+                        assert today_payload["required_blocks"] == [
+                            {
+                                "name": task.block,
+                                "planned_minutes": task.timebox_minutes,
+                                "activity_ids": [
+                                    actual_tasks_by_block[task.block]["activity_id"]
+                                ],
+                            }
+                            for task in expected_day_tasks
+                            if task.required
                         ]
+                        assert today_payload["corrections"] == []
+                        assert today_payload["interviews"] == []
+                        assert today_payload["awaiting_self_reviews"] == []
+                        assert today_payload["analyses"] == []
+                        first_task = today_payload["tasks"][0]
+                        assert today_payload["primary_continue"] == {
+                            "kind": "start_activity",
+                            "target_id": first_task["activity_id"],
+                            "label": "Start next required activity",
+                            "allowed_ai_role": first_task["allowed_ai_role"],
+                        }
                         reading = next(
                             item
                             for item in today_payload["tasks"]
                             if item["block"] == "technical_learning"
                         )
-                        expected_reading = expected_today["tasks"][0]
-                        assert reading["block"] == expected_reading["block"]
-                        assert reading["timebox_minutes"] == expected_reading[
-                            "timebox_minutes"
-                        ]
                         activity_id = int(reading["activity_id"])
                         path = f"/api/v1/activities/{activity_id}"
                         detail = await first_native_client.get(path, headers=native_headers)
                         assert detail.status_code == 200
                         detail_payload = detail.json()
-                        assert detail_payload["id"] == activity_id
-                        assert detail_payload["state"] == reading["state"]
-                        assert detail_payload["optimistic_version"] == reading[
-                            "optimistic_version"
-                        ]
-                        task_contract = detail_payload["task_contract"]
-                        for key in (
-                            "stable_id",
-                            "block",
-                            "objective",
-                            "timebox_minutes",
-                            "required",
-                            "source_references",
-                            "required_output",
-                            "pass_criteria",
-                            "evidence_requirements",
-                            "allowed_ai_role",
-                        ):
-                            assert task_contract[key] == reading[key]
+                        expected_reading = next(
+                            task
+                            for task in expected_day_tasks
+                            if task.block == "technical_learning"
+                        )
+                        assert detail_payload == {
+                            "id": activity_id,
+                            "study_day_id": today_payload["day_id"],
+                            "state": "ready",
+                            "optimistic_version": 1,
+                            "classification": "required",
+                            "stronger_evidence_id": None,
+                            "activity_focused_seconds": 0,
+                            "day_focused_minutes": 0,
+                            "hard_stop_recommended": False,
+                            "open_timer": None,
+                            "source_hidden": False,
+                            "task_contract": {
+                                "stable_id": expected_reading.stable_id,
+                                "block": expected_reading.block,
+                                "objective": expected_reading.objective,
+                                "timebox_minutes": expected_reading.timebox_minutes,
+                                "required": expected_reading.required,
+                                "source_references": [
+                                    {
+                                        "path": expected_reading.source_path,
+                                        "anchor": expected_reading.source_heading,
+                                    }
+                                ],
+                                "required_output": list(
+                                    expected_reading.required_output
+                                ),
+                                "pass_criteria": list(expected_reading.pass_criteria),
+                                "evidence_requirements": list(
+                                    expected_reading.evidence_requirements
+                                ),
+                                "allowed_ai_role": expected_reading.allowed_ai_role,
+                                "procedure": [
+                                    item.to_dict() for item in expected_reading.procedure
+                                ],
+                                "constraints": list(expected_reading.constraints),
+                                "exercise_type": expected_reading.exercise_type,
+                                "mapping_version": expected_reading.mapping_version,
+                            },
+                            "committed_output": None,
+                            "self_review": None,
+                        }
                         started = await mutate(
                             first_native_client,
                             path + "/start",
@@ -617,8 +722,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                             "/api/v1/portfolio-judgment", headers=native_headers
                         )
                         assert portfolio.status_code == 200
-                        assert portfolio.json()["items"] == []
-                        assert portfolio.json()["next_cursor"] is None
+                        assert portfolio.json() == parity["responses"]["portfolio"]
 
                         notifications = await final_native_client.get(
                             "/api/v1/notifications", headers=native_headers
