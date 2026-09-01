@@ -233,7 +233,9 @@ private final class NativeUIFixtureState: @unchecked Sendable {
             if emptyEvidence || path.contains("tam_english") {
                 return ["items": [], "next_cursor": NSNull()]
             }
-            let events = cursor == nil ? [evidenceEvent(id: 50), evidenceEvent(id: 49)] : [evidenceEvent(id: 39)]
+            let events = cursor == nil
+                ? [evidenceEvent(id: 50), evidenceEvent(id: 49)]
+                : [evidenceEvent(id: 39), evidenceEvent(id: 10), evidenceEvent(id: 9)]
             let nextCursor: Any = cursor == nil ? 49 : NSNull()
             return ["items": events, "next_cursor": nextCursor]
         }
@@ -243,18 +245,19 @@ private final class NativeUIFixtureState: @unchecked Sendable {
         let assessed = !english && !emptyEvidence
         let snapshot: [String: Any] = [
             "id": 71, "formula_version": "seed-v1", "snapshot_date": "2026-08-27",
-            "estimated_level": "2.750", "confidence": "medium", "trend": "improving", "recency": "fresh",
-            "baseline_target_gap": "-0.750", "month_one_target_gap": "0.250", "final_target_gap": "0.750",
-            "total_effective_weight": "1.400", "qualifying_event_count": 2, "exercise_type_count": 2,
-            "last_strong_evidence_date": "2026-08-27",
+            "estimated_level": "2.410", "confidence": "low", "trend": "insufficient_evidence", "recency": "fresh",
+            "baseline_target_gap": "-0.410", "month_one_target_gap": "0.590", "final_target_gap": "1.090",
+            "total_effective_weight": "1.389375", "qualifying_event_count": 3, "exercise_type_count": 1,
+            "last_strong_evidence_date": NSNull(),
             "manifest": [
-                ["event_id": 50, "effective_weight": "0.400", "inclusion_code": "discounted_same_day"],
+                ["event_id": 9, "effective_weight": "0.617500", "inclusion_code": "included"],
+                ["event_id": 10, "effective_weight": "0.617500", "inclusion_code": "included"],
+                ["event_id": 50, "effective_weight": "0.154375", "inclusion_code": "discounted_same_day"],
                 ["event_id": 49, "effective_weight": "0.000", "inclusion_code": "excluded_nonqualifying"],
-                ["event_id": 9, "effective_weight": "1.000", "inclusion_code": "included"],
+                ["event_id": 39, "effective_weight": "0.000", "inclusion_code": "excluded_nonqualifying"],
             ],
-            "confidence_basis": ["schema_version": 1, "qualifying_events": 2,
-                                 "future_basis": ["context": ["Independent case", "Timed writing"]]],
-            "trend_basis": ["schema_version": 1, "basis_code": "improving", "event_ids": [50, 9]],
+            "confidence_basis": ["schema_version": 1, "basis_code": "low_weight", "event_ids": [9, 10, 50]],
+            "trend_basis": ["schema_version": 1, "basis_code": "too_few_events", "event_ids": []],
         ]
         return [
             "slug": english ? "tam_english" : "structured_troubleshooting",
@@ -265,20 +268,26 @@ private final class NativeUIFixtureState: @unchecked Sendable {
     }
 
     private func evidenceEvent(id: Int) -> [String: Any] {
-        let selfEvidence = id == 49
+        let selfEvidence = id == 49 || id == 39
+        let effectiveWeight = selfEvidence ? "0.390000" : "0.617500"
+        let occurredAt = switch id {
+        case 9: "2026-08-27T18:00:00Z"
+        case 10: "2026-08-27T19:00:00Z"
+        default: stamp
+        }
         return [
             "id": id, "activity_id": 41, "attempt_id": 11, "skill_slug": "structured_troubleshooting",
             "exercise_type": "troubleshooting_case", "mapping_version": "seed-v1", "formula_version": "seed-v1",
             "rubric_slug": "tam_case", "rubric_version": "seed-v1",
             "evaluator": selfEvidence ? "self" : "human_coach", "practice_mode": "independent_practice",
             "assistance": "no_ai", "difficulty": "standard", "performance_score": "3.000",
-            "skill_impact": "1.000", "effective_weight": "0.800", "qualifying_for_level": !selfEvidence,
+            "skill_impact": "1.000", "effective_weight": effectiveWeight, "qualifying_for_level": !selfEvidence,
             "qualification_reason": selfEvidence ? "excluded_by_formula" : "qualifies",
             "raw_dimension_scores": ["schema_version": 1, "scores": [
                 ["dimension_slug": "diagnosis", "availability": "scored", "score": "3.000",
                  "observations": ["Customer impact is explicit; next steps name an owner and a verification condition."]],
             ]],
-            "occurred_at": stamp,
+            "occurred_at": occurredAt,
         ]
     }
 }

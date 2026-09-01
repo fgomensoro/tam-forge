@@ -7,7 +7,7 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         let fixture = URLProtocolFixture()
         fixture.enqueue(.response(statusCode: 200, body: skillsBody(snapshot: nil)))
         fixture.enqueue(.response(statusCode: 200, body: skillBody(snapshot: snapshotBody())))
-        fixture.enqueue(.response(statusCode: 200, body: evidencePageBody(nextCursor: nil)))
+        fixture.enqueue(.response(statusCode: 200, body: evidencePageBody(nextCursor: nil, qualifying: true)))
         fixture.enqueue(.response(statusCode: 200, body: evidencePageBody(nextCursor: 39, eventID: 39)))
         fixture.enqueue(.response(statusCode: 200, body: portfolioPageBody(nextCursor: nil)))
         let recorder = EvidenceDiagnosticRecorder()
@@ -25,10 +25,10 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         let portfolio = try await api.fetchPortfolioHistory(cursor: nil)
 
         XCTAssertNil(skills[0].snapshot, "A null snapshot is not a zero score")
-        XCTAssertEqual(detail.snapshot?.estimatedLevel, "1.162")
+        XCTAssertEqual(detail.snapshot?.estimatedLevel, "1.368")
         XCTAssertEqual(detail.snapshot?.snapshotDate, "2026-08-31")
-        XCTAssertEqual(detail.snapshot?.lastStrongEvidenceDate, "2026-08-30")
-        XCTAssertEqual(detail.snapshot?.manifest[0].usedWeight, "0.125")
+        XCTAssertNil(detail.snapshot?.lastStrongEvidenceDate)
+        XCTAssertEqual(detail.snapshot?.manifest[0].usedWeight, "0.308750")
         XCTAssertEqual(detail.snapshot?.confidenceBasis["unknown_basis"], .object([
             "items": .array([.integer(1), .object(["deep": .string("kept")])]),
         ]))
@@ -37,7 +37,7 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         XCTAssertEqual(activityPage.nextCursor, 39)
         XCTAssertEqual(activityPage.items[0].attemptID, nil)
         XCTAssertEqual(activityPage.items[0].performanceScore, "3.750")
-        XCTAssertEqual(activityPage.items[0].effectiveWeight, "0.875")
+        XCTAssertEqual(activityPage.items[0].effectiveWeight, "0.308750")
         XCTAssertEqual(
             activityPage.items[0].rawDimensionScores["nested"],
             .object(["items": .array([.integer(2), .object(["value": .string("kept")])])])
@@ -116,9 +116,9 @@ final class NativeEvidenceAdapterTests: XCTestCase {
 
     func testRejectsSnapshotAndEventValuesOutsideBackendRanges() async {
         for body in [
-            replacing(skillsBody(snapshot: snapshotBody()), [("\"baseline_target_gap\":\"-0.162\"", "\"baseline_target_gap\":\"-4.001\"")]),
-            replacing(skillsBody(snapshot: snapshotBody()), [("\"total_effective_weight\":\"0.125\"", "\"total_effective_weight\":\"-0.001\"")]),
-            replacing(skillsBody(snapshot: snapshotBody()), [("\"effective_weight\":\"0.125\"", "\"effective_weight\":\"1.501\"")]),
+            replacing(skillsBody(snapshot: snapshotBody()), [("\"baseline_target_gap\":\"-0.368\"", "\"baseline_target_gap\":\"-4.001\"")]),
+            replacing(skillsBody(snapshot: snapshotBody()), [("\"total_effective_weight\":\"0.308750\"", "\"total_effective_weight\":\"-0.001\"")]),
+            replacing(skillsBody(snapshot: snapshotBody()), [("\"effective_weight\":\"0.308750\"", "\"effective_weight\":\"1.501\"")]),
         ] {
             let fixture = URLProtocolFixture()
             fixture.enqueue(.response(statusCode: 200, body: body))
@@ -128,8 +128,8 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         for body in [
             replacing(evidencePageBody(nextCursor: nil), [("\"skill_impact\":\"0.500\"", "\"skill_impact\":\"0\"")]),
             replacing(evidencePageBody(nextCursor: nil), [("\"skill_impact\":\"0.500\"", "\"skill_impact\":\"1.001\"")]),
-            replacing(evidencePageBody(nextCursor: nil), [("\"effective_weight\":\"0.875\"", "\"effective_weight\":\"-0.001\"")]),
-            replacing(evidencePageBody(nextCursor: nil), [("\"effective_weight\":\"0.875\"", "\"effective_weight\":\"1.501\"")]),
+            replacing(evidencePageBody(nextCursor: nil), [("\"effective_weight\":\"0.308750\"", "\"effective_weight\":\"-0.001\"")]),
+            replacing(evidencePageBody(nextCursor: nil), [("\"effective_weight\":\"0.308750\"", "\"effective_weight\":\"1.501\"")]),
         ] {
             let fixture = URLProtocolFixture()
             fixture.enqueue(.response(statusCode: 200, body: body))
@@ -142,9 +142,9 @@ final class NativeEvidenceAdapterTests: XCTestCase {
 
     func testRejectsIncoherentSnapshotRelationships() async {
         for body in [
-            replacing(skillsBody(snapshot: snapshotBody()), [("\"baseline_target_gap\":\"-0.162\"", "\"baseline_target_gap\":\"-0.163\"")]),
-            replacing(skillsBody(snapshot: snapshotBody()), [("\"total_effective_weight\":\"0.125\"", "\"total_effective_weight\":\"0.126\"")]),
-            replacing(skillsBody(snapshot: snapshotBody()), [("\"inclusion_code\":\"discounted_same_day\"", "\"inclusion_code\":\"excluded_nonqualifying\"")]),
+            replacing(skillsBody(snapshot: snapshotBody()), [("\"baseline_target_gap\":\"-0.368\"", "\"baseline_target_gap\":\"-0.369\"")]),
+            replacing(skillsBody(snapshot: snapshotBody()), [("\"total_effective_weight\":\"0.308750\"", "\"total_effective_weight\":\"0.308751\"")]),
+            replacing(skillsBody(snapshot: snapshotBody()), [("\"inclusion_code\":\"included\"", "\"inclusion_code\":\"excluded_nonqualifying\"")]),
             replacing(skillsBody(snapshot: snapshotBody()), [("\"qualifying_event_count\":1", "\"qualifying_event_count\":2")]),
         ] {
             let fixture = URLProtocolFixture()
@@ -154,11 +154,7 @@ final class NativeEvidenceAdapterTests: XCTestCase {
     }
 
     func testEnforcesQualifyingEvidenceCoherence() async throws {
-        let validQualifying = replacing(evidencePageBody(nextCursor: nil), [
-            ("\"attempt_id\":null", "\"attempt_id\":81"),
-            ("\"qualifying_for_level\":false", "\"qualifying_for_level\":true"),
-            ("\"qualification_reason\":\"missing_committed_attempt\"", "\"qualification_reason\":\"qualifies\""),
-        ])
+        let validQualifying = evidencePageBody(nextCursor: nil, qualifying: true)
         let fixture = URLProtocolFixture()
         fixture.enqueue(.response(statusCode: 200, body: validQualifying))
         fixture.enqueue(.response(statusCode: 200, body: replacing(
@@ -187,24 +183,24 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         fixture.enqueue(.response(statusCode: 200, body: replacing(
             skillsBody(snapshot: snapshotBody()),
             [
-                ("\"estimated_level\":\"1.162\"", "\"estimated_level\":\"2.179\""),
-                ("\"baseline_target_gap\":\"-0.162\"", "\"baseline_target_gap\":\"-1.179\""),
-                ("\"month_one_target_gap\":\"0.838\"", "\"month_one_target_gap\":\"-0.179\""),
-                ("\"final_target_gap\":\"2.838\"", "\"final_target_gap\":\"1.821\""),
-                ("\"total_effective_weight\":\"0.125\"", "\"total_effective_weight\":\"1.5\""),
-                ("\"effective_weight\":\"0.125\"", "\"effective_weight\":\"1.5\""),
+                ("\"estimated_level\":\"1.368\"", "\"estimated_level\":\"2.179\""),
+                ("\"baseline_target_gap\":\"-0.368\"", "\"baseline_target_gap\":\"-1.179\""),
+                ("\"month_one_target_gap\":\"0.632\"", "\"month_one_target_gap\":\"-0.179\""),
+                ("\"final_target_gap\":\"2.632\"", "\"final_target_gap\":\"1.821\""),
+                ("\"total_effective_weight\":\"0.308750\"", "\"total_effective_weight\":\"1.5\""),
+                ("\"effective_weight\":\"0.308750\"", "\"effective_weight\":\"1.5\""),
             ]
         )))
         fixture.enqueue(.response(statusCode: 200, body: replacing(
             evidencePageBody(nextCursor: nil),
             [
                 ("\"skill_impact\":\"0.500\"", "\"skill_impact\":\"0.000001\""),
-                ("\"effective_weight\":\"0.875\"", "\"effective_weight\":\"0\""),
+                ("\"effective_weight\":\"0.308750\"", "\"effective_weight\":\"0\""),
             ]
         )))
         fixture.enqueue(.response(statusCode: 200, body: replacing(
             evidencePageBody(nextCursor: nil),
-            [("\"effective_weight\":\"0.875\"", "\"effective_weight\":\"1.5\"")]
+            [("\"effective_weight\":\"0.308750\"", "\"effective_weight\":\"1.5\"")]
         )))
         let api = LiveEvidenceAPI(transport: transport(fixture))
 
@@ -357,7 +353,7 @@ final class NativeEvidenceAdapterTests: XCTestCase {
             let fixture = URLProtocolFixture()
             let data = replacing(
                 skillsBody(snapshot: snapshotBody()),
-                "\"estimated_level\":\"1.162\"",
+                "\"estimated_level\":\"1.368\"",
                 "\"estimated_level\":\"\(value)\""
             )
             fixture.enqueue(.response(statusCode: 200, body: data))
@@ -457,29 +453,32 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         """.utf8)
     }
 
-    private func snapshotBody(estimatedLevel: String = "1.162") -> String {
+    private func snapshotBody(estimatedLevel: String = "1.368") -> String {
         """
-        {"id":71,"formula_version":"v1","snapshot_date":"2026-08-31",
-         "estimated_level":"\(estimatedLevel)","confidence":"medium","trend":"improving","recency":"fresh",
-         "baseline_target_gap":"-0.162","month_one_target_gap":"0.838","final_target_gap":"2.838",
-         "total_effective_weight":"0.125","qualifying_event_count":1,"exercise_type_count":1,
-         "last_strong_evidence_date":"2026-08-30",
-         "manifest":[{"event_id":501,"effective_weight":"0.125","inclusion_code":"discounted_same_day"}],
-         "confidence_basis":{"known_count":2,"unknown_basis":{"items":[1,{"deep":"kept"}]}},
-         "trend_basis":{"window":"30d","unknown_signal":["raw",true]}}
+        {"id":71,"formula_version":"formula-v1","snapshot_date":"2026-08-31",
+         "estimated_level":"\(estimatedLevel)","confidence":"low","trend":"insufficient_evidence","recency":"fresh",
+         "baseline_target_gap":"-0.368","month_one_target_gap":"0.632","final_target_gap":"2.632",
+         "total_effective_weight":"0.308750","qualifying_event_count":1,"exercise_type_count":1,
+         "last_strong_evidence_date":null,
+         "manifest":[{"event_id":501,"effective_weight":"0.308750","inclusion_code":"included"}],
+         "confidence_basis":{"schema_version":1,"basis_code":"low_weight","event_ids":[501],"unknown_basis":{"items":[1,{"deep":"kept"}]}},
+         "trend_basis":{"schema_version":1,"basis_code":"too_few_events","event_ids":[],"unknown_signal":["raw",true]}}
         """
     }
 
-    private func evidencePageBody(nextCursor: Int?, eventID: Int = 501) -> Data {
+    private func evidencePageBody(nextCursor: Int?, eventID: Int = 501, qualifying: Bool = false) -> Data {
         let cursor = nextCursor.map(String.init) ?? "null"
+        let attemptID = qualifying ? "81" : "null"
+        let qualifies = qualifying ? "true" : "false"
+        let reason = qualifying ? "qualifies" : "missing_committed_attempt"
         return Data("""
         {"items":[{
-          "id":\(eventID),"activity_id":41,"attempt_id":null,"skill_slug":"incident_communication",
+          "id":\(eventID),"activity_id":41,"attempt_id":\(attemptID),"skill_slug":"incident_communication",
           "exercise_type":"tam_case","mapping_version":"mapping-v1","formula_version":"formula-v1",
           "rubric_slug":"incident_rubric","rubric_version":"rubric-v1","evaluator":"human_coach",
           "practice_mode":"independent_practice","assistance":"no_ai","difficulty":"standard",
-          "performance_score":"3.750","skill_impact":"0.500","effective_weight":"0.875",
-          "qualifying_for_level":false,"qualification_reason":"missing_committed_attempt",
+          "performance_score":"3.750","skill_impact":"0.500","effective_weight":"0.308750",
+          "qualifying_for_level":\(qualifies),"qualification_reason":"\(reason)",
           "raw_dimension_scores":{"clarity":3,"nested":{"items":[2,{"value":"kept"}]}},
           "occurred_at":"2026-08-31T12:00:00Z"
         }],"next_cursor":\(cursor)}

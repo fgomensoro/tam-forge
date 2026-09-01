@@ -61,7 +61,7 @@ final class TAMForgeUITests: XCTestCase {
         app.buttons["evidenceNavigation"].click()
 
         XCTAssertTrue(app.staticTexts["evidenceTitle"].waitForExistence(timeout: 5))
-        XCTAssertTrue(textContaining("2.750 / 4", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(textContaining("2.410 / 4", in: app).waitForExistence(timeout: 5))
         XCTAssertTrue(textContaining("14.000 / 20", in: app).waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 5))
         XCTAssertTrue(textContaining("Missing evidence is not zero", in: app).exists)
@@ -86,7 +86,7 @@ final class TAMForgeUITests: XCTestCase {
         XCTAssertEqual(older.label, "Older skill evidence")
         let manifest = app.disclosureTriangles["evidenceManifest"]
         setDisclosure(manifest, expanded: true, in: app)
-        XCTAssertTrue(textContaining("Used weight 0.400 · Event weight 0.800", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(textContaining("Used weight 0.154375 · Event weight 0.617500", in: app).waitForExistence(timeout: 5))
         XCTAssertTrue(textContaining("Outside this page; browse older evidence", in: app).exists)
 
         let event = eventDisclosure(50, in: app)
@@ -112,6 +112,7 @@ final class TAMForgeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Evidence event 39"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Evidence event 50"].exists)
         let newest = app.buttons["evidenceSkillNewest"]
+        XCTAssertTrue(newest.waitForExistence(timeout: 5))
         XCTAssertEqual(newest.label, "Newest skill evidence")
         reveal(newest, in: app, scrollIdentifier: "evidenceLedger")
         app.activate()
@@ -125,11 +126,13 @@ final class TAMForgeUITests: XCTestCase {
         app.buttons["evidenceNavigation"].click()
 
         let portfolioOlder = app.buttons["evidencePortfolioOlder"]
+        XCTAssertTrue(portfolioOlder.waitForExistence(timeout: 5))
         XCTAssertEqual(portfolioOlder.label, "Older portfolio history")
         reveal(portfolioOlder, in: app, scrollIdentifier: "evidenceLedger")
         portfolioOlder.click()
         XCTAssertTrue(app.descendants(matching: .any)["evidencePortfolio_90"].waitForExistence(timeout: 5))
         let portfolioNewest = app.buttons["evidencePortfolioNewest"]
+        XCTAssertTrue(portfolioNewest.waitForExistence(timeout: 5))
         XCTAssertEqual(portfolioNewest.label, "Newest portfolio history")
         reveal(portfolioNewest, in: app, scrollIdentifier: "evidenceLedger")
         portfolioNewest.click()
