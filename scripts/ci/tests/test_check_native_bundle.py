@@ -70,6 +70,18 @@ def test_non_system_linked_library_is_rejected(tmp_path: Path) -> None:
     )
 
 
+def test_external_macho_runpath_is_rejected(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+
+    violations = bundle_violations(
+        app,
+        load_commands="Load command 1\n      cmd LC_RPATH\n  cmdsize 32\n"
+        "     path /usr/local/lib (offset 12)",
+    )
+
+    assert violations == ("non-standalone Mach-O runpath: /usr/local/lib",)
+
+
 def test_unexpected_second_product_executable_is_rejected(tmp_path: Path) -> None:
     app = _app(tmp_path)
     helper = app / "Contents" / "MacOS" / "postgres"
@@ -122,6 +134,8 @@ def test_checker_rejects_compatibility_library_trusted_only_by_filename(
             return "Signature=adhoc\nIdentifier=attacker.library"
         if command[:2] == ["xcrun", "--find"]:
             return str(tmp_path / "Xcode.xctoolchain" / "usr" / "bin" / "swiftc")
+        if command[:2] == ["otool", "-L"] and command[-1].endswith("/TAMForge"):
+            return "@rpath/libswiftCompatibilitySpan.dylib"
         return ""
 
     monkeypatch.setattr(check_native_bundle, "_run", fake_run)  # type: ignore[attr-defined]
@@ -172,11 +186,92 @@ def test_checker_accepts_compatibility_library_matching_signed_xcode_copy(
             return str(swiftc)
         if command[:2] == ["dwarfdump", "--uuid"]:
             return uuid_details
+        if command[:2] == ["otool", "-L"] and command[-1].endswith("/TAMForge"):
+            return (
+                "/usr/lib/libSystem.B.dylib\n"
+                "@rpath/libswiftCompatibilitySpan.dylib"
+            )
+        if command[:2] == ["otool", "-l"]:
+            return (
+                "Load command 1\n      cmd LC_RPATH\n  cmdsize 32\n"
+                "     path @executable_path/../Frameworks (offset 12)"
+            )
         return "/usr/lib/libSystem.B.dylib"
 
     monkeypatch.setattr(check_native_bundle, "_run", fake_run)  # type: ignore[attr-defined]
 
     check_bundle(app, require_ad_hoc=True)
+
+
+def test_checker_rejects_modified_compatibility_content_with_trusted_metadata(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    app = _app(tmp_path)
+    compatibility = app / "Contents" / "Frameworks" / "libswiftCompatibilitySpan.dylib"
+    compatibility.parent.mkdir(parents=True)
+    compatibility.write_bytes(b"\xcf\xfa\xed\xfe modified payload")
+    toolchain = tmp_path / "Xcode.xctoolchain"
+    swiftc = toolchain / "usr" / "bin" / "swiftc"
+    source = (
+        toolchain
+        / "usr"
+        / "lib"
+        / "swift-6.2"
+        / "macosx"
+        / "libswiftCompatibilitySpan.dylib"
+    )
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"\xcf\xfa\xed\xfe trusted payload")
+    uuid_details = "UUID: 35FDD7FE-B26C-3F04-AA72-2DB973F905B1 (arm64) payload"
+
+    def fake_run(command: list[str]) -> str:
+        if command[:3] == ["codesign", "-dv", "--verbose=4"]:
+            if command[-1] == str(app):
+                return "Signature=adhoc"
+            return (
+                "Identifier=com.apple.dt.runtime.swiftCompatibilitySpan\n"
+                "TeamIdentifier=59GAB85EFG"
+            )
+        if command[:2] == ["otool", "-D"]:
+            return "/usr/lib/swift/libswiftCompatibilitySpan.dylib"
+        if command[:2] == ["xcrun", "--find"]:
+            return str(swiftc)
+        if command[:2] == ["dwarfdump", "--uuid"]:
+            return uuid_details
+        if command[:2] == ["otool", "-L"] and command[-1].endswith("/TAMForge"):
+            return "@rpath/libswiftCompatibilitySpan.dylib"
+        return ""
+
+    monkeypatch.setattr(check_native_bundle, "_run", fake_run)  # type: ignore[attr-defined]
+
+    try:
+        check_bundle(app, require_ad_hoc=True)
+    except NativeBundleError as exc:
+        assert "content differs from the signed Xcode toolchain" in str(exc)
+    else:
+        raise AssertionError("modified compatibility content was accepted")
+
+
+def test_checker_requires_linked_compatibility_payload(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    app = _app(tmp_path)
+
+    def fake_run(command: list[str]) -> str:
+        if command[:3] == ["codesign", "-dv", "--verbose=4"]:
+            return "Signature=adhoc"
+        if command[:2] == ["otool", "-L"]:
+            return "@rpath/libswiftCompatibilitySpan.dylib"
+        return ""
+
+    monkeypatch.setattr(check_native_bundle, "_run", fake_run)  # type: ignore[attr-defined]
+
+    try:
+        check_bundle(app, require_ad_hoc=True)
+    except NativeBundleError as exc:
+        assert "payload and executable link must agree" in str(exc)
+    else:
+        raise AssertionError("missing linked compatibility payload was accepted")
 
 
 def test_checker_inspects_only_allowed_binary_dependencies(
@@ -195,7 +290,8 @@ def test_checker_inspects_only_allowed_binary_dependencies(
 
     check_bundle(app, require_ad_hoc=True)
 
-    assert calls[-1] == ["otool", "-L", str(app / "Contents" / "MacOS" / "TAMForge")]
+    assert ["otool", "-L", str(app / "Contents" / "MacOS" / "TAMForge")] in calls
+    assert ["otool", "-l", str(app / "Contents" / "MacOS" / "TAMForge")] in calls
 
 
 def test_checker_does_not_inspect_rejected_binary(tmp_path: Path, monkeypatch: object) -> None:

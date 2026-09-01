@@ -46,6 +46,12 @@ SWIFT_COMPATIBILITY_PATH = ALLOWED_BINARY_PATHS[1]
 SWIFT_COMPATIBILITY_IDENTIFIER = "com.apple.dt.runtime.swiftCompatibilitySpan"
 SWIFT_COMPATIBILITY_INSTALL_NAME = "/usr/lib/swift/libswiftCompatibilitySpan.dylib"
 APPLE_DEVELOPER_TEAM_IDENTIFIER = "59GAB85EFG"
+APPLE_SWIFT_COMPATIBILITY_REQUIREMENT = (
+    'anchor apple generic and identifier "com.apple.dt.runtime.swiftCompatibilitySpan"'
+)
+ALLOWED_RUNPATHS = frozenset(
+    {"/usr/lib/swift", "@executable_path/../Frameworks"}
+)
 MACH_O_MAGICS = frozenset(
     {
         b"\xce\xfa\xed\xfe",  # MH_MAGIC, little-endian
@@ -97,7 +103,12 @@ def _allowed_binary_payloads(app: Path) -> tuple[Path, ...]:
     return tuple(path for path in _binary_payloads(app) if path in allowed)
 
 
-def bundle_violations(app: Path, *, linked_libraries: str = "") -> tuple[str, ...]:
+def bundle_violations(
+    app: Path,
+    *,
+    linked_libraries: str = "",
+    load_commands: str = "",
+) -> tuple[str, ...]:
     violations: list[str] = []
     if not app.is_dir() or app.suffix != ".app":
         return ("Release app bundle does not exist",)
@@ -156,6 +167,9 @@ def bundle_violations(app: Path, *, linked_libraries: str = "") -> tuple[str, ..
     for library in _linked_library_paths(linked_libraries):
         if not _is_standalone_library_reference(library):
             violations.append(f"non-standalone linked library: {library}")
+    for runpath in _runpaths(load_commands):
+        if runpath not in ALLOWED_RUNPATHS:
+            violations.append(f"non-standalone Mach-O runpath: {runpath}")
     return tuple(violations)
 
 
@@ -177,6 +191,20 @@ def _is_standalone_library_reference(library: str) -> bool:
         or library.startswith("/usr/lib/")
         or library == "@rpath/libswiftCompatibilitySpan.dylib"
     )
+
+
+def _runpaths(details: str) -> tuple[str, ...]:
+    runpaths: list[str] = []
+    awaiting_path = False
+    for raw_line in details.splitlines():
+        line = raw_line.strip()
+        if line == "cmd LC_RPATH":
+            awaiting_path = True
+            continue
+        if awaiting_path and line.startswith("path "):
+            runpaths.append(line[5:].split(" (offset ", 1)[0])
+            awaiting_path = False
+    return tuple(runpaths)
 
 
 def _run(command: list[str]) -> str:
@@ -241,6 +269,19 @@ def _swift_compatibility_violations(app: Path) -> tuple[str, ...]:
             f"Identifier={SWIFT_COMPATIBILITY_IDENTIFIER}" in signature
             and f"TeamIdentifier={APPLE_DEVELOPER_TEAM_IDENTIFIER}" in signature
         ):
+            try:
+                _run(
+                    [
+                        "codesign",
+                        "--verify",
+                        "--strict",
+                        "--verbose=4",
+                        f"-R={APPLE_SWIFT_COMPATIBILITY_REQUIREMENT}",
+                        str(candidate),
+                    ]
+                )
+            except subprocess.CalledProcessError:
+                continue
             trusted_uuids.add(
                 _mach_o_uuids(_run(["dwarfdump", "--uuid", str(candidate)]))
             )
@@ -266,15 +307,32 @@ def check_bundle(app: Path, *, require_ad_hoc: bool) -> None:
     if violations:
         raise NativeBundleError("; ".join(violations))
 
+    binaries = _allowed_binary_payloads(app)
+    links_by_binary = {
+        binary: _run(["otool", "-L", str(binary)]) for binary in binaries
+    }
+    main = app / ALLOWED_BINARY_PATHS[0]
+    main_links = _linked_library_paths(links_by_binary.get(main, ""))
+    compatibility = app / SWIFT_COMPATIBILITY_PATH
+    compatibility_linked = "@rpath/libswiftCompatibilitySpan.dylib" in main_links
+    if compatibility_linked != compatibility.is_file():
+        raise NativeBundleError(
+            "Swift compatibility library payload and executable link must agree"
+        )
+
     compatibility_violations = _swift_compatibility_violations(app)
     if compatibility_violations:
         raise NativeBundleError("; ".join(compatibility_violations))
 
-    links = "\n".join(
-        _run(["otool", "-L", str(binary)])
-        for binary in _allowed_binary_payloads(app)
+    links = "\n".join(links_by_binary.values())
+    load_commands = "\n".join(
+        _run(["otool", "-l", str(binary)]) for binary in binaries
     )
-    violations = bundle_violations(app, linked_libraries=links)
+    violations = bundle_violations(
+        app,
+        linked_libraries=links,
+        load_commands=load_commands,
+    )
     if violations:
         raise NativeBundleError("; ".join(violations))
 

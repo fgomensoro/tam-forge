@@ -5,7 +5,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from decimal import ROUND_HALF_UP, Decimal
+from datetime import datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -25,16 +26,13 @@ def load_fixture(path: Path = DEFAULT_FIXTURE) -> dict[str, Any]:
 
 
 def validate_fixture(value: dict[str, Any], *, root: Path = ROOT) -> None:
+    from tamforge_backend.evidence.confidence import SkillEvidence, estimate_skill
     from tamforge_backend.evidence.config_loader import load_config_bundle
     from tamforge_backend.evidence.schemas import (
         PortfolioHistoryResponse,
         SkillListResponse,
     )
-    from tamforge_backend.evidence.scoring import (
-        SCORE_QUANTUM,
-        WEIGHT_QUANTUM,
-        calculate_effective_weight,
-    )
+    from tamforge_backend.evidence.scoring import calculate_effective_weight
     from tamforge_backend.learning.schemas import ActivityDetailResponse
     from tamforge_backend.notifications.schemas import NotificationPage
     from tamforge_backend.roadmaps.package import inspect_zip_stream
@@ -204,18 +202,76 @@ def validate_fixture(value: dict[str, Any], *, root: Path = ROOT) -> None:
         difficulty="standard",
         formula=formula,
     ).effective_weight
-    discounted_weight = (full_weight * formula.same_day_repetition_factor).quantize(
-        WEIGHT_QUANTUM,
-        rounding=ROUND_HALF_UP,
+    self_weight = calculate_effective_weight(
+        skill_impact=Decimal("1"),
+        practice_mode="independent_practice",
+        assistance="no_ai",
+        evaluator="self",
+        difficulty="standard",
+        formula=formula,
+    ).effective_weight
+    as_of = datetime.fromisoformat(value["fixed_now"])
+    event_specs = (
+        (9, timedelta(minutes=60), True, full_weight),
+        (10, timedelta(minutes=50), True, full_weight),
+        (50, timedelta(minutes=40), True, full_weight),
+        (39, timedelta(minutes=80), False, self_weight),
+        (49, timedelta(minutes=70), False, self_weight),
     )
-    total_weight = full_weight * 2 + discounted_weight
-    estimate = (
-        (
-            troubleshooting.baseline * formula.prior_weight
-            + Decimal("3") * total_weight
+    synthetic_evidence = tuple(
+        SkillEvidence(
+            event_id=event_id,
+            performance_score=Decimal("3"),
+            effective_weight=weight,
+            qualifying_for_level=qualifying,
+            exercise_type="troubleshooting_case",
+            scenario_key="native-parity-five-event-history",
+            occurred_at=as_of - age,
+            practice_mode="independent_practice",
+            attempt_kind="attempt_a",
+            reviewed_artifact=False,
+            scored_recording=False,
         )
-        / (formula.prior_weight + total_weight)
-    ).quantize(SCORE_QUANTUM, rounding=ROUND_HALF_UP)
+        for event_id, age, qualifying, weight in event_specs
+    )
+    estimate = estimate_skill(
+        baseline=troubleshooting.baseline,
+        month_one_target=troubleshooting.month_one_target,
+        final_target=troubleshooting.final_target,
+        events=synthetic_evidence,
+        formula=formula,
+        as_of=as_of,
+    )
+    evidence_by_id = {item.event_id: item for item in synthetic_evidence}
+    expected_manifest = [
+        {
+            "event_id": item.event_id,
+            "effective_weight": f"{item.used_weight:.6f}",
+            "inclusion_code": item.inclusion,
+        }
+        for item in estimate.weight_manifest
+    ]
+    expected_manifest.extend(
+        {
+            "event_id": item.event_id,
+            "effective_weight": "0.000",
+            "inclusion_code": (
+                "excluded_outside_window"
+                if item.qualifying_for_level
+                else "excluded_nonqualifying"
+            ),
+        }
+        for item in sorted(
+            (evidence_by_id[item] for item in estimate.excluded_event_ids),
+            key=lambda item: (item.occurred_at, str(item.event_id)),
+            reverse=True,
+        )
+    )
+    trend_basis_code = (
+        "no_qualifying_evidence"
+        if not estimate.contributing_event_ids
+        else "too_few_events"
+    ) if estimate.trend.code == "insufficient_evidence" else estimate.trend.code
     expected_skills = {
         "items": [
             {
@@ -226,61 +282,39 @@ def validate_fixture(value: dict[str, Any], *, root: Path = ROOT) -> None:
                 "final_target": f"{troubleshooting.final_target:.3f}",
                 "latest_snapshot": {
                     "id": 71,
-                    "formula_version": formula.version,
+                    "formula_version": estimate.formula_version,
                     "snapshot_date": value["fixed_now"][:10],
-                    "estimated_level": f"{estimate:.3f}",
-                    "confidence": "low",
-                    "trend": "insufficient_evidence",
-                    "recency": "fresh",
+                    "estimated_level": f"{estimate.estimate:.3f}",
+                    "confidence": estimate.confidence.code,
+                    "trend": estimate.trend.code,
+                    "recency": (
+                        "no_qualifying_evidence"
+                        if estimate.recency.code == "no_evidence"
+                        else estimate.recency.code
+                    ),
                     "baseline_target_gap": (
-                        f"{troubleshooting.baseline - estimate:.3f}"
+                        f"{troubleshooting.baseline - estimate.estimate:.3f}"
                     ),
-                    "month_one_target_gap": (
-                        f"{troubleshooting.month_one_target - estimate:.3f}"
+                    "month_one_target_gap": f"{estimate.month_one_target_gap:.3f}",
+                    "final_target_gap": f"{estimate.final_target_gap:.3f}",
+                    "total_effective_weight": f"{estimate.total_effective_weight:.6f}",
+                    "qualifying_event_count": estimate.qualifying_event_count,
+                    "exercise_type_count": estimate.confidence.exercise_type_count,
+                    "last_strong_evidence_date": (
+                        None
+                        if estimate.last_strong_evidence_at is None
+                        else estimate.last_strong_evidence_at.date().isoformat()
                     ),
-                    "final_target_gap": (
-                        f"{troubleshooting.final_target - estimate:.3f}"
-                    ),
-                    "total_effective_weight": f"{total_weight:.6f}",
-                    "qualifying_event_count": 3,
-                    "exercise_type_count": 1,
-                    "last_strong_evidence_date": None,
-                    "manifest": [
-                        {
-                            "event_id": 9,
-                            "effective_weight": f"{full_weight:.6f}",
-                            "inclusion_code": "included",
-                        },
-                        {
-                            "event_id": 10,
-                            "effective_weight": f"{full_weight:.6f}",
-                            "inclusion_code": "included",
-                        },
-                        {
-                            "event_id": 50,
-                            "effective_weight": f"{discounted_weight:.6f}",
-                            "inclusion_code": "discounted_same_day",
-                        },
-                        {
-                            "event_id": 49,
-                            "effective_weight": "0.000",
-                            "inclusion_code": "excluded_nonqualifying",
-                        },
-                        {
-                            "event_id": 39,
-                            "effective_weight": "0.000",
-                            "inclusion_code": "excluded_nonqualifying",
-                        },
-                    ],
+                    "manifest": expected_manifest,
                     "confidence_basis": {
                         "schema_version": 1,
-                        "basis_code": "low_weight",
-                        "event_ids": [9, 10, 50],
+                        "basis_code": estimate.confidence.basis_code,
+                        "event_ids": list(estimate.confidence.event_ids),
                     },
                     "trend_basis": {
                         "schema_version": 1,
-                        "basis_code": "too_few_events",
-                        "event_ids": [],
+                        "basis_code": trend_basis_code,
+                        "event_ids": list(estimate.trend.event_ids),
                     },
                 },
             },
