@@ -285,6 +285,11 @@ struct RecordingReleaseGates: Codable, Equatable, Sendable {
 enum RecordingDiskPolicy {
     static let gibibyte: Int64 = 1_073_741_824
     static let maximumDurationSeconds = 120 * 60
+    static let maximumCanonicalSamples = Int64(RecordingPCMFormat.canonicalSampleRate)
+        * Int64(maximumDurationSeconds)
+    static let maximumGapEntriesPerTrack = maximumDurationSeconds
+    static let maximumGapEntries = RecordingTrackKind.allCases.count
+        * maximumGapEntriesPerTrack
     static let maximumRecordingBytes = Int64(2.5 * Double(gibibyte))
     static let maximumGlobalBytes = 5 * gibibyte
     static let requiredFreeReserveBytes = 8 * gibibyte
@@ -304,6 +309,24 @@ enum RecordingDiskPolicy {
             return .insufficientDiskReserve
         }
         return nil
+    }
+
+    static func permitsGap(
+        _ gap: RecordingGap,
+        trackEntryCount: Int,
+        totalEntryCount: Int
+    ) -> Bool {
+        let (end, overflow) = gap.sampleStart.addingReportingOverflow(
+            Int64(gap.sampleCount)
+        )
+        return gap.sampleStart >= 0
+            && gap.sampleCount > 0
+            && !overflow
+            && end <= maximumCanonicalSamples
+            && trackEntryCount >= 0
+            && trackEntryCount < maximumGapEntriesPerTrack
+            && totalEntryCount >= 0
+            && totalEntryCount < maximumGapEntries
     }
 }
 

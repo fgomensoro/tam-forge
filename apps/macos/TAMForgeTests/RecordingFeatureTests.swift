@@ -73,6 +73,126 @@ final class RecordingFeatureTests: XCTestCase {
         XCTAssertEqual(resumed.chunk.sampleStart, 52_800)
     }
 
+    func testCapturePipelineCoalescesSubsecondBuffersIntoOneSecondRecord() throws {
+        var pipeline = RecordingCapturePipeline()
+        var events: [RecordingCaptureEvent] = []
+
+        for index in 0..<4 {
+            events += try pipeline.accept(.fixture(
+                track: .microphone,
+                presentationNanoseconds: 1_000_000_000 + Int64(index * 250_000_000),
+                sampleCount: 12_000,
+                byte: UInt8(index + 1)
+            ), normalizedLevel: 0.5)
+        }
+
+        let chunks = events.recordingChunks
+        XCTAssertEqual(chunks.count, 1)
+        XCTAssertEqual(chunks.first?.sampleStart, 0)
+        XCTAssertEqual(chunks.first?.sampleCount, 48_000)
+        XCTAssertEqual(chunks.first?.payload.count, 96_000)
+        XCTAssertTrue(pipeline.finish().recordingChunks.isEmpty)
+    }
+
+    func testCapturePipelineFinishFlushesAcceptedFinalPartialWithoutLoss() throws {
+        var pipeline = RecordingCapturePipeline()
+        let first = try pipeline.accept(.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 30_000,
+            byte: 0x11
+        ), normalizedLevel: 0.5)
+        let second = try pipeline.accept(.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_625_000_000,
+            sampleCount: 30_000,
+            byte: 0x22
+        ), normalizedLevel: 0.5)
+
+        XCTAssertTrue(first.recordingChunks.isEmpty)
+        XCTAssertEqual(second.recordingChunks.map(\.sampleCount), [48_000])
+        let final = pipeline.finish().recordingChunks
+        XCTAssertEqual(final.map(\.sampleStart), [48_000])
+        XCTAssertEqual(final.map(\.sampleCount), [12_000])
+        XCTAssertEqual(
+            second.recordingChunks.reduce(0) { $0 + $1.sampleCount }
+                + final.reduce(0) { $0 + $1.sampleCount },
+            60_000
+        )
+    }
+
+    func testCapturePipelineSplitsPartialOnSourceLineageChange() throws {
+        var pipeline = RecordingCapturePipeline()
+        let first = try pipeline.accept(.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 12_000,
+            initialRoute: "Route A"
+        ), normalizedLevel: 0.5)
+        let second = try pipeline.accept(.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_250_000_000,
+            sampleCount: 12_000,
+            initialRoute: "Route B"
+        ), normalizedLevel: 0.5)
+
+        XCTAssertTrue(first.recordingChunks.isEmpty)
+        XCTAssertEqual(second.recordingChunks.map(\.source.initialRoute), ["Route A"])
+        XCTAssertEqual(pipeline.finish().recordingChunks.map(\.source.initialRoute), ["Route B"])
+    }
+
+    func testFailedRetainedSampleFlushesAudioAndEmitsExactSeparatedGaps() throws {
+        var pipeline = RecordingCapturePipeline()
+        _ = try pipeline.accept(.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 24_000
+        ), normalizedLevel: 0.5)
+
+        let events = try pipeline.acceptFailure(
+            droppedSourceRange: .init(
+                track: .microphone,
+                presentationNanoseconds: 2_000_000_000,
+                sourceSampleCount: 4_410,
+                sourceSampleRate: 44_100
+            ),
+            reason: .formatChange,
+            failure: .formatUnsupported
+        )
+
+        XCTAssertEqual(events.recordingChunks.map(\.sampleCount), [24_000])
+        XCTAssertEqual(events.recordingGaps, [
+            .init(
+                track: .microphone,
+                sampleStart: 24_000,
+                sampleCount: 24_000,
+                reason: .sourceDiscontinuity
+            ),
+            .init(
+                track: .microphone,
+                sampleStart: 48_000,
+                sampleCount: 4_800,
+                reason: .formatChange
+            ),
+        ])
+        XCTAssertEqual(events.recordingFailures, [.formatUnsupported])
+    }
+
+    func testCapturePipelineThrottlesLevelsToCanonicalTenHertz() throws {
+        var pipeline = RecordingCapturePipeline()
+        var events: [RecordingCaptureEvent] = []
+
+        for index in 0...10 {
+            events += try pipeline.accept(.fixture(
+                track: .microphone,
+                presentationNanoseconds: 1_000_000_000 + Int64(index * 20_000_000),
+                sampleCount: 960
+            ), normalizedLevel: Double(index) / 10)
+        }
+
+        XCTAssertEqual(events.recordingLevels.map { $0.normalized }, [0.0, 0.5, 1.0])
+    }
+
     func testBoundedQueueRejectsOverflowWithoutEvictingAcceptedAudio() {
         let queue = BoundedCaptureQueue<Int>(capacity: 2)
 
@@ -107,6 +227,30 @@ final class RecordingFeatureTests: XCTestCase {
         XCTAssertNil(handoff.takeDrainBatch())
         XCTAssertFalse(handoff.isDrainScheduled)
         XCTAssertTrue(handoff.scheduleDrainIfNeeded())
+    }
+
+    func testCaptureHandoffCloseRejectsLaterOverflowBookkeeping() {
+        let handoff = BoundedCaptureHandoffQueue(capacity: 1)
+        XCTAssertTrue(handoff.record(dropped: .init(
+            track: .microphone,
+            presentationNanoseconds: 1_000_000_000,
+            sourceSampleCount: 4_800,
+            sourceSampleRate: 48_000
+        )))
+
+        handoff.close()
+
+        XCTAssertTrue(handoff.isClosed)
+        XCTAssertFalse(handoff.record(dropped: .init(
+            track: .microphone,
+            presentationNanoseconds: 2_000_000_000,
+            sourceSampleCount: 4_800,
+            sourceSampleRate: 48_000
+        )))
+        XCTAssertFalse(handoff.scheduleDrainIfNeeded())
+        let drained = handoff.takeDrainBatch()
+        XCTAssertEqual(drained?.count, 1)
+        XCTAssertNil(handoff.takeDrainBatch())
     }
 
     func testSpoolAuthenticatesEachRecordAndIgnoresOnlyCrashTail() async throws {
@@ -147,6 +291,77 @@ final class RecordingFeatureTests: XCTestCase {
         )
         XCTAssertEqual(crashTail.records.count, 2)
         XCTAssertTrue(crashTail.ignoredIncompleteTail)
+        XCTAssertEqual(
+            crashTail.unrecoverableCorruptions.last?.reason,
+            .sealedIncompleteTail
+        )
+    }
+
+    func testSpoolChargesExactAudioAndGapJournalRecordBytesToReservation() async throws {
+        let root = try temporaryDirectory()
+        let keyStore = InMemoryRecordingKeyStore()
+        let recordingID = UUID()
+        let reservationBytes: Int64 = 1_000_000
+        let spool = try await EncryptedRecordingSpool.create(
+            recordingID: recordingID,
+            rootURL: root,
+            keyStore: keyStore,
+            reservationBytes: reservationBytes
+        )
+        try await spool.append(.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 12_000
+        ))
+        try await spool.record(gap: .init(
+            track: .microphone,
+            sampleStart: 12_000,
+            sampleCount: 4_800,
+            reason: .callbackOverflow
+        ))
+
+        let directory = root.appendingPathComponent(recordingID.uuidString, isDirectory: true)
+        let audioBytes = try fileSize(directory.appendingPathComponent("microphone.tfr"))
+        let journalBytes = try fileSize(directory.appendingPathComponent("gaps.tfj"))
+        let remainingReservation = try fileSize(directory.appendingPathComponent(".reserve"))
+        XCTAssertEqual(
+            remainingReservation,
+            reservationBytes - audioBytes - journalBytes
+        )
+    }
+
+    func testGapManifestPolicyBoundsRangeDurationAndEntryCount() {
+        let finalValidGap = RecordingGap(
+            track: .systemAudio,
+            sampleStart: RecordingDiskPolicy.maximumCanonicalSamples - 1,
+            sampleCount: 1,
+            reason: .missingAudio
+        )
+        XCTAssertTrue(RecordingDiskPolicy.permitsGap(
+            finalValidGap,
+            trackEntryCount: RecordingDiskPolicy.maximumGapEntriesPerTrack - 1,
+            totalEntryCount: RecordingDiskPolicy.maximumGapEntries - 1
+        ))
+        XCTAssertFalse(RecordingDiskPolicy.permitsGap(
+            .init(
+                track: .systemAudio,
+                sampleStart: RecordingDiskPolicy.maximumCanonicalSamples,
+                sampleCount: 1,
+                reason: .missingAudio
+            ),
+            trackEntryCount: 0,
+            totalEntryCount: 0
+        ))
+        XCTAssertFalse(RecordingDiskPolicy.permitsGap(
+            finalValidGap,
+            trackEntryCount: RecordingDiskPolicy.maximumGapEntriesPerTrack,
+            totalEntryCount: RecordingDiskPolicy.maximumGapEntries - 1
+        ))
+        XCTAssertFalse(RecordingDiskPolicy.permitsGap(
+            finalValidGap,
+            trackEntryCount: 0,
+            totalEntryCount: RecordingDiskPolicy.maximumGapEntries
+        ))
     }
 
     func testSpoolTamperBecomesExplicitCorruptRange() async throws {
@@ -470,6 +685,23 @@ final class RecordingFeatureTests: XCTestCase {
         ), .globalSpoolLimitReached)
     }
 
+    func testPendingSpoolBytesCountsHiddenReservationAndUploadFiles() throws {
+        let root = try temporaryDirectory()
+        let recording = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: recording, withIntermediateDirectories: true)
+        try Data(repeating: 0, count: 3).write(
+            to: recording.appendingPathComponent(".reserve")
+        )
+        try Data(repeating: 0, count: 5).write(
+            to: recording.appendingPathComponent(".upload")
+        )
+        try Data(repeating: 0, count: 7).write(
+            to: recording.appendingPathComponent("microphone.tfr")
+        )
+
+        XCTAssertEqual(LiveRecordingPreflight.pendingSpoolBytes(at: root), 15)
+    }
+
     func testReleaseGateNeverDeletesAfterAudio201Alone() {
         XCTAssertFalse(RecordingReleaseGates(
             audioCreatedOnServer: true, transcriptLineageAccepted: false
@@ -617,12 +849,131 @@ final class RecordingFeatureTests: XCTestCase {
         XCTAssertEqual(recordingID, createdIDs.first)
     }
 
+    func testCoordinatorStopPersistsSourceFinalChunkBeforeSeal() async {
+        let finalChunk = RecordingPCMChunk.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 12_000
+        )
+        let source = FakeRecordingCaptureSource(finalEventOnStop: .chunk(finalChunk))
+        let preflight = FakeRecordingPreflight()
+        let spool = OrderedFakeRecordingSpool()
+        let spoolFactory = SingleRecordingSpoolFactory(spool: spool)
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: preflight, source: source, spoolFactory: spoolFactory
+            )
+        }
+
+        await coordinator.start()
+        await coordinator.stop()
+
+        let operations = await spool.operations()
+        XCTAssertEqual(operations, [.chunk(finalChunk), .seal])
+    }
+
+    func testCoordinatorAppendFailureDuringStopNeverSeals() async {
+        let finalChunk = RecordingPCMChunk.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 12_000
+        )
+        let source = FakeRecordingCaptureSource(finalEventOnStop: .chunk(finalChunk))
+        let spool = WriteFailingRecordingSpool(failure: .append)
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: spool)
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: spoolFactory
+            )
+        }
+        await coordinator.start()
+
+        await coordinator.stop()
+
+        let sealAttempts = await spool.sealAttempts
+        XCTAssertEqual(sealAttempts, 0)
+        let phase = await MainActor.run { coordinator.phase }
+        guard case .needsAttention = phase else {
+            return XCTFail("append failure must leave an unsealed spool needing attention")
+        }
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        let pendingIDs = await MainActor.run { coordinator.pendingRecordingIDs }
+        XCTAssertEqual(pendingIDs, createdIDs)
+    }
+
+    func testCoordinatorGapPersistenceFailureDuringStopNeverSeals() async {
+        let finalGap = RecordingGap(
+            track: .microphone,
+            sampleStart: 0,
+            sampleCount: 4_800,
+            reason: .missingAudio
+        )
+        let source = FakeRecordingCaptureSource(finalEventOnStop: .gap(finalGap))
+        let spool = WriteFailingRecordingSpool(failure: .gap)
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: spool)
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: spoolFactory
+            )
+        }
+        await coordinator.start()
+
+        await coordinator.stop()
+
+        let sealAttempts = await spool.sealAttempts
+        XCTAssertEqual(sealAttempts, 0)
+        let phase = await MainActor.run { coordinator.phase }
+        guard case .needsAttention = phase else {
+            return XCTFail("gap failure must leave an unsealed spool needing attention")
+        }
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        let pendingIDs = await MainActor.run { coordinator.pendingRecordingIDs }
+        XCTAssertEqual(pendingIDs, createdIDs)
+    }
+
+    func testCoordinatorSourceStopFailureAbandonsUnsealedSpoolAndRefreshesRecovery() async {
+        let source = FakeRecordingCaptureSource(stopFailure: .streamStopped)
+        let spool = OrderedFakeRecordingSpool()
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: spool)
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: spoolFactory
+            )
+        }
+        await coordinator.start()
+
+        await coordinator.stop()
+
+        let operations = await spool.operations()
+        XCTAssertFalse(operations.contains(.seal))
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        let pendingIDs = await MainActor.run { coordinator.pendingRecordingIDs }
+        XCTAssertEqual(pendingIDs, createdIDs)
+        let phase = await MainActor.run { coordinator.phase }
+        guard case .needsAttention = phase else {
+            return XCTFail("source stop failure must preserve the spool for recovery")
+        }
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("tamforge-recording-tests-(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent(
+                "tamforge-recording-tests-\(UUID().uuidString)", isDirectory: true
+            )
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
         return url
+    }
+
+    private func fileSize(_ url: URL) throws -> Int64 {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        return try XCTUnwrap(attributes[.size] as? NSNumber).int64Value
     }
 
     private func reauthenticatedRecordMetadata(
@@ -654,7 +1005,9 @@ private extension RecordingPCMChunk {
         track: RecordingTrackKind,
         presentationNanoseconds: Int64,
         sampleCount: Int,
-        byte: UInt8 = 0
+        byte: UInt8 = 0,
+        initialRoute: String = "Test Route",
+        conversionVersion: Int = 1
     ) -> Self {
         let channels = track == .microphone ? 1 : 2
         return .init(
@@ -666,12 +1019,42 @@ private extension RecordingPCMChunk {
             source: .init(
                 sampleRate: 48_000, channelCount: channels,
                 deviceID: track == .microphone ? "test-microphone" : "system-audio",
-                initialRoute: "Test Route",
-                conversionVersion: 1,
+                initialRoute: initialRoute,
+                conversionVersion: conversionVersion,
                 presentationNanoseconds: presentationNanoseconds
             ),
             payload: Data(repeating: byte, count: sampleCount * channels * 2)
         )
+    }
+}
+
+private extension Array where Element == RecordingCaptureEvent {
+    var recordingChunks: [RecordingPCMChunk] {
+        compactMap { event in
+            guard case let .chunk(chunk) = event else { return nil }
+            return chunk
+        }
+    }
+
+    var recordingGaps: [RecordingGap] {
+        compactMap { event in
+            guard case let .gap(gap) = event else { return nil }
+            return gap
+        }
+    }
+
+    var recordingFailures: [RecordingCaptureFailure] {
+        compactMap { event in
+            guard case let .failure(failure) = event else { return nil }
+            return failure
+        }
+    }
+
+    var recordingLevels: [(track: RecordingTrackKind, normalized: Double)] {
+        compactMap { event in
+            guard case let .level(track, normalized) = event else { return nil }
+            return (track, normalized)
+        }
     }
 }
 
@@ -696,9 +1079,18 @@ private actor FakeRecordingCaptureSource: RecordingCaptureSource {
     private(set) var startCount = 0
     private(set) var stopCount = 0
     private let startFailure: RecordingCaptureFailure?
+    private let stopFailure: RecordingCaptureFailure?
+    private let finalEventOnStop: RecordingCaptureEvent?
+    private var receive: (@Sendable (RecordingCaptureEvent) -> Void)?
 
-    init(startFailure: RecordingCaptureFailure? = nil) {
+    init(
+        startFailure: RecordingCaptureFailure? = nil,
+        stopFailure: RecordingCaptureFailure? = nil,
+        finalEventOnStop: RecordingCaptureEvent? = nil
+    ) {
         self.startFailure = startFailure
+        self.stopFailure = stopFailure
+        self.finalEventOnStop = finalEventOnStop
     }
 
     func start(
@@ -708,9 +1100,16 @@ private actor FakeRecordingCaptureSource: RecordingCaptureSource {
     ) async throws {
         startCount += 1
         if let startFailure { throw startFailure }
+        self.receive = receive
     }
 
-    func stop() async throws { stopCount += 1 }
+    func stop() async throws {
+        stopCount += 1
+        if let finalEventOnStop { receive?(finalEventOnStop) }
+        receive = nil
+        if let stopFailure { throw stopFailure }
+    }
+
 }
 
 private struct FakeRecordingPreflight: RecordingPreflighting {
@@ -730,6 +1129,27 @@ private actor FakeRecordingSpoolFactory: RecordingSpoolCreating {
     func discard(recordingID: UUID) async throws { discardedRecordingIDs.append(recordingID) }
 }
 
+private struct SingleRecordingSpoolFactory: RecordingSpoolCreating {
+    let spool: OrderedFakeRecordingSpool
+
+    func create(recordingID: UUID) async throws -> any RecordingSpoolWriting { spool }
+    func pendingRecordingIDs() async -> [UUID] { [] }
+    func discard(recordingID: UUID) async throws {}
+}
+
+private actor RecoveryTrackingSpoolFactory: RecordingSpoolCreating {
+    let spool: any RecordingSpoolWriting
+    private(set) var createdRecordingIDs: [UUID] = []
+
+    func create(recordingID: UUID) async throws -> any RecordingSpoolWriting {
+        createdRecordingIDs.append(recordingID)
+        return spool
+    }
+
+    func pendingRecordingIDs() async -> [UUID] { createdRecordingIDs }
+    func discard(recordingID: UUID) async throws {}
+}
+
 private actor FakeRecordingSpool: RecordingSpoolWriting {
     func append(_ chunk: RecordingPCMChunk) async throws {}
     func record(gap: RecordingGap) async throws {}
@@ -738,13 +1158,14 @@ private actor FakeRecordingSpool: RecordingSpoolWriting {
 
 private actor OrderedFakeRecordingSpool: RecordingSpoolWriting {
     enum Operation: Equatable {
+        case chunk(RecordingPCMChunk)
         case gap(RecordingGap)
         case seal
     }
 
     private var recordedOperations: [Operation] = []
 
-    func append(_ chunk: RecordingPCMChunk) async throws {}
+    func append(_ chunk: RecordingPCMChunk) async throws { recordedOperations.append(.chunk(chunk)) }
     func record(gap: RecordingGap) async throws { recordedOperations.append(.gap(gap)) }
     func seal(gaps: [RecordingGap]) async throws { recordedOperations.append(.seal) }
     func operations() -> [Operation] { recordedOperations }
@@ -759,4 +1180,26 @@ private actor FailingFakeRecordingSpool: RecordingSpoolWriting {
         throw RecordingSpoolError.invalidRecord
     }
     func seal(gaps: [RecordingGap]) async throws {}
+}
+
+private actor WriteFailingRecordingSpool: RecordingSpoolWriting {
+    enum Failure: Equatable {
+        case append
+        case gap
+    }
+
+    private let failure: Failure
+    private(set) var sealAttempts = 0
+
+    init(failure: Failure) { self.failure = failure }
+
+    func append(_ chunk: RecordingPCMChunk) async throws {
+        if failure == .append { throw RecordingSpoolError.invalidRecord }
+    }
+
+    func record(gap: RecordingGap) async throws {
+        if failure == .gap { throw RecordingSpoolError.invalidRecord }
+    }
+
+    func seal(gaps: [RecordingGap]) async throws { sealAttempts += 1 }
 }

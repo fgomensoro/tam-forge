@@ -60,16 +60,19 @@ actor ScreenCaptureAudioSource: RecordingCaptureSource {
 
     func stop() async throws {
         guard let stream else { return }
+        let output = self.output
         do {
             try await stream.stopCapture()
         } catch {
+            await output?.finish()
             self.stream = nil
-            output = nil
+            self.output = nil
             delegate = nil
             throw error
         }
+        await output?.finish()
         self.stream = nil
-        output = nil
+        self.output = nil
         delegate = nil
     }
 }
@@ -99,7 +102,7 @@ private final class ScreenCaptureAudioOutput: NSObject, SCStreamOutput, @uncheck
     private let microphoneID: String
     private let initialRoute: String
     private let receive: @Sendable (RecordingCaptureEvent) -> Void
-    private var timeline = RecordingTimelineAssembler()
+    private var pipeline = RecordingCapturePipeline()
 
     init(
         microphoneID: String,
@@ -127,24 +130,45 @@ private final class ScreenCaptureAudioOutput: NSObject, SCStreamOutput, @uncheck
         }
         guard sampleBuffer.isValid, sampleBuffer.dataReadiness == .ready else { return }
         let retained = RetainedAudioSample(track: track, sampleBuffer: sampleBuffer)
-        guard handoff.offer(retained) else {
+        switch handoff.offer(retained) {
+        case .accepted:
+            scheduleHandoffDrain()
+        case .full:
             guard let dropped = RecordingDroppedSourceRange(
                 sampleBuffer: sampleBuffer, track: track
             ) else {
                 receive(.failure(.conversionFailed))
                 return
             }
-            handoff.record(dropped: dropped)
+            guard handoff.record(dropped: dropped) else { return }
             scheduleHandoffDrain()
             receive(.failure(.callbackOverflow))
+        case .closed:
             return
         }
-        scheduleHandoffDrain()
     }
 
     private func scheduleHandoffDrain() {
         guard handoff.scheduleDrainIfNeeded() else { return }
         processingQueue.async { [weak self] in self?.drainHandoff() }
+    }
+
+    // The callback-queue close is the acceptance boundary. Holding self strongly
+    // keeps that fixed accepted prefix alive through conversion and final flush.
+    func finish() async {
+        await withCheckedContinuation { continuation in
+            callbackQueue.async { [handoff] in
+                handoff.close()
+                continuation.resume()
+            }
+        }
+        await withCheckedContinuation { continuation in
+            processingQueue.async { [self] in
+                drainHandoff()
+                for event in pipeline.finish() { receive(event) }
+                continuation.resume()
+            }
+        }
     }
 
     private func drainHandoff() {
@@ -154,24 +178,44 @@ private final class ScreenCaptureAudioOutput: NSObject, SCStreamOutput, @uncheck
                     switch item {
                     case let .retained(sample):
                         let converted = try convert(sample)
-                        let accepted = try timeline.accept(converted)
-                        if let gap = accepted.gap { receive(.gap(gap)) }
-                        for chunk in accepted.chunk.oneSecondChunks() {
-                            receive(.chunk(chunk))
-                        }
-                        receive(.level(
-                            track: sample.track,
-                            normalized: accepted.chunk.payload.normalizedPCM16Level
-                        ))
+                        for event in try pipeline.accept(
+                            converted,
+                            normalizedLevel: converted.payload.normalizedPCM16Level
+                        ) { receive(event) }
                     case let .dropped(range):
-                        for gap in try timeline.accept(droppedSourceInterval: range) { receive(.gap(gap)) }
+                        for event in try pipeline.acceptDroppedSourceInterval(
+                            range, reason: .callbackOverflow
+                        ) { receive(event) }
                     }
                 } catch let failure as RecordingCaptureFailure {
-                    receive(.failure(failure))
+                    emitFailure(for: item, failure: failure)
                 } catch {
-                    receive(.failure(.conversionFailed))
+                    emitFailure(for: item, failure: .conversionFailed)
                 }
             }
+        }
+    }
+
+    private func emitFailure(for item: CaptureHandoff, failure: RecordingCaptureFailure) {
+        guard case let .retained(sample) = item,
+              let interval = RecordingDroppedSourceInterval(
+                sampleBuffer: sample.sampleBuffer, track: sample.track
+              )
+        else {
+            receive(.failure(failure))
+            return
+        }
+        let reason: RecordingGapReason = failure == .formatUnsupported
+            ? .formatChange
+            : .missingAudio
+        do {
+            for event in try pipeline.acceptFailure(
+                droppedSourceInterval: interval,
+                reason: reason,
+                failure: failure
+            ) { receive(event) }
+        } catch {
+            receive(.failure(failure))
         }
     }
 
@@ -271,12 +315,19 @@ enum CaptureHandoff: Sendable {
     case dropped(RecordingDroppedSourceInterval)
 }
 
+enum CaptureHandoffOfferResult: Equatable, Sendable {
+    case accepted
+    case full
+    case closed
+}
+
 final class BoundedCaptureHandoffQueue: @unchecked Sendable {
     private let lock = NSLock()
     private let capacity: Int
     private var retained: [RetainedAudioSample] = []
     private var droppedByTrack: [RecordingTrackKind: RecordingDroppedSourceInterval] = [:]
     private var drainScheduled = false
+    private var closed = false
 
     init(capacity: Int) {
         precondition(capacity > 0)
@@ -284,27 +335,44 @@ final class BoundedCaptureHandoffQueue: @unchecked Sendable {
         retained.reserveCapacity(capacity)
     }
 
-    func offer(_ sample: RetainedAudioSample) -> Bool {
+    func offer(_ sample: RetainedAudioSample) -> CaptureHandoffOfferResult {
         lock.lock()
         defer { lock.unlock() }
-        guard retained.count < capacity else { return false }
+        guard !closed else { return .closed }
+        guard retained.count < capacity else { return .full }
         retained.append(sample)
-        return true
+        return .accepted
+    }
+
+    func close() {
+        lock.lock()
+        closed = true
+        lock.unlock()
+    }
+
+    var isClosed: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return closed
     }
 
     // At most one metadata-only interval survives per track, independent of source rate.
-    func record(dropped range: RecordingDroppedSourceRange) {
-        guard let interval = RecordingDroppedSourceInterval(range: range) else { return }
+    @discardableResult
+    func record(dropped range: RecordingDroppedSourceRange) -> Bool {
+        guard let interval = RecordingDroppedSourceInterval(range: range) else { return false }
         lock.lock()
         defer { lock.unlock() }
+        guard !closed else { return false }
         droppedByTrack[interval.track] = droppedByTrack[interval.track]
             .map { $0.merged(with: interval) } ?? interval
+        return true
     }
 
     // At most one processing block is queued while capture callbacks keep arriving.
     func scheduleDrainIfNeeded() -> Bool {
         lock.lock()
         defer { lock.unlock() }
+        guard !closed else { return false }
         guard !drainScheduled else { return false }
         drainScheduled = true
         return true
@@ -352,36 +420,33 @@ private extension RecordingDroppedSourceRange {
     }
 }
 
-private extension CMTime {
-    var convertedNanoseconds: Int64 {
-        CMTimeConvertScale(self, timescale: 1_000_000_000, method: .roundTowardZero).value
+private extension RecordingDroppedSourceInterval {
+    init?(sampleBuffer: CMSampleBuffer, track: RecordingTrackKind) {
+        if let range = RecordingDroppedSourceRange(sampleBuffer: sampleBuffer, track: track),
+           let interval = RecordingDroppedSourceInterval(range: range) {
+            self = interval
+            return
+        }
+        let duration = sampleBuffer.duration
+        guard sampleBuffer.numSamples > 0,
+              duration.isValid,
+              duration.isNumeric,
+              duration.value > 0
+        else { return nil }
+        let start = sampleBuffer.presentationTimeStamp.convertedNanoseconds
+        let (end, overflow) = start.addingReportingOverflow(duration.convertedNanoseconds)
+        guard !overflow, end > start else { return nil }
+        self.init(
+            track: track,
+            startPresentationNanoseconds: start,
+            endPresentationNanoseconds: end
+        )
     }
 }
 
-private extension RecordingPCMChunk {
-    func oneSecondChunks() -> [RecordingPCMChunk] {
-        guard sampleCount > RecordingPCMFormat.canonicalSampleRate else { return [self] }
-        let bytesPerFrame = format.channelCount * RecordingPCMFormat.bytesPerSample
-        var result: [RecordingPCMChunk] = []
-        var consumed = 0
-        while consumed < sampleCount {
-            let count = min(RecordingPCMFormat.canonicalSampleRate, sampleCount - consumed)
-            let byteStart = consumed * bytesPerFrame
-            let byteEnd = byteStart + count * bytesPerFrame
-            result.append(.init(
-                track: track,
-                presentationNanoseconds: presentationNanoseconds
-                    + Int64(consumed) * 1_000_000_000
-                    / Int64(RecordingPCMFormat.canonicalSampleRate),
-                sampleStart: sampleStart + Int64(consumed),
-                sampleCount: count,
-                format: format,
-                source: source,
-                payload: payload.subdata(in: byteStart..<byteEnd)
-            ))
-            consumed += count
-        }
-        return result
+private extension CMTime {
+    var convertedNanoseconds: Int64 {
+        CMTimeConvertScale(self, timescale: 1_000_000_000, method: .roundTowardZero).value
     }
 }
 

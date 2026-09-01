@@ -138,6 +138,7 @@ final class RecordingCoordinator: ObservableObject {
     private var lifecycleTask: Task<Void, Never>?
     private var durationLimitTask: Task<Void, Never>?
     private var accumulatedGaps: [RecordingGap] = []
+    private var activeStorageFailure: Error?
 
     init(
         preflight: any RecordingPreflighting = LiveRecordingPreflight(),
@@ -174,6 +175,7 @@ final class RecordingCoordinator: ObservableObject {
         phase = .preflighting
         health = RecordingHealth()
         accumulatedGaps.removeAll(keepingCapacity: true)
+        activeStorageFailure = nil
         let result = await preflight.run()
         guard case let .ready(snapshot) = result else {
             if case let .blocked(failure) = result { phase = .blocked(failure) }
@@ -263,7 +265,7 @@ final class RecordingCoordinator: ObservableObject {
             try await source.stop()
         } catch {
             try? await finishEventStreamAndPendingGaps()
-            phase = .needsAttention(recordingID, "Recording needs recovery")
+            await abandonActiveSpool(recordingID: recordingID)
             return
         }
         do {
@@ -277,7 +279,7 @@ final class RecordingCoordinator: ObservableObject {
                 phase = .sealed(recordingID)
             }
         } catch {
-            phase = .needsAttention(recordingID, "Recording needs recovery")
+            await abandonActiveSpool(recordingID: recordingID)
         }
     }
 
@@ -307,6 +309,7 @@ final class RecordingCoordinator: ObservableObject {
                 track.lastSampleEnd = chunk.sampleStart + Int64(chunk.sampleCount)
                 health[chunk.track] = track
             } catch {
+                if activeStorageFailure == nil { activeStorageFailure = error }
                 await failActiveRecording(message: "Encrypted spool write failed")
             }
         case let .gap(gap):
@@ -317,6 +320,7 @@ final class RecordingCoordinator: ObservableObject {
                 track.gapCount += 1
                 health[gap.track] = track
             } catch {
+                if activeStorageFailure == nil { activeStorageFailure = error }
                 await failActiveRecording(message: "Encrypted gap write failed")
             }
         case let .level(track, normalized):
@@ -376,15 +380,20 @@ final class RecordingCoordinator: ObservableObject {
         do {
             try await pendingGapWrites?.flush()
             pendingGapWrites = nil
+            guard activeStorageFailure == nil else {
+                await abandonActiveSpool(recordingID: recordingID)
+                return
+            }
             guard sourceStopped else {
-                phase = .needsAttention(recordingID, "Recording needs recovery")
+                await abandonActiveSpool(recordingID: recordingID)
                 return
             }
             try await spool?.seal(gaps: [])
             spool = nil
+            await refreshPendingRecordings()
             phase = .needsAttention(recordingID, message)
         } catch {
-            phase = .needsAttention(recordingID, "Recording needs recovery")
+            await abandonActiveSpool(recordingID: recordingID)
         }
     }
 
@@ -393,8 +402,22 @@ final class RecordingCoordinator: ObservableObject {
         eventContinuation = nil
         await writerTask?.value
         writerTask = nil
-        try await pendingGapWrites?.flush()
+        let writes = pendingGapWrites
         pendingGapWrites = nil
+        try await writes?.flush()
+        if let activeStorageFailure { throw activeStorageFailure }
+    }
+
+    // Drop live handles only after all registered writes have settled. The
+    // authenticated state, journal, media files, and key remain for recovery.
+    private func abandonActiveSpool(recordingID: UUID) async {
+        eventContinuation?.finish()
+        eventContinuation = nil
+        writerTask = nil
+        pendingGapWrites = nil
+        spool = nil
+        await refreshPendingRecordings()
+        phase = .needsAttention(recordingID, "Recording needs recovery")
     }
 
     private func refreshPendingRecordings() async {

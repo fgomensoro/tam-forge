@@ -37,17 +37,23 @@ struct RecordingTimelineAssembler: Sendable {
         return .init(chunk: chunk, gap: gap)
     }
 
-    mutating func accept(droppedSourceRange range: RecordingDroppedSourceRange) throws -> [RecordingGap] {
+    mutating func accept(
+        droppedSourceRange range: RecordingDroppedSourceRange,
+        reason: RecordingGapReason = .callbackOverflow
+    ) throws -> [RecordingGap] {
         guard let interval = RecordingDroppedSourceInterval(range: range) else {
             throw RecordingTimelineError.invalidDroppedSourceRange
         }
-        return try accept(droppedSourceInterval: interval)
+        return try accept(droppedSourceInterval: interval, reason: reason)
     }
 
     // Track cursors advance once to the end of a coalesced dropped source interval.
     // This preserves a pre-existing timestamp hole as source discontinuity and
     // prevents resumed audio from repeating either range.
-    mutating func accept(droppedSourceInterval interval: RecordingDroppedSourceInterval) throws -> [RecordingGap] {
+    mutating func accept(
+        droppedSourceInterval interval: RecordingDroppedSourceInterval,
+        reason: RecordingGapReason = .callbackOverflow
+    ) throws -> [RecordingGap] {
         if originNanoseconds == nil { originNanoseconds = interval.startPresentationNanoseconds }
         let sourceStart = try canonicalSampleStart(for: interval.startPresentationNanoseconds)
         let sourceEnd = try canonicalSampleStart(for: interval.endPresentationNanoseconds)
@@ -69,7 +75,7 @@ struct RecordingTimelineAssembler: Sendable {
                 track: interval.track,
                 sampleStart: callbackStart,
                 sampleCount: try boundedSampleCount(from: callbackStart, to: sourceEnd),
-                reason: .callbackOverflow
+                reason: reason
             ))
         }
         trackEnds[interval.track] = sourceEnd
@@ -93,6 +99,207 @@ struct RecordingTimelineAssembler: Sendable {
             throw RecordingTimelineError.arithmeticOverflow
         }
         return boundedCount
+    }
+}
+
+struct RecordingCapturePipeline: Sendable {
+    private var timeline = RecordingTimelineAssembler()
+    private var accumulator = RecordingChunkAccumulator()
+    private var levelThrottle = RecordingLevelThrottle()
+
+    mutating func accept(
+        _ chunk: RecordingPCMChunk,
+        normalizedLevel: Double
+    ) throws -> [RecordingCaptureEvent] {
+        let accepted = try timeline.accept(chunk)
+        var events: [RecordingCaptureEvent] = []
+        if let gap = accepted.gap {
+            events.append(contentsOf: accumulator.flush(track: chunk.track).map {
+                .chunk($0)
+            })
+            events.append(.gap(gap))
+        }
+        events.append(contentsOf: try accumulator.accept(accepted.chunk).map {
+            .chunk($0)
+        })
+        if levelThrottle.shouldEmit(for: accepted.chunk) {
+            events.append(.level(track: chunk.track, normalized: normalizedLevel))
+        }
+        return events
+    }
+
+    mutating func acceptDroppedSourceInterval(
+        _ interval: RecordingDroppedSourceInterval,
+        reason: RecordingGapReason
+    ) throws -> [RecordingCaptureEvent] {
+        var events = accumulator.flush(track: interval.track).map {
+            RecordingCaptureEvent.chunk($0)
+        }
+        events.append(contentsOf: try timeline.accept(
+            droppedSourceInterval: interval, reason: reason
+        ).map { .gap($0) })
+        return events
+    }
+
+    mutating func acceptFailure(
+        droppedSourceRange range: RecordingDroppedSourceRange,
+        reason: RecordingGapReason,
+        failure: RecordingCaptureFailure
+    ) throws -> [RecordingCaptureEvent] {
+        guard let interval = RecordingDroppedSourceInterval(range: range) else {
+            throw RecordingTimelineError.invalidDroppedSourceRange
+        }
+        var events = try acceptDroppedSourceInterval(interval, reason: reason)
+        events.append(.failure(failure))
+        return events
+    }
+
+    mutating func acceptFailure(
+        droppedSourceInterval interval: RecordingDroppedSourceInterval,
+        reason: RecordingGapReason,
+        failure: RecordingCaptureFailure
+    ) throws -> [RecordingCaptureEvent] {
+        var events = try acceptDroppedSourceInterval(interval, reason: reason)
+        events.append(.failure(failure))
+        return events
+    }
+
+    mutating func finish() -> [RecordingCaptureEvent] {
+        accumulator.finish().map { .chunk($0) }
+    }
+}
+
+private struct RecordingChunkAccumulator: Sendable {
+    private var pendingByTrack: [RecordingTrackKind: RecordingPCMChunk] = [:]
+
+    mutating func accept(_ unvalidatedChunk: RecordingPCMChunk) throws -> [RecordingPCMChunk] {
+        let chunk = try unvalidatedChunk.validated()
+        var emitted: [RecordingPCMChunk] = []
+        if let pending = pendingByTrack[chunk.track], !canMerge(pending, chunk) {
+            emitted.append(pending)
+            pendingByTrack[chunk.track] = nil
+        }
+        if let pending = pendingByTrack[chunk.track] {
+            pendingByTrack[chunk.track] = try merge(pending, chunk)
+        } else {
+            pendingByTrack[chunk.track] = chunk
+        }
+        while let pending = pendingByTrack[chunk.track],
+              pending.sampleCount >= RecordingPCMFormat.canonicalSampleRate {
+            let count = RecordingPCMFormat.canonicalSampleRate
+            emitted.append(try slice(pending, offset: 0, count: count))
+            if pending.sampleCount == count {
+                pendingByTrack[chunk.track] = nil
+            } else {
+                pendingByTrack[chunk.track] = try slice(
+                    pending, offset: count, count: pending.sampleCount - count
+                )
+            }
+        }
+        return emitted
+    }
+
+    mutating func flush(track: RecordingTrackKind) -> [RecordingPCMChunk] {
+        guard let pending = pendingByTrack.removeValue(forKey: track) else { return [] }
+        return [pending]
+    }
+
+    mutating func finish() -> [RecordingPCMChunk] {
+        let pending = pendingByTrack.values.sorted {
+            if $0.sampleStart != $1.sampleStart { return $0.sampleStart < $1.sampleStart }
+            return $0.track.rawValue < $1.track.rawValue
+        }
+        pendingByTrack.removeAll(keepingCapacity: true)
+        return pending
+    }
+
+    private func canMerge(_ current: RecordingPCMChunk, _ next: RecordingPCMChunk) -> Bool {
+        let (currentEnd, overflow) = current.sampleStart.addingReportingOverflow(
+            Int64(current.sampleCount)
+        )
+        return !overflow
+            && current.track == next.track
+            && currentEnd == next.sampleStart
+            && current.format == next.format
+            && current.source.sampleRate == next.source.sampleRate
+            && current.source.channelCount == next.source.channelCount
+            && current.source.deviceID == next.source.deviceID
+            && current.source.initialRoute == next.source.initialRoute
+            && current.source.conversionVersion == next.source.conversionVersion
+    }
+
+    private func merge(
+        _ current: RecordingPCMChunk,
+        _ next: RecordingPCMChunk
+    ) throws -> RecordingPCMChunk {
+        let (sampleCount, overflow) = current.sampleCount.addingReportingOverflow(next.sampleCount)
+        guard !overflow else { throw RecordingTimelineError.arithmeticOverflow }
+        var payload = current.payload
+        payload.append(next.payload)
+        return .init(
+            track: current.track,
+            presentationNanoseconds: current.presentationNanoseconds,
+            sampleStart: current.sampleStart,
+            sampleCount: sampleCount,
+            format: current.format,
+            source: current.source,
+            payload: payload
+        )
+    }
+
+    private func slice(
+        _ chunk: RecordingPCMChunk,
+        offset: Int,
+        count: Int
+    ) throws -> RecordingPCMChunk {
+        let bytesPerFrame = chunk.format.channelCount * RecordingPCMFormat.bytesPerSample
+        let byteStart = offset * bytesPerFrame
+        let byteEnd = byteStart + count * bytesPerFrame
+        let (scaledOffset, scaledOverflow) = Int64(offset).multipliedReportingOverflow(
+            by: 1_000_000_000
+        )
+        guard !scaledOverflow else { throw RecordingTimelineError.arithmeticOverflow }
+        let nanosecondOffset = scaledOffset / Int64(RecordingPCMFormat.canonicalSampleRate)
+        let (presentation, presentationOverflow) = chunk.presentationNanoseconds
+            .addingReportingOverflow(nanosecondOffset)
+        let (sourcePresentation, sourceOverflow) = chunk.source.presentationNanoseconds
+            .addingReportingOverflow(nanosecondOffset)
+        let (sampleStart, sampleOverflow) = chunk.sampleStart.addingReportingOverflow(Int64(offset))
+        guard !presentationOverflow, !sourceOverflow, !sampleOverflow else {
+            throw RecordingTimelineError.arithmeticOverflow
+        }
+        return .init(
+            track: chunk.track,
+            presentationNanoseconds: presentation,
+            sampleStart: sampleStart,
+            sampleCount: count,
+            format: chunk.format,
+            source: .init(
+                sampleRate: chunk.source.sampleRate,
+                channelCount: chunk.source.channelCount,
+                deviceID: chunk.source.deviceID,
+                initialRoute: chunk.source.initialRoute,
+                conversionVersion: chunk.source.conversionVersion,
+                presentationNanoseconds: sourcePresentation
+            ),
+            payload: chunk.payload.subdata(in: byteStart..<byteEnd)
+        )
+    }
+}
+
+private struct RecordingLevelThrottle: Sendable {
+    private static let intervalSamples = RecordingPCMFormat.canonicalSampleRate / 10
+    private var lastEmissionByTrack: [RecordingTrackKind: Int64] = [:]
+
+    mutating func shouldEmit(for chunk: RecordingPCMChunk) -> Bool {
+        guard let lastEmission = lastEmissionByTrack[chunk.track] else {
+            lastEmissionByTrack[chunk.track] = chunk.sampleStart
+            return true
+        }
+        let (distance, overflow) = chunk.sampleStart.subtractingReportingOverflow(lastEmission)
+        guard !overflow, distance >= Int64(Self.intervalSamples) else { return false }
+        lastEmissionByTrack[chunk.track] = chunk.sampleStart
+        return true
     }
 }
 

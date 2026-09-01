@@ -22,6 +22,7 @@ enum RecordingSpoolCorruptionReason: Equatable, Sendable {
     case sequenceMismatch
     case malformedState
     case malformedGapJournal
+    case sealedIncompleteTail
 }
 
 struct RecordingSpoolUnrecoverableCorruption: Equatable, Sendable {
@@ -180,6 +181,9 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
     private var sequences: [RecordingTrackKind: Int] = [:]
     private var fileHandles: [RecordingTrackKind: FileHandle] = [:]
     private var gapJournalHandle: FileHandle?
+    private var gapJournalEntriesByTrack: [RecordingTrackKind: Int] = [:]
+    // Physical record bytes only. The tiny authenticated state envelope is
+    // bounded and intentionally excluded from the 2.5 GiB media manifest cap.
     private var storedBytes: Int64 = 0
     private var gapJournalCount = 0
     private var isSealed = false
@@ -242,10 +246,6 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
         guard deviceID.count <= Self.maximumDeviceIDBytes, route.count <= Self.maximumRouteBytes else {
             throw RecordingSpoolError.invalidRecord
         }
-        let nextStoredBytes = storedBytes + Int64(chunk.payload.count)
-        guard nextStoredBytes <= RecordingDiskPolicy.maximumRecordingBytes else {
-            throw RecordingSpoolError.recordingLimitReached
-        }
         let sequence = sequences[chunk.track, default: 0]
         let header = try Self.header(
             recordingID: recordingID,
@@ -265,6 +265,8 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
         var record = Data()
         record.appendFixedWidth(UInt32(body.count))
         record.append(body)
+        let chargedBytes = Int64(record.count)
+        let nextStoredBytes = try checkedStoredBytes(adding: chargedBytes)
 
         let handle = try fileHandle(for: chunk.track)
         try handle.seekToEnd()
@@ -272,20 +274,30 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
         try handle.synchronize()
         sequences[chunk.track] = sequence + 1
         storedBytes = nextStoredBytes
-        try reservation?.shrink(by: Int64(chunk.payload.count))
+        try reservation?.shrink(by: chargedBytes)
     }
 
     func record(gap: RecordingGap) async throws {
         guard !isSealed else { return }
+        try persistGap(gap)
+    }
+
+    private func persistGap(_ gap: RecordingGap) throws {
+        let trackEntryCount = gapJournalEntriesByTrack[gap.track, default: 0]
+        guard RecordingDiskPolicy.permitsGap(
+            gap,
+            trackEntryCount: trackEntryCount,
+            totalEntryCount: gapJournalCount
+        ) else { throw RecordingSpoolError.invalidRecord }
         try appendGapJournalRecord(gap: gap, sequence: gapJournalCount)
         gapJournalCount += 1
+        gapJournalEntriesByTrack[gap.track] = trackEntryCount + 1
     }
 
     func seal(gaps: [RecordingGap]) async throws {
         guard !isSealed else { return }
         for gap in gaps {
-            try appendGapJournalRecord(gap: gap, sequence: gapJournalCount)
-            gapJournalCount += 1
+            try persistGap(gap)
         }
         for handle in fileHandles.values {
             try handle.synchronize()
@@ -317,9 +329,17 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
         var corrupt: [RecordingGap] = []
         var unrecoverable = stateResult.unrecoverableCorruption.map { [$0] } ?? []
         unrecoverable.append(contentsOf: journalResult.unrecoverableCorruptions)
+        let stateIsSealed = stateResult.state?.sealed == true
         if let state = stateResult.state,
            state.sealed,
            state.gapJournalCount != journalResult.gaps.count {
+            unrecoverable.append(.init(
+                track: nil, byteOffset: nil, reason: .malformedGapJournal
+            ))
+        }
+        if stateIsSealed,
+           journalResult.ignoredIncompleteTail,
+           !unrecoverable.contains(where: { $0.reason == .malformedGapJournal }) {
             unrecoverable.append(.init(
                 track: nil, byteOffset: nil, reason: .malformedGapJournal
             ))
@@ -337,6 +357,11 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
             records.append(contentsOf: result.records)
             corrupt.append(contentsOf: result.corruptRanges)
             unrecoverable.append(contentsOf: result.unrecoverableCorruptions)
+            if stateIsSealed, result.ignoredIncompleteTail {
+                unrecoverable.append(.init(
+                    track: track, byteOffset: nil, reason: .sealedIncompleteTail
+                ))
+            }
             ignoredTail = ignoredTail || result.ignoredIncompleteTail
         }
         return .init(
@@ -555,7 +580,8 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
             )
             guard envelope.state.schemaVersion == 2,
                   envelope.state.recordingID == recordingID,
-                  envelope.state.gapJournalCount >= 0
+                  envelope.state.gapJournalCount >= 0,
+                  envelope.state.gapJournalCount <= RecordingDiskPolicy.maximumGapEntries
             else {
                 return .init(state: nil, unrecoverableCorruption: .init(
                     track: nil, byteOffset: nil, reason: .malformedState
@@ -630,10 +656,14 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
         var record = Data()
         record.appendFixedWidth(length)
         record.append(body)
+        let chargedBytes = Int64(record.count)
+        let nextStoredBytes = try checkedStoredBytes(adding: chargedBytes)
         let handle = try gapJournalFileHandle()
         try handle.seekToEnd()
         try handle.write(contentsOf: record)
         try handle.synchronize()
+        storedBytes = nextStoredBytes
+        try reservation?.shrink(by: chargedBytes)
     }
 
     private func gapJournalFileHandle() throws -> FileHandle {
@@ -662,6 +692,7 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
             let handle = try FileHandle(forReadingFrom: url)
             defer { try? handle.close() }
             var gaps: [RecordingGap] = []
+            var entriesByTrack: [RecordingTrackKind: Int] = [:]
             var expectedSequence = 0
             var ignoredIncompleteTail = false
             while true {
@@ -703,19 +734,6 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
                         ignoredIncompleteTail: ignoredIncompleteTail
                     )
                 }
-                guard envelope.entry.recordingID == recordingID,
-                      envelope.entry.sequence == expectedSequence,
-                      envelope.entry.gap.sampleStart >= 0,
-                      envelope.entry.gap.sampleCount > 0
-                else {
-                    return .init(
-                        gaps: gaps,
-                        unrecoverableCorruptions: [.init(
-                            track: nil, byteOffset: nil, reason: .malformedGapJournal
-                        )],
-                        ignoredIncompleteTail: ignoredIncompleteTail
-                    )
-                }
                 let entryData = try JSONEncoder.recording.encode(envelope.entry)
                 guard HMAC<SHA256>.isValidAuthenticationCode(
                     envelope.authentication,
@@ -730,7 +748,26 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
                         ignoredIncompleteTail: ignoredIncompleteTail
                     )
                 }
-                gaps.append(envelope.entry.gap)
+                let gap = envelope.entry.gap
+                let trackEntryCount = entriesByTrack[gap.track, default: 0]
+                guard envelope.entry.recordingID == recordingID,
+                      envelope.entry.sequence == expectedSequence,
+                      RecordingDiskPolicy.permitsGap(
+                        gap,
+                        trackEntryCount: trackEntryCount,
+                        totalEntryCount: gaps.count
+                      )
+                else {
+                    return .init(
+                        gaps: gaps,
+                        unrecoverableCorruptions: [.init(
+                            track: nil, byteOffset: nil, reason: .malformedGapJournal
+                        )],
+                        ignoredIncompleteTail: ignoredIncompleteTail
+                    )
+                }
+                gaps.append(gap)
+                entriesByTrack[gap.track] = trackEntryCount + 1
                 expectedSequence += 1
             }
             return .init(gaps: gaps, ignoredIncompleteTail: ignoredIncompleteTail)
@@ -775,6 +812,15 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
             info: Data(recordingID.uuidString.utf8),
             outputByteCount: 32
         )
+    }
+
+    private func checkedStoredBytes(adding bytes: Int64) throws -> Int64 {
+        guard bytes >= 0 else { throw RecordingSpoolError.recordingLimitReached }
+        let (nextStoredBytes, overflow) = storedBytes.addingReportingOverflow(bytes)
+        guard !overflow,
+              nextStoredBytes <= RecordingDiskPolicy.maximumRecordingBytes
+        else { throw RecordingSpoolError.recordingLimitReached }
+        return nextStoredBytes
     }
 
     private func fileHandle(for track: RecordingTrackKind) throws -> FileHandle {
