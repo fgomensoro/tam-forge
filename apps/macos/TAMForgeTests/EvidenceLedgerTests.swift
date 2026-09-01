@@ -134,6 +134,77 @@ final class EvidenceLedgerTests: XCTestCase {
         XCTAssertEqual(model.portfolioState, .idle)
     }
 
+    func testCallerCancellationSettlesOpenSectionsAfterCancellationResistantSuccess() async {
+        let skills = DeferredValues<Result<[EvidenceSkill], EvidenceAPIError>>()
+        let portfolio = DeferredValues<Result<EvidencePortfolioPage, EvidenceAPIError>>()
+        let activity = DeferredValues<Result<EvidenceEventPage, EvidenceAPIError>>()
+        let service = DeferredResultEvidenceService(
+            skills: skills,
+            portfolio: portfolio,
+            activityPages: [41: activity]
+        )
+        let model = EvidenceLedgerModel(service: service)
+
+        let open = Task { await model.open(activityID: 41) }
+        await assertCall(skills, count: 1)
+        await assertCall(portfolio, count: 1)
+        await assertCall(activity, count: 1)
+        open.cancel()
+        await skills.resolve(.success([assessedSkill()]))
+        await portfolio.resolve(.success(portfolioPage()))
+        await activity.resolve(.success(.init(
+            items: [event(id: 50, skill: "incident_communication")],
+            nextCursor: nil
+        )))
+        await open.value
+
+        XCTAssertTrue(model.skills.isEmpty)
+        XCTAssertNil(model.portfolioPage)
+        XCTAssertNil(model.activityPage)
+        XCTAssertEqual(model.skillState, .idle)
+        XCTAssertEqual(model.portfolioState, .idle)
+        XCTAssertEqual(model.activityState, .idle)
+    }
+
+    func testCallerCancellationDoesNotPublishCancellationResistantErrors() async {
+        let skills = DeferredValues<Result<[EvidenceSkill], EvidenceAPIError>>()
+        let portfolio = DeferredValues<Result<EvidencePortfolioPage, EvidenceAPIError>>()
+        let activity = DeferredValues<Result<EvidenceEventPage, EvidenceAPIError>>()
+        let skill = DeferredValues<Result<EvidenceEventPage, EvidenceAPIError>>()
+        let service = DeferredResultEvidenceService(
+            skills: skills,
+            portfolio: portfolio,
+            skillPages: ["incident_communication": skill],
+            activityPages: [41: activity]
+        )
+        let model = EvidenceLedgerModel(service: service)
+
+        let open = Task { await model.open(activityID: 41) }
+        await assertCall(skills, count: 1)
+        await assertCall(portfolio, count: 1)
+        await assertCall(activity, count: 1)
+        open.cancel()
+        await skills.resolve(.failure(.unavailable))
+        await portfolio.resolve(.failure(.unavailable))
+        await activity.resolve(.failure(.unavailable))
+        await open.value
+
+        let inspect = Task { await model.inspectSkill(slug: "incident_communication") }
+        await assertCall(skill, count: 1)
+        inspect.cancel()
+        await skill.resolve(.failure(.unavailable))
+        await inspect.value
+
+        XCTAssertEqual(model.skillState, .idle)
+        XCTAssertEqual(model.portfolioState, .idle)
+        XCTAssertEqual(model.activityState, .idle)
+        XCTAssertEqual(model.skillInspectorState, .idle)
+        XCTAssertNil(model.skillError)
+        XCTAssertNil(model.portfolioError)
+        XCTAssertNil(model.activityInspectorError)
+        XCTAssertNil(model.skillInspectorError)
+    }
+
     func testStaleMarkDoesNotFetchAndRefreshReplacesVisibleSections() async {
         let service = EvidenceServiceStub(
             skillsResult: .success([assessedSkill()]),
@@ -511,6 +582,43 @@ private final class DeferredEvidenceService: EvidenceServicing {
         return await page.next()
     }
     func fetchPortfolioHistory(cursor: Int?) async throws -> EvidencePortfolioPage { await portfolio.next() }
+}
+
+@MainActor
+private final class DeferredResultEvidenceService: EvidenceServicing {
+    let skills: DeferredValues<Result<[EvidenceSkill], EvidenceAPIError>>
+    let portfolio: DeferredValues<Result<EvidencePortfolioPage, EvidenceAPIError>>
+    let skillPages: [String: DeferredValues<Result<EvidenceEventPage, EvidenceAPIError>>]
+    let activityPages: [Int: DeferredValues<Result<EvidenceEventPage, EvidenceAPIError>>]
+
+    init(
+        skills: DeferredValues<Result<[EvidenceSkill], EvidenceAPIError>>,
+        portfolio: DeferredValues<Result<EvidencePortfolioPage, EvidenceAPIError>>,
+        skillPages: [String: DeferredValues<Result<EvidenceEventPage, EvidenceAPIError>>] = [:],
+        activityPages: [Int: DeferredValues<Result<EvidenceEventPage, EvidenceAPIError>>] = [:]
+    ) {
+        self.skills = skills
+        self.portfolio = portfolio
+        self.skillPages = skillPages
+        self.activityPages = activityPages
+    }
+
+    func listSkills() async throws -> [EvidenceSkill] { try await skills.next().get() }
+    func fetchSkill(slug: String) async throws -> EvidenceSkill {
+        guard let skill = try await listSkills().first else { throw EvidenceAPIError.invalidResponse }
+        return skill
+    }
+    func fetchSkillEvidence(slug: String, cursor: Int?) async throws -> EvidenceEventPage {
+        guard let page = skillPages[slug] else { throw EvidenceAPIError.unavailable }
+        return try await page.next().get()
+    }
+    func fetchActivityEvidence(activityID: Int, cursor: Int?) async throws -> EvidenceEventPage {
+        guard let page = activityPages[activityID] else { throw EvidenceAPIError.unavailable }
+        return try await page.next().get()
+    }
+    func fetchPortfolioHistory(cursor: Int?) async throws -> EvidencePortfolioPage {
+        try await portfolio.next().get()
+    }
 }
 
 @MainActor

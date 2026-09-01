@@ -215,9 +215,16 @@ final class EvidenceLedgerModel: ObservableObject {
         skillError = nil
         let task = Task { [service] in try await service.listSkills() }
         skillsTask = task
-        defer { if request == skillsRequest { skillsTask = nil } }
+        defer {
+            if request == skillsRequest {
+                skillsTask = nil
+                settleLoadingState(for: .skills)
+            }
+        }
         do {
-            let value = try await task.value
+            let value = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: { task.cancel() }
             guard publishable(generation: generation, taskCancelled: task.isCancelled), request == skillsRequest else { return false }
             skills = value
             skillState = value.isEmpty ? .empty : .content
@@ -236,8 +243,16 @@ final class EvidenceLedgerModel: ObservableObject {
         portfolioError = nil
         let task = Task { [service] in try await service.fetchPortfolioHistory(cursor: cursor) }
         portfolioTask = task
+        defer {
+            if request == portfolioRequest {
+                portfolioTask = nil
+                settleLoadingState(for: .portfolio)
+            }
+        }
         do {
-            let page = try await task.value
+            let page = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: { task.cancel() }
             guard publishable(generation: generation, taskCancelled: task.isCancelled), request == portfolioRequest else { return }
             try EvidencePageValidator.portfolio(page, requestedCursor: cursor)
             portfolioPage = page
@@ -245,7 +260,6 @@ final class EvidenceLedgerModel: ObservableObject {
             failedPortfolioCursor = nil
             portfolioState = page.items.isEmpty ? .empty : .content
         } catch { handle(error, generation: generation, section: .portfolio, cursor: cursor, request: request) }
-        if request == portfolioRequest { portfolioTask = nil }
     }
 
     private func requestSkillPage(slug: String, cursor: Int?) async {
@@ -260,13 +274,13 @@ final class EvidenceLedgerModel: ObservableObject {
         defer {
             if request == skillRequest {
                 skillTask = nil
-                if skillInspectorState == .loading {
-                    skillInspectorState = skillPage.map { $0.items.isEmpty ? .empty : .content } ?? .idle
-                }
+                settleLoadingState(for: .skillInspector)
             }
         }
         do {
-            let page = try await task.value
+            let page = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: { task.cancel() }
             guard publishable(generation: generation, taskCancelled: task.isCancelled), request == skillRequest, selectedSkillSlug == slug else { return }
             try EvidencePageValidator.events(page, scope: .skill(slug), requestedCursor: cursor)
             skillPage = page
@@ -284,8 +298,16 @@ final class EvidenceLedgerModel: ObservableObject {
         activityInspectorError = nil
         let task = Task { [service] in try await service.fetchActivityEvidence(activityID: activityID, cursor: cursor) }
         activityTask = task
+        defer {
+            if request == activityRequest {
+                activityTask = nil
+                settleLoadingState(for: .activityInspector)
+            }
+        }
         do {
-            let page = try await task.value
+            let page = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: { task.cancel() }
             guard publishable(generation: generation, taskCancelled: task.isCancelled), request == activityRequest, inspectedActivityID == activityID else { return }
             try EvidencePageValidator.events(page, scope: .activity(activityID), requestedCursor: cursor)
             activityPage = page
@@ -293,7 +315,6 @@ final class EvidenceLedgerModel: ObservableObject {
             failedActivityCursor = nil
             activityState = page.items.isEmpty ? .empty : .content
         } catch { handle(error, generation: generation, section: .activityInspector, cursor: cursor, request: request) }
-        if request == activityRequest { activityTask = nil }
     }
 
     private func publishable(generation: Int, taskCancelled: Bool) -> Bool {
@@ -301,7 +322,9 @@ final class EvidenceLedgerModel: ObservableObject {
     }
 
     private func handle(_ error: Error, generation: Int, section: Section, cursor: Int?, request: Int? = nil) {
-        guard active, generation == lifetime, !isCancellation(error), requestMatches(section, request) else { return }
+        guard active, generation == lifetime, !Task.isCancelled,
+              !isCancellation(error), requestMatches(section, request)
+        else { return }
         if error as? EvidenceAPIError == .unauthorized { reset(); return }
         let message = error is EvidenceContractError || error as? EvidenceAPIError == .invalidResponse
             ? "Evidence response could not be used. Retry."
@@ -315,6 +338,21 @@ final class EvidenceLedgerModel: ObservableObject {
             skillInspectorState = .failed; skillInspectorError = message; failedSkillCursor = cursor
         case .activityInspector:
             activityState = .failed; activityInspectorError = message; failedActivityCursor = cursor
+        }
+    }
+
+    private func settleLoadingState(for section: Section) {
+        switch section {
+        case .skills where skillState == .loading:
+            skillState = skills.isEmpty ? .idle : .content
+        case .portfolio where portfolioState == .loading:
+            portfolioState = portfolioPage.map { $0.items.isEmpty ? .empty : .content } ?? .idle
+        case .skillInspector where skillInspectorState == .loading:
+            skillInspectorState = skillPage.map { $0.items.isEmpty ? .empty : .content } ?? .idle
+        case .activityInspector where activityState == .loading:
+            activityState = activityPage.map { $0.items.isEmpty ? .empty : .content } ?? .idle
+        default:
+            break
         }
     }
 

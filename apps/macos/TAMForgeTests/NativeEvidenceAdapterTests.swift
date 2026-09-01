@@ -25,7 +25,7 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         let portfolio = try await api.fetchPortfolioHistory(cursor: nil)
 
         XCTAssertNil(skills[0].snapshot, "A null snapshot is not a zero score")
-        XCTAssertEqual(detail.snapshot?.estimatedLevel, "3.125")
+        XCTAssertEqual(detail.snapshot?.estimatedLevel, "1.162")
         XCTAssertEqual(detail.snapshot?.snapshotDate, "2026-08-31")
         XCTAssertEqual(detail.snapshot?.lastStrongEvidenceDate, "2026-08-30")
         XCTAssertEqual(detail.snapshot?.manifest[0].usedWeight, "0.125")
@@ -90,7 +90,6 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         fixture.enqueue(.response(statusCode: 200, body: replacing(portfolioPageBody(nextCursor: nil), "16.500", "20.001")))
         fixture.enqueue(.response(statusCode: 200, body: portfolioPageMissingLastComponent()))
         fixture.enqueue(.response(statusCode: 200, body: portfolioPageWithDuplicateComponent()))
-        fixture.enqueue(.response(statusCode: 200, body: replacing(portfolioPageBody(nextCursor: nil), "16.500", "16.499")))
         fixture.enqueue(.response(statusCode: 200, body: portfolioPageWithImpossibleComponent()))
         let api = LiveEvidenceAPI(transport: transport(fixture))
 
@@ -99,13 +98,26 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         await assertInvalidResponse { _ = try await api.fetchPortfolioHistory(cursor: nil) }
         await assertInvalidResponse { _ = try await api.fetchPortfolioHistory(cursor: nil) }
         await assertInvalidResponse { _ = try await api.fetchPortfolioHistory(cursor: nil) }
-        await assertInvalidResponse { _ = try await api.fetchPortfolioHistory(cursor: nil) }
+    }
+
+    func testPreservesServerAuthoritativePortfolioTotalWithoutRecomputingIt() async throws {
+        let fixture = URLProtocolFixture()
+        fixture.enqueue(.response(
+            statusCode: 200,
+            body: replacing(portfolioPageBody(nextCursor: nil), "16.500", "16.499")
+        ))
+
+        let page = try await LiveEvidenceAPI(transport: transport(fixture))
+            .fetchPortfolioHistory(cursor: nil)
+
+        XCTAssertEqual(page.items[0].totalScore, "16.499")
+        XCTAssertEqual(page.items[0].components[0].score, "3.500")
     }
 
     func testRejectsSnapshotAndEventValuesOutsideBackendRanges() async {
         for body in [
-            replacing(skillsBody(snapshot: snapshotBody()), [("\"baseline_target_gap\":\"2.125\"", "\"baseline_target_gap\":\"4.001\"")]),
-            replacing(skillsBody(snapshot: snapshotBody()), [("\"total_effective_weight\":\"1.250\"", "\"total_effective_weight\":\"-0.001\"")]),
+            replacing(skillsBody(snapshot: snapshotBody()), [("\"baseline_target_gap\":\"-0.162\"", "\"baseline_target_gap\":\"-4.001\"")]),
+            replacing(skillsBody(snapshot: snapshotBody()), [("\"total_effective_weight\":\"0.125\"", "\"total_effective_weight\":\"-0.001\"")]),
             replacing(skillsBody(snapshot: snapshotBody()), [("\"effective_weight\":\"0.125\"", "\"effective_weight\":\"1.501\"")]),
         ] {
             let fixture = URLProtocolFixture()
@@ -128,14 +140,58 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         }
     }
 
+    func testRejectsIncoherentSnapshotRelationships() async {
+        for body in [
+            replacing(skillsBody(snapshot: snapshotBody()), [("\"baseline_target_gap\":\"-0.162\"", "\"baseline_target_gap\":\"-0.163\"")]),
+            replacing(skillsBody(snapshot: snapshotBody()), [("\"total_effective_weight\":\"0.125\"", "\"total_effective_weight\":\"0.126\"")]),
+            replacing(skillsBody(snapshot: snapshotBody()), [("\"inclusion_code\":\"discounted_same_day\"", "\"inclusion_code\":\"excluded_nonqualifying\"")]),
+            replacing(skillsBody(snapshot: snapshotBody()), [("\"qualifying_event_count\":1", "\"qualifying_event_count\":2")]),
+        ] {
+            let fixture = URLProtocolFixture()
+            fixture.enqueue(.response(statusCode: 200, body: body))
+            await assertInvalidResponse { _ = try await LiveEvidenceAPI(transport: transport(fixture)).listSkills() }
+        }
+    }
+
+    func testEnforcesQualifyingEvidenceCoherence() async throws {
+        let validQualifying = replacing(evidencePageBody(nextCursor: nil), [
+            ("\"attempt_id\":null", "\"attempt_id\":81"),
+            ("\"qualifying_for_level\":false", "\"qualifying_for_level\":true"),
+            ("\"qualification_reason\":\"missing_committed_attempt\"", "\"qualification_reason\":\"qualifies\""),
+        ])
+        let fixture = URLProtocolFixture()
+        fixture.enqueue(.response(statusCode: 200, body: validQualifying))
+        fixture.enqueue(.response(statusCode: 200, body: replacing(
+            validQualifying,
+            [("\"attempt_id\":81", "\"attempt_id\":null")]
+        )))
+        fixture.enqueue(.response(statusCode: 200, body: replacing(
+            validQualifying,
+            [("\"practice_mode\":\"independent_practice\"", "\"practice_mode\":\"guided_practice\"")]
+        )))
+        fixture.enqueue(.response(statusCode: 200, body: replacing(
+            validQualifying,
+            [("\"assistance\":\"no_ai\"", "\"assistance\":\"ai_during_attempt\"")]
+        )))
+        let api = LiveEvidenceAPI(transport: transport(fixture))
+
+        let accepted = try await api.fetchSkillEvidence(slug: "incident_communication", cursor: nil)
+        XCTAssertTrue(accepted.items[0].qualifyingForLevel)
+        await assertInvalidResponse { _ = try await api.fetchSkillEvidence(slug: "incident_communication", cursor: nil) }
+        await assertInvalidResponse { _ = try await api.fetchSkillEvidence(slug: "incident_communication", cursor: nil) }
+        await assertInvalidResponse { _ = try await api.fetchSkillEvidence(slug: "incident_communication", cursor: nil) }
+    }
+
     func testAcceptsSnapshotAndEventBackendRangeBoundaries() async throws {
         let fixture = URLProtocolFixture()
         fixture.enqueue(.response(statusCode: 200, body: replacing(
             skillsBody(snapshot: snapshotBody()),
             [
-                ("\"baseline_target_gap\":\"2.125\"", "\"baseline_target_gap\":\"-4\""),
-                ("\"month_one_target_gap\":\"1.125\"", "\"month_one_target_gap\":\"4\""),
-                ("\"total_effective_weight\":\"1.250\"", "\"total_effective_weight\":\"0\""),
+                ("\"estimated_level\":\"1.162\"", "\"estimated_level\":\"2.179\""),
+                ("\"baseline_target_gap\":\"-0.162\"", "\"baseline_target_gap\":\"-1.179\""),
+                ("\"month_one_target_gap\":\"0.838\"", "\"month_one_target_gap\":\"-0.179\""),
+                ("\"final_target_gap\":\"2.838\"", "\"final_target_gap\":\"1.821\""),
+                ("\"total_effective_weight\":\"0.125\"", "\"total_effective_weight\":\"1.5\""),
                 ("\"effective_weight\":\"0.125\"", "\"effective_weight\":\"1.5\""),
             ]
         )))
@@ -156,7 +212,7 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         let zeroWeight = try await api.fetchSkillEvidence(slug: "incident_communication", cursor: nil)
         let maximumWeight = try await api.fetchSkillEvidence(slug: "incident_communication", cursor: nil)
 
-        XCTAssertEqual(skills[0].snapshot?.baselineTargetGap, "-4")
+        XCTAssertEqual(skills[0].snapshot?.baselineTargetGap, "-1.179")
         XCTAssertEqual(skills[0].snapshot?.manifest[0].usedWeight, "1.5")
         XCTAssertEqual(zeroWeight.items[0].skillImpact, "0.000001")
         XCTAssertEqual(zeroWeight.items[0].effectiveWeight, "0")
@@ -173,10 +229,22 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         XCTAssertFalse(EvidenceResponseContract.validSnapshotCodes(
             confidence: "medium", trend: "improving", recency: "recent"
         ))
-        XCTAssertTrue(EvidenceResponseContract.validQualification(reason: "qualifies", qualifies: true))
-        XCTAssertTrue(EvidenceResponseContract.validQualification(reason: "excluded_by_formula", qualifies: false))
-        XCTAssertFalse(EvidenceResponseContract.validQualification(reason: "Independent evidence", qualifies: true))
-        XCTAssertFalse(EvidenceResponseContract.validQualification(reason: "qualifies", qualifies: false))
+        XCTAssertTrue(EvidenceResponseContract.validQualification(
+            reason: "qualifies", qualifies: true, attemptID: 81,
+            practiceMode: "independent_practice", assistance: "no_ai"
+        ))
+        XCTAssertTrue(EvidenceResponseContract.validQualification(
+            reason: "excluded_by_formula", qualifies: false, attemptID: nil,
+            practiceMode: "guided_practice", assistance: "ai_during_attempt"
+        ))
+        XCTAssertFalse(EvidenceResponseContract.validQualification(
+            reason: "Independent evidence", qualifies: true, attemptID: 81,
+            practiceMode: "independent_practice", assistance: "no_ai"
+        ))
+        XCTAssertFalse(EvidenceResponseContract.validQualification(
+            reason: "qualifies", qualifies: false, attemptID: nil,
+            practiceMode: "guided_practice", assistance: "ai_during_attempt"
+        ))
     }
 
     func testDebugFixturePaginationQueryRejectsBareEmptyDuplicateAndInvalidCursors() throws {
@@ -287,7 +355,11 @@ final class NativeEvidenceAdapterTests: XCTestCase {
     func testMalformedDecimalsDatesAndOversizeFailClosed() async {
         for value in ["", "+", "NaN", "1e3", "1.5x", "2\n"] {
             let fixture = URLProtocolFixture()
-            let data = replacing(skillsBody(snapshot: snapshotBody()), "3.125", value)
+            let data = replacing(
+                skillsBody(snapshot: snapshotBody()),
+                "\"estimated_level\":\"1.162\"",
+                "\"estimated_level\":\"\(value)\""
+            )
             fixture.enqueue(.response(statusCode: 200, body: data))
             let api = LiveEvidenceAPI(transport: transport(fixture))
             await assertInvalidResponse { _ = try await api.listSkills() }
@@ -385,12 +457,12 @@ final class NativeEvidenceAdapterTests: XCTestCase {
         """.utf8)
     }
 
-    private func snapshotBody(estimatedLevel: String = "3.125") -> String {
+    private func snapshotBody(estimatedLevel: String = "1.162") -> String {
         """
         {"id":71,"formula_version":"v1","snapshot_date":"2026-08-31",
          "estimated_level":"\(estimatedLevel)","confidence":"medium","trend":"improving","recency":"fresh",
-         "baseline_target_gap":"2.125","month_one_target_gap":"1.125","final_target_gap":"0.875",
-         "total_effective_weight":"1.250","qualifying_event_count":2,"exercise_type_count":1,
+         "baseline_target_gap":"-0.162","month_one_target_gap":"0.838","final_target_gap":"2.838",
+         "total_effective_weight":"0.125","qualifying_event_count":1,"exercise_type_count":1,
          "last_strong_evidence_date":"2026-08-30",
          "manifest":[{"event_id":501,"effective_weight":"0.125","inclusion_code":"discounted_same_day"}],
          "confidence_basis":{"known_count":2,"unknown_basis":{"items":[1,{"deep":"kept"}]}},

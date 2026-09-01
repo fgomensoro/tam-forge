@@ -182,10 +182,9 @@ private enum EvidenceRequiredNulls: Equatable {
 
 private extension EvidenceSkill {
     init(api value: Components.Schemas.SkillSummaryResponse) throws {
-        try EvidenceDecimal.validate(
-            [value.baseline, value.monthOneTarget, value.finalTarget],
-            within: Decimal(0) ... Decimal(4)
-        )
+        let targets = try [value.baseline, value.monthOneTarget, value.finalTarget].map {
+            try EvidenceDecimal.parse($0, within: Decimal(0) ... Decimal(4))
+        }
         guard LiveEvidenceAPI.isValidSlug(value.slug), !value.name.isEmpty else {
             throw EvidenceAdapterError.invalidSchemaValue
         }
@@ -195,22 +194,42 @@ private extension EvidenceSkill {
             baseline: value.baseline,
             monthOneTarget: value.monthOneTarget,
             finalTarget: value.finalTarget,
-            snapshot: try value.latestSnapshot.map { try .init(api: $0.value1) }
+            snapshot: try value.latestSnapshot.map {
+                try .init(
+                    api: $0.value1,
+                    baseline: targets[0],
+                    monthOneTarget: targets[1],
+                    finalTarget: targets[2]
+                )
+            }
         )
     }
 }
 
 private extension EvidenceSnapshot {
-    init(api value: Components.Schemas.SkillSnapshotResponse) throws {
-        try EvidenceDecimal.validate([value.estimatedLevel], within: Decimal(0) ... Decimal(4))
-        try EvidenceDecimal.validate([
+    init(
+        api value: Components.Schemas.SkillSnapshotResponse,
+        baseline: Decimal,
+        monthOneTarget: Decimal,
+        finalTarget: Decimal
+    ) throws {
+        let estimate = try EvidenceDecimal.parse(value.estimatedLevel, within: Decimal(0) ... Decimal(4))
+        let gaps = try [
             value.baselineTargetGap, value.monthOneTargetGap,
             value.finalTargetGap,
-        ], within: Decimal(-4) ... Decimal(4))
+        ].map { try EvidenceDecimal.parse($0, within: Decimal(-4) ... Decimal(4)) }
         let totalEffectiveWeight = try EvidenceDecimal.parse(value.totalEffectiveWeight)
         let manifest = try value.manifest.map(EvidenceManifestEntry.init(api:))
+        let contributing = manifest.filter { EvidenceSnapshotContract.contributingCodes.contains($0.inclusionCode) }
+        let manifestWeight = try contributing.reduce(Decimal.zero) {
+            $0 + (try EvidenceDecimal.parse($1.usedWeight))
+        }
         guard value.id > 0, value.qualifyingEventCount >= 0, value.exerciseTypeCount >= 0,
               totalEffectiveWeight >= 0,
+              gaps == [baseline - estimate, monthOneTarget - estimate, finalTarget - estimate],
+              manifestWeight == totalEffectiveWeight,
+              contributing.count == value.qualifyingEventCount,
+              value.exerciseTypeCount <= value.qualifyingEventCount,
               EvidenceResponseContract.validSnapshotCodes(
                 confidence: value.confidence, trend: value.trend, recency: value.recency
               ),
@@ -240,12 +259,18 @@ private extension EvidenceSnapshot {
 
 private extension EvidenceManifestEntry {
     init(api value: Components.Schemas.SnapshotManifestItem) throws {
-        try EvidenceDecimal.validate(
-            [value.effectiveWeight],
+        let weight = try EvidenceDecimal.parse(
+            value.effectiveWeight,
             within: Decimal(0) ... EvidenceDecimal.maximumEventWeight
         )
-        guard value.eventId > 0 else { throw EvidenceAdapterError.invalidSchemaValue }
-        self.init(eventID: value.eventId, usedWeight: value.effectiveWeight, inclusionCode: value.inclusionCode.rawValue)
+        let code = value.inclusionCode.rawValue
+        let validWeight = switch code {
+        case "discounted_same_day": weight > 0
+        case "excluded_nonqualifying", "excluded_outside_window": weight == 0
+        default: true
+        }
+        guard value.eventId > 0, validWeight else { throw EvidenceAdapterError.invalidSchemaValue }
+        self.init(eventID: value.eventId, usedWeight: value.effectiveWeight, inclusionCode: code)
     }
 }
 
@@ -267,7 +292,11 @@ private extension EvidenceEvent {
               skillImpact > 0,
               LiveEvidenceAPI.isValidSlug(value.skillSlug),
               EvidenceResponseContract.validQualification(
-                reason: value.qualificationReason, qualifies: value.qualifyingForLevel
+                reason: value.qualificationReason,
+                qualifies: value.qualifyingForLevel,
+                attemptID: value.attemptId,
+                practiceMode: value.practiceMode,
+                assistance: value.assistance
               )
         else { throw EvidenceAdapterError.invalidSchemaValue }
         self.init(
@@ -303,18 +332,16 @@ private extension EvidencePortfolioPage {
 
 private extension EvidencePortfolioScore {
     init(api value: Components.Schemas.PortfolioScoreResponse) throws {
-        let total = try EvidenceDecimal.parse(value.totalScore, within: Decimal(0) ... Decimal(20))
-        let componentScores = try value.components.map {
+        _ = try EvidenceDecimal.parse(value.totalScore, within: Decimal(0) ... Decimal(20))
+        try value.components.forEach {
             guard let maximum = EvidencePortfolioContract.componentMaximums[$0.slug] else {
                 throw EvidenceAdapterError.invalidSchemaValue
             }
-            return try EvidenceDecimal.parse($0.score, within: Decimal(0) ... maximum)
+            _ = try EvidenceDecimal.parse($0.score, within: Decimal(0) ... maximum)
         }
-        let componentTotal = componentScores.reduce(Decimal.zero) { $0 + $1 }
         guard value.id > 0, value.activityId > 0, value.attemptId > 0,
               value.components.count == EvidencePortfolioContract.componentSlugs.count,
-              Set(value.components.map(\.slug)) == EvidencePortfolioContract.componentSlugs,
-              componentTotal == total
+              Set(value.components.map(\.slug)) == EvidencePortfolioContract.componentSlugs
         else { throw EvidenceAdapterError.invalidSchemaValue }
         self.init(
             id: value.id,
@@ -366,6 +393,10 @@ private enum EvidencePortfolioContract {
     static let componentSlugs = Set(componentMaximums.keys)
 }
 
+private enum EvidenceSnapshotContract {
+    static let contributingCodes: Set<String> = ["included", "discounted_same_day"]
+}
+
 enum EvidenceResponseContract {
     private static let confidence: Set<String> = ["low", "medium", "high"]
     private static let trend: Set<String> = ["improving", "stable", "declining", "insufficient_evidence"]
@@ -374,13 +405,30 @@ enum EvidenceResponseContract {
         "qualifies", "nonqualifying_mode", "assisted_during_attempt", "attempt_b",
         "missing_committed_attempt", "mapping_condition_not_met", "excluded_by_formula",
     ]
+    private static let qualifyingModes: Set<String> = [
+        "independent_practice", "timed_assessment", "mock_interview", "real_interview",
+    ]
+    private static let qualifyingAssistance: Set<String> = ["no_ai", "ai_after_committed_attempt"]
 
     static func validSnapshotCodes(confidence: String, trend: String, recency: String) -> Bool {
         Self.confidence.contains(confidence) && Self.trend.contains(trend) && Self.recency.contains(recency)
     }
 
-    static func validQualification(reason: String, qualifies: Bool) -> Bool {
-        qualificationReasons.contains(reason) && qualifies == (reason == "qualifies")
+    static func validQualification(
+        reason: String,
+        qualifies: Bool,
+        attemptID: Int?,
+        practiceMode: String,
+        assistance: String
+    ) -> Bool {
+        guard qualificationReasons.contains(reason), qualifies == (reason == "qualifies") else {
+            return false
+        }
+        return !qualifies || (
+            attemptID != nil
+                && qualifyingModes.contains(practiceMode)
+                && qualifyingAssistance.contains(assistance)
+        )
     }
 }
 

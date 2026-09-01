@@ -78,7 +78,11 @@ struct EvidenceLedgerView: View {
                 ProgressView("Loading skill evidence…")
             }
             if model.skillState == .failed {
-                sectionError(model.skillError ?? "Skill evidence could not be loaded.", retryID: "evidenceRetrySkills") {
+                sectionError(
+                    model.skillError ?? "Skill evidence could not be loaded.",
+                    retryID: "evidenceRetrySkills",
+                    retryLabel: "Retry skill estimates"
+                ) {
                     await model.retrySkills()
                 }
             }
@@ -168,6 +172,7 @@ struct EvidenceLedgerView: View {
                 error: model.skillInspectorError,
                 empty: "No evidence events are available for this skill.",
                 retryID: "evidenceRetrySkillInspector",
+                retryLabel: "Retry selected skill evidence",
                 retry: { await model.retrySkillEvidence() }
             ) {
                 if let page = model.skillPage {
@@ -178,6 +183,8 @@ struct EvidenceLedgerView: View {
                         hasOlder: page.nextCursor != nil,
                         olderID: "evidenceSkillOlder",
                         newestID: "evidenceSkillNewest",
+                        olderLabel: "Older skill evidence",
+                        newestLabel: "Newest skill evidence",
                         older: { await model.loadOlderSkillEvidence() },
                         newestAction: { await model.loadNewestSkillEvidence() }
                     )
@@ -195,7 +202,11 @@ struct EvidenceLedgerView: View {
                 ProgressView("Loading portfolio history…")
             }
             if model.portfolioState == .failed {
-                sectionError(model.portfolioError ?? "Portfolio history could not be loaded.", retryID: "evidenceRetryPortfolio") {
+                sectionError(
+                    model.portfolioError ?? "Portfolio history could not be loaded.",
+                    retryID: "evidenceRetryPortfolio",
+                    retryLabel: "Retry portfolio history"
+                ) {
                     await model.retryPortfolio()
                 }
             }
@@ -209,6 +220,8 @@ struct EvidenceLedgerView: View {
                     hasOlder: page.nextCursor != nil,
                     olderID: "evidencePortfolioOlder",
                     newestID: "evidencePortfolioNewest",
+                    olderLabel: "Older portfolio history",
+                    newestLabel: "Newest portfolio history",
                     older: { await model.loadOlderPortfolio() },
                     newestAction: { await model.loadNewestPortfolio() }
                 )
@@ -276,6 +289,7 @@ struct EvidenceLedgerView: View {
                 error: model.activityInspectorError,
                 empty: "No qualifying evidence is recorded for this activity.",
                 retryID: "evidenceRetryActivityInspector",
+                retryLabel: "Retry activity evidence",
                 retry: { await model.retryActivityEvidence() }
             ) {
                 if let page = model.activityPage {
@@ -285,6 +299,8 @@ struct EvidenceLedgerView: View {
                         hasOlder: page.nextCursor != nil,
                         olderID: "evidenceActivityOlder",
                         newestID: "evidenceActivityNewest",
+                        olderLabel: "Older activity evidence",
+                        newestLabel: "Newest activity evidence",
                         older: { await model.loadOlderActivityEvidence() },
                         newestAction: { await model.loadNewestActivityEvidence() }
                     )
@@ -355,12 +371,18 @@ struct EvidenceLedgerView: View {
         error: String?,
         empty: String,
         retryID: String,
+        retryLabel: String,
         retry: @escaping @MainActor () async -> Void,
         @ViewBuilder content: () -> Content
     ) -> some View {
         if state == .loading { ProgressView("Loading evidence…") }
         if state == .failed {
-            sectionError(error ?? "Evidence could not be loaded.", retryID: retryID, retry: retry)
+            sectionError(
+                error ?? "Evidence could not be loaded.",
+                retryID: retryID,
+                retryLabel: retryLabel,
+                retry: retry
+            )
         }
         if state == .empty { Text(empty).foregroundStyle(.secondary) }
         if state == .content || state == .failed || state == .loading { content() }
@@ -369,12 +391,14 @@ struct EvidenceLedgerView: View {
     private func sectionError(
         _ message: String,
         retryID: String,
+        retryLabel: String,
         retry: @escaping @MainActor () async -> Void
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Label(message, systemImage: "exclamationmark.triangle")
                 .foregroundStyle(.orange)
             Button("Retry") { Task { await retry() } }
+                .accessibilityLabel(retryLabel)
                 .accessibilityIdentifier(retryID)
         }
     }
@@ -384,16 +408,20 @@ struct EvidenceLedgerView: View {
         hasOlder: Bool,
         olderID: String,
         newestID: String,
+        olderLabel: String,
+        newestLabel: String,
         older: @escaping @MainActor () async -> Void,
         newestAction: @escaping @MainActor () async -> Void
     ) -> some View {
         HStack(spacing: 10) {
             if hasOlder {
                 Button("Older") { Task { await older() } }
+                    .accessibilityLabel(olderLabel)
                     .accessibilityIdentifier(olderID)
             }
             if !newest {
                 Button("Newest") { Task { await newestAction() } }
+                    .accessibilityLabel(newestLabel)
                     .accessibilityIdentifier(newestID)
             }
         }

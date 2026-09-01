@@ -46,6 +46,7 @@ final class TAMForgeUITests: XCTestCase {
         app.buttons["evidenceNavigation"].click()
         let retry = app.buttons["evidenceRetrySkills"]
         XCTAssertTrue(retry.waitForExistence(timeout: 5))
+        XCTAssertEqual(retry.label, "Retry skill estimates")
         let portfolioScore = textContaining("14.000 / 20", in: app)
         XCTAssertTrue(portfolioScore.waitForExistence(timeout: 5))
         retry.click()
@@ -82,6 +83,7 @@ final class TAMForgeUITests: XCTestCase {
 
         let older = app.buttons["evidenceSkillOlder"]
         XCTAssertTrue(older.waitForExistence(timeout: 5))
+        XCTAssertEqual(older.label, "Older skill evidence")
         let manifest = app.disclosureTriangles["evidenceManifest"]
         setDisclosure(manifest, expanded: true, in: app)
         XCTAssertTrue(textContaining("Used weight 0.400 · Event weight 0.800", in: app).waitForExistence(timeout: 5))
@@ -110,6 +112,7 @@ final class TAMForgeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Evidence event 39"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Evidence event 50"].exists)
         let newest = app.buttons["evidenceSkillNewest"]
+        XCTAssertEqual(newest.label, "Newest skill evidence")
         reveal(newest, in: app, scrollIdentifier: "evidenceLedger")
         app.activate()
         newest.click()
@@ -122,10 +125,12 @@ final class TAMForgeUITests: XCTestCase {
         app.buttons["evidenceNavigation"].click()
 
         let portfolioOlder = app.buttons["evidencePortfolioOlder"]
+        XCTAssertEqual(portfolioOlder.label, "Older portfolio history")
         reveal(portfolioOlder, in: app, scrollIdentifier: "evidenceLedger")
         portfolioOlder.click()
         XCTAssertTrue(app.descendants(matching: .any)["evidencePortfolio_90"].waitForExistence(timeout: 5))
         let portfolioNewest = app.buttons["evidencePortfolioNewest"]
+        XCTAssertEqual(portfolioNewest.label, "Newest portfolio history")
         reveal(portfolioNewest, in: app, scrollIdentifier: "evidenceLedger")
         portfolioNewest.click()
         XCTAssertTrue(app.descendants(matching: .any)["evidencePortfolio_91"].waitForExistence(timeout: 5))
@@ -135,6 +140,7 @@ final class TAMForgeUITests: XCTestCase {
         inspect.click()
         let activityOlder = app.buttons["evidenceActivityOlder"]
         XCTAssertTrue(activityOlder.waitForExistence(timeout: 5))
+        XCTAssertEqual(activityOlder.label, "Older activity evidence")
         reveal(activityOlder, in: app, scrollIdentifier: "evidenceLedger")
         activityOlder.click()
         XCTAssertTrue(app.staticTexts["Evidence event 39"].waitForExistence(timeout: 5))
