@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import base64
-from typing import Annotated, Literal
+import hmac
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Path, Request, Response
@@ -11,9 +12,8 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth.dependencies import get_authenticated_owner
+from ..auth.dependencies import get_bearer_authenticated_owner
 from ..auth.schemas import AuthenticatedOwner, ProblemResponse
-from ..auth.service import Unauthenticated
 from ..database import get_db_session
 from ..storage.dependencies import get_object_store
 from ..storage.models import ObjectStoreError
@@ -44,18 +44,57 @@ from .service import (
 router = APIRouter(prefix="/api/v1/recordings", tags=["recordings"])
 
 
+def _recording_problem_response_schema(description: str) -> dict[str, Any]:
+    return {
+        "description": description,
+        "content": {
+            "application/problem+json": {
+                "schema": {"$ref": "#/components/schemas/ProblemResponse"}
+            }
+        },
+    }
+
+
+RECORDING_CREATE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: _recording_problem_response_schema("Native bearer authentication is required."),
+    409: _recording_problem_response_schema("Recording identity conflicts with an existing request."),
+    422: _recording_problem_response_schema("Recording request validation failed."),
+    503: _recording_problem_response_schema("Recording service is temporarily unavailable."),
+}
+RECORDING_PART_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: _recording_problem_response_schema("Recording part metadata is invalid."),
+    401: _recording_problem_response_schema("Native bearer authentication is required."),
+    404: _recording_problem_response_schema("Recording or track was not found."),
+    409: _recording_problem_response_schema("Recording part conflicts with durable state."),
+    422: _recording_problem_response_schema("Recording part request validation failed."),
+    503: _recording_problem_response_schema("Recording storage is temporarily unavailable."),
+}
+RECORDING_SEAL_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: _recording_problem_response_schema("Native bearer authentication is required."),
+    404: _recording_problem_response_schema("Recording was not found."),
+    409: _recording_problem_response_schema("Recording seal conflicts with durable state."),
+    422: _recording_problem_response_schema("Recording seal request validation failed."),
+    503: _recording_problem_response_schema("Recording storage is temporarily unavailable."),
+}
+RECORDING_PENDING_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: _recording_problem_response_schema("Native bearer authentication is required."),
+    409: _recording_problem_response_schema("Recording aggregate is incomplete."),
+    422: _recording_problem_response_schema("Recording request validation failed."),
+    503: _recording_problem_response_schema("Recording service is temporarily unavailable."),
+}
+RECORDING_STATUS_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: _recording_problem_response_schema("Native bearer authentication is required."),
+    404: _recording_problem_response_schema("Recording was not found."),
+    409: _recording_problem_response_schema("Recording aggregate is incomplete."),
+    422: _recording_problem_response_schema("Recording request validation failed."),
+    503: _recording_problem_response_schema("Recording service is temporarily unavailable."),
+}
+
+
 def _prevent_storage(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     response.headers["Referrer-Policy"] = "no-referrer"
-
-
-async def require_native_recording_owner(
-    owner: Annotated[AuthenticatedOwner, Depends(get_authenticated_owner)],
-) -> AuthenticatedOwner:
-    if owner.authentication_method != "bearer":
-        raise Unauthenticated("authentication required")
-    return owner
 
 
 def get_recording_repository(
@@ -78,13 +117,18 @@ def get_recording_service(
     return RecordingService(repository, object_store)
 
 
-@router.post("", response_model=RecordingCreateResponse, status_code=201)
+@router.post(
+    "",
+    response_model=RecordingCreateResponse,
+    status_code=201,
+    responses=RECORDING_CREATE_RESPONSES,
+)
 async def create_recording(
     command: RecordingCreateCommand,
     response: Response,
     idempotency_key: Annotated[IdempotencyKey, Header(alias="Idempotency-Key")],
+    owner: Annotated[AuthenticatedOwner, Depends(get_bearer_authenticated_owner)],
     service: Annotated[RecordingService, Depends(get_recording_service)],
-    owner: Annotated[AuthenticatedOwner, Depends(require_native_recording_owner)],
 ) -> RecordingCreateResponse:
     result = await service.create(
         owner_id=owner.owner_id,
@@ -95,11 +139,15 @@ async def create_recording(
     return result
 
 
-@router.get("/pending", response_model=PendingRecordingPage)
+@router.get(
+    "/pending",
+    response_model=PendingRecordingPage,
+    responses=RECORDING_PENDING_RESPONSES,
+)
 async def pending_recordings(
     response: Response,
+    owner: Annotated[AuthenticatedOwner, Depends(get_bearer_authenticated_owner)],
     service: Annotated[RecordingService, Depends(get_recording_service)],
-    owner: Annotated[AuthenticatedOwner, Depends(require_native_recording_owner)],
 ) -> PendingRecordingPage:
     result = PendingRecordingPage(items=await service.pending(owner_id=owner.owner_id))
     _prevent_storage(response)
@@ -110,6 +158,7 @@ async def pending_recordings(
     "/{recording_id}/tracks/{track_id}/parts/{sequence}",
     response_model=RecordingPartReceipt,
     status_code=201,
+    responses=RECORDING_PART_RESPONSES,
 )
 async def upload_recording_part(
     request: Request,
@@ -145,15 +194,15 @@ async def upload_recording_part(
             alias="X-TAM-Part-Key",
             min_length=43,
             max_length=43,
-            pattern=r"^[A-Za-z0-9_-]+$",
+            pattern=r"^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$",
         ),
     ],
     encryption_version: Annotated[
         Literal["aes-256-gcm-hkdf-sha256-v1"],
         Header(alias="X-TAM-Part-Encryption"),
     ],
+    owner: Annotated[AuthenticatedOwner, Depends(get_bearer_authenticated_owner)],
     service: Annotated[RecordingService, Depends(get_recording_service)],
-    owner: Annotated[AuthenticatedOwner, Depends(require_native_recording_owner)],
 ) -> RecordingPartReceipt:
     try:
         part_key = base64.b64decode(
@@ -164,6 +213,9 @@ async def upload_recording_part(
     except (TypeError, ValueError):
         raise RecordingInvalidRequest("recording encryption material is invalid") from None
     if len(part_key) != 32:
+        raise RecordingInvalidRequest("recording encryption material is invalid")
+    canonical_part_key = base64.urlsafe_b64encode(part_key).rstrip(b"=").decode("ascii")
+    if not hmac.compare_digest(canonical_part_key, part_key_base64url):
         raise RecordingInvalidRequest("recording encryption material is invalid")
     try:
         metadata = RecordingPartUploadMetadata.model_validate(
@@ -215,14 +267,15 @@ async def upload_recording_part(
     "/{recording_id}/seal",
     response_model=RecordingSealResponse,
     status_code=201,
+    responses=RECORDING_SEAL_RESPONSES,
 )
 async def seal_recording(
     recording_id: UUID,
     command: RecordingSealCommand,
     response: Response,
     idempotency_key: Annotated[IdempotencyKey, Header(alias="Idempotency-Key")],
+    owner: Annotated[AuthenticatedOwner, Depends(get_bearer_authenticated_owner)],
     service: Annotated[RecordingService, Depends(get_recording_service)],
-    owner: Annotated[AuthenticatedOwner, Depends(require_native_recording_owner)],
 ) -> RecordingSealResponse:
     if command.recording_id != recording_id:
         raise RecordingConflict("recording seal path and manifest differ")
@@ -235,12 +288,16 @@ async def seal_recording(
     return result
 
 
-@router.get("/{recording_id}", response_model=RecordingStatusResponse)
+@router.get(
+    "/{recording_id}",
+    response_model=RecordingStatusResponse,
+    responses=RECORDING_STATUS_RESPONSES,
+)
 async def recording_status(
     recording_id: UUID,
     response: Response,
+    owner: Annotated[AuthenticatedOwner, Depends(get_bearer_authenticated_owner)],
     service: Annotated[RecordingService, Depends(get_recording_service)],
-    owner: Annotated[AuthenticatedOwner, Depends(require_native_recording_owner)],
 ) -> RecordingStatusResponse:
     result = await service.status(owner_id=owner.owner_id, recording_id=recording_id)
     _prevent_storage(response)

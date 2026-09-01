@@ -7,7 +7,8 @@ from collections.abc import Sequence
 from datetime import timedelta
 from typing import Annotated, cast
 
-from fastapi import Cookie, Depends, Header, Request
+from fastapi import Cookie, Depends, Header, Request, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import Settings
@@ -22,6 +23,12 @@ from .service import AuthError, AuthMisconfigured, AuthService, Unauthenticated
 SESSION_COOKIE_NAME = "tamforge_session"
 CSRF_COOKIE_NAME = "tamforge_csrf"
 STATE_COOKIE_NAME = "tamforge_oauth_state"
+NATIVE_BEARER_SCHEME = HTTPBearer(
+    auto_error=False,
+    scheme_name="NativeBearer",
+    bearerFormat="opaque",
+    description="Short-lived TAM Forge native access token.",
+)
 
 
 class OriginRejected(AuthError):
@@ -118,6 +125,36 @@ async def get_authenticated_owner(
             raise Unauthenticated("authentication required")
         return await service.authenticate_bearer(token)
     return await service.authenticate(session_token)
+
+
+async def get_bearer_authenticated_owner(
+    request: Request,
+    service: Annotated[AuthService, Depends(get_auth_service)],
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(NATIVE_BEARER_SCHEME),
+    ],
+) -> AuthenticatedOwner:
+    """Return an owner authenticated only by one strict native bearer header."""
+    authorization_values = request.headers.getlist("authorization")
+    if (
+        SESSION_COOKIE_NAME in request.cookies
+        or len(authorization_values) != 1
+        or credentials is None
+    ):
+        raise Unauthenticated("authentication required")
+    authorization = authorization_values[0]
+    scheme, separator, token = authorization.partition(" ")
+    if (
+        separator != " "
+        or scheme.lower() != "bearer"
+        or not token
+        or any(character.isspace() for character in token)
+        or credentials.scheme.lower() != "bearer"
+        or not hmac.compare_digest(credentials.credentials, token)
+    ):
+        raise Unauthenticated("authentication required")
+    return await service.authenticate_bearer(token)
 
 
 async def require_csrf_owner(

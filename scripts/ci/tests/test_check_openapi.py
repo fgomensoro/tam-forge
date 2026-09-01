@@ -9,7 +9,7 @@ from pathlib import Path
 
 from tamforge_backend.recordings.schemas import RECORDING_OPENAPI_MODELS
 
-FROZEN_E10_I04_OPENAPI_SHA256 = "3669cd8af29a1e2ca874a59d4d633ea8d1f120d3fb9fdb8d71fb6816c78e17eb"
+FROZEN_OPENAPI_SHA256 = "c5907ae636e942f3e5ba1e6ecf309af2af18bdc9d689c457e37901d95cef65fa"
 
 
 def _check_openapi_module() -> object:
@@ -22,13 +22,13 @@ def _check_openapi_module() -> object:
     return module
 
 
-def test_normalized_fastapi_schema_matches_frozen_e10_i04_auth_contract() -> None:
-    """Keep the locked E10-I04 auth schema explicit beside the drift guard."""
+def test_normalized_fastapi_schema_matches_frozen_contract() -> None:
+    """Keep the generated API schema explicit beside the checked-in drift guard."""
     check_openapi = _check_openapi_module()
 
     document = check_openapi.normalized_openapi_document()
 
-    assert hashlib.sha256(document).hexdigest() == FROZEN_E10_I04_OPENAPI_SHA256
+    assert hashlib.sha256(document).hexdigest() == FROZEN_OPENAPI_SHA256
 
 
 def test_native_capacity_response_is_documented_only_on_start() -> None:
@@ -87,7 +87,7 @@ def test_native_openapi_transform_preserves_every_fastapi_null_union() -> None:
         assert _value_at(native, path).get("nullable") is True
 
 
-def test_recording_contract_components_are_checked_in_without_placeholder_routes() -> None:
+def test_recording_contract_components_are_checked_in_with_live_routes() -> None:
     check_openapi = _check_openapi_module()
     expected_components = {
         "CanonicalPCMFormat",
@@ -132,7 +132,61 @@ def test_recording_contract_components_are_checked_in_without_placeholder_routes
     assert {name: native_schemas[name] for name in expected_components} == {
         name: checked_in_schemas[name] for name in expected_components
     }
-    assert not any(path.startswith("/api/v1/recordings") for path in generated["paths"])
+    assert {
+        "/api/v1/recordings",
+        "/api/v1/recordings/pending",
+        "/api/v1/recordings/{recording_id}",
+        "/api/v1/recordings/{recording_id}/seal",
+        "/api/v1/recordings/{recording_id}/tracks/{track_id}/parts/{sequence}",
+    } <= generated["paths"].keys()
+
+
+def test_recording_injection_preserves_exact_int64_with_live_security_contract() -> None:
+    check_openapi = _check_openapi_module()
+    generated = check_openapi.generated_openapi_schema()
+    native = check_openapi.native_openapi_schema()
+    checked_in = json.loads(check_openapi.NATIVE_TARGET.read_text(encoding="utf-8"))
+    recording_operations = (
+        ("/api/v1/recordings", "post"),
+        ("/api/v1/recordings/pending", "get"),
+        ("/api/v1/recordings/{recording_id}", "get"),
+        ("/api/v1/recordings/{recording_id}/seal", "post"),
+        (
+            "/api/v1/recordings/{recording_id}/tracks/{track_id}/parts/{sequence}",
+            "put",
+        ),
+    )
+
+    for document in (generated, native, checked_in):
+        schemas = document["components"]["schemas"]
+        lineage_properties = schemas["RecordingSourceLineageSegment"]["properties"]
+        for field in ("presentation_time_start", "presentation_time_end"):
+            maximum = lineage_properties[field]["maximum"]
+            assert isinstance(maximum, int)
+            assert not isinstance(maximum, bool)
+            assert maximum == 9_223_372_036_854_775_807
+        for response_model in ("RecordingSealResponse", "RecordingStatusResponse"):
+            assert {
+                "audio_created_on_server",
+                "transcript_lineage_accepted",
+            } <= set(schemas[response_model]["required"])
+        assert (
+            schemas["RecordingPartCryptoHeaders"]["properties"]["part_key_base64url"][
+                "pattern"
+            ]
+            == r"^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+        )
+        assert document["components"]["securitySchemes"]["NativeBearer"]["scheme"] == "bearer"
+        for path, method in recording_operations:
+            assert document["paths"][path][method]["security"] == [{"NativeBearer": []}]
+
+        part_parameters = document["paths"][recording_operations[-1][0]]["put"]["parameters"]
+        part_key = next(
+            parameter
+            for parameter in part_parameters
+            if parameter["name"] == "X-TAM-Part-Key"
+        )
+        assert part_key["schema"]["pattern"] == r"^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
 
 
 def test_generated_swift_contract_references_key_recording_components() -> None:
