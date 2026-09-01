@@ -603,6 +603,11 @@ final class TAMForgeUITests: XCTestCase {
             }
             let startedAt = ContinuousClock.now
             app.launch()
+            app.activate()
+            XCTAssertTrue(
+                app.buttons["todayNavigation"].waitForExistence(timeout: 15)
+            )
+            app.activate()
             XCTAssertTrue(
                 textContaining("240 planned minutes", in: app)
                     .waitForExistence(timeout: 15)
