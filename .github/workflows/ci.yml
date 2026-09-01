@@ -30,6 +30,29 @@ jobs:
           -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
           -only-testing:TAMForgeTests test
 
+  native-ui:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run complete native UI target with ad-hoc signing
+        run: >-
+          xcodebuild -jobs 2 -skipPackagePluginValidation
+          -project apps/macos/TAMForge.xcodeproj -scheme TAMForge
+          -destination 'platform=macOS'
+          CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual
+          -only-testing:TAMForgeUITests
+          -resultBundlePath "$RUNNER_TEMP/TAMForgeUITests.xcresult" test
+      - name: Require every native UI journey to pass
+        run: >-
+          python3 scripts/ci/check_native_xcresult.py
+          "$RUNNER_TEMP/TAMForgeUITests.xcresult"
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-ui-xcresult
+          path: ${{ runner.temp }}/TAMForgeUITests.xcresult
+          retention-days: 7
+
   backend-unit:
     runs-on: ubuntu-latest
     steps:
