@@ -384,8 +384,9 @@ final class TAMForgeUITests: XCTestCase {
         let submit = app.buttons["Submit self-review"]
         reveal(submit, in: app)
         XCTAssertFalse(submit.isEnabled)
-        let scroll = app.scrollViews["activityWorkspaceScroll"]
-        scroll.scroll(byDeltaX: 0, deltaY: 2_000)
+        // Reaching the fields is reveal()'s job: a single 2000pt jump materializes
+        // a large stretch of the lazy stack at once, which on the 1024x768 runner
+        // inflated the accessibility tree until snapshots stopped being answerable.
         for title in ["Main answer or decision", "What I did well", "Where structure was weak",
                       "Where I became vague", "Where I hesitated", "What I will change"] {
             let editor = app.textViews[title]
