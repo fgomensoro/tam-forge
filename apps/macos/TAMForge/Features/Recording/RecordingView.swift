@@ -4,6 +4,13 @@ struct RecordingView: View {
     @ObservedObject var coordinator: RecordingCoordinator
     @State private var pendingDiscardID: UUID?
 
+    private struct UploadStatusDescription {
+        let title: String
+        let symbol: String
+        let color: Color
+        let accessibilityLabel: String
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -12,7 +19,8 @@ struct RecordingView: View {
                 recordingControls
                 consentSummary
                 if let snapshot = coordinator.preflightSnapshot,
-                   coordinator.phase.hasCurrentPreflightSnapshot {
+                    coordinator.phase.hasCurrentPreflightSnapshot
+                {
                     preflightSummary(snapshot)
                 }
                 captureHealth
@@ -35,7 +43,9 @@ struct RecordingView: View {
             }
             Button("Cancel", role: .cancel) { pendingDiscardID = nil }
         } message: {
-            Text("This crypto-shreds the local key and removes the encrypted spool. It cannot be undone.")
+            Text(
+                "This crypto-shreds the local key and removes the encrypted spool. It cannot be undone."
+            )
         }
     }
 
@@ -55,15 +65,23 @@ struct RecordingView: View {
                 .foregroundStyle(.secondary)
         case .preflighting:
             ProgressView("Checking access, microphone, display, and disk reserve…")
-        case let .blocked(failure):
+        case .blocked(let failure):
             stateNotice(title: "Recording is blocked", detail: failure.message, color: .red)
         case .recording:
-            stateNotice(title: "Recording in progress", detail: "Keep TAM Forge open until you stop and seal this recording.", color: .red)
+            stateNotice(
+                title: "Recording in progress",
+                detail: "Keep TAM Forge open until you stop and seal this recording.", color: .red)
         case .stopping:
-            stateNotice(title: "Sealing recording", detail: "TAM Forge is stopping capture and sealing the local recording.", color: .orange)
+            stateNotice(
+                title: "Sealing recording",
+                detail: "TAM Forge is stopping capture and sealing the local recording.",
+                color: .orange)
         case .sealed:
-            stateNotice(title: "Recording sealed", detail: "Capture has stopped. It will not resume automatically.", color: .green)
-        case let .needsAttention(_, message):
+            stateNotice(
+                title: "Recording sealed",
+                detail: "Capture has stopped. It will not resume automatically.",
+                color: .green)
+        case .needsAttention(_, let message):
             stateNotice(title: "Recording needs attention", detail: message, color: .orange)
         }
     }
@@ -111,16 +129,25 @@ struct RecordingView: View {
     private var consentSummary: some View {
         GroupBox("Preflight and consent") {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Start checks microphone and Screen Recording permission, a shareable display, and disk reserve before capture begins.")
-                Text("Audio stays in an encrypted local spool while capture is active. Nothing starts automatically.")
-                    .foregroundStyle(.secondary)
-                Label("Coverage remains provisional until recording is sealed and reviewed.", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange)
-                    .accessibilityIdentifier("recordingProvisionalCoverage")
+                Text(
+                    "Start checks microphone and Screen Recording permission, a shareable display, and disk reserve before capture begins."
+                )
+                Text(
+                    "Audio stays in an encrypted local spool while capture is active. Nothing starts automatically."
+                )
+                .foregroundStyle(.secondary)
+                Label(
+                    "Coverage remains provisional until recording is sealed and reviewed.",
+                    systemImage: "exclamationmark.triangle"
+                )
+                .foregroundStyle(.orange)
+                .accessibilityIdentifier("recordingProvisionalCoverage")
             }
         }
         .accessibilityIdentifier("recordingConsentSummary")
-        .accessibilityLabel("Preflight and consent. Recording starts only after you press Start recording. Coverage remains provisional until sealed and reviewed.")
+        .accessibilityLabel(
+            "Preflight and consent. Recording starts only after you press Start recording. Coverage remains provisional until sealed and reviewed."
+        )
     }
 
     private func preflightSummary(_ snapshot: RecordingPreflightSnapshot) -> some View {
@@ -172,8 +199,12 @@ struct RecordingView: View {
                             .accessibilityIdentifier("recordingElapsedTime")
                     }
                 }
-                trackHealth("Microphone", track: coordinator.health.microphone, identifier: "recordingMicrophone")
-                trackHealth("System audio", track: coordinator.health.systemAudio, identifier: "recordingSystemAudio")
+                trackHealth(
+                    "Microphone", track: coordinator.health.microphone,
+                    identifier: "recordingMicrophone")
+                trackHealth(
+                    "System audio", track: coordinator.health.systemAudio,
+                    identifier: "recordingSystemAudio")
             }
         }
         .accessibilityIdentifier("recordingCaptureHealth")
@@ -182,19 +213,110 @@ struct RecordingView: View {
     private var pendingRecovery: some View {
         GroupBox("Pending encrypted recordings") {
             VStack(alignment: .leading, spacing: 10) {
-                Text("TAM Forge retained these recordings for recovery. They are never deleted automatically.")
+                Text("TAM Forge retained these recordings for recovery.")
                     .foregroundStyle(.secondary)
+                Text(
+                    "A server audio 201 receipt alone does not delete the local encrypted spool. It stays until transcript-lineage acceptance."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
                 ForEach(coordinator.pendingRecordingIDs, id: \.self) { recordingID in
-                    HStack {
-                        Text(recordingID.uuidString).font(.caption).textSelection(.enabled)
-                        Spacer()
-                        Button("Discard", role: .destructive) { pendingDiscardID = recordingID }
-                            .accessibilityLabel("Discard pending encrypted recording")
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(recordingID.uuidString)
+                            .font(.caption)
+                            .textSelection(.enabled)
+                        uploadStatus(for: recordingID)
+                        HStack {
+                            if uploadStateAllowsRetry(recordingID) {
+                                Button("Retry") {
+                                    coordinator.retryUpload(recordingID: recordingID)
+                                }
+                                .accessibilityLabel("Retry upload for pending encrypted recording")
+                            }
+                            Spacer()
+                            Button("Discard", role: .destructive) { pendingDiscardID = recordingID }
+                                .accessibilityLabel("Discard pending encrypted recording")
+                        }
                     }
+                    .padding(.vertical, 4)
+                    .accessibilityElement(children: .contain)
                 }
             }
         }
         .accessibilityIdentifier("recordingPendingRecovery")
+    }
+
+    @ViewBuilder
+    private func uploadStatus(for recordingID: UUID) -> some View {
+        let status = uploadStatusDescription(for: coordinator.uploadStates[recordingID] ?? .pending)
+        Label(status.title, systemImage: status.symbol)
+            .foregroundStyle(status.color)
+            .accessibilityIdentifier("recordingUploadStatus")
+            .accessibilityLabel(status.accessibilityLabel)
+    }
+
+    private func uploadStateAllowsRetry(_ recordingID: UUID) -> Bool {
+        guard !coordinator.phase.isActive else { return false }
+        return switch coordinator.uploadStates[recordingID] ?? .pending {
+        case .uploading:
+            false
+        case .pending, .waitingForAuthentication, .waitingForNetwork, .waitingForTranscript,
+            .needsAttention:
+            true
+        }
+    }
+
+    private func uploadStatusDescription(for state: RecordingUploadState) -> UploadStatusDescription
+    {
+        switch state {
+        case .pending:
+            .init(
+                title: "Ready to upload",
+                symbol: "clock",
+                color: .secondary,
+                accessibilityLabel: "Upload pending. Retry uploads this encrypted recording."
+            )
+        case .uploading(let completedParts):
+            .init(
+                title:
+                    "Uploading: \(completedParts) part\(completedParts == 1 ? "" : "s") complete",
+                symbol: "arrow.up.circle",
+                color: .blue,
+                accessibilityLabel:
+                    "Uploading encrypted recording. \(completedParts) part\(completedParts == 1 ? "" : "s") complete."
+            )
+        case .waitingForAuthentication:
+            .init(
+                title: "Waiting for sign-in",
+                symbol: "person.crop.circle.badge.exclamationmark",
+                color: .orange,
+                accessibilityLabel: "Upload is waiting for authentication. Sign in, then retry."
+            )
+        case .waitingForNetwork:
+            .init(
+                title: "Waiting for network",
+                symbol: "wifi.exclamationmark",
+                color: .orange,
+                accessibilityLabel:
+                    "Upload is waiting for a network connection. Reconnect, then retry."
+            )
+        case .waitingForTranscript:
+            .init(
+                title: "Waiting for transcript acceptance",
+                symbol: "text.badge.clock",
+                color: .orange,
+                accessibilityLabel:
+                    "Server audio was accepted, but the local encrypted spool remains until transcript-lineage acceptance. Retry checks its status again."
+            )
+        case .needsAttention(let message):
+            .init(
+                title: "Needs attention: \(message)",
+                symbol: "exclamationmark.triangle",
+                color: .red,
+                accessibilityLabel:
+                    "Recording upload needs attention. \(message). Retry attempts recovery."
+            )
+        }
     }
 
     private func trackHealth(
@@ -262,9 +384,12 @@ struct RecordingGlobalStatusView: View {
                     Text(startedAt, style: .timer).monospacedDigit()
                 }
                 Spacer()
-                Text(coordinator.health.routeDescription.isEmpty ? "Recording route pending" : coordinator.health.routeDescription)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                Text(
+                    coordinator.health.routeDescription.isEmpty
+                        ? "Recording route pending" : coordinator.health.routeDescription
+                )
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
                 if case .recording = coordinator.phase {
                     Button("Stop") { Task { await coordinator.stop() } }
                         .buttonStyle(.borderedProminent)
@@ -293,8 +418,8 @@ struct RecordingGlobalStatusView: View {
     }
 }
 
-private extension RecordingPreflightFailure {
-    var message: String {
+extension RecordingPreflightFailure {
+    fileprivate var message: String {
         switch self {
         case .microphonePermissionDenied:
             "Microphone access is denied. Allow it in System Settings before retrying."
@@ -322,16 +447,16 @@ private extension RecordingPreflightFailure {
     }
 }
 
-private extension RecordingTrackHealth {
-    var statusMessage: String {
+extension RecordingTrackHealth {
+    fileprivate var statusMessage: String {
         if let warning { return warning.message }
         if gapCount > 0 { return "\(gapCount) coverage gap\(gapCount == 1 ? "" : "s") recorded" }
         return lastSampleEnd == 0 ? "Waiting for audio" : "Receiving audio"
     }
 }
 
-private extension RecordingCaptureFailure {
-    var message: String {
+extension RecordingCaptureFailure {
+    fileprivate var message: String {
         switch self {
         case .permissionLost:
             "Audio permission was lost"
@@ -353,13 +478,13 @@ private extension RecordingCaptureFailure {
     }
 }
 
-private extension RecordingPhase {
-    var hasCurrentPreflightSnapshot: Bool {
+extension RecordingPhase {
+    fileprivate var hasCurrentPreflightSnapshot: Bool {
         if case .blocked = self { return false }
         return true
     }
 
-    var globalStatusTitle: String {
+    fileprivate var globalStatusTitle: String {
         switch self {
         case .preflighting:
             "Preparing recording"
@@ -372,7 +497,7 @@ private extension RecordingPhase {
         }
     }
 
-    var globalStatusSymbol: String {
+    fileprivate var globalStatusSymbol: String {
         switch self {
         case .recording:
             "record.circle.fill"
@@ -383,7 +508,7 @@ private extension RecordingPhase {
         }
     }
 
-    var globalStatusColor: Color {
+    fileprivate var globalStatusColor: Color {
         switch self {
         case .recording:
             .red

@@ -1,5 +1,28 @@
 #if DEBUG
+import CryptoKit
 import Foundation
+
+/// Local development signing carries no application identifier, so the Data
+/// Protection keychain rejects fixture-mode recordings outright. UI-test
+/// launches keep recording root keys in process memory instead; production
+/// builds keep the real Keychain store, and fixture-mode recovery across a
+/// relaunch is intentionally out of scope.
+actor EphemeralRecordingKeyStore: RecordingKeyStoring {
+    private var keys: [UUID: SymmetricKey] = [:]
+
+    func create(recordingID: UUID) async throws -> SymmetricKey {
+        let key = SymmetricKey(size: .bits256)
+        keys[recordingID] = key
+        return key
+    }
+
+    func load(recordingID: UUID) async throws -> SymmetricKey {
+        guard let key = keys[recordingID] else { throw RecordingSpoolError.missingKey }
+        return key
+    }
+
+    func delete(recordingID: UUID) async throws { keys[recordingID] = nil }
+}
 
 /// Explicit UI-test launches exercise the real URLSession adapters without network or credentials.
 final class NativeUIFixtureProtocol: URLProtocol, @unchecked Sendable {

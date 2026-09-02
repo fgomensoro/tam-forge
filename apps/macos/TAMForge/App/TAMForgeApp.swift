@@ -8,18 +8,20 @@ struct TAMForgeApp: App {
     init() {
         // One startup sweep; live uploads are protected by their OS-held file locks.
         _ = try? ActivityStagedFileStore().cleanupAbandonedCopies()
-#if DEBUG
-        let arguments = ProcessInfo.processInfo.arguments
-        let nativeFeatures: Set<NativeFeature> = arguments.contains("-ui-test-signed-in")
-            && !arguments.contains("-ui-test-native-features")
-            ? [] : [.today, .roadmaps, .evidence, .recording]
-#else
-        let nativeFeatures: Set<NativeFeature> = [.today, .roadmaps, .evidence, .recording]
-#endif
-        self.init(dependencies: .live(
-            environment: .selected(from: ProcessInfo.processInfo.environment),
-            nativeFeatures: nativeFeatures
-        ))
+        #if DEBUG
+            let arguments = ProcessInfo.processInfo.arguments
+            let nativeFeatures: Set<NativeFeature> =
+                arguments.contains("-ui-test-signed-in")
+                    && !arguments.contains("-ui-test-native-features")
+                ? [] : [.today, .roadmaps, .evidence, .recording]
+        #else
+            let nativeFeatures: Set<NativeFeature> = [.today, .roadmaps, .evidence, .recording]
+        #endif
+        self.init(
+            dependencies: .live(
+                environment: .selected(from: ProcessInfo.processInfo.environment),
+                nativeFeatures: nativeFeatures
+            ))
     }
 
     init(dependencies: AppDependencies) { self.dependencies = dependencies }
@@ -31,39 +33,39 @@ struct TAMForgeApp: App {
 }
 
 #if DEBUG
-private enum LocalResourceProbe {
-    static var isRequested: Bool {
-        ProcessInfo.processInfo.environment["TAMFORGE_RESOURCE_RECEIPT"] == "1"
-    }
+    private enum LocalResourceProbe {
+        static var isRequested: Bool {
+            ProcessInfo.processInfo.environment["TAMFORGE_RESOURCE_RECEIPT"] == "1"
+        }
 
-    static func residentMemoryKiB() -> Int? {
-        var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(
-            MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size
-        )
-        let status = withUnsafeMutablePointer(to: &info) { pointer in
-            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                task_info(
-                    mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count
-                )
+        static func residentMemoryKiB() -> Int? {
+            var info = mach_task_basic_info()
+            var count = mach_msg_type_number_t(
+                MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size
+            )
+            let status = withUnsafeMutablePointer(to: &info) { pointer in
+                pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                    task_info(
+                        mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count
+                    )
+                }
             }
+            guard status == KERN_SUCCESS else { return nil }
+            return Int(info.resident_size / 1024)
         }
-        guard status == KERN_SUCCESS else { return nil }
-        return Int(info.resident_size / 1024)
     }
-}
 
-private struct LocalResourceProbeView: View {
-    @State private var rssKiB = LocalResourceProbe.residentMemoryKiB() ?? 0
-    @State private var samples: [Int] = []
+    private struct LocalResourceProbeView: View {
+        @State private var rssKiB = LocalResourceProbe.residentMemoryKiB() ?? 0
+        @State private var samples: [Int] = []
 
-    var body: some View {
-        ZStack {
-            Text(String(rssKiB))
-                .accessibilityIdentifier("resourceRSSKiB")
-            Text(samples.map(String.init).joined(separator: ","))
-                .accessibilityIdentifier("resourceRSSSamples")
-        }
+        var body: some View {
+            ZStack {
+                Text(String(rssKiB))
+                    .accessibilityIdentifier("resourceRSSKiB")
+                Text(samples.map(String.init).joined(separator: ","))
+                    .accessibilityIdentifier("resourceRSSSamples")
+            }
             .font(.system(size: 1))
             .frame(width: 1, height: 1)
             .task {
@@ -76,8 +78,8 @@ private struct LocalResourceProbeView: View {
                     try? await clock.sleep(until: nextSample)
                 }
             }
+        }
     }
-}
 #endif
 
 private struct NativeShellView: View {
@@ -111,11 +113,13 @@ private struct NativeSessionView: View {
         Group {
             switch model.phase {
             case .loading:
-                ProgressView("Checking your secure session").accessibilityIdentifier("sessionLoading")
+                ProgressView("Checking your secure session").accessibilityIdentifier(
+                    "sessionLoading")
             case .signedOut:
                 VStack(alignment: .leading, spacing: 16) {
                     Text("TAM Forge").font(.largeTitle).accessibilityIdentifier("shellTitle")
-                    Text(dependencies.environment.displayName).accessibilityIdentifier("environmentLabel")
+                    Text(dependencies.environment.displayName).accessibilityIdentifier(
+                        "environmentLabel")
                     Text("Sign in to continue your study workspace.")
                     if let banner = model.banner { GlobalBannerView(banner: banner) }
                     Button("Sign in") { Task { await model.signIn() } }
@@ -143,11 +147,11 @@ private struct NativeSessionView: View {
         .safeAreaInset(edge: .bottom) {
             RecordingGlobalStatusView(coordinator: recording)
         }
-#if DEBUG
-        .overlay(alignment: .bottomTrailing) {
-            if LocalResourceProbe.isRequested { LocalResourceProbeView() }
-        }
-#endif
+        #if DEBUG
+            .overlay(alignment: .bottomTrailing) {
+                if LocalResourceProbe.isRequested { LocalResourceProbeView() }
+            }
+        #endif
     }
 }
 
@@ -167,30 +171,42 @@ private final class NativeShellComposition: ObservableObject {
     let recording: RecordingCoordinator
 
     init(dependencies: AppDependencies) {
-        recording = RecordingCoordinator()
         let bearerToken: NativeBearerTokenProvider
+        let recordingBearerToken: RecordingBearerTokenProvider
+        let refreshBearer: RecordingBearerRefresh
         let httpSession: URLSession?
-#if DEBUG
-        let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("-ui-test-signed-out") || arguments.contains("-ui-test-signed-in") {
-            session = ShellSessionModel(
-                actions: .init(restore: { "UI test" }, login: { "UI test" }, localLogout: {}, logout: {}),
-                statusStream: nil,
-                initialPhase: arguments.contains("-ui-test-signed-out") ? .signedOut(.signedOut) : .signedIn("UI test"),
-                initialBanner: arguments.contains("-ui-test-offline") ? .offline : nil
+        #if DEBUG
+            let arguments = ProcessInfo.processInfo.arguments
+            if arguments.contains("-ui-test-signed-out") || arguments.contains("-ui-test-signed-in")
+            {
+                session = ShellSessionModel(
+                    actions: .init(
+                        restore: { "UI test" }, login: { "UI test" }, localLogout: {}, logout: {}),
+                    statusStream: nil,
+                    initialPhase: arguments.contains("-ui-test-signed-out")
+                        ? .signedOut(.signedOut) : .signedIn("UI test"),
+                    initialBanner: arguments.contains("-ui-test-offline") ? .offline : nil
+                )
+                bearerToken = { "ui-test-only" }
+                recordingBearerToken = {
+                    .init(token: "ui-test-only", sessionGeneration: 0)
+                }
+                refreshBearer = { lease in lease }
+                let configuration = URLSessionConfiguration.ephemeral
+                configuration.protocolClasses = [NativeUIFixtureProtocol.self]
+                httpSession = URLSession(configuration: configuration)
+            } else {
+                (session, bearerToken, recordingBearerToken, refreshBearer) = Self.liveSession(
+                    dependencies
+                )
+                httpSession = nil
+            }
+        #else
+            (session, bearerToken, recordingBearerToken, refreshBearer) = Self.liveSession(
+                dependencies
             )
-            bearerToken = { "ui-test-only" }
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.protocolClasses = [NativeUIFixtureProtocol.self]
-            httpSession = URLSession(configuration: configuration)
-        } else {
-            (session, bearerToken) = Self.liveSession(dependencies)
             httpSession = nil
-        }
-#else
-        (session, bearerToken) = Self.liveSession(dependencies)
-        httpSession = nil
-#endif
+        #endif
         let onUnauthorizedForRequest: NativeUnauthorizedHandlerFactory = { [weak session] in
             guard let session else { return {} }
             return await session.unauthorizedHandlerForCurrentSession()
@@ -209,31 +225,76 @@ private final class NativeShellComposition: ObservableObject {
             activities: LiveActivityAPI(transport: transport),
             evidence: LiveEvidenceAPI(transport: transport)
         )
+        #if DEBUG
+            let isUITest = ProcessInfo.processInfo.arguments.contains("-ui-test-signed-out")
+                || ProcessInfo.processInfo.arguments.contains("-ui-test-signed-in")
+            let recordingSpool = isUITest
+                ? EncryptedRecordingSpoolFactory(
+                    rootURL: FileManager.default.temporaryDirectory.appendingPathComponent(
+                        "TAMForgeUITestRecordingSpool", isDirectory: true
+                    ),
+                    keyStore: EphemeralRecordingKeyStore(),
+                    reservationBytes: 0
+                )
+                : EncryptedRecordingSpoolFactory()
+        #else
+            let recordingSpool = EncryptedRecordingSpoolFactory()
+        #endif
+        let recordingServer = LiveRecordingServerClient(
+            baseURL: dependencies.environment.apiBaseURL,
+            bearerToken: recordingBearerToken,
+            refreshBearer: refreshBearer,
+            session: httpSession
+        )
+        recording = RecordingCoordinator(
+            preflight: LiveRecordingPreflight(spoolRootURL: recordingSpool.rootURL),
+            spoolFactory: recordingSpool,
+            uploader: RecordingUploadPipeline(
+                spoolFactory: recordingSpool,
+                server: recordingServer
+            )
+        )
     }
 
     private static func liveSession(
         _ dependencies: AppDependencies
-    ) -> (ShellSessionModel, NativeBearerTokenProvider) {
+    ) -> (
+        ShellSessionModel,
+        NativeBearerTokenProvider,
+        RecordingBearerTokenProvider,
+        RecordingBearerRefresh
+    ) {
         let store = KeychainCredentialStore()
         let authentication = NativeAuthenticationCoordinator(
             http: LiveNativeAuthHTTPClient(baseURL: dependencies.environment.apiBaseURL),
             credentialStore: store, oauthSession: SystemOAuthSession()
         )
-        let bearerToken: NativeBearerTokenProvider = { try await authentication.currentAccessToken() }
+        let bearerToken: NativeBearerTokenProvider = {
+            try await authentication.currentAccessToken()
+        }
+        let recordingBearerToken: RecordingBearerTokenProvider = {
+            try await authentication.recordingAccessTokenLease()
+        }
+        let refreshBearer: RecordingBearerRefresh = { lease in
+            try await authentication.refreshedAccessTokenAfterUnauthorized(lease: lease)
+        }
         let stream = StatusStreamClient(
             baseURL: dependencies.environment.apiBaseURL,
             bearerToken: { try await authentication.currentAccessToken() }
         )
         let session = ShellSessionModel(
             actions: .init(
-                restore: { _ = try await authentication.currentAccessToken(); return "Signed in" },
+                restore: {
+                    _ = try await authentication.currentAccessToken()
+                    return "Signed in"
+                },
                 login: { try await authentication.login() },
                 localLogout: { try quarantineActiveRefreshCredential(in: store) },
                 logout: { try? await authentication.logout() }
             ),
             statusStream: stream
         )
-        return (session, bearerToken)
+        return (session, bearerToken, recordingBearerToken, refreshBearer)
     }
 }
 
@@ -248,29 +309,30 @@ private final class NativeWorkspaceState: ObservableObject {
     let timerJournal: any ActivityTimerJournaling
 
     init(services: NativeFeatureServices) {
-#if DEBUG
-        if let fixedNow = NativeParityUIFixture.fixedNow() {
-            today = TodayViewModel(client: services.today, now: { fixedNow })
-        } else {
+        #if DEBUG
+            if let fixedNow = NativeParityUIFixture.fixedNow() {
+                today = TodayViewModel(client: services.today, now: { fixedNow })
+            } else {
+                today = TodayViewModel(client: services.today)
+            }
+        #else
             today = TodayViewModel(client: services.today)
-        }
-#else
-        today = TodayViewModel(client: services.today)
-#endif
+        #endif
         notifications = NotificationViewModel(client: services.notifications)
         roadmaps = RoadmapAdministrationModel(service: services.roadmaps)
         evidence = EvidenceLedgerModel(service: services.evidence)
-#if DEBUG
-        let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("-ui-test-signed-in") || arguments.contains("-ui-test-signed-out") {
-            // Fixture activity IDs must never share persistent recovery commands with real study work.
-            timerJournal = InMemoryActivityTimerJournal()
-        } else {
+        #if DEBUG
+            let arguments = ProcessInfo.processInfo.arguments
+            if arguments.contains("-ui-test-signed-in") || arguments.contains("-ui-test-signed-out")
+            {
+                // Fixture activity IDs must never share persistent recovery commands with real study work.
+                timerJournal = InMemoryActivityTimerJournal()
+            } else {
+                timerJournal = UserDefaultsActivityTimerJournal()
+            }
+        #else
             timerJournal = UserDefaultsActivityTimerJournal()
-        }
-#else
-        timerJournal = UserDefaultsActivityTimerJournal()
-#endif
+        #endif
     }
 }
 
@@ -300,21 +362,33 @@ private struct NativeWorkspaceView: View {
         NavigationSplitView {
             List {
                 if dependencies.nativeFeatures.contains(.today) {
-                    Button { session.select(.today) } label: { Label("Today", systemImage: "sun.max") }
-                        .accessibilityIdentifier("todayNavigation")
+                    Button {
+                        session.select(.today)
+                    } label: {
+                        Label("Today", systemImage: "sun.max")
+                    }
+                    .accessibilityIdentifier("todayNavigation")
                 }
                 if dependencies.nativeFeatures.contains(.roadmaps) {
-                    Button { session.select(.roadmaps) } label: { Label("Roadmaps", systemImage: "map") }
-                        .accessibilityIdentifier("roadmapsNavigation")
+                    Button {
+                        session.select(.roadmaps)
+                    } label: {
+                        Label("Roadmaps", systemImage: "map")
+                    }
+                    .accessibilityIdentifier("roadmapsNavigation")
                 }
                 if dependencies.nativeFeatures.contains(.evidence) {
-                    Button { session.select(.evidence(activityID: nil)) } label: {
+                    Button {
+                        session.select(.evidence(activityID: nil))
+                    } label: {
                         Label("Evidence", systemImage: "list.bullet.rectangle")
                     }
                     .accessibilityIdentifier("evidenceNavigation")
                 }
                 if dependencies.nativeFeatures.contains(.recording) {
-                    Button { session.select(.recording) } label: {
+                    Button {
+                        session.select(.recording)
+                    } label: {
                         Label("Recording", systemImage: "record.circle")
                     }
                     .accessibilityIdentifier("recordingNavigation")
@@ -324,17 +398,23 @@ private struct NativeWorkspaceView: View {
         } detail: {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text(dependencies.environment.displayName).accessibilityIdentifier("environmentLabel")
+                    Text(dependencies.environment.displayName).accessibilityIdentifier(
+                        "environmentLabel")
                     Spacer()
                     if !dependencies.nativeFeatures.isEmpty {
-                        if session.isStatusStreamActive { NotificationConnectionStatusView(state: session.statusState) }
+                        if session.isStatusStreamActive {
+                            NotificationConnectionStatusView(state: session.statusState)
+                        }
                         NotificationPanelView(model: state.notifications)
                     }
                     Button("Sign out") {
                         if recording.requiresStopBeforeSignOut {
                             showRecordingSignOutConfirmation = true
                         } else {
-                            session.signOut()
+                            Task {
+                                await recording.pauseUploadsForSignOut()
+                                session.signOut()
+                            }
                         }
                     }
                     .accessibilityIdentifier("signOutButton")
@@ -367,7 +447,10 @@ private struct NativeWorkspaceView: View {
         }
         // Close this generation on logout/expiry. A fresh sign-in gets a new model;
         // canceled or noncooperative reads cannot publish into the retired workspace.
-        .onDisappear { state.evidence.reset() }
+        .onDisappear {
+            state.evidence.reset()
+            Task { await recording.pauseUploadsForSignOut() }
+        }
         .alert(
             "Stop recording before signing out?",
             isPresented: $showRecordingSignOutConfirmation
@@ -376,6 +459,7 @@ private struct NativeWorkspaceView: View {
             Button("Stop and sign out") {
                 Task {
                     await recording.stop()
+                    await recording.pauseUploadsForSignOut()
                     session.signOut()
                 }
             }
@@ -393,7 +477,7 @@ private struct NativeWorkspaceView: View {
             RoadmapAdministrationView(model: state.roadmaps)
         case .recording where dependencies.nativeFeatures.contains(.recording):
             RecordingView(coordinator: recording)
-        case let .evidence(identifier) where dependencies.nativeFeatures.contains(.evidence):
+        case .evidence(let identifier) where dependencies.nativeFeatures.contains(.evidence):
             EvidenceLedgerView(
                 model: state.evidence,
                 onOpenActivity: { identifier in
@@ -403,7 +487,7 @@ private struct NativeWorkspaceView: View {
                 onShowAll: { session.select(.evidence(activityID: nil)) }
             )
             .task(id: identifier) { await state.evidence.open(activityID: identifier) }
-        case let .activity(identifier) where dependencies.nativeFeatures.contains(.today):
+        case .activity(let identifier) where dependencies.nativeFeatures.contains(.today):
             NativeActivityScreen(
                 activityID: identifier, api: services.activities, drafts: state.drafts,
                 timerJournal: state.timerJournal, focusSelfReview: focusSelfReview
@@ -417,13 +501,13 @@ private struct NativeWorkspaceView: View {
 
     private func navigate(_ destination: TodayDestination) {
         switch destination {
-        case let .activity(identifier, focus):
+        case .activity(let identifier, let focus):
             focusSelfReview = focus == .selfReview
             session.select(.activity(identifier))
-        case let .evidence(identifier):
+        case .evidence(let identifier):
             session.select(.evidence(activityID: identifier))
         case .dailyClose:
-            break // Today owns the daily-close form and command.
+            break  // Today owns the daily-close form and command.
         }
     }
 }
@@ -433,11 +517,14 @@ private struct NativeActivityScreen: View {
     @StateObject private var uploader: ActivityArtifactUploader
     let focusSelfReview: Bool
 
-    init(activityID: Int, api: any ActivityAPI, drafts: any ActivityDraftStoring,
-         timerJournal: any ActivityTimerJournaling, focusSelfReview: Bool) {
-        _model = StateObject(wrappedValue: ActivityWorkspaceModel(
-            activityID: activityID, api: api, drafts: drafts, timerJournal: timerJournal
-        ))
+    init(
+        activityID: Int, api: any ActivityAPI, drafts: any ActivityDraftStoring,
+        timerJournal: any ActivityTimerJournaling, focusSelfReview: Bool
+    ) {
+        _model = StateObject(
+            wrappedValue: ActivityWorkspaceModel(
+                activityID: activityID, api: api, drafts: drafts, timerJournal: timerJournal
+            ))
         _uploader = StateObject(wrappedValue: ActivityArtifactUploader(api: api))
         self.focusSelfReview = focusSelfReview
     }

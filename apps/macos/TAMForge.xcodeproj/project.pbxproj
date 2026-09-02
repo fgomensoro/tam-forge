@@ -14,6 +14,8 @@
 		F30000000000000000000005 /* ScreenCaptureAudioSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000105 /* ScreenCaptureAudioSource.swift */; };
 		F30000000000000000000006 /* RecordingCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000106 /* RecordingCoordinator.swift */; };
 		F30000000000000000000007 /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000107 /* RecordingView.swift */; };
+		F30000000000000000000008 /* RecordingUploadModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000108 /* RecordingUploadModels.swift */; };
+		F30000000000000000000009 /* RecordingUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000109 /* RecordingUploader.swift */; };
 		F30000000000000000000011 /* RecordingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000101 /* RecordingModels.swift */; };
 		F30000000000000000000012 /* RecordingTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000102 /* RecordingTimeline.swift */; };
 		F30000000000000000000013 /* RecordingPreflight.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000103 /* RecordingPreflight.swift */; };
@@ -21,7 +23,10 @@
 		F30000000000000000000015 /* ScreenCaptureAudioSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000105 /* ScreenCaptureAudioSource.swift */; };
 		F30000000000000000000016 /* RecordingCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000106 /* RecordingCoordinator.swift */; };
 		F30000000000000000000017 /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000107 /* RecordingView.swift */; };
+		F30000000000000000000018 /* RecordingUploadModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000108 /* RecordingUploadModels.swift */; };
+		F30000000000000000000019 /* RecordingUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000109 /* RecordingUploader.swift */; };
 		F30000000000000000000021 /* RecordingFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000121 /* RecordingFeatureTests.swift */; };
+		F30000000000000000000022 /* RecordingUploadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000122 /* RecordingUploadTests.swift */; };
 		F40000000000000000000001 /* NativeParityFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40000000000000000000011 /* NativeParityFixtureTests.swift */; };
 		F40000000000000000000002 /* foundation-journey-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = F40000000000000000000012 /* foundation-journey-v1.json */; };
 		F40000000000000000000003 /* foundation-journey-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = F40000000000000000000012 /* foundation-journey-v1.json */; };
@@ -128,7 +133,10 @@
 		F30000000000000000000105 /* ScreenCaptureAudioSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenCaptureAudioSource.swift; sourceTree = "<group>"; };
 		F30000000000000000000106 /* RecordingCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingCoordinator.swift; sourceTree = "<group>"; };
 		F30000000000000000000107 /* RecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
+		F30000000000000000000108 /* RecordingUploadModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingUploadModels.swift; sourceTree = "<group>"; };
+		F30000000000000000000109 /* RecordingUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingUploader.swift; sourceTree = "<group>"; };
 		F30000000000000000000121 /* RecordingFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingFeatureTests.swift; sourceTree = "<group>"; };
+		F30000000000000000000122 /* RecordingUploadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingUploadTests.swift; sourceTree = "<group>"; };
 		F40000000000000000000011 /* NativeParityFixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeParityFixtureTests.swift; sourceTree = "<group>"; };
 		F40000000000000000000012 /* foundation-journey-v1.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../tests/fixtures/native-parity/foundation-journey-v1.json"; sourceTree = SOURCE_ROOT; };
 		F40000000000000000000013 /* month-v1.zip */ = {isa = PBXFileReference; lastKnownFileType = archive.zip; path = "../backend/tests/fixtures/roadmaps/month-v1.zip"; sourceTree = SOURCE_ROOT; };
@@ -248,6 +256,7 @@
 			isa = PBXGroup;
 			children = (
 				F30000000000000000000121 /* RecordingFeatureTests.swift */,
+				F30000000000000000000122 /* RecordingUploadTests.swift */,
 				F40000000000000000000011 /* NativeParityFixtureTests.swift */,
 				E30000000000000000000071 /* NativeEvidenceAdapterTests.swift */,
 				E30000000000000000000072 /* EvidenceLedgerTests.swift */,
@@ -362,6 +371,8 @@
 				F30000000000000000000105 /* ScreenCaptureAudioSource.swift */,
 				F30000000000000000000106 /* RecordingCoordinator.swift */,
 				F30000000000000000000107 /* RecordingView.swift */,
+				F30000000000000000000108 /* RecordingUploadModels.swift */,
+				F30000000000000000000109 /* RecordingUploader.swift */,
 			);
 			path = Recording;
 			sourceTree = "<group>";
@@ -578,6 +589,8 @@
 				F30000000000000000000005 /* ScreenCaptureAudioSource.swift in Sources */,
 				F30000000000000000000006 /* RecordingCoordinator.swift in Sources */,
 				F30000000000000000000007 /* RecordingView.swift in Sources */,
+				F30000000000000000000008 /* RecordingUploadModels.swift in Sources */,
+				F30000000000000000000009 /* RecordingUploader.swift in Sources */,
 				E30000000000000000000001 /* EvidenceModels.swift in Sources */,
 				F40000000000000000000005 /* NativeParityUIFixture.swift in Sources */,
 				E30000000000000000000002 /* LiveEvidenceAPI.swift in Sources */,
@@ -624,7 +637,10 @@
 				F30000000000000000000015 /* ScreenCaptureAudioSource.swift in Sources */,
 				F30000000000000000000016 /* RecordingCoordinator.swift in Sources */,
 				F30000000000000000000017 /* RecordingView.swift in Sources */,
+				F30000000000000000000018 /* RecordingUploadModels.swift in Sources */,
+				F30000000000000000000019 /* RecordingUploader.swift in Sources */,
 				F30000000000000000000021 /* RecordingFeatureTests.swift in Sources */,
+				F30000000000000000000022 /* RecordingUploadTests.swift in Sources */,
 				F40000000000000000000001 /* NativeParityFixtureTests.swift in Sources */,
 				E30000000000000000000021 /* EvidenceModels.swift in Sources */,
 				E30000000000000000000022 /* LiveEvidenceAPI.swift in Sources */,

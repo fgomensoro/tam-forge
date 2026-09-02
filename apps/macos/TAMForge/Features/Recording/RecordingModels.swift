@@ -259,7 +259,7 @@ protocol RecordingCaptureSource: Sendable {
 protocol RecordingSpoolWriting: Sendable {
     func append(_ chunk: RecordingPCMChunk) async throws
     func record(gap: RecordingGap) async throws
-    func seal(gaps: [RecordingGap]) async throws
+    func seal(gaps: [RecordingGap], startedAt: Date, endedAt: Date) async throws
 }
 
 protocol RecordingSpoolCreating: Sendable {
@@ -283,6 +283,22 @@ struct RecordingReleaseGates: Codable, Equatable, Sendable {
     }
 }
 
+enum RecordingUploadState: Equatable, Sendable {
+    case pending
+    case uploading(completedParts: Int)
+    case waitingForAuthentication
+    case waitingForNetwork
+    case waitingForTranscript
+    case needsAttention(String)
+}
+
+protocol RecordingUploading: Sendable {
+    func upload(
+        recordingID: UUID,
+        progress: @escaping @Sendable (Int) -> Void
+    ) async throws -> RecordingReleaseGates
+}
+
 enum RecordingDiskPolicy {
     static let gibibyte: Int64 = 1_073_741_824
     static let maximumDurationSeconds = 120 * 60
@@ -292,6 +308,8 @@ enum RecordingDiskPolicy {
     static let maximumGapEntries = RecordingTrackKind.allCases.count
         * maximumGapEntriesPerTrack
     static let maximumRecordingBytes = Int64(2.5 * Double(gibibyte))
+    // Covers per-record envelopes plus one bounded 60-second encrypted upload file.
+    static let maximumSpoolBytes = maximumRecordingBytes + 32 * 1_048_576
     static let maximumGlobalBytes = 5 * gibibyte
     static let requiredFreeReserveBytes = 8 * gibibyte
 
@@ -300,7 +318,7 @@ enum RecordingDiskPolicy {
         pendingGlobalBytes: Int64,
         proposedRecordingBytes: Int64
     ) -> RecordingPreflightFailure? {
-        guard proposedRecordingBytes <= maximumRecordingBytes else {
+        guard proposedRecordingBytes <= maximumSpoolBytes else {
             return .recordingSizeLimitReached
         }
         guard pendingGlobalBytes + proposedRecordingBytes <= maximumGlobalBytes else {

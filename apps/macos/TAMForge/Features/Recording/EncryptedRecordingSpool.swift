@@ -13,6 +13,8 @@ enum RecordingSpoolError: Error, Equatable {
     case recordingLimitReached
     case reservationFailed
     case sealed
+    case notSealed
+    case unrecoverableCorruption
 }
 
 enum RecordingSpoolCorruptionReason: Equatable, Sendable {
@@ -137,6 +139,28 @@ struct EncryptedRecordingSpoolFactory: RecordingSpoolCreating {
         }
     }
 
+    func markReleaseGates(recordingID: UUID, gates: RecordingReleaseGates) async throws {
+        try await EncryptedRecordingSpool.updateReleaseGates(
+            recordingID: recordingID,
+            rootURL: rootURL,
+            keyStore: keyStore,
+            gates: gates
+        )
+    }
+
+    // Both authenticated release gates must be set; audio 201 alone never
+    // deletes the local original.
+    func releaseIfEligible(recordingID: UUID) async throws -> Bool {
+        let metadata = try await EncryptedRecordingSpool.recoverMetadata(
+            recordingID: recordingID,
+            rootURL: rootURL,
+            keyStore: keyStore
+        )
+        guard metadata.releaseGates.mayDeleteLocalSpool else { return false }
+        try await discard(recordingID: recordingID)
+        return true
+    }
+
     static func defaultRootURL() -> URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return base.appendingPathComponent("TAM Forge/RecordingSpool", isDirectory: true)
@@ -158,6 +182,23 @@ struct RecordingSpoolRecovery: Sendable {
     let ignoredIncompleteTail: Bool
     let sealed: Bool
     let releaseGates: RecordingReleaseGates
+}
+
+struct RecordingSpoolMetadata: Sendable {
+    let recordingID: UUID
+    let sealed: Bool
+    let gaps: [RecordingGap]
+    let releaseGates: RecordingReleaseGates
+    let startedAt: Date?
+    let endedAt: Date?
+}
+
+// Everything upload needs from the bounded verification pass: exact
+// recoverable corrupt ranges, persisted gaps, and observed conversions.
+struct RecordingSpoolUploadInventory: Sendable {
+    let corruptRanges: [RecordingGap]
+    let gaps: [RecordingGap]
+    let conversionVersions: Set<Int>
 }
 
 actor EncryptedRecordingSpool: RecordingSpoolWriting {
@@ -306,7 +347,7 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
         gapJournalEntriesByTrack[gap.track] = trackEntryCount + 1
     }
 
-    func seal(gaps: [RecordingGap]) async throws {
+    func seal(gaps: [RecordingGap], startedAt: Date, endedAt: Date) async throws {
         guard !isSealed else { return }
         for gap in gaps {
             try persistGap(gap)
@@ -336,7 +377,9 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
         try persistState(
             sealed: true,
             gapJournalCount: gapJournalCount,
-            trackCheckpoints: checkpoints
+            trackCheckpoints: checkpoints,
+            startedAtMilliseconds: Self.milliseconds(startedAt),
+            endedAtMilliseconds: Self.milliseconds(endedAt)
         )
         isSealed = true
     }
@@ -429,90 +472,157 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
         expectedTrack: RecordingTrackKind,
         key: SymmetricKey
     ) throws -> RecoveredTrack {
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        let fileByteLength = try fileSize(url)
+        var cursor = try TrackScanCursor(
+            url: url,
+            expectedRecordingID: expectedRecordingID,
+            expectedTrack: expectedTrack,
+            key: key
+        )
+        defer { cursor.close() }
         var records: [RecoveredSpoolRecord] = []
         var corrupt: [RecordingGap] = []
         var unrecoverable: [RecordingSpoolUnrecoverableCorruption] = []
         var ignoredTail = false
-        var expectedSequence = 0
-        var byteOffset: Int64 = 0
-        var terminalSampleEnd: Int64 = 0
-        while true {
-            let lengthData = try handle.read(upToCount: 4) ?? Data()
-            if lengthData.isEmpty { break }
-            guard lengthData.count == 4, let length = lengthData.fixedWidth(at: 0, as: UInt32.self) else {
+        scan: while true {
+            switch try cursor.next() {
+            case let .record(record):
+                records.append(record)
+            case let .corrupt(gap):
+                corrupt.append(gap)
+            case let .unrecoverable(corruption):
+                unrecoverable.append(corruption)
+                break scan
+            case .incompleteTail:
                 ignoredTail = true
-                break
+                break scan
+            case .end:
+                break scan
             }
-            guard Int(length) >= headerBytes, Int(length) <= maximumRecordBytes else {
-                unrecoverable.append(.init(
+        }
+        return .init(
+            records: records,
+            corruptRanges: corrupt,
+            unrecoverableCorruptions: unrecoverable,
+            ignoredIncompleteTail: ignoredTail,
+            checkpoint: cursor.scannedCheckpoint
+        )
+    }
+
+    fileprivate enum TrackScanStep {
+        case record(RecoveredSpoolRecord)
+        case corrupt(RecordingGap)
+        case unrecoverable(RecordingSpoolUnrecoverableCorruption)
+        case incompleteTail
+        case end
+    }
+
+    // One bounded record per step; shared by whole-spool recovery and the
+    // streaming upload reader so every trust rule has a single implementation.
+    fileprivate struct TrackScanCursor {
+        let expectedRecordingID: UUID
+        let expectedTrack: RecordingTrackKind
+        let key: SymmetricKey
+        private let handle: FileHandle
+        private let fileByteLength: Int64
+        private var expectedSequence = 0
+        private var byteOffset: Int64 = 0
+        private var terminalSampleEnd: Int64 = 0
+
+        init(
+            url: URL,
+            expectedRecordingID: UUID,
+            expectedTrack: RecordingTrackKind,
+            key: SymmetricKey
+        ) throws {
+            self.expectedRecordingID = expectedRecordingID
+            self.expectedTrack = expectedTrack
+            self.key = key
+            handle = try FileHandle(forReadingFrom: url)
+            fileByteLength = try EncryptedRecordingSpool.fileSize(url)
+        }
+
+        // The checkpoint scanned so far; complete once next() returned a
+        // terminal step.
+        var scannedCheckpoint: RecordingTrackCheckpoint {
+            .init(
+                track: expectedTrack,
+                recordCount: expectedSequence,
+                fileByteLength: fileByteLength,
+                terminalSampleEnd: terminalSampleEnd
+            )
+        }
+
+        func close() {
+            try? handle.close()
+        }
+
+        mutating func next() throws -> TrackScanStep {
+            let lengthData = try handle.read(upToCount: 4) ?? Data()
+            if lengthData.isEmpty { return .end }
+            guard lengthData.count == 4,
+                  let length = lengthData.fixedWidth(at: 0, as: UInt32.self)
+            else { return .incompleteTail }
+            guard Int(length) >= EncryptedRecordingSpool.headerBytes,
+                  Int(length) <= EncryptedRecordingSpool.maximumRecordBytes
+            else {
+                return .unrecoverable(.init(
                     track: expectedTrack, byteOffset: byteOffset, reason: .malformedLength
                 ))
-                break
             }
             let body = try handle.read(upToCount: Int(length)) ?? Data()
-            guard body.count == Int(length) else {
-                ignoredTail = true
-                break
-            }
-            let headerData = body.prefix(headerBytes)
-            guard authenticateRecoverableMetadata(
+            guard body.count == Int(length) else { return .incompleteTail }
+            let headerData = body.prefix(EncryptedRecordingSpool.headerBytes)
+            guard EncryptedRecordingSpool.authenticateRecoverableMetadata(
                 Data(headerData), key: key, recordingID: expectedRecordingID
             ) else {
-                unrecoverable.append(.init(
+                return .unrecoverable(.init(
                     track: expectedTrack, byteOffset: byteOffset, reason: .malformedHeader
                 ))
-                break
             }
             let parsed: ParsedSpoolHeader
             do {
-                parsed = try parseHeader(Data(headerData))
+                parsed = try EncryptedRecordingSpool.parseHeader(Data(headerData))
             } catch {
-                if let gap = fixedCorruptRange(
+                if let gap = EncryptedRecordingSpool.fixedCorruptRange(
                     headerData: Data(headerData),
                     bodyLength: Int(length),
                     expectedRecordingID: expectedRecordingID,
                     expectedTrack: expectedTrack,
                     expectedSequence: expectedSequence
                 ) {
-                    corrupt.append(gap)
                     expectedSequence += 1
                     byteOffset += 4 + Int64(length)
                     terminalSampleEnd = gap.sampleStart + Int64(gap.sampleCount)
-                    continue
+                    return .corrupt(gap)
                 }
-                unrecoverable.append(.init(
+                return .unrecoverable(.init(
                     track: expectedTrack, byteOffset: byteOffset, reason: .malformedHeader
                 ))
-                break
             }
             guard parsed.recordingID == expectedRecordingID, parsed.track == expectedTrack else {
-                unrecoverable.append(.init(
+                return .unrecoverable(.init(
                     track: expectedTrack, byteOffset: byteOffset, reason: .identityMismatch
                 ))
-                break
             }
             guard parsed.sequence == expectedSequence else {
-                unrecoverable.append(.init(
+                return .unrecoverable(.init(
                     track: expectedTrack, byteOffset: byteOffset, reason: .sequenceMismatch
                 ))
-                break
             }
-            guard Int(length) == headerBytes + parsed.deviceIDLength + parsed.routeLength
-                + parsed.payloadLength + 28
+            guard Int(length) == EncryptedRecordingSpool.headerBytes + parsed.deviceIDLength
+                + parsed.routeLength + parsed.payloadLength + 28
             else {
-                unrecoverable.append(.init(
+                return .unrecoverable(.init(
                     track: expectedTrack, byteOffset: byteOffset, reason: .malformedLength
                 ))
-                break
             }
             expectedSequence += 1
             byteOffset += 4 + Int64(length)
             terminalSampleEnd = parsed.sampleEnd
             do {
-                let sealed = try AES.GCM.SealedBox(combined: body.dropFirst(headerBytes))
+                let sealed = try AES.GCM.SealedBox(
+                    combined: body.dropFirst(EncryptedRecordingSpool.headerBytes)
+                )
                 let plaintext = try AES.GCM.open(sealed, using: key, authenticating: headerData)
                 guard plaintext.count == parsed.deviceIDLength + parsed.routeLength + parsed.payloadLength else {
                     throw RecordingSpoolError.invalidRecord
@@ -550,14 +660,14 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
                     payload: payload
                 )
                 _ = try chunk.validated()
-                records.append(.init(
+                return .record(.init(
                     recordingID: parsed.recordingID,
                     sequence: parsed.sequence,
                     payload: payload,
                     chunk: chunk
                 ))
             } catch {
-                corrupt.append(.init(
+                return .corrupt(.init(
                     track: parsed.track,
                     sampleStart: parsed.sampleStart,
                     sampleCount: parsed.sampleCount,
@@ -565,16 +675,137 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
                 ))
             }
         }
+    }
+
+    static func recoverMetadata(
+        recordingID: UUID,
+        rootURL: URL,
+        keyStore: any RecordingKeyStoring
+    ) async throws -> RecordingSpoolMetadata {
+        let directory = rootURL.appendingPathComponent(recordingID.uuidString, isDirectory: true)
+        let key = try await keyStore.load(recordingID: recordingID)
+        let stateResult = recoverState(directory: directory, recordingID: recordingID, key: key)
+        guard let state = stateResult.state else {
+            throw RecordingSpoolError.unrecoverableCorruption
+        }
+        let journal = recoverGapJournal(
+            directory: directory, recordingID: recordingID, key: key
+        )
+        guard journal.unrecoverableCorruptions.isEmpty,
+              !(state.sealed && journal.ignoredIncompleteTail),
+              !state.sealed || journal.gaps.count == state.gapJournalCount
+        else { throw RecordingSpoolError.unrecoverableCorruption }
         return .init(
-            records: records,
-            corruptRanges: corrupt,
-            unrecoverableCorruptions: unrecoverable,
-            ignoredIncompleteTail: ignoredTail,
-            checkpoint: .init(
-                track: expectedTrack,
-                recordCount: expectedSequence,
-                fileByteLength: fileByteLength,
-                terminalSampleEnd: terminalSampleEnd
+            recordingID: state.recordingID,
+            sealed: state.sealed,
+            gaps: journal.gaps,
+            releaseGates: state.releaseGates,
+            startedAt: state.startedAtMilliseconds.map {
+                Date(timeIntervalSince1970: Double($0) / 1000)
+            },
+            endedAt: state.endedAtMilliseconds.map {
+                Date(timeIntervalSince1970: Double($0) / 1000)
+            }
+        )
+    }
+
+    // Release gates only ever advance; they never reopen a delivered gate.
+    static func updateReleaseGates(
+        recordingID: UUID,
+        rootURL: URL,
+        keyStore: any RecordingKeyStoring,
+        gates: RecordingReleaseGates
+    ) async throws {
+        let directory = rootURL.appendingPathComponent(recordingID.uuidString, isDirectory: true)
+        let key = try await keyStore.load(recordingID: recordingID)
+        let stateResult = recoverState(directory: directory, recordingID: recordingID, key: key)
+        guard let state = stateResult.state else {
+            throw RecordingSpoolError.unrecoverableCorruption
+        }
+        guard state.sealed else { throw RecordingSpoolError.notSealed }
+        guard !state.releaseGates.audioCreatedOnServer || gates.audioCreatedOnServer,
+              !state.releaseGates.transcriptLineageAccepted || gates.transcriptLineageAccepted
+        else { throw RecordingSpoolError.invalidRecord }
+        try writeAuthenticatedState(
+            RecordingSpoolState(
+                schemaVersion: state.schemaVersion,
+                recordingID: state.recordingID,
+                sealed: state.sealed,
+                gapJournalCount: state.gapJournalCount,
+                trackCheckpoints: state.trackCheckpoints,
+                releaseGates: gates,
+                startedAtMilliseconds: state.startedAtMilliseconds,
+                endedAtMilliseconds: state.endedAtMilliseconds
+            ),
+            directory: directory,
+            key: key
+        )
+    }
+
+    // Verifies the complete sealed spool with bounded memory before returning a
+    // streaming reader: every schema-3 rule (authenticated state, exact gap
+    // journal, per-track checkpoints, structural trust) must hold, or upload
+    // is refused before any network work.
+    static func openRecordReader(
+        recordingID: UUID,
+        rootURL: URL,
+        keyStore: any RecordingKeyStoring
+    ) async throws -> RecordingSpoolRecordReader {
+        let directory = rootURL.appendingPathComponent(recordingID.uuidString, isDirectory: true)
+        let key = try await keyStore.load(recordingID: recordingID)
+        let stateResult = recoverState(directory: directory, recordingID: recordingID, key: key)
+        guard let state = stateResult.state else {
+            throw RecordingSpoolError.unrecoverableCorruption
+        }
+        guard state.sealed else { throw RecordingSpoolError.notSealed }
+        let journal = recoverGapJournal(
+            directory: directory, recordingID: recordingID, key: key
+        )
+        guard journal.unrecoverableCorruptions.isEmpty,
+              !journal.ignoredIncompleteTail,
+              journal.gaps.count == state.gapJournalCount
+        else { throw RecordingSpoolError.unrecoverableCorruption }
+        let checkpoints = Dictionary(uniqueKeysWithValues:
+            state.trackCheckpoints.map { ($0.track, $0) }
+        )
+        var corrupt: [RecordingGap] = []
+        var conversions: Set<Int> = []
+        for track in RecordingTrackKind.allCases {
+            let url = directory.appendingPathComponent(track.fileName)
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                throw RecordingSpoolError.unrecoverableCorruption
+            }
+            var cursor = try TrackScanCursor(
+                url: url,
+                expectedRecordingID: recordingID,
+                expectedTrack: track,
+                key: key
+            )
+            defer { cursor.close() }
+            scan: while true {
+                switch try cursor.next() {
+                case let .record(record):
+                    conversions.insert(record.chunk.source.conversionVersion)
+                case let .corrupt(gap):
+                    corrupt.append(gap)
+                case .unrecoverable, .incompleteTail:
+                    throw RecordingSpoolError.unrecoverableCorruption
+                case .end:
+                    break scan
+                }
+            }
+            guard cursor.scannedCheckpoint == checkpoints[track] else {
+                throw RecordingSpoolError.unrecoverableCorruption
+            }
+        }
+        return RecordingSpoolRecordReader(
+            directory: directory,
+            recordingID: recordingID,
+            key: key,
+            inventory: .init(
+                corruptRanges: corrupt,
+                gaps: journal.gaps,
+                conversionVersions: conversions
             )
         )
     }
@@ -663,7 +894,11 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
                   envelope.state.sealed
                     ? checkpoints.count == RecordingTrackKind.allCases.count
                         && checkpointTracks == Set(RecordingTrackKind.allCases)
+                        && envelope.state.startedAtMilliseconds != nil
+                        && envelope.state.endedAtMilliseconds != nil
                     : checkpoints.isEmpty
+                        && envelope.state.startedAtMilliseconds == nil
+                        && envelope.state.endedAtMilliseconds == nil
             else {
                 return .init(state: nil, unrecoverableCorruption: .init(
                     track: nil, byteOffset: nil, reason: .malformedState
@@ -680,21 +915,36 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
     private func persistState(
         sealed: Bool,
         gapJournalCount: Int,
-        trackCheckpoints: [RecordingTrackCheckpoint]
+        trackCheckpoints: [RecordingTrackCheckpoint],
+        startedAtMilliseconds: Int64? = nil,
+        endedAtMilliseconds: Int64? = nil
     ) throws {
-        let state = RecordingSpoolState(
-            schemaVersion: Self.stateSchemaVersion,
-            recordingID: recordingID,
-            sealed: sealed,
-            gapJournalCount: gapJournalCount,
-            trackCheckpoints: trackCheckpoints,
-            releaseGates: .init(
-                audioCreatedOnServer: false, transcriptLineageAccepted: false
-            )
+        try Self.writeAuthenticatedState(
+            RecordingSpoolState(
+                schemaVersion: Self.stateSchemaVersion,
+                recordingID: recordingID,
+                sealed: sealed,
+                gapJournalCount: gapJournalCount,
+                trackCheckpoints: trackCheckpoints,
+                releaseGates: .init(
+                    audioCreatedOnServer: false, transcriptLineageAccepted: false
+                ),
+                startedAtMilliseconds: startedAtMilliseconds,
+                endedAtMilliseconds: endedAtMilliseconds
+            ),
+            directory: directoryURL,
+            key: key
         )
+    }
+
+    private static func writeAuthenticatedState(
+        _ state: RecordingSpoolState,
+        directory: URL,
+        key: SymmetricKey
+    ) throws {
         let stateData = try JSONEncoder.recording.encode(state)
-        let authenticationKey = Self.stateAuthenticationKey(
-            rootKey: key, recordingID: recordingID
+        let authenticationKey = stateAuthenticationKey(
+            rootKey: key, recordingID: state.recordingID
         )
         let authentication = Data(HMAC<SHA256>.authenticationCode(
             for: stateData, using: authenticationKey
@@ -702,11 +952,15 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
         let data = try JSONEncoder.recording.encode(AuthenticatedSpoolState(
             state: state, authentication: authentication
         ))
-        let stateURL = directoryURL.appendingPathComponent("state.json")
+        let stateURL = directory.appendingPathComponent("state.json")
         try data.write(to: stateURL, options: [.atomic])
         try FileManager.default.setAttributes(
             [.posixPermissions: 0o600], ofItemAtPath: stateURL.path
         )
+    }
+
+    private static func milliseconds(_ date: Date) -> Int64 {
+        Int64((date.timeIntervalSince1970 * 1000).rounded())
     }
 
     private func appendGapJournalRecord(gap: RecordingGap, sequence: Int) throws {
@@ -1051,6 +1305,62 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
     }
 }
 
+// Streams one authenticated record at a time in fixed track order. Assumes
+// openRecordReader's verification pass succeeded, but still authenticates every
+// record; any divergence discovered while streaming fails closed.
+actor RecordingSpoolRecordReader {
+    nonisolated let inventory: RecordingSpoolUploadInventory
+    private let directory: URL
+    private let recordingID: UUID
+    private let key: SymmetricKey
+    private var remainingTracks: [RecordingTrackKind]
+    private var cursor: EncryptedRecordingSpool.TrackScanCursor?
+
+    fileprivate init(
+        directory: URL,
+        recordingID: UUID,
+        key: SymmetricKey,
+        inventory: RecordingSpoolUploadInventory
+    ) {
+        self.directory = directory
+        self.recordingID = recordingID
+        self.key = key
+        self.inventory = inventory
+        remainingTracks = RecordingTrackKind.allCases
+    }
+
+    func next() throws -> RecoveredSpoolRecord? {
+        while true {
+            if cursor == nil {
+                guard !remainingTracks.isEmpty else { return nil }
+                let track = remainingTracks.removeFirst()
+                cursor = try EncryptedRecordingSpool.TrackScanCursor(
+                    url: directory.appendingPathComponent(track.fileName),
+                    expectedRecordingID: recordingID,
+                    expectedTrack: track,
+                    key: key
+                )
+            }
+            switch try cursor?.next() {
+            case let .record(record):
+                return record
+            case .corrupt:
+                // Already inventoried by the verification pass; its exact
+                // range becomes an explicit manifest gap, never audio.
+                continue
+            case .unrecoverable, .incompleteTail, .none:
+                cursor?.close()
+                cursor = nil
+                remainingTracks = []
+                throw RecordingSpoolError.unrecoverableCorruption
+            case .end:
+                cursor?.close()
+                cursor = nil
+            }
+        }
+    }
+}
+
 private struct ParsedSpoolHeader {
     let recordingID: UUID
     let track: RecordingTrackKind
@@ -1078,6 +1388,9 @@ private struct RecordingSpoolState: Codable {
     let gapJournalCount: Int
     let trackCheckpoints: [RecordingTrackCheckpoint]
     let releaseGates: RecordingReleaseGates
+    // Present exactly when sealed; deterministic integers keep the HMAC stable.
+    let startedAtMilliseconds: Int64?
+    let endedAtMilliseconds: Int64?
 }
 
 private struct RecordingTrackCheckpoint: Codable, Equatable {

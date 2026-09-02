@@ -128,10 +128,14 @@ final class RecordingCoordinator: ObservableObject {
     @Published private(set) var health = RecordingHealth()
     @Published private(set) var startedAt: Date?
     @Published private(set) var pendingRecordingIDs: [UUID] = []
+    @Published private(set) var uploadStates: [UUID: RecordingUploadState] = [:]
 
     private let preflight: any RecordingPreflighting
     private let source: any RecordingCaptureSource
     private let spoolFactory: any RecordingSpoolCreating
+    private let uploader: (any RecordingUploading)?
+    private var uploadQueue: [UUID] = []
+    private var uploadWorkerTask: Task<Void, Never>?
     private var spool: (any RecordingSpoolWriting)?
     private var eventContinuation: AsyncStream<RecordingCaptureEvent>.Continuation?
     private var writerTask: Task<Void, Never>?
@@ -147,11 +151,13 @@ final class RecordingCoordinator: ObservableObject {
     init(
         preflight: any RecordingPreflighting = LiveRecordingPreflight(),
         source: any RecordingCaptureSource = ScreenCaptureAudioSource(),
-        spoolFactory: any RecordingSpoolCreating = EncryptedRecordingSpoolFactory()
+        spoolFactory: any RecordingSpoolCreating = EncryptedRecordingSpoolFactory(),
+        uploader: (any RecordingUploading)? = nil
     ) {
         self.preflight = preflight
         self.source = source
         self.spoolFactory = spoolFactory
+        self.uploader = uploader
         lifecycleTask = Task { [weak self] in
             for await _ in NotificationCenter.default.notifications(
                 named: NSWorkspace.willSleepNotification
@@ -162,6 +168,7 @@ final class RecordingCoordinator: ObservableObject {
         }
         Task { [weak self] in
             await self?.refreshPendingRecordings()
+            await self?.enqueueAllPendingUploads()
         }
     }
 
@@ -169,6 +176,7 @@ final class RecordingCoordinator: ObservableObject {
         lifecycleTask?.cancel()
         durationLimitTask?.cancel()
         writerTask?.cancel()
+        uploadWorkerTask?.cancel()
         eventContinuation?.finish()
     }
 
@@ -176,6 +184,10 @@ final class RecordingCoordinator: ObservableObject {
 
     func start() async {
         guard !phase.isActive else { return }
+        await pauseUploadsForCapture()
+        defer {
+            if !phase.isActive { enqueueAllPendingUploads() }
+        }
         phase = .preflighting
         health = RecordingHealth()
         accumulatedGaps.removeAll(keepingCapacity: true)
@@ -279,7 +291,12 @@ final class RecordingCoordinator: ObservableObject {
                 await abandonActiveSpool(recordingID: recordingID)
                 return
             }
-            try await spool?.seal(gaps: [])
+            let endedAt = Date()
+            try await spool?.seal(
+                gaps: [],
+                startedAt: startedAt ?? endedAt,
+                endedAt: endedAt
+            )
             spool = nil
             await refreshPendingRecordings()
             if let reason {
@@ -287,6 +304,7 @@ final class RecordingCoordinator: ObservableObject {
             } else {
                 phase = .sealed(recordingID)
             }
+            enqueueAllPendingUploads()
         } catch {
             await abandonActiveSpool(recordingID: recordingID)
         }
@@ -303,10 +321,23 @@ final class RecordingCoordinator: ObservableObject {
         guard confirmed, !phase.isActive else { return }
         do {
             try await spoolFactory.discard(recordingID: recordingID)
+            uploadQueue.removeAll { $0 == recordingID }
+            uploadStates.removeValue(forKey: recordingID)
             await refreshPendingRecordings()
         } catch {
             phase = .needsAttention(recordingID, "Encrypted spool could not be discarded")
         }
+    }
+
+    func retryUpload(recordingID: UUID) {
+        uploadStates[recordingID] = .pending
+        guard !phase.isActive else { return }
+        enqueueUpload(recordingID)
+    }
+
+    func pauseUploadsForSignOut() async {
+        await pauseUploadsForCapture()
+        uploadQueue.removeAll()
     }
 
     private func consume(_ event: RecordingCaptureEvent) async {
@@ -407,10 +438,16 @@ final class RecordingCoordinator: ObservableObject {
                 await abandonActiveSpool(recordingID: recordingID)
                 return
             }
-            try await spool?.seal(gaps: [])
+            let endedAt = Date()
+            try await spool?.seal(
+                gaps: [],
+                startedAt: startedAt ?? endedAt,
+                endedAt: endedAt
+            )
             spool = nil
             await refreshPendingRecordings()
             phase = .needsAttention(recordingID, message)
+            enqueueAllPendingUploads()
         } catch {
             await abandonActiveSpool(recordingID: recordingID)
         }
@@ -441,5 +478,92 @@ final class RecordingCoordinator: ObservableObject {
 
     private func refreshPendingRecordings() async {
         pendingRecordingIDs = await spoolFactory.pendingRecordingIDs()
+        for recordingID in pendingRecordingIDs where uploadStates[recordingID] == nil {
+            uploadStates[recordingID] = .pending
+        }
+        uploadStates = uploadStates.filter { pendingRecordingIDs.contains($0.key) }
+    }
+
+    private func enqueueAllPendingUploads() {
+        for recordingID in pendingRecordingIDs { enqueueUpload(recordingID) }
+    }
+
+    // One upload job at a time, and never while capture is active.
+    private func enqueueUpload(_ recordingID: UUID) {
+        guard uploader != nil,
+              !phase.isActive,
+              !uploadQueue.contains(recordingID),
+              pendingRecordingIDs.contains(recordingID)
+        else { return }
+        uploadQueue.append(recordingID)
+        startUploadWorkerIfNeeded()
+    }
+
+    private func startUploadWorkerIfNeeded() {
+        guard uploadWorkerTask == nil else { return }
+        uploadWorkerTask = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled, !self.uploadQueue.isEmpty {
+                let recordingID = self.uploadQueue.removeFirst()
+                await self.uploadOne(recordingID)
+            }
+            self.uploadWorkerTask = nil
+        }
+    }
+
+    private func pauseUploadsForCapture() async {
+        guard let worker = uploadWorkerTask else { return }
+        worker.cancel()
+        await worker.value
+        uploadWorkerTask = nil
+    }
+
+    private func uploadOne(_ recordingID: UUID) async {
+        guard let uploader else { return }
+        uploadStates[recordingID] = .uploading(completedParts: 0)
+        do {
+            let gates = try await uploader.upload(
+                recordingID: recordingID,
+                progress: { [weak self] count in
+                    Task { @MainActor [weak self] in
+                        self?.uploadStates[recordingID] = .uploading(completedParts: count)
+                    }
+                }
+            )
+            if gates.mayDeleteLocalSpool {
+                uploadStates.removeValue(forKey: recordingID)
+            } else {
+                uploadStates[recordingID] = .waitingForTranscript
+            }
+            await refreshPendingRecordings()
+        } catch is CancellationError {
+            uploadStates[recordingID] = .pending
+        } catch let error as RecordingUploadError {
+            switch error {
+            case .unauthorized:
+                uploadStates[recordingID] = .waitingForAuthentication
+            case .offline:
+                uploadStates[recordingID] = .waitingForNetwork
+            case .conflict:
+                uploadStates[recordingID] = .needsAttention(
+                    "Server data conflicts with this recording")
+            case .unsupportedConversion:
+                uploadStates[recordingID] = .needsAttention(
+                    "Recording uses an unsupported audio conversion")
+            case .invalidCoverage, .missingTimeline, .unsealedSpool, .fileChanged:
+                uploadStates[recordingID] = .needsAttention("Local recording needs recovery")
+            case .invalidResponse, .server:
+                uploadStates[recordingID] = .needsAttention(
+                    "Server could not verify this recording")
+            }
+        } catch is RecordingSpoolError {
+            uploadStates[recordingID] = .needsAttention("Local recording needs recovery")
+        } catch is NativeAuthenticationError {
+            uploadStates[recordingID] = .waitingForAuthentication
+        } catch is URLError {
+            uploadStates[recordingID] = .waitingForNetwork
+        } catch {
+            uploadStates[recordingID] = .needsAttention("Recording upload needs attention")
+        }
     }
 }
