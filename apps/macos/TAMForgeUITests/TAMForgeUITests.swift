@@ -407,11 +407,17 @@ final class TAMForgeUITests: XCTestCase {
     private func reveal(_ element: XCUIElement, in app: XCUIApplication, scrollIdentifier: String = "activityWorkspaceScroll") {
         app.activate()
         let scroll = app.scrollViews[scrollIdentifier]
-        XCTAssertTrue(scroll.waitForExistence(timeout: 5))
-        for _ in 0..<12 {
-            app.activate()
-            if element.exists && element.isHittable && scroll.frame.contains(element.frame) { return }
-            scroll.scroll(byDeltaX: 0, deltaY: -350)
+        XCTAssertTrue(scroll.waitForExistence(timeout: 10))
+        // The target can sit either side of the viewport (committing scrolls back to
+        // the top), so sweep down first and then back up past the starting position.
+        // 40 steps cover the roadmap review screen once entry previews render in
+        // all four sections; the loop exits early the moment the target is inside.
+        for deltaY in [CGFloat(-350), CGFloat(350)] {
+            for _ in 0..<40 {
+                app.activate()
+                if element.exists && element.isHittable && scroll.frame.contains(element.frame) { return }
+                scroll.scroll(byDeltaX: 0, deltaY: deltaY)
+            }
         }
         XCTAssertTrue(element.exists && element.isHittable && scroll.frame.contains(element.frame),
                       "Expected control fully inside the scrolling viewport")
