@@ -112,6 +112,31 @@ def test_policy_rejects_node_launcher_in_all_yaml_block_scalar_forms(monkeypatch
     )
 
 
+def test_policy_rejects_node_launcher_in_deferred_plain_scalar_run(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from scripts.ci import check_repository_policy
+
+    monkeypatch.setattr(check_repository_policy, "ROOT", tmp_path)
+    workflow_dir = tmp_path / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "deferred.yml").write_text(
+        "jobs:\n  check:\n    steps:\n      - run:\n          npm ci\n",
+        encoding="utf-8",
+    )
+    (workflow_dir / "commented.yml").write_text(
+        "jobs:\n  check:\n    steps:\n      - run: # shell\n          npm ci\n",
+        encoding="utf-8",
+    )
+    assert violations(
+        (
+            PurePosixPath(".github/workflows/deferred.yml"),
+            PurePosixPath(".github/workflows/commented.yml"),
+        )
+    ) == (
+        "forbidden product Node invocation in .github/workflows/deferred.yml",
+        "forbidden product Node invocation in .github/workflows/commented.yml",
+    )
+
+
 def test_policy_rejects_every_node_launcher_from_make_recipes(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
     from scripts.ci import check_repository_policy
 
