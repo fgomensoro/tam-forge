@@ -58,6 +58,7 @@ enum NativeFeature: Hashable, Sendable {
     case today
     case roadmaps
     case evidence
+    case recording
 }
 
 struct AppDependencies: Sendable {

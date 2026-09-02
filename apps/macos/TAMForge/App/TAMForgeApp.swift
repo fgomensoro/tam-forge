@@ -11,9 +11,10 @@ struct TAMForgeApp: App {
 #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         let nativeFeatures: Set<NativeFeature> = arguments.contains("-ui-test-signed-in")
-            && !arguments.contains("-ui-test-native-features") ? [] : [.today, .roadmaps, .evidence]
+            && !arguments.contains("-ui-test-native-features")
+            ? [] : [.today, .roadmaps, .evidence, .recording]
 #else
-        let nativeFeatures: Set<NativeFeature> = [.today, .roadmaps, .evidence]
+        let nativeFeatures: Set<NativeFeature> = [.today, .roadmaps, .evidence, .recording]
 #endif
         self.init(dependencies: .live(
             environment: .selected(from: ProcessInfo.processInfo.environment),
@@ -89,7 +90,12 @@ private struct NativeShellView: View {
     }
 
     var body: some View {
-        NativeSessionView(dependencies: dependencies, model: composition.session, services: composition.services)
+        NativeSessionView(
+            dependencies: dependencies,
+            model: composition.session,
+            services: composition.services,
+            recording: composition.recording
+        )
     }
 }
 
@@ -97,6 +103,7 @@ private struct NativeSessionView: View {
     let dependencies: AppDependencies
     @ObservedObject var model: ShellSessionModel
     let services: NativeFeatureServices
+    @ObservedObject var recording: RecordingCoordinator
     @SceneStorage("tamforge.shell.route") private var restoredRouteID = "today"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -117,7 +124,12 @@ private struct NativeSessionView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             case .signedIn:
-                NativeWorkspaceView(dependencies: dependencies, session: model, services: services)
+                NativeWorkspaceView(
+                    dependencies: dependencies,
+                    session: model,
+                    services: services,
+                    recording: recording
+                )
             }
         }
         .padding(24)
@@ -128,6 +140,9 @@ private struct NativeSessionView: View {
         }
         .onChange(of: model.restorationRouteID) { _, value in restoredRouteID = value }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: model.banner)
+        .safeAreaInset(edge: .bottom) {
+            RecordingGlobalStatusView(coordinator: recording)
+        }
 #if DEBUG
         .overlay(alignment: .bottomTrailing) {
             if LocalResourceProbe.isRequested { LocalResourceProbeView() }
@@ -149,8 +164,10 @@ private struct NativeFeatureServices {
 private final class NativeShellComposition: ObservableObject {
     let session: ShellSessionModel
     let services: NativeFeatureServices
+    let recording: RecordingCoordinator
 
     init(dependencies: AppDependencies) {
+        recording = RecordingCoordinator()
         let bearerToken: NativeBearerTokenProvider
         let httpSession: URLSession?
 #if DEBUG
@@ -261,13 +278,21 @@ private struct NativeWorkspaceView: View {
     let dependencies: AppDependencies
     @ObservedObject var session: ShellSessionModel
     let services: NativeFeatureServices
+    @ObservedObject var recording: RecordingCoordinator
     @StateObject private var state: NativeWorkspaceState
     @State private var focusSelfReview = false
+    @State private var showRecordingSignOutConfirmation = false
 
-    init(dependencies: AppDependencies, session: ShellSessionModel, services: NativeFeatureServices) {
+    init(
+        dependencies: AppDependencies,
+        session: ShellSessionModel,
+        services: NativeFeatureServices,
+        recording: RecordingCoordinator
+    ) {
         self.dependencies = dependencies
         self.session = session
         self.services = services
+        self.recording = recording
         _state = StateObject(wrappedValue: NativeWorkspaceState(services: services))
     }
 
@@ -288,6 +313,12 @@ private struct NativeWorkspaceView: View {
                     }
                     .accessibilityIdentifier("evidenceNavigation")
                 }
+                if dependencies.nativeFeatures.contains(.recording) {
+                    Button { session.select(.recording) } label: {
+                        Label("Recording", systemImage: "record.circle")
+                    }
+                    .accessibilityIdentifier("recordingNavigation")
+                }
             }
             .navigationTitle("TAM Forge")
         } detail: {
@@ -299,7 +330,14 @@ private struct NativeWorkspaceView: View {
                         if session.isStatusStreamActive { NotificationConnectionStatusView(state: session.statusState) }
                         NotificationPanelView(model: state.notifications)
                     }
-                    Button("Sign out") { session.signOut() }.accessibilityIdentifier("signOutButton")
+                    Button("Sign out") {
+                        if recording.requiresStopBeforeSignOut {
+                            showRecordingSignOutConfirmation = true
+                        } else {
+                            session.signOut()
+                        }
+                    }
+                    .accessibilityIdentifier("signOutButton")
                 }
                 if let banner = session.banner { GlobalBannerView(banner: banner) }
                 routeDetail
@@ -330,6 +368,20 @@ private struct NativeWorkspaceView: View {
         // Close this generation on logout/expiry. A fresh sign-in gets a new model;
         // canceled or noncooperative reads cannot publish into the retired workspace.
         .onDisappear { state.evidence.reset() }
+        .alert(
+            "Stop recording before signing out?",
+            isPresented: $showRecordingSignOutConfirmation
+        ) {
+            Button("Cancel", role: .cancel) {}
+            Button("Stop and sign out") {
+                Task {
+                    await recording.stop()
+                    session.signOut()
+                }
+            }
+        } message: {
+            Text("TAM Forge will seal the encrypted local recording before signing out.")
+        }
     }
 
     @ViewBuilder
@@ -339,6 +391,8 @@ private struct NativeWorkspaceView: View {
             TodayView(model: state.today, onNavigate: navigate)
         case .roadmaps where dependencies.nativeFeatures.contains(.roadmaps):
             RoadmapAdministrationView(model: state.roadmaps)
+        case .recording where dependencies.nativeFeatures.contains(.recording):
+            RecordingView(coordinator: recording)
         case let .evidence(identifier) where dependencies.nativeFeatures.contains(.evidence):
             EvidenceLedgerView(
                 model: state.evidence,

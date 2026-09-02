@@ -4,6 +4,7 @@ import Foundation
 enum ShellRoute: Equatable, Sendable {
     case today
     case roadmaps
+    case recording
     case activity(Int)
     case evidence(activityID: Int?)
 
@@ -11,6 +12,8 @@ enum ShellRoute: Equatable, Sendable {
         switch self {
         case .roadmaps:
             "roadmaps"
+        case .recording:
+            "recording"
         case .evidence:
             "evidence"
         case .today, .activity:
@@ -21,6 +24,7 @@ enum ShellRoute: Equatable, Sendable {
     static func restored(from identifier: String) -> Self {
         switch identifier {
         case "roadmaps": .roadmaps
+        case "recording": .recording
         case "evidence": .evidence(activityID: nil)
         default: .today
         }
