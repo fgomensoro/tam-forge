@@ -1,8 +1,8 @@
 # Native feature parity
 
-Scope: E10-I06–E10-I10 (#122–#126). The reference web client remains present through
-the parity PR and is removed only by the separately reviewed cutover PR. Server read
-models and commands remain authoritative.
+Scope: E10-I06–E10-I10 (#122–#126). The native-only cutover removed the active web
+client runtime; this matrix preserves its former behavior as parity evidence. Server
+read models and commands remain authoritative.
 
 | Surface | Native behavior | Verification |
 | --- | --- | --- |
@@ -23,7 +23,7 @@ models and commands remain authoritative.
 | Activity evidence | Today preserves the exact activity scope; one bounded page, retry-safe Older/Newest replacement, lineage and evaluator/assistance details; All evidence clears private scope | Evidence route/model tests; scoped Evidence/sign-out UI journey |
 | Portfolio history | Independent server-provided `/20` total, all seven components, trend basis and versions remain usable even when skill loading fails | Independent-state model test; section-specific retry UI journey |
 
-## Browser-cutover replacement map
+## Former browser journey replacement map
 
 One synthetic scenario is checked at
 `tests/fixtures/native-parity/foundation-journey-v1.json`. Its source ZIP digest and

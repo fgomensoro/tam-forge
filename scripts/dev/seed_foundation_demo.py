@@ -1,4 +1,4 @@
-"""Create the bounded test session used by the foundation browser journey."""
+"""Seed bounded data for the durable foundation backend journey."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import argparse
 import asyncio
 import json
 import os
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import anyio
@@ -15,8 +15,7 @@ from botocore.client import Config
 from botocore.exceptions import ClientError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from tamforge_backend.auth.crypto import hash_secret
-from tamforge_backend.auth.models import AuthSession, Owner
+from tamforge_backend.auth.models import Owner
 from tamforge_backend.config import APPROVED_GITHUB_USER_ID, Settings
 from tamforge_backend.database import transaction_scope, validate_test_database_url
 from tamforge_backend.evidence.config_loader import load_config_bundle
@@ -25,8 +24,6 @@ from tamforge_backend.learning.models import LearnerSetting
 from tamforge_backend.notifications.models import Notification
 
 ROOT = Path(__file__).parents[2]
-SESSION_TOKEN = "s" * 43
-CSRF_TOKEN = "c" * 43
 TEST_LOGIN = "fgomensoro"
 
 
@@ -87,20 +84,6 @@ async def seed(settings: Settings, *, study_start_date: date) -> dict[str, objec
                     await session.flush()
                 else:
                     owner.github_login = TEST_LOGIN
-                await session.execute(
-                    delete(AuthSession).where(
-                        AuthSession.token_hash == hash_secret(SESSION_TOKEN)
-                    )
-                )
-                session.add(
-                    AuthSession(
-                        owner_id=owner.id,
-                        token_hash=hash_secret(SESSION_TOKEN),
-                        csrf_hash=hash_secret(CSRF_TOKEN),
-                        created_at=now,
-                        expires_at=now + timedelta(hours=2),
-                    )
-                )
                 learner = await session.scalar(
                     select(LearnerSetting).where(LearnerSetting.owner_id == owner.id)
                 )
@@ -141,16 +124,16 @@ async def seed(settings: Settings, *, study_start_date: date) -> dict[str, objec
                     )
                 )
         await ensure_bucket(settings)
-        return {
-            "base_url": "http://127.0.0.1:5173",
-            "session_cookie": "tamforge_session",
-            "session_token": SESSION_TOKEN,
-            "csrf_cookie": "tamforge_csrf",
-            "csrf_token": CSRF_TOKEN,
-            "owner_github_id": APPROVED_GITHUB_USER_ID,
-        }
+        return seed_result(study_start_date)
     finally:
         await engine.dispose()
+
+
+def seed_result(study_start_date: date) -> dict[str, object]:
+    return {
+        "owner_github_id": APPROVED_GITHUB_USER_ID,
+        "study_start_date": study_start_date.isoformat(),
+    }
 
 
 def main() -> int:

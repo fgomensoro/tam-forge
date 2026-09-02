@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-import pytest
+from datetime import date
 
-from scripts.dev.seed_foundation_demo import load_test_settings
+import pytest
+from tamforge_backend.config import APPROVED_GITHUB_USER_ID
+
+from scripts.dev.seed_foundation_demo import load_test_settings, seed_result
 
 
 def test_demo_seed_refuses_non_test_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -27,3 +30,10 @@ def test_demo_seed_refuses_non_test_database(monkeypatch: pytest.MonkeyPatch) ->
     )
     with pytest.raises(ValueError, match="tamforge_test"):
         load_test_settings()
+
+
+def test_demo_seed_reports_only_seeded_data() -> None:
+    assert seed_result(date(2026, 8, 24)) == {
+        "owner_github_id": APPROVED_GITHUB_USER_ID,
+        "study_start_date": "2026-08-24",
+    }
