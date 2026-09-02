@@ -10,7 +10,8 @@ from pathlib import Path
 import pytest
 import yaml
 from pydantic import ValidationError
-from tamforge_backend.cli import _apply, main as cli_main
+from tamforge_backend.cli import _apply
+from tamforge_backend.cli import main as cli_main
 from tamforge_backend.evidence.config_loader import (
     ConfigError,
     RoadmapReleaseRegistry,
