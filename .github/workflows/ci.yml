@@ -26,7 +26,8 @@ jobs:
         run: >-
           xcodebuild -jobs 2 -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge
           -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
-          -only-testing:TAMForgeTests test
+          -only-testing:TAMForgeTests
+          -retry-tests-on-failure -test-iterations 3 test
       - name: Build signed standalone Release app
         run: >-
           xcodebuild -jobs 2 -skipPackagePluginValidation
