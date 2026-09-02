@@ -227,76 +227,78 @@ private final class ScreenCaptureAudioOutput: NSObject, SCStreamOutput, @uncheck
             throw RecordingCaptureFailure.formatUnsupported
         }
         let frameCount = AVAudioFrameCount(sample.sampleBuffer.numSamples)
-        guard frameCount > 0,
-              let sourceBuffer = AVAudioPCMBuffer(
-                  pcmFormat: sourceFormat, frameCapacity: frameCount
-              )
-        else { throw RecordingCaptureFailure.formatUnsupported }
-        let copyStatus = CMSampleBufferCopyPCMDataIntoAudioBufferList(
-            sample.sampleBuffer,
-            at: 0,
-            frameCount: Int32(frameCount),
-            into: sourceBuffer.mutableAudioBufferList
-        )
-        guard copyStatus == noErr else { throw RecordingCaptureFailure.conversionFailed }
-        sourceBuffer.frameLength = frameCount
+        guard frameCount > 0 else { throw RecordingCaptureFailure.formatUnsupported }
+        // ScreenCaptureKit vends audio as an AudioBufferList-backed block
+        // buffer; CMSampleBufferCopyPCMDataIntoAudioBufferList rejects those
+        // buffers (kCMSampleBufferError_ArrayTooSmall), so wrap the list in
+        // place and convert before the block buffer goes away.
+        return try sample.sampleBuffer.withAudioBufferList { audioBufferList, _ in
+            guard let sourceBuffer = AVAudioPCMBuffer(
+                pcmFormat: sourceFormat,
+                bufferListNoCopy: UnsafePointer(audioBufferList.unsafeMutablePointer)
+            ), sourceBuffer.frameLength >= frameCount
+            else { throw RecordingCaptureFailure.conversionFailed }
+            sourceBuffer.frameLength = frameCount
 
-        let channelCount: AVAudioChannelCount = sample.track == .microphone ? 1 : 2
-        guard let targetFormat = AVAudioFormat(
-            commonFormat: .pcmFormatInt16,
-            sampleRate: Double(RecordingPCMFormat.canonicalSampleRate),
-            channels: channelCount,
-            interleaved: true
-        ), let converter = AVAudioConverter(from: sourceFormat, to: targetFormat)
-        else { throw RecordingCaptureFailure.formatUnsupported }
-        let ratio = Double(RecordingPCMFormat.canonicalSampleRate) / sourceFormat.sampleRate
-        let capacity = AVAudioFrameCount((Double(frameCount) * ratio).rounded(.up)) + 32
-        guard let output = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else {
-            throw RecordingCaptureFailure.conversionFailed
-        }
-        var supplied = false
-        var conversionError: NSError?
-        let status = converter.convert(to: output, error: &conversionError) { _, inputStatus in
-            guard !supplied else {
-                inputStatus.pointee = AVAudioConverterInputStatus.noDataNow
-                return nil
+            let channelCount: AVAudioChannelCount = sample.track == .microphone ? 1 : 2
+            guard let targetFormat = AVAudioFormat(
+                commonFormat: .pcmFormatInt16,
+                sampleRate: Double(RecordingPCMFormat.canonicalSampleRate),
+                channels: channelCount,
+                interleaved: true
+            ), let converter = AVAudioConverter(from: sourceFormat, to: targetFormat)
+            else { throw RecordingCaptureFailure.formatUnsupported }
+            let ratio = Double(RecordingPCMFormat.canonicalSampleRate) / sourceFormat.sampleRate
+            let capacity = AVAudioFrameCount((Double(frameCount) * ratio).rounded(.up)) + 32
+            guard let output = AVAudioPCMBuffer(
+                pcmFormat: targetFormat, frameCapacity: capacity
+            ) else {
+                throw RecordingCaptureFailure.conversionFailed
             }
-            supplied = true
-            inputStatus.pointee = AVAudioConverterInputStatus.haveData
-            return sourceBuffer
+            var supplied = false
+            var conversionError: NSError?
+            let status = converter.convert(to: output, error: &conversionError) { _, inputStatus in
+                guard !supplied else {
+                    inputStatus.pointee = AVAudioConverterInputStatus.noDataNow
+                    return nil
+                }
+                supplied = true
+                inputStatus.pointee = AVAudioConverterInputStatus.haveData
+                return sourceBuffer
+            }
+            guard status != AVAudioConverterOutputStatus.error,
+                  conversionError == nil,
+                  output.frameLength > 0
+            else {
+                throw RecordingCaptureFailure.conversionFailed
+            }
+            let buffer = output.audioBufferList.pointee.mBuffers
+            guard let pointer = buffer.mData else { throw RecordingCaptureFailure.conversionFailed }
+            let payload = Data(bytes: pointer, count: Int(buffer.mDataByteSize))
+            let presentation = sample.sampleBuffer.presentationTimeStamp.convertedNanoseconds
+            let sourceChannels = Int(streamDescription.pointee.mChannelsPerFrame)
+            let format = try RecordingPCMFormat(
+                track: sample.track, channelCount: Int(channelCount)
+            )
+            return RecordingPCMChunk(
+                track: sample.track,
+                presentationNanoseconds: presentation,
+                sampleStart: 0,
+                sampleCount: Int(output.frameLength),
+                format: format,
+                source: .init(
+                    sampleRate: sourceFormat.sampleRate,
+                    channelCount: sourceChannels,
+                    deviceID: sample.track == .microphone ? microphoneID : "system-audio",
+                    initialRoute: sample.track == .microphone
+                        ? initialRoute
+                        : "ScreenCaptureKit authorized system mix",
+                    conversionVersion: 1,
+                    presentationNanoseconds: presentation
+                ),
+                payload: payload
+            )
         }
-        guard status != AVAudioConverterOutputStatus.error,
-              conversionError == nil,
-              output.frameLength > 0
-        else {
-            throw RecordingCaptureFailure.conversionFailed
-        }
-        let buffer = output.audioBufferList.pointee.mBuffers
-        guard let pointer = buffer.mData else { throw RecordingCaptureFailure.conversionFailed }
-        let payload = Data(bytes: pointer, count: Int(buffer.mDataByteSize))
-        let presentation = sample.sampleBuffer.presentationTimeStamp.convertedNanoseconds
-        let sourceChannels = Int(streamDescription.pointee.mChannelsPerFrame)
-        let format = try RecordingPCMFormat(
-            track: sample.track, channelCount: Int(channelCount)
-        )
-        return .init(
-            track: sample.track,
-            presentationNanoseconds: presentation,
-            sampleStart: 0,
-            sampleCount: Int(output.frameLength),
-            format: format,
-            source: .init(
-                sampleRate: sourceFormat.sampleRate,
-                channelCount: sourceChannels,
-                deviceID: sample.track == .microphone ? microphoneID : "system-audio",
-                initialRoute: sample.track == .microphone
-                    ? initialRoute
-                    : "ScreenCaptureKit authorized system mix",
-                conversionVersion: 1,
-                presentationNanoseconds: presentation
-            ),
-            payload: payload
-        )
     }
 }
 
