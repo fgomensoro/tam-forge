@@ -283,7 +283,10 @@ final class NativeParityUIFixture {
         defer { stream.close() }
         var result = Data()
         var buffer = [UInt8](repeating: 0, count: 64 * 1024)
-        while stream.hasBytesAvailable {
+        // Read until end-of-stream: hasBytesAvailable can be transiently false
+        // on a body stream that has not produced its first byte yet, which
+        // used to surface as an empty body and a spurious invalidRequest.
+        while true {
             let count = stream.read(&buffer, maxLength: buffer.count)
             guard count >= 0, result.count + count <= 65 * 1024 * 1024 else {
                 throw NativeParityFixtureError.invalidRequest
