@@ -8,6 +8,7 @@ from pathlib import Path
 
 from tamforge_backend.config import APPROVED_GITHUB_USER_ID, Settings
 from tamforge_backend.main import create_app
+from tamforge_backend.recordings.schemas import RECORDING_OPENAPI_MODELS
 
 ROOT = Path(__file__).parents[2]
 NATIVE_TARGET = ROOT / "apps" / "macos" / "TAMForge" / "openapi.yaml"
@@ -22,7 +23,41 @@ def generated_openapi_schema() -> dict[str, object]:
             _env_file=None,
         )
     )
-    return app.openapi()
+    document = app.openapi()
+    _inject_recording_components(document)
+    return document
+
+
+def _inject_recording_components(document: dict[str, object]) -> None:
+    components = document.setdefault("components", {})
+    assert isinstance(components, dict)
+    schemas = components.setdefault("schemas", {})
+    assert isinstance(schemas, dict)
+    for name, schema in recording_openapi_components().items():
+        existing = schemas.get(name)
+        if existing is not None and existing != schema:
+            raise RuntimeError(f"OpenAPI component conflict for {name}")
+        schemas[name] = schema
+
+
+def recording_openapi_components() -> dict[str, object]:
+    """Generate canonical recording components without inventing HTTP operations."""
+    components: dict[str, object] = {}
+    for model in RECORDING_OPENAPI_MODELS:
+        model_schema = model.model_json_schema(ref_template="#/components/schemas/{model}")
+        definitions = model_schema.pop("$defs", {})
+        assert isinstance(definitions, dict)
+        for name, schema in definitions.items():
+            _add_recording_component(components, name, schema)
+        _add_recording_component(components, model.__name__, model_schema)
+    return components
+
+
+def _add_recording_component(components: dict[str, object], name: str, schema: object) -> None:
+    existing = components.get(name)
+    if existing is not None and existing != schema:
+        raise RuntimeError(f"recording component conflict for {name}")
+    components[name] = schema
 
 
 def normalized_openapi_document() -> bytes:
@@ -95,11 +130,11 @@ def _normalize_openapi_30_bounds(schema: dict[str, object]) -> dict[str, object]
         ("maximum", "exclusiveMaximum"),
     ):
         threshold = normalized.get(exclusive)
-        if not isinstance(threshold, (int, float)) or isinstance(threshold, bool):
+        if not isinstance(threshold, int | float) or isinstance(threshold, bool):
             continue
         normalized.pop(exclusive)
         current = normalized.get(bound)
-        if not isinstance(current, (int, float)) or isinstance(current, bool):
+        if not isinstance(current, int | float) or isinstance(current, bool):
             normalized[bound] = threshold
             normalized[exclusive] = True
             continue

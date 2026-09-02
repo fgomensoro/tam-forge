@@ -80,7 +80,7 @@ jobs:
       - run: uv run mypy apps/backend/src packages/protocol/src
       - run: MYPYPATH=apps/backend/src:packages/protocol/src uv run mypy scripts/ci/check_openapi.py scripts/ci/check_repository_policy.py scripts/ci/verify_bootstrap.py scripts/ci/verify_compose.py scripts/dev/seed_foundation_demo.py
       - run: uv run python -m scripts.ci.verify_bootstrap
-      - run: uv run pytest apps/backend/tests/unit apps/backend/tests/security packages/protocol/tests scripts/ci/tests scripts/dev/tests scripts/github/tests -m "not integration" -q
+      - run: uv run pytest apps/backend/tests/unit apps/backend/tests/security apps/backend/tests/recordings packages/protocol/tests scripts/ci/tests scripts/dev/tests scripts/github/tests -m "not integration" -q
 
   backend-integration:
     runs-on: ubuntu-latest
