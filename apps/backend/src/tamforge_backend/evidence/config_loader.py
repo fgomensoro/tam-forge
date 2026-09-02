@@ -693,7 +693,9 @@ def _build_bundle(
         rubrics=rubrics_file.rubrics,
         roadmap_version=roadmap_file.roadmap_version,
         roadmap_contracts=MappingProxyType(
-            dict(roadmap_file.contracts) if isinstance(roadmap_file, RoadmapTaskMapFile) else {}
+            dict(roadmap_file.contracts)
+            if isinstance(roadmap_file, RoadmapTaskMapFile)
+            else dict(roadmap_file.contracts.tasks)
         ),
         reconciliations=roadmap_file.reconciliations,
         roadmap_tasks=sorted_tasks,

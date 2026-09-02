@@ -790,6 +790,7 @@ class RoadmapContractsConfig(StrictModel):
     interview_cycle: OrdinaryInterviewContractConfig
     sealed_final_mock: SealedFinalMockContractConfig
     pipeline: PipelineContractConfig
+    tasks: dict[Slug, TaskContractConfig]
 
 
 class CoverageRequirementConfig(StrictModel):
@@ -921,6 +922,9 @@ class RoadmapTaskMapV2File(StrictModel):
         task_ids = [task.stable_id for task in self.tasks]
         if len(set(task_ids)) != len(task_ids):
             raise ValueError("Phase 1 task IDs must be unique")
+        for task in self.tasks:
+            if task.contract not in self.contracts.tasks:
+                raise ValueError(f"unknown task contract {task.contract!r}")
         return self
 
 
