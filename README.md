@@ -120,6 +120,11 @@ backend unit checks, PostgreSQL integration tests, durable backend E2E, native O
 drift, and tracked secret/audio policy. CI receives no production credentials and does
 not deploy or merge anything.
 
+A new push to a pull request cancels that pull request's superseded run. Runs on `main`
+are never cancelled, so every merged commit keeps its own result. Both macOS jobs carry a
+30-minute timeout: the 6-hour default lets a hung run sit on the queue and delay every
+other result long after the run is worthless.
+
 ## GitHub planning catalog
 
 The approved milestones, labels, epics, and child issues are declared in

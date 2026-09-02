@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # Superseded pull-request runs are cancelled; every main commit keeps its own run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   PYTHON_VERSION: "3.12"
   UV_VERSION: "0.10.2"
@@ -15,6 +20,8 @@ env:
 jobs:
   macos-native:
     runs-on: macos-26
+    # The 6-hour default lets a hung run block the queue and delay every result.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Build native macOS shell
@@ -42,6 +49,8 @@ jobs:
 
   native-ui:
     runs-on: macos-26
+    # The 6-hour default lets a hung run block the queue and delay every result.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Run complete native UI target with ad-hoc signing
