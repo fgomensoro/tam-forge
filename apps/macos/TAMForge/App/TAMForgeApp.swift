@@ -233,9 +233,7 @@ private final class NativeShellComposition: ObservableObject {
                     rootURL: FileManager.default.temporaryDirectory.appendingPathComponent(
                         "TAMForgeUITestRecordingSpool", isDirectory: true
                     ),
-                    keyStore: KeychainRecordingKeyStore(
-                        service: "com.fgomensoro.tamforge.recording-spool.ui-test"
-                    ),
+                    keyStore: EphemeralRecordingKeyStore(),
                     reservationBytes: 0
                 )
                 : EncryptedRecordingSpoolFactory()
