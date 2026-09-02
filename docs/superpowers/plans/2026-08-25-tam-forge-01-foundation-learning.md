@@ -2086,4 +2086,4 @@ git rev-parse HEAD
 gh pr view --repo fgomensoro/tam-forge --json number,url,headRefOid,mergeStateStatus,statusCheckRollup,reviewDecision
 ~~~
 
-Expected: headRefOid equals local HEAD. Wait for all required checks on that exact SHA and address review findings in new focused commits. A missing/skipped check is not green, mergeable is not deployed, and this plan stops before merge. Merge requires explicit user approval.
+Expected: headRefOid equals local HEAD. Wait for every check in `statusCheckRollup` on that exact SHA and address review findings in new focused commits. The `main required checks` ruleset makes the CI jobs required as of 2026-09-02, so `mergeStateStatus: BLOCKED` means GitHub is genuinely refusing the merge, not just reporting. `reviewDecision` is not enforced by that ruleset and remains a fact to read. A missing/skipped check is not green, mergeable is not deployed, and this plan stops before merge. Merge requires explicit user approval.

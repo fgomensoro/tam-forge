@@ -35,7 +35,7 @@ main
         └── feat/agents-interviews-operations PR base: feat/recording-speech
 ```
 
-Each child plan contains the exact branch creation and draft-PR commands. A child branch must start from the recorded exact remote head of its prerequisite and its PR must target that prerequisite branch while the prerequisite PR is open. Never merge a child before its prerequisite. After an explicitly approved prerequisite merge, fetch `origin/main`, merge—not rebase—the new `origin/main` into the child branch, push without force, retarget the child PR to `main`, and verify that `git diff --name-status origin/main...HEAD` contains only the child slice before treating the transition as valid. Keep prerequisite branches until every dependent PR has been safely retargeted. Every PR lists its exact issue keys and prerequisite SHA, remains draft until its exact final head has passed required checks/review, and never mixes work whose prerequisite head is unavailable. No force-push, branch deletion, or merge is automatic.
+Each child plan contains the exact branch creation and draft-PR commands. A child branch must start from the recorded exact remote head of its prerequisite and its PR must target that prerequisite branch while the prerequisite PR is open. Never merge a child before its prerequisite. After an explicitly approved prerequisite merge, fetch `origin/main`, merge—not rebase—the new `origin/main` into the child branch, push without force, retarget the child PR to `main`, and verify that `git diff --name-status origin/main...HEAD` contains only the child slice before treating the transition as valid. Keep prerequisite branches until every dependent PR has been safely retargeted. Every PR lists its exact issue keys and prerequisite SHA, remains draft until its exact final head has passed every reported CI check and review (GitHub applies no server-side required-check gate on this repository; see Task 6, Step 1), and never mixes work whose prerequisite head is unavailable. No force-push, branch deletion, or merge is automatic.
 
 ## 2. Migration repository layout
 
@@ -462,10 +462,16 @@ Run:
 ```bash
 git status --short
 git rev-parse HEAD
-gh pr checks --required
+gh pr checks "$(gh pr view --json number --jq .number)"
 ```
 
-Expected: clean tree; recorded head SHA; all required checks present and passing.
+Expected: clean tree; recorded head SHA; `gh pr checks` lists every check reported on that exact head and exits `0`. Read the list against the jobs declared in `.github/workflows/ci.yml` on that exact head (the job set differs per branch, so the count in `README.md` is not the authority): a check that is missing, skipped, pending, or cancelled is not green. `gh pr checks` exits `1` on failure and `8` while pending, but a skipped job lands in the `skipping` bucket and does not change the exit code, so the skip check is the operator's to make.
+
+Use the unfiltered form, not `gh pr checks <n> --required`. A ruleset now makes a subset of the jobs required, so `--required` does report something, but it reports only that subset: a job outside it that failed would not appear, and the release gate is every check on the head, not the required ones.
+
+Server-side enforcement exists as of 2026-09-02 and is worth knowing precisely, because for most of this plan's life it did not. While the repository was private on an account without GitHub Pro, rulesets and branch protection returned `403 Upgrade to GitHub Pro` and nothing could be required. The repository is public now, and the ruleset `main required checks` (`gh api repos/fgomensoro/tam-forge/rules/branches/main`) requires `backend-unit`, `backend-integration`, `e2e`, `openapi`, `secret-scan`, `macos-native`, and `native-ui`. A pull request missing any of them reports `mergeStateStatus: BLOCKED` and GitHub refuses the merge.
+
+Two consequences for this step. A green read here is now backed by enforcement rather than by the operator alone, so `mergeStateStatus` is worth recording as evidence. And the ruleset can be changed or removed by whoever owns the repository, so confirm it still lists the jobs above rather than assuming it: an emptied ruleset fails open and silently, which is exactly the failure this step exists to catch.
 
 - [ ] **Step 2: Run non-container release checks locally**
 
