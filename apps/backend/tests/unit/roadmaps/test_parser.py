@@ -136,6 +136,10 @@ def test_parser_rejects_missing_or_ambiguous_sources_and_resources(
     ("mutator", "message"),
     [
         (
+            lambda bundle: replace(bundle, roadmap_schema_version=2),
+            "requires schema version 1",
+        ),
+        (
             lambda bundle: replace(
                 bundle,
                 roadmap_tasks=bundle.roadmap_tasks + (bundle.roadmap_tasks[0],),
