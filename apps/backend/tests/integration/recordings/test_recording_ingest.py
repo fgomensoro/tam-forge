@@ -259,7 +259,12 @@ def test_recording_migration_enforces_postgresql_state_constraints(
         } <= check_names
         assert "ck_recording_tracks_final_manifest_state_coherent" in track_check_names
 
-        with pytest.raises(IntegrityError, match="state_coverage_coherent"):
+        # The incoherent stored row violates several coherence checks and
+        # PostgreSQL reports whichever it evaluates first.
+        with pytest.raises(
+            IntegrityError,
+            match=r"ck_recordings_(state_coverage|durable_audio_state|seal_result_state)_coherent",
+        ):
             with sync_engine.begin() as connection:
                 owner_id = connection.execute(
                     text(
