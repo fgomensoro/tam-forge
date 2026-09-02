@@ -87,7 +87,9 @@ def _active_command_lines(relative: PurePosixPath, data: bytes) -> tuple[bytes, 
         if match is None:
             continue
         command = match.group(1).strip()
-        if YAML_BLOCK_SCALAR.fullmatch(command):
+        # An empty or comment-only value defers the command to the following
+        # indented lines exactly like a block scalar does, so treat it the same.
+        if not command or command.startswith(b"#") or YAML_BLOCK_SCALAR.fullmatch(command):
             run_indent = indentation
         elif command and not command.startswith(b"#"):
             commands.append(command)
