@@ -1,3 +1,4 @@
+import Darwin
 import SwiftUI
 
 @main
@@ -27,6 +28,56 @@ struct TAMForgeApp: App {
         Window("TAM Forge", id: "main") { NativeShellView(dependencies: dependencies) }
     }
 }
+
+#if DEBUG
+private enum LocalResourceProbe {
+    static var isRequested: Bool {
+        ProcessInfo.processInfo.environment["TAMFORGE_RESOURCE_RECEIPT"] == "1"
+    }
+
+    static func residentMemoryKiB() -> Int? {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size
+        )
+        let status = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(
+                    mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count
+                )
+            }
+        }
+        guard status == KERN_SUCCESS else { return nil }
+        return Int(info.resident_size / 1024)
+    }
+}
+
+private struct LocalResourceProbeView: View {
+    @State private var rssKiB = LocalResourceProbe.residentMemoryKiB() ?? 0
+    @State private var samples: [Int] = []
+
+    var body: some View {
+        ZStack {
+            Text(String(rssKiB))
+                .accessibilityIdentifier("resourceRSSKiB")
+            Text(samples.map(String.init).joined(separator: ","))
+                .accessibilityIdentifier("resourceRSSSamples")
+        }
+            .font(.system(size: 1))
+            .frame(width: 1, height: 1)
+            .task {
+                let clock = ContinuousClock()
+                var nextSample = clock.now
+                while !Task.isCancelled {
+                    rssKiB = LocalResourceProbe.residentMemoryKiB() ?? rssKiB
+                    samples.append(rssKiB)
+                    nextSample = nextSample.advanced(by: .seconds(1))
+                    try? await clock.sleep(until: nextSample)
+                }
+            }
+    }
+}
+#endif
 
 private struct NativeShellView: View {
     let dependencies: AppDependencies
@@ -77,6 +128,11 @@ private struct NativeSessionView: View {
         }
         .onChange(of: model.restorationRouteID) { _, value in restoredRouteID = value }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: model.banner)
+#if DEBUG
+        .overlay(alignment: .bottomTrailing) {
+            if LocalResourceProbe.isRequested { LocalResourceProbeView() }
+        }
+#endif
     }
 }
 
@@ -175,7 +231,15 @@ private final class NativeWorkspaceState: ObservableObject {
     let timerJournal: any ActivityTimerJournaling
 
     init(services: NativeFeatureServices) {
+#if DEBUG
+        if let fixedNow = NativeParityUIFixture.fixedNow() {
+            today = TodayViewModel(client: services.today, now: { fixedNow })
+        } else {
+            today = TodayViewModel(client: services.today)
+        }
+#else
         today = TodayViewModel(client: services.today)
+#endif
         notifications = NotificationViewModel(client: services.notifications)
         roadmaps = RoadmapAdministrationModel(service: services.roadmaps)
         evidence = EvidenceLedgerModel(service: services.evidence)

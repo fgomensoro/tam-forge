@@ -1,8 +1,8 @@
 # Native feature parity
 
-Scope: E10-I06–E10-I09 (#122–#125). The reference client remains
-`apps/web/src/features/{today,notifications,roadmaps,activities,evidence}` until
-the separately gated E10-I10 cutover. Server read models and commands remain authoritative.
+Scope: E10-I06–E10-I10 (#122–#126). The reference web client remains present through
+the parity PR and is removed only by the separately reviewed cutover PR. Server read
+models and commands remain authoritative.
 
 | Surface | Native behavior | Verification |
 | --- | --- | --- |
@@ -23,11 +23,67 @@ the separately gated E10-I10 cutover. Server read models and commands remain aut
 | Activity evidence | Today preserves the exact activity scope; one bounded page, retry-safe Older/Newest replacement, lineage and evaluator/assistance details; All evidence clears private scope | Evidence route/model tests; scoped Evidence/sign-out UI journey |
 | Portfolio history | Independent server-provided `/20` total, all seven components, trend basis and versions remain usable even when skill loading fails | Independent-state model test; section-specific retry UI journey |
 
+## Browser-cutover replacement map
+
+One synthetic scenario is checked at
+`tests/fixtures/native-parity/foundation-journey-v1.json`. Its source ZIP digest and
+byte count are bound to the real Month 1 package. Roadmap version, validation counts,
+hash, selected task, source references and complete activity contract are regenerated
+from that package and compared with the fixture. FastAPI/Pydantic validates every
+shared response, and Swift decodes the same copied bytes through generated OpenAPI
+types. The synthetic fixture intentionally contains one client-visible activity and
+an empty portfolio for its non-portfolio exercise. The durable server journey is
+separate: it compares every business field from the real seven-task Today response,
+retains cross-response IDs, and reads persisted state through fresh sessions. The
+fixture copy is drift-checked and exists only in test bundles.
+
+| Former browser journey assertion | Native client evidence | Durable server evidence |
+| --- | --- | --- |
+| Authenticated owner workspace | Strict DEBUG launch uses bearer-only requests and rejects an unexpected origin, method, header, query or body | Native OAuth start/callback/PKCE exchange creates the ephemeral bearer; only GitHub provider responses are mocked; no owner dependency override |
+| Select, validate and idempotently stage Month 1 | Real macOS picker and multipart adapter send the exact shared ZIP, package kind, idempotency key, digest and bytes | Real route stores one import through PostgreSQL and MinIO; replay returns the original import; a fresh S3 adapter reopens the exact bytes |
+| Explicit roadmap approval and activation | SwiftUI review/confirmation/activate controls and state transitions | Real service persists `not_required` mirror state with egress disabled, then activates the server-authoritative version |
+| Today contains 240 planned minutes and a 45-minute technical reading | Generated Today decoding, visible UI and Continue routing preserve the shared activity relationship | Real Today route rebuilds the complete seven-task day from the activated PostgreSQL roadmap, preserves the 45-minute technical-work assertion, and returns an activity contract consistent with that Today row |
+| Timer and closed-source work survive navigation/reload | Start, pause, navigate, resume and hide-source execute through strict request contracts | A fresh bearer client resumes the persisted optimistic version and source-visibility state |
+| Attempt A is exact, immutable and idempotent | Every shared output field is entered in the native editors; commit removes mutation controls | Real commit route stores one Attempt and one receipt; replay is byte-for-byte the same response |
+| Mandatory self-review uses all six reflections and `/4` score | Native score menu and six editors submit the shared score `3`; completion summary is visible | Real self-review route persists one complete review and final activity state in a fresh database session |
+| Missing evidence is not zero; no vanity proxies | Native Evidence UI shows `Not assessed`, exact Decimal/lineage fixtures, independent `/20` portfolio scale, and no forbidden proxy labels | Real skill routes use seeded server configuration and persisted evaluation data; an unassessed skill remains null, and this non-portfolio exercise leaves the independent portfolio history honestly empty |
+| Feedback notification is keyboard-readable and idempotent | Enter activates the native default Mark read action and clears unread state | Real outbox delivery creates one notification; two bearer mark-read calls preserve one read timestamp |
+
+This is deliberately layered proof, not a claim that a hosted Swift binary contacted a
+deployed server during CI. The native lane proves macOS behavior and exact HTTP
+contracts; the Linux lane proves native bearer authentication and durable
+PostgreSQL/MinIO behavior through the same FastAPI routes and shared scenario.
+
+## Local 8 GB resource receipt
+
+The opt-in receipt runs only against an explicitly selected DEBUG app executable. It
+requires the expected SHA-256, discovers the single launched TAM Forge process,
+hashes that process's executable before measurement, and records both hashes, bundle
+identifier, process identifier and executable name in a schema-v2 JSON receipt.
+Source Git SHA is retained as metadata but is not accepted as proof of app identity.
+
+The measurement performs five usable cold launches, a 60-second settle, 300 RSS
+samples on an absolute one-second schedule, 20 Today/Evidence/refresh cycles and a
+final 60-second settle. Idle p95 must remain at or below 180 MiB; post-cycle RSS must
+remain at or below idle p95 + 20 MiB. Exact-head values and the retained xcresult
+belong in the PR evidence because they change per build. Any older receipt without
+the measured executable identity is historical only and cannot satisfy this gate.
+This measures native UI under the shared fixture, not local ASR, recording or
+live-server work. The RSS probe exists only under `DEBUG`; the separate Release gate
+proves the probe and all other fixture hooks are absent from the distributable app.
+
 ## Evidence boundaries
 
 - Native UI journeys use a DEBUG-only `URLProtocol` fixture, the real SwiftUI views,
   adapters and macOS file picker. They prove client behavior, not deployed backend
   or OAuth connectivity.
+- `native-ui` requires the explicit 19-test inventory to pass with zero failures,
+  skips or expected failures. Its xcresult is retained on failure. The long local
+  resource receipt is opt-in and explicitly excluded from that normal CI inventory.
+- `macos-native` separately builds an optimized ad-hoc signed Release app. A fail-closed
+  bundle check verifies its identity/executable, signature, single product executable,
+  linked libraries and complete file tree. It rejects DEBUG fixture credentials and
+  launch hooks plus embedded browser, Node, Python, PostgreSQL or database tooling.
 - Unit tests exercise malformed responses, errors, retries and cancellation in
   addition to happy paths. PostgreSQL integration remains a required GitHub CI gate;
   local verification does not start Docker.

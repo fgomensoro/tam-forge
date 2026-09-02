@@ -39,6 +39,24 @@ final class NotificationFeatureTests: XCTestCase {
         XCTAssertEqual(page.allowedItems.first?.presentation?.title, "Feedback ready")
     }
 
+    func testOnlyFirstUnreadAllowedNotificationOwnsDefaultAction() {
+        let first = NotificationFixture.item(id: 1, readAt: nil)
+        let second = NotificationFixture.item(id: 2, readAt: nil)
+
+        XCTAssertEqual(
+            NotificationPage(items: [first, second], nextCursor: nil)
+                .defaultActionNotificationID,
+            1
+        )
+        XCTAssertEqual(
+            NotificationPage(
+                items: [NotificationFixture.item(id: 1, readAt: "2026-08-27T12:05:00Z"), second],
+                nextCursor: nil
+            ).defaultActionNotificationID,
+            2
+        )
+    }
+
     func testIndeterminateReadReconcilesWithServerBeforeOfferingRetry() async {
         let unread = NotificationFixture.item(id: 1, readAt: nil)
         let read = NotificationFixture.item(id: 1, readAt: "2026-08-27T12:05:00Z")

@@ -27,6 +27,8 @@ final class NativeUIFixtureProtocol: URLProtocol, @unchecked Sendable {
 /// URLProtocol may invoke requests concurrently; all fixture state is protected by this lock.
 private final class NativeUIFixtureState: @unchecked Sendable {
     private let lock = NSLock()
+    private let parityMode = ProcessInfo.processInfo.arguments.contains("-ui-test-parity-journey")
+    private let parity = try? NativeParityUIFixture()
     private var activityState = ProcessInfo.processInfo.arguments.contains("-ui-test-self-review") ? "output_committed" : "ready"
     private var activityVersion = 1
     private var roadmapState: String?
@@ -41,6 +43,14 @@ private final class NativeUIFixtureState: @unchecked Sendable {
 
     func response(for request: URLRequest) throws -> Data {
         try lock.withLock {
+            if parityMode {
+                guard let parity else { throw NativeParityFixtureError.invalidFixture }
+                let value = try parity.response(
+                    for: request,
+                    environment: AppEnvironment.selected(from: ProcessInfo.processInfo.environment)
+                )
+                return try JSONSerialization.data(withJSONObject: value)
+            }
             guard let url = request.url,
                   NativeUIFixtureRequestValidator.hasExpectedOrigin(
                     url,
@@ -184,8 +194,7 @@ private final class NativeUIFixtureState: @unchecked Sendable {
         guard paths.contains(path) else { return nil }
         guard request.httpMethod == "GET", request.httpBody == nil, request.httpBodyStream == nil,
               request.value(forHTTPHeaderField: "Authorization") == "Bearer ui-test-only",
-              let url = request.url,
-              let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+              let url = request.url else {
             throw URLError(.badServerResponse)
         }
         let paginated = path.hasSuffix("/evidence") || path == "/api/v1/portfolio-judgment"

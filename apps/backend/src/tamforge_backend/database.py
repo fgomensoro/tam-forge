@@ -148,8 +148,7 @@ def validate_test_database_url(raw_url: str) -> str:
         or not url.username
         or not url.password
         or url.database != "tamforge_test"
-        or port is None
-        or not 1 <= port <= 65535
+        or port != 54329
         or bool(url.query)
     ):
         raise ValueError("TEST_DATABASE_URL must target local PostgreSQL tamforge_test")

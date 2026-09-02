@@ -1,6 +1,140 @@
+import Darwin
+import CryptoKit
 import XCTest
 
 final class TAMForgeUITests: XCTestCase {
+    @MainActor
+    func testNativeFoundationParityJourney() throws {
+        let fixtureURL = try XCTUnwrap(
+            Bundle(for: Self.self).url(forResource: "foundation-journey-v1", withExtension: "json")
+        )
+        let packageURL = try XCTUnwrap(
+            Bundle(for: Self.self).url(forResource: "month-v1", withExtension: "zip")
+        )
+        let fixtureData = try Data(contentsOf: fixtureURL)
+        let fixture = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: fixtureData) as? [String: Any]
+        )
+        let journey = try XCTUnwrap(fixture["journey"] as? [String: Any])
+        let output = try XCTUnwrap(journey["output"] as? [String: Any])
+        let selfReview = try XCTUnwrap(journey["self_review"] as? [String: Any])
+
+        let app = launchWorkspace(
+            extra: ["-ui-test-parity-journey"],
+            environment: ["TAMFORGE_UI_FIXTURE_BASE64": fixtureData.base64EncodedString()]
+        )
+
+        app.buttons["roadmapsNavigation"].click()
+        chooseRoadmapPackage(packageURL, in: app)
+        app.buttons["Review package"].click()
+        XCTAssertTrue(app.staticTexts["Validation passed"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["158 tasks"].exists)
+        let confirmation = app.checkBoxes["roadmapApprovalConfirmation"]
+        reveal(confirmation, in: app, scrollIdentifier: "roadmapWorkspaceScroll")
+        confirmation.click()
+        let approve = app.buttons["Approve roadmap"]
+        reveal(approve, in: app, scrollIdentifier: "roadmapWorkspaceScroll")
+        approve.click()
+        let activate = app.buttons["Activate Month 1"]
+        XCTAssertTrue(activate.waitForExistence(timeout: 10))
+        reveal(activate, in: app, scrollIdentifier: "roadmapWorkspaceScroll")
+        activate.click()
+        XCTAssertTrue(app.staticTexts["Month 1 is active"].waitForExistence(timeout: 10))
+
+        app.buttons["todayNavigation"].click()
+        XCTAssertTrue(textContaining("240 planned minutes", in: app).waitForExistence(timeout: 10))
+        XCTAssertTrue(textContaining("45 minutes", in: app).exists)
+        app.buttons["todayContinueButton"].click()
+        XCTAssertTrue(app.buttons["Start activity"].waitForExistence(timeout: 10))
+        app.buttons["Start activity"].click()
+        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 10))
+        app.buttons["Pause"].click()
+        XCTAssertTrue(app.buttons["Resume"].waitForExistence(timeout: 10))
+        app.buttons["todayNavigation"].click()
+        app.buttons["todayContinueButton"].click()
+        XCTAssertTrue(app.buttons["Resume"].waitForExistence(timeout: 10))
+        app.buttons["Resume"].click()
+        let hideSource = app.buttons["Hide source"]
+        reveal(hideSource, in: app)
+        hideSource.click()
+        XCTAssertTrue(app.staticTexts["Closed-source mode is active. Recall from memory before reopening material."].waitForExistence(timeout: 10))
+
+        let outputFields: [(String, Any?)] = [
+            ("Audience", output["audience"]),
+            ("Key idea 1", (output["key_ideas"] as? [String])?[safe: 0]),
+            ("Key idea 2", (output["key_ideas"] as? [String])?[safe: 1]),
+            ("Key idea 3", (output["key_ideas"] as? [String])?[safe: 2]),
+            ("Boundary or failure mode", output["boundary_or_failure"]),
+            ("TAM or customer example", output["tam_customer_example"]),
+            ("Unresolved question", output["unresolved_question"]),
+        ]
+        for (label, rawValue) in outputFields {
+            let editor = app.textViews[label]
+            reveal(editor, in: app)
+            editor.click()
+            editor.typeText(try XCTUnwrap(rawValue as? String))
+        }
+        let immutable = app.checkBoxes["activityImmutabilityAcknowledgment"]
+        reveal(immutable, in: app)
+        immutable.click()
+        let commit = app.buttons["Commit Attempt A"]
+        reveal(commit, in: app)
+        XCTAssertTrue(commit.isEnabled)
+        commit.click()
+        // Committing scrolls the mandatory self-review to the top and the
+        // read-only banner can leave the lazy accessibility tree, so assert
+        // the committed state through the elements that stay realized.
+        XCTAssertTrue(app.staticTexts["Mandatory self-review"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Commit Attempt A"].exists)
+
+        let reviewFields: [(String, String)] = [
+            ("Main answer or decision", "main_answer"),
+            ("What I did well", "did_well"),
+            ("Where structure was weak", "structure_weakness"),
+            ("Where I became vague", "vague_points"),
+            ("Where I hesitated", "hesitation_points"),
+            ("What I will change", "change_next"),
+        ]
+        for (label, key) in reviewFields {
+            let editor = app.textViews[label]
+            reveal(editor, in: app)
+            editor.click()
+            editor.typeText(try XCTUnwrap(selfReview[key] as? String))
+        }
+        let score = app.popUpButtons["activitySelfScore"]
+        reveal(score, in: app)
+        score.click()
+        app.menuItems["3"].click()
+        let submit = app.buttons["Submit self-review"]
+        reveal(submit, in: app)
+        submit.click()
+        XCTAssertTrue(app.staticTexts["activitySelfReviewSummary"].waitForExistence(timeout: 10))
+        XCTAssertEqual(
+            app.staticTexts["activitySelfReviewSummary"].value as? String,
+            "Your score: 3 / 4. AI analysis has not been requested."
+        )
+        XCTAssertEqual(textsContaining("Attempt C", in: app).count, 0)
+        XCTAssertEqual(
+            app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Attempt C")).count,
+            0
+        )
+
+        app.buttons["evidenceNavigation"].click()
+        XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 10))
+        XCTAssertEqual(textsContaining("streak", in: app).count, 0)
+        XCTAssertEqual(textsContaining("recording count", in: app).count, 0)
+        XCTAssertEqual(textsContaining("transcript word count", in: app).count, 0)
+
+        app.buttons["notificationToggle"].click()
+        let markRead = app.buttons.matching(
+            NSPredicate(format: "label == %@", "Mark Feedback ready as read")
+        ).firstMatch
+        XCTAssertTrue(markRead.waitForExistence(timeout: 10))
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(markRead.waitForNonExistence(timeout: 10))
+        XCTAssertEqual(app.buttons["notificationToggle"].label, "Notifications")
+    }
+
     @MainActor
     func testEvidenceIsReachableFromSidebar() {
         let app = launchWorkspace()
@@ -249,38 +383,38 @@ final class TAMForgeUITests: XCTestCase {
         app.buttons["todayContinueButton"].click()
         let submit = app.buttons["Submit self-review"]
         reveal(submit, in: app)
+        // Only the mandatory gate is asserted here. Filling the six fields,
+        // submitting, and checking the summary is covered by
+        // testNativeFoundationParityJourney; repeating that flow here made
+        // hundreds of extra accessibility queries that time out on the CI runner.
         XCTAssertFalse(submit.isEnabled)
-        let scroll = app.scrollViews["activityWorkspaceScroll"]
-        scroll.scroll(byDeltaX: 0, deltaY: 2_000)
-        for title in ["Main answer or decision", "What I did well", "Where structure was weak",
-                      "Where I became vague", "Where I hesitated", "What I will change"] {
-            let editor = app.textViews[title]
-            reveal(editor, in: app)
-            editor.click()
-            editor.typeText("Clear impact.")
-        }
-        reveal(submit, in: app)
-        XCTAssertTrue(submit.isEnabled)
-        submit.click()
-        let summary = app.staticTexts["activitySelfReviewSummary"]
-        // Wait for the command, detail reload, and macOS accessibility snapshot.
-        XCTAssertTrue(summary.waitForExistence(timeout: 20))
-        XCTAssertEqual(summary.value as? String, "Your score: 0 / 4. AI analysis has not been requested.")
-        XCTAssertFalse(app.buttons["Commit Attempt A"].exists)
     }
 
     @MainActor
     private func reveal(_ element: XCUIElement, in app: XCUIApplication, scrollIdentifier: String = "activityWorkspaceScroll") {
         app.activate()
         let scroll = app.scrollViews[scrollIdentifier]
-        XCTAssertTrue(scroll.waitForExistence(timeout: 5))
-        for _ in 0..<12 {
-            app.activate()
-            if element.exists && element.isHittable && scroll.frame.contains(element.frame) { return }
-            scroll.scroll(byDeltaX: 0, deltaY: -350)
+        XCTAssertTrue(scroll.waitForExistence(timeout: 10))
+        // The target can sit either side of the viewport (committing scrolls back to
+        // the top), so sweep down first and then back up past the starting position.
+        // 40 steps cover the roadmap review screen once entry previews render in
+        // all four sections; the loop exits early the moment the target is inside.
+        for deltaY in [CGFloat(-350), CGFloat(350)] {
+            for _ in 0..<40 {
+                app.activate()
+                if isClickable(element, in: scroll) { return }
+                scroll.scroll(byDeltaX: 0, deltaY: deltaY)
+            }
         }
-        XCTAssertTrue(element.exists && element.isHittable && scroll.frame.contains(element.frame),
-                      "Expected control fully inside the scrolling viewport")
+        XCTAssertTrue(isClickable(element, in: scroll),
+                      "Expected the control's click point inside the scrolling viewport")
+    }
+
+    @MainActor
+    private func isClickable(_ element: XCUIElement, in scroll: XCUIElement) -> Bool {
+        guard element.exists && element.isHittable else { return false }
+        let frame = element.frame
+        return scroll.frame.contains(CGPoint(x: frame.midX, y: frame.midY))
     }
 
     @MainActor
@@ -416,14 +550,275 @@ final class TAMForgeUITests: XCTestCase {
     }
 
     @MainActor
-    private func launchWorkspace(extra: [String] = []) -> XCUIApplication {
+    private func launchWorkspace(
+        extra: [String] = [], environment: [String: String] = [:]
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-ApplePersistenceIgnoreState", "YES", "-ui-test-signed-in", "-ui-test-native-features"] + extra
+        for (key, value) in environment { app.launchEnvironment[key] = value }
         app.launch()
         XCTAssertTrue(app.buttons["todayNavigation"].waitForExistence(timeout: 5))
         app.activate()
         return app
     }
+
+    @MainActor
+    private func chooseRoadmapPackage(_ package: URL, in app: XCUIApplication) {
+        let choose = app.buttons["Choose ZIP or folder"]
+        XCTAssertTrue(choose.waitForExistence(timeout: 5))
+        choose.click()
+        app.typeKey("g", modifierFlags: [.command, .shift])
+        let location = app.textFields.firstMatch
+        XCTAssertTrue(location.waitForExistence(timeout: 5))
+        location.typeText(package.path)
+        app.typeKey(.return, modifierFlags: [])
+        app.windows["open-panel"].buttons["OKButton"].click()
+        XCTAssertTrue(app.buttons["Review package"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testLocalNativeResourceReceipt() throws {
+        let configURL = URL(
+            fileURLWithPath: "/tmp/tamforge-native-resource-receipt-config.json"
+        )
+        guard let configData = try? Data(contentsOf: configURL) else {
+            throw XCTSkip("opt-in local 8-minute resource receipt")
+        }
+        let config = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: configData) as? [String: String]
+        )
+        let receiptPath = try XCTUnwrap(config["receipt_path"])
+        let sourceGitSHA = try XCTUnwrap(config["git_sha"])
+        let expectedExecutableSHA256 = try XCTUnwrap(config["expected_executable_sha256"])
+        let fixtureURL = try XCTUnwrap(
+            Bundle(for: Self.self).url(
+                forResource: "foundation-journey-v1", withExtension: "json"
+            )
+        )
+        let fixtureData = try Data(contentsOf: fixtureURL)
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-ApplePersistenceIgnoreState", "YES",
+            "-ui-test-signed-in",
+            "-ui-test-native-features",
+            "-ui-test-parity-journey",
+        ]
+        app.launchEnvironment["TAMFORGE_UI_FIXTURE_BASE64"] =
+            fixtureData.base64EncodedString()
+        app.launchEnvironment["TAMFORGE_RESOURCE_RECEIPT"] = "1"
+
+        var launchSeconds: [Double] = []
+        for _ in 0..<5 {
+            if app.state != .notRunning {
+                app.terminate()
+                XCTAssertTrue(waitForTermination(app, timeout: 10))
+            }
+            let startedAt = ContinuousClock.now
+            app.launch()
+            XCTAssertTrue(
+                app.buttons["todayNavigation"].waitForExistence(timeout: 15)
+            )
+            XCTAssertTrue(
+                textContaining("240 planned minutes", in: app)
+                    .waitForExistence(timeout: 15)
+            )
+            let duration = startedAt.duration(to: .now).components
+            launchSeconds.append(
+                Double(duration.seconds) + Double(duration.attoseconds) / 1_000_000_000_000_000_000
+            )
+        }
+        let launchedAppIdentity = try verifiedLaunchedAppIdentity(
+            expectedExecutableSHA256: expectedExecutableSHA256
+        )
+
+        app.buttons["evidenceNavigation"].click()
+        XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 10))
+        let resourceProbe = app.staticTexts["resourceRSSKiB"]
+        let resourceSamples = app.staticTexts["resourceRSSSamples"]
+        XCTAssertTrue(resourceProbe.waitForExistence(timeout: 5))
+        XCTAssertTrue(resourceSamples.waitForExistence(timeout: 5))
+        _ = try residentMemoryKiB(resourceProbe)
+
+        Thread.sleep(forTimeInterval: 60)
+        let idleStart = try rssSamples(resourceSamples).count
+        Thread.sleep(forTimeInterval: 300)
+        // Reattach XCTest after five minutes without UI automation; sampling stays in-app.
+        app.activate()
+        var allSamples = try rssSamples(resourceSamples)
+        let idleDeadline = Date().addingTimeInterval(30)
+        while allSamples.count < idleStart + 300 && Date() < idleDeadline {
+            Thread.sleep(forTimeInterval: 1)
+            allSamples = try rssSamples(resourceSamples)
+        }
+        XCTAssertGreaterThanOrEqual(allSamples.count, idleStart + 300)
+        let idleRSSKiB = Array(allSamples[idleStart..<(idleStart + 300)])
+
+        var navigationRSSKiB: [Int] = []
+        for _ in 0..<20 {
+            app.buttons["todayNavigation"].click()
+            XCTAssertTrue(
+                textContaining("240 planned minutes", in: app)
+                    .waitForExistence(timeout: 5)
+            )
+            app.buttons["evidenceNavigation"].click()
+            XCTAssertTrue(app.staticTexts["evidenceTitle"].waitForExistence(timeout: 5))
+            app.buttons["evidenceRefresh"].click()
+            XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 5))
+            navigationRSSKiB.append(try residentMemoryKiB(resourceProbe))
+        }
+        Thread.sleep(forTimeInterval: 60)
+        let finalRSSKiB = try residentMemoryKiB(resourceProbe)
+
+        let idleP50MiB = mib(percentile(0.50, values: idleRSSKiB))
+        let idleP95MiB = mib(percentile(0.95, values: idleRSSKiB))
+        let finalMiB = mib(finalRSSKiB)
+        XCTAssertLessThanOrEqual(idleP95MiB, 180.0, "idle p95 exceeded the locked gate")
+        XCTAssertLessThanOrEqual(
+            finalMiB,
+            idleP95MiB + 20.0,
+            "retired Evidence pages remained resident after 20 navigation cycles"
+        )
+
+        let receipt: [String: Any] = [
+            "schema_version": 2,
+            "source_git_sha": sourceGitSHA,
+            "measured_app_identity": [
+                "bundle_identifier": launchedAppIdentity.bundleIdentifier,
+                "process_identifier": launchedAppIdentity.processIdentifier,
+                "executable_name": launchedAppIdentity.executableName,
+                "executable_sha256": launchedAppIdentity.executableSHA256,
+                "expected_executable_sha256": expectedExecutableSHA256.lowercased(),
+            ],
+            "scenario": "DEBUG shared parity fixture; Today and Evidence usable",
+            "build": "ad-hoc signed macOS app; xcodebuild -jobs 2",
+            "hardware_model": hardwareModel(),
+            "physical_memory_bytes": ProcessInfo.processInfo.physicalMemory,
+            "macos": ProcessInfo.processInfo.operatingSystemVersionString,
+            "launch_count": launchSeconds.count,
+            "launch_seconds": launchSeconds,
+            "launch_p50_seconds": percentile(0.50, values: launchSeconds),
+            "launch_p95_seconds": percentile(0.95, values: launchSeconds),
+            "settle_seconds": 60,
+            "idle_sample_interval_seconds": 1,
+            "idle_sample_count": idleRSSKiB.count,
+            "idle_rss_mib": [
+                "min": mib(idleRSSKiB.min() ?? 0),
+                "p50": idleP50MiB,
+                "p95": idleP95MiB,
+                "max": mib(idleRSSKiB.max() ?? 0),
+            ],
+            "navigation_cycles": navigationRSSKiB.count,
+            "navigation_peak_rss_mib": mib(navigationRSSKiB.max() ?? 0),
+            "post_cycle_settle_seconds": 60,
+            "post_cycle_rss_mib": finalMiB,
+        ]
+        let receiptData = try JSONSerialization.data(
+            withJSONObject: receipt, options: [.prettyPrinted, .sortedKeys]
+        )
+        let receiptURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            URL(fileURLWithPath: receiptPath).lastPathComponent
+        )
+        try receiptData.write(to: receiptURL, options: .atomic)
+        let attachment = XCTAttachment(data: receiptData, uniformTypeIdentifier: "public.json")
+        attachment.name = "tamforge-native-resource-receipt"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        print("Native resource receipt: \(receiptURL.path)")
+    }
+
+    @MainActor
+    private func waitForTermination(_ app: XCUIApplication, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while app.state != .notRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        return app.state == .notRunning
+    }
+
+    @MainActor
+    private func residentMemoryKiB(_ probe: XCUIElement) throws -> Int {
+        XCTAssertTrue(probe.waitForExistence(timeout: 5))
+        let rawValue = probe.value as? String ?? probe.label
+        return try XCTUnwrap(Int(rawValue), "resource RSS probe was not numeric")
+    }
+
+    @MainActor
+    private func rssSamples(_ probe: XCUIElement) throws -> [Int] {
+        XCTAssertTrue(probe.waitForExistence(timeout: 5))
+        let rawValue = probe.value as? String ?? probe.label
+        return rawValue.split(separator: ",").compactMap { Int($0) }
+    }
+
+    private func verifiedLaunchedAppIdentity(
+        expectedExecutableSHA256: String
+    ) throws -> LaunchedAppIdentity {
+        guard expectedExecutableSHA256.range(
+            of: "^[0-9A-Fa-f]{64}$", options: .regularExpression
+        ) != nil else {
+            throw LocalResourceReceiptIdentityError.invalidExpectedExecutableSHA256
+        }
+
+        let bundleIdentifier = "com.fgomensoro.tamforge"
+        let runningApps = NSRunningApplication.runningApplications(
+            withBundleIdentifier: bundleIdentifier
+        )
+        guard runningApps.count == 1, let runningApp = runningApps.first else {
+            throw LocalResourceReceiptIdentityError.ambiguousLaunchedApp(
+                bundleIdentifier: bundleIdentifier,
+                processIdentifiers: runningApps.map(\.processIdentifier)
+            )
+        }
+        let executableURL = try XCTUnwrap(
+            runningApp.executableURL,
+            "launched TAM Forge process has no executable URL"
+        )
+        let executableSHA256 = try sha256(of: executableURL)
+        guard executableSHA256.caseInsensitiveCompare(expectedExecutableSHA256) == .orderedSame else {
+            throw LocalResourceReceiptIdentityError.executableSHA256Mismatch(
+                expected: expectedExecutableSHA256.lowercased(), actual: executableSHA256
+            )
+        }
+        return LaunchedAppIdentity(
+            bundleIdentifier: bundleIdentifier,
+            processIdentifier: runningApp.processIdentifier,
+            executableName: executableURL.lastPathComponent,
+            executableSHA256: executableSHA256
+        )
+    }
+
+    private func sha256(of fileURL: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: fileURL)
+        defer { try? handle.close() }
+
+        var hasher = SHA256()
+        while let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty {
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func hardwareModel() -> String {
+        var size = 0
+        guard sysctlbyname("hw.model", nil, &size, nil, 0) == 0 else { return "unknown" }
+        var value = [CChar](repeating: 0, count: size)
+        guard sysctlbyname("hw.model", &value, &size, nil, 0) == 0 else { return "unknown" }
+        let bytes = value.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+        return String(decoding: bytes, as: UTF8.self)
+    }
+
+    private func percentile<T: BinaryFloatingPoint>(_ fraction: T, values: [T]) -> T {
+        let sorted = values.sorted()
+        let index = max(0, min(sorted.count - 1, Int((fraction * T(sorted.count)).rounded(.up)) - 1))
+        return sorted[index]
+    }
+
+    private func percentile(_ fraction: Double, values: [Int]) -> Int {
+        let sorted = values.sorted()
+        let index = max(0, min(sorted.count - 1, Int(ceil(fraction * Double(sorted.count))) - 1))
+        return sorted[index]
+    }
+
+    private func mib(_ kibibytes: Int) -> Double { Double(kibibytes) / 1024.0 }
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -491,5 +886,35 @@ final class TAMForgeUITests: XCTestCase {
         XCTAssertTrue(signOut.waitForExistence(timeout: 5))
         signOut.click()
         XCTAssertTrue(app.buttons["signInButton"].waitForExistence(timeout: 5))
+    }
+}
+
+private struct LaunchedAppIdentity {
+    let bundleIdentifier: String
+    let processIdentifier: pid_t
+    let executableName: String
+    let executableSHA256: String
+}
+
+private enum LocalResourceReceiptIdentityError: LocalizedError {
+    case invalidExpectedExecutableSHA256
+    case ambiguousLaunchedApp(bundleIdentifier: String, processIdentifiers: [pid_t])
+    case executableSHA256Mismatch(expected: String, actual: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidExpectedExecutableSHA256:
+            return "resource receipt config expected_executable_sha256 must be a 64-character hexadecimal SHA-256"
+        case let .ambiguousLaunchedApp(bundleIdentifier, processIdentifiers):
+            return "expected exactly one launched \(bundleIdentifier) process, found PIDs \(processIdentifiers)"
+        case let .executableSHA256Mismatch(expected, actual):
+            return "launched executable SHA-256 mismatch: expected \(expected), got \(actual)"
+        }
+    }
+}
+
+private extension Array {
+    subscript(safe index: Index) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }
