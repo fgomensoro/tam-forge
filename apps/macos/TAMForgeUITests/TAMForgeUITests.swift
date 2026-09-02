@@ -81,7 +81,10 @@ final class TAMForgeUITests: XCTestCase {
         reveal(commit, in: app)
         XCTAssertTrue(commit.isEnabled)
         commit.click()
-        XCTAssertTrue(app.staticTexts["Attempt A is committed and read-only."].waitForExistence(timeout: 10))
+        // Committing scrolls the mandatory self-review to the top and the
+        // read-only banner can leave the lazy accessibility tree, so assert
+        // the committed state through the elements that stay realized.
+        XCTAssertTrue(app.staticTexts["Mandatory self-review"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["Commit Attempt A"].exists)
 
         let reviewFields: [(String, String)] = [
