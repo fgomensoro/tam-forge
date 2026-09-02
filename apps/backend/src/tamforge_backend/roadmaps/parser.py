@@ -335,11 +335,15 @@ def _validate_tasks(
 
 def parse_roadmap(*, files: Mapping[str, bytes], config: ConfigBundle) -> ParsedRoadmap:
     """Validate source links and return a canonical reviewed runtime projection."""
+    if config.roadmap_schema_version != 1:
+        raise RoadmapParseError(
+            f"roadmap projection requires schema version 1, got {config.roadmap_schema_version}"
+        )
     markdown = _decode_markdown(files)
     headings = _headings(markdown)
     source_tasks = tuple(
         sorted(
-            config.roadmap_tasks,
+            (task for task in config.roadmap_tasks if isinstance(task, RoadmapTaskConfig)),
             key=lambda item: (item.week, item.day, item.order, item.stable_id),
         )
     )

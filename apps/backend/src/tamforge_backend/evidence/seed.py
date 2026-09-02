@@ -75,6 +75,8 @@ async def seed_config(
     apply: bool,
 ) -> SeedResult:
     """Validate only, or append one content-addressed config release atomically."""
+    if bundle.roadmap_schema_version == 2:
+        raise SeedConfigError("roadmap-only release cannot seed scoring")
     counts = _counts(bundle)
     if not apply:
         return SeedResult(
