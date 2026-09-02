@@ -151,6 +151,29 @@ def _valid_v2_roadmap() -> dict[str, object]:
             ],
         },
         "contracts": {
+            "tasks": {
+                "close": {
+                    "required_output": [
+                        "Completed daily scorecard and unfinished-work classification."
+                    ],
+                    "pass_criteria": [
+                        "Record strongest evidence, repeated mistake, and at most two corrections."
+                    ],
+                    "evidence_requirements": [
+                        "Scorecard, evidence links, correction selections, unfinished requirement."
+                    ],
+                    "procedure": [
+                        {
+                            "phase": "daily_close",
+                            "minutes": 15,
+                            "requirement": "Confirm evidence and unfinished classification.",
+                        }
+                    ],
+                    "constraints": [
+                        "Do not extend the day or invent work to fill unused time."
+                    ],
+                }
+            },
             "interview_cycle": {
                 "kind": "ordinary_interview",
                 "total_minutes": 60,
@@ -423,11 +446,30 @@ def test_v2_release_loads_with_v1_scoring_and_phase1_contracts(
     assert len(bundle.interview_queue) == 30
     assert bundle.coverage is not None
     assert len(bundle.roadmap_tasks) == 1
-    assert bundle.roadmap_contracts == {}
+    assert set(bundle.roadmap_contracts) == {"close"}
+    assert bundle.roadmap_contracts["close"].procedure[0].phase == "daily_close"
     contracts = bundle.phase1_contracts
     assert contracts is not None
     assert contracts.sealed_final_mock.fixed_local_date == date(2026, 10, 2)
     assert contracts.pipeline.action_types == ("application", "recruiter_reply")
+
+
+def test_v2_task_contract_must_resolve_against_the_release_catalog(
+    tmp_path: Path,
+) -> None:
+    release_dir = tmp_path / "phase-1-six-week-v1"
+    release_dir.mkdir(parents=True)
+    for filename in SCORING_FILES:
+        shutil.copyfile(CONFIG_DIR / filename, release_dir / filename)
+    roadmap = _valid_v2_roadmap()
+    roadmap["days"][0]["tasks"][0]["contract"] = "nonexistent_contract"
+    (release_dir / "tam-roadmap-task-map.yaml").write_text(
+        yaml.safe_dump(roadmap, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="unknown task contract 'nonexistent_contract'"):
+        load_config_bundle(release_dir)
 
 
 def test_v2_release_cannot_seed_scoring_even_before_session_use(
