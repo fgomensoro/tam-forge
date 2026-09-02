@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta
-from typing import Annotated, Literal, Self
+from typing import Annotated, Final, Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION: Final[Literal[1]] = 1
 SAMPLE_RATE_HZ = 48_000
 MAX_RECORDING_SECONDS = 120 * 60
 MAX_TRACK_SAMPLES = SAMPLE_RATE_HZ * MAX_RECORDING_SECONDS
