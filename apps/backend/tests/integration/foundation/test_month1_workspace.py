@@ -249,6 +249,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                 expected_version: int,
                 expected_source_hidden: bool,
                 timer_open: bool,
+                expected_detail_extra: dict[str, object] | None = None,
             ) -> dict[str, object]:
                 assert response.status_code == 200, response.text
                 payload = cast(dict[str, object], response.json())
@@ -295,6 +296,8 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                     ),
                     source_hidden=expected_source_hidden,
                 ).model_dump(mode="json")
+                if expected_detail_extra is not None:
+                    expected_payload = {**expected_payload, **expected_detail_extra}
                 assert payload == expected_payload
                 return payload
 
@@ -687,6 +690,13 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                             expected_version=5,
                             expected_source_hidden=True,
                             timer_open=True,
+                            expected_detail_extra={
+                                "task_contract": parity["responses"]["activity"][
+                                    "task_contract"
+                                ],
+                                "committed_output": None,
+                                "self_review": None,
+                            },
                         )
                         output = parity["journey"]["output"]
                         commit_body = {
@@ -910,7 +920,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                         evaluator="ai_rubric_reviewer",
                         difficulty="standard",
                         ai_role="reviewer",
-                        evaluated_at=datetime.fromisoformat(parity["fixed_now"]),
+                        evaluated_at=persisted_review.submitted_at,
                         artifact_ids=(),
                         observation_ids=(),
                         transcript_available=False,
