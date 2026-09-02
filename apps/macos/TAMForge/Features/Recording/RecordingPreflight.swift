@@ -46,9 +46,11 @@ struct LiveRecordingPreflight: RecordingPreflighting {
 
         let availableBytes: Int64
         do {
-            let values = try spoolRootURL.deletingLastPathComponent().resourceValues(
-                forKeys: [.volumeAvailableCapacityForImportantUsageKey]
-            )
+            // The spool directory may not exist before the first recording;
+            // measure the volume through the home directory, which always
+            // exists on the same user data volume.
+            let values = try URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+                .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
             availableBytes = values.volumeAvailableCapacityForImportantUsage ?? 0
         } catch {
             return .blocked(.insufficientDiskReserve)
