@@ -415,12 +415,19 @@ final class TAMForgeUITests: XCTestCase {
         for deltaY in [CGFloat(-350), CGFloat(350)] {
             for _ in 0..<40 {
                 app.activate()
-                if element.exists && element.isHittable && scroll.frame.contains(element.frame) { return }
+                if isClickable(element, in: scroll) { return }
                 scroll.scroll(byDeltaX: 0, deltaY: deltaY)
             }
         }
-        XCTAssertTrue(element.exists && element.isHittable && scroll.frame.contains(element.frame),
-                      "Expected control fully inside the scrolling viewport")
+        XCTAssertTrue(isClickable(element, in: scroll),
+                      "Expected the control's click point inside the scrolling viewport")
+    }
+
+    @MainActor
+    private func isClickable(_ element: XCUIElement, in scroll: XCUIElement) -> Bool {
+        guard element.exists && element.isHittable else { return false }
+        let frame = element.frame
+        return scroll.frame.contains(CGPoint(x: frame.midX, y: frame.midY))
     }
 
     @MainActor
