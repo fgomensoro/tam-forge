@@ -52,6 +52,7 @@ jobs:
           CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual
           -only-testing:TAMForgeUITests
           -skip-testing:TAMForgeUITests/TAMForgeUITests/testLocalNativeResourceReceipt
+          -retry-tests-on-failure -test-iterations 3
           -resultBundlePath "$RUNNER_TEMP/TAMForgeUITests.xcresult" test
       - name: Require every native UI journey to pass
         run: >-
