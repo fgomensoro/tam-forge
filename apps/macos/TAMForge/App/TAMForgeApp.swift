@@ -249,6 +249,7 @@ private final class NativeShellComposition: ObservableObject {
             session: httpSession
         )
         recording = RecordingCoordinator(
+            preflight: LiveRecordingPreflight(spoolRootURL: recordingSpool.rootURL),
             spoolFactory: recordingSpool,
             uploader: RecordingUploadPipeline(
                 spoolFactory: recordingSpool,
