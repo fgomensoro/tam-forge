@@ -2,6 +2,10 @@ import Darwin
 import CryptoKit
 import XCTest
 
+// Ceiling for waits on an 8GB machine under load; waits return as soon as the
+// condition holds, so green runs never pay it.
+private let underLoadTimeout: TimeInterval = 30
+
 final class TAMForgeUITests: XCTestCase {
     @MainActor
     func testNativeFoundationParityJourney() throws {
@@ -24,11 +28,11 @@ final class TAMForgeUITests: XCTestCase {
             environment: ["TAMFORGE_UI_FIXTURE_BASE64": fixtureData.base64EncodedString()]
         )
 
-        app.buttons["roadmapsNavigation"].click()
+        clickWhenReady(app.buttons["roadmapsNavigation"])
         chooseRoadmapPackage(packageURL, in: app)
-        app.buttons["Review package"].click()
-        XCTAssertTrue(app.staticTexts["Validation passed"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["158 tasks"].exists)
+        clickWhenReady(app.buttons["Review package"])
+        XCTAssertTrue(app.staticTexts["Validation passed"].waitForExistence(timeout: underLoadTimeout))
+        XCTAssertTrue(app.staticTexts["158 tasks"].waitForExistence(timeout: underLoadTimeout))
         let confirmation = app.checkBoxes["roadmapApprovalConfirmation"]
         reveal(confirmation, in: app, scrollIdentifier: "roadmapWorkspaceScroll")
         confirmation.click()
@@ -36,28 +40,25 @@ final class TAMForgeUITests: XCTestCase {
         reveal(approve, in: app, scrollIdentifier: "roadmapWorkspaceScroll")
         approve.click()
         let activate = app.buttons["Activate Month 1"]
-        XCTAssertTrue(activate.waitForExistence(timeout: 10))
+        XCTAssertTrue(activate.waitForExistence(timeout: underLoadTimeout))
         reveal(activate, in: app, scrollIdentifier: "roadmapWorkspaceScroll")
         activate.click()
-        XCTAssertTrue(app.staticTexts["Month 1 is active"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Month 1 is active"].waitForExistence(timeout: underLoadTimeout))
 
-        app.buttons["todayNavigation"].click()
-        XCTAssertTrue(textContaining("240 planned minutes", in: app).waitForExistence(timeout: 10))
-        XCTAssertTrue(textContaining("45 minutes", in: app).exists)
-        app.buttons["todayContinueButton"].click()
-        XCTAssertTrue(app.buttons["Start activity"].waitForExistence(timeout: 10))
-        app.buttons["Start activity"].click()
-        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 10))
-        app.buttons["Pause"].click()
-        XCTAssertTrue(app.buttons["Resume"].waitForExistence(timeout: 10))
-        app.buttons["todayNavigation"].click()
-        app.buttons["todayContinueButton"].click()
-        XCTAssertTrue(app.buttons["Resume"].waitForExistence(timeout: 10))
-        app.buttons["Resume"].click()
+        clickWhenReady(app.buttons["todayNavigation"])
+        XCTAssertTrue(textContaining("240 planned minutes", in: app).waitForExistence(timeout: underLoadTimeout))
+        XCTAssertTrue(textContaining("45 minutes", in: app).waitForExistence(timeout: underLoadTimeout))
+        clickWhenReady(app.buttons["todayContinueButton"])
+        clickWhenReady(app.buttons["Start activity"])
+        clickWhenReady(app.buttons["Pause"])
+        XCTAssertTrue(app.buttons["Resume"].waitForExistence(timeout: underLoadTimeout))
+        clickWhenReady(app.buttons["todayNavigation"])
+        clickWhenReady(app.buttons["todayContinueButton"])
+        clickWhenReady(app.buttons["Resume"])
         let hideSource = app.buttons["Hide source"]
         reveal(hideSource, in: app)
         hideSource.click()
-        XCTAssertTrue(app.staticTexts["Closed-source mode is active. Recall from memory before reopening material."].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Closed-source mode is active. Recall from memory before reopening material."].waitForExistence(timeout: underLoadTimeout))
 
         let outputFields: [(String, Any?)] = [
             ("Audience", output["audience"]),
@@ -69,22 +70,20 @@ final class TAMForgeUITests: XCTestCase {
             ("Unresolved question", output["unresolved_question"]),
         ]
         for (label, rawValue) in outputFields {
-            let editor = app.textViews[label]
-            reveal(editor, in: app)
-            editor.click()
-            editor.typeText(try XCTUnwrap(rawValue as? String))
+            try fill(app.textViews[label], with: XCTUnwrap(rawValue as? String), in: app)
         }
         let immutable = app.checkBoxes["activityImmutabilityAcknowledgment"]
         reveal(immutable, in: app)
         immutable.click()
         let commit = app.buttons["Commit Attempt A"]
         reveal(commit, in: app)
-        XCTAssertTrue(commit.isEnabled)
+        XCTAssertTrue(waitUntil({ commit.isEnabled }, timeout: underLoadTimeout),
+                      "Expected Commit Attempt A to enable once the form is complete")
         commit.click()
         // Committing scrolls the mandatory self-review to the top and the
         // read-only banner can leave the lazy accessibility tree, so assert
         // the committed state through the elements that stay realized.
-        XCTAssertTrue(app.staticTexts["Mandatory self-review"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Mandatory self-review"].waitForExistence(timeout: underLoadTimeout))
         XCTAssertFalse(app.buttons["Commit Attempt A"].exists)
 
         let reviewFields: [(String, String)] = [
@@ -96,19 +95,16 @@ final class TAMForgeUITests: XCTestCase {
             ("What I will change", "change_next"),
         ]
         for (label, key) in reviewFields {
-            let editor = app.textViews[label]
-            reveal(editor, in: app)
-            editor.click()
-            editor.typeText(try XCTUnwrap(selfReview[key] as? String))
+            try fill(app.textViews[label], with: XCTUnwrap(selfReview[key] as? String), in: app)
         }
         let score = app.popUpButtons["activitySelfScore"]
         reveal(score, in: app)
         score.click()
-        app.menuItems["3"].click()
+        clickWhenReady(app.menuItems["3"])
         let submit = app.buttons["Submit self-review"]
         reveal(submit, in: app)
         submit.click()
-        XCTAssertTrue(app.staticTexts["activitySelfReviewSummary"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["activitySelfReviewSummary"].waitForExistence(timeout: underLoadTimeout))
         XCTAssertEqual(
             app.staticTexts["activitySelfReviewSummary"].value as? String,
             "Your score: 3 / 4. AI analysis has not been requested."
@@ -119,20 +115,23 @@ final class TAMForgeUITests: XCTestCase {
             0
         )
 
-        app.buttons["evidenceNavigation"].click()
-        XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: 10))
+        clickWhenReady(app.buttons["evidenceNavigation"])
+        XCTAssertTrue(app.staticTexts["Not assessed"].waitForExistence(timeout: underLoadTimeout))
         XCTAssertEqual(textsContaining("streak", in: app).count, 0)
         XCTAssertEqual(textsContaining("recording count", in: app).count, 0)
         XCTAssertEqual(textsContaining("transcript word count", in: app).count, 0)
 
-        app.buttons["notificationToggle"].click()
+        clickWhenReady(app.buttons["notificationToggle"])
         let markRead = app.buttons.matching(
             NSPredicate(format: "label == %@", "Mark Feedback ready as read")
         ).firstMatch
-        XCTAssertTrue(markRead.waitForExistence(timeout: 10))
+        XCTAssertTrue(markRead.waitForExistence(timeout: underLoadTimeout))
         app.typeKey(.return, modifierFlags: [])
-        XCTAssertTrue(markRead.waitForNonExistence(timeout: 10))
-        XCTAssertEqual(app.buttons["notificationToggle"].label, "Notifications")
+        XCTAssertTrue(markRead.waitForNonExistence(timeout: underLoadTimeout))
+        XCTAssertTrue(
+            waitUntil({ app.buttons["notificationToggle"].label == "Notifications" }, timeout: underLoadTimeout),
+            "Expected the notification toggle to drop its unread badge"
+        )
     }
 
     @MainActor
@@ -402,19 +401,78 @@ final class TAMForgeUITests: XCTestCase {
         for deltaY in [CGFloat(-350), CGFloat(350)] {
             for _ in 0..<40 {
                 app.activate()
-                if isClickable(element, in: scroll) { return }
+                if isClickable(element, in: scroll) {
+                    settle(element)
+                    return
+                }
                 scroll.scroll(byDeltaX: 0, deltaY: deltaY)
             }
         }
         XCTAssertTrue(isClickable(element, in: scroll),
                       "Expected the control's click point inside the scrolling viewport")
+        settle(element)
     }
 
+    /// A control is reachable once its click point sits inside the viewport.
+    /// Requiring the whole control to fit is unsatisfiable for a multi-line
+    /// editor on a small screen, so scrolling would exhaust its budget instead
+    /// of stopping on a control that was clickable all along.
     @MainActor
     private func isClickable(_ element: XCUIElement, in scroll: XCUIElement) -> Bool {
         guard element.exists && element.isHittable else { return false }
         let frame = element.frame
         return scroll.frame.contains(CGPoint(x: frame.midX, y: frame.midY))
+    }
+
+    /// Waits for scrolling inertia to stop. Clicking while the tree is still
+    /// settling resolves against a snapshot the app has already replaced, which
+    /// surfaces as "No matches found for Identity Binding".
+    @MainActor
+    private func settle(_ element: XCUIElement) {
+        var previous = element.frame
+        for _ in 0..<20 {
+            Thread.sleep(forTimeInterval: 0.15)
+            let current = element.frame
+            if current == previous { return }
+            previous = current
+        }
+    }
+
+    @MainActor
+    private func waitUntil(_ condition: () -> Bool, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            guard Date() < deadline else { return condition() }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        return true
+    }
+
+    @MainActor
+    private func clickWhenReady(_ element: XCUIElement, timeout: TimeInterval = underLoadTimeout) {
+        XCTAssertTrue(element.waitForExistence(timeout: timeout))
+        // Hittability is animation grace only, never a gate: remote views such as
+        // the out-of-process open panel report isHittable false while clickable.
+        _ = waitUntil({ element.isHittable }, timeout: 5)
+        element.click()
+    }
+
+    @MainActor
+    private func fill(_ editor: XCUIElement, with text: String, in app: XCUIApplication) {
+        for _ in 0..<3 {
+            reveal(editor, in: app)
+            editor.click()
+            editor.typeText(text)
+            if editor.value as? String == text { return }
+            // Clear only this editor's partial text; a missed focus must not
+            // send select-all into whichever field currently has it.
+            if let value = editor.value as? String, !value.isEmpty {
+                editor.click()
+                app.typeKey("a", modifierFlags: .command)
+                app.typeKey(.delete, modifierFlags: [])
+            }
+        }
+        XCTAssertEqual(editor.value as? String, text, "Expected typed text to land in \(editor)")
     }
 
     @MainActor
@@ -513,18 +571,8 @@ final class TAMForgeUITests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: package) }
         let app = launchWorkspace()
         app.buttons["roadmapsNavigation"].click()
-        let choose = app.buttons["Choose ZIP or folder"]
-        XCTAssertTrue(choose.waitForExistence(timeout: 5))
-        choose.click()
-        app.typeKey("g", modifierFlags: [.command, .shift])
-        let location = app.textFields.firstMatch
-        XCTAssertTrue(location.waitForExistence(timeout: 5))
-        location.typeText(package.path)
-        app.typeKey(.return, modifierFlags: [])
-        app.windows["open-panel"].buttons["OKButton"].click()
-        let review = app.buttons["Review package"]
-        XCTAssertTrue(review.waitForExistence(timeout: 5))
-        review.click()
+        chooseRoadmapPackage(package, in: app)
+        app.buttons["Review package"].click()
         XCTAssertTrue(app.staticTexts["Validation passed"].waitForExistence(timeout: 5))
         capture("Roadmap validation", app: app)
         let inspect = app.buttons["Inspect all changes, fields, and values"]
@@ -557,23 +605,30 @@ final class TAMForgeUITests: XCTestCase {
         app.launchArguments = ["-ApplePersistenceIgnoreState", "YES", "-ui-test-signed-in", "-ui-test-native-features"] + extra
         for (key, value) in environment { app.launchEnvironment[key] = value }
         app.launch()
-        XCTAssertTrue(app.buttons["todayNavigation"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["todayNavigation"].waitForExistence(timeout: underLoadTimeout))
         app.activate()
         return app
     }
 
     @MainActor
     private func chooseRoadmapPackage(_ package: URL, in app: XCUIApplication) {
-        let choose = app.buttons["Choose ZIP or folder"]
-        XCTAssertTrue(choose.waitForExistence(timeout: 5))
-        choose.click()
+        // The system open panel is a separate process: under load the first click
+        // can be swallowed before the panel ever opens, so re-issue it until the
+        // window itself shows up rather than typing into nothing.
+        let panel = app.windows["open-panel"]
+        for _ in 0..<3 {
+            if panel.exists { break }
+            clickWhenReady(app.buttons["Choose ZIP or folder"])
+            if panel.waitForExistence(timeout: 10) { break }
+        }
+        XCTAssertTrue(panel.exists, "Expected the system open panel to appear")
         app.typeKey("g", modifierFlags: [.command, .shift])
         let location = app.textFields.firstMatch
-        XCTAssertTrue(location.waitForExistence(timeout: 5))
+        XCTAssertTrue(location.waitForExistence(timeout: underLoadTimeout))
         location.typeText(package.path)
         app.typeKey(.return, modifierFlags: [])
-        app.windows["open-panel"].buttons["OKButton"].click()
-        XCTAssertTrue(app.buttons["Review package"].waitForExistence(timeout: 5))
+        clickWhenReady(panel.buttons["OKButton"])
+        XCTAssertTrue(app.buttons["Review package"].waitForExistence(timeout: underLoadTimeout))
     }
 
     @MainActor
