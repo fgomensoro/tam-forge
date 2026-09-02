@@ -941,7 +941,7 @@ class ConfigBundle:
     formula: FormulaConfig
     rubrics: tuple[RubricConfig, ...]
     roadmap_version: str
-    roadmap_contracts: Mapping[str, Any]
+    roadmap_contracts: Mapping[str, TaskContractConfig]
     reconciliations: tuple[RoadmapReconciliationConfig, ...]
     roadmap_tasks: tuple[RoadmapTaskConfig | RoadmapTaskV2Config, ...]
     program: RoadmapProgramConfig
@@ -951,6 +951,7 @@ class ConfigBundle:
     interview_queue: tuple[InterviewQueueItemConfig, ...]
     english_dimensions: EnglishDimensionPolicyConfig | None
     coverage: CoverageConfig | None
+    phase1_contracts: RoadmapContractsConfig | None
     content_hash: bytes
     version_key: str
     _skills_by_slug: Mapping[str, SkillConfig] = field(repr=False)
