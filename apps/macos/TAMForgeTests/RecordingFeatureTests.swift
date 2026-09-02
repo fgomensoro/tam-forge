@@ -1138,6 +1138,49 @@ final class RecordingFeatureTests: XCTestCase {
         }
     }
 
+    func testCoordinatorMidRecordingRequiredTrackLossNeverSeals() async {
+        let source = FakeRecordingCaptureSource()
+        let spool = OrderedFakeRecordingSpool()
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: spool)
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: spoolFactory
+            )
+        }
+        await coordinator.start()
+
+        // Coverage loss reported while recording routes through the failure
+        // path, not the stop path.
+        await source.emit(.failure(.requiredTracksMissing))
+        await waitUntilCoordinatorSettles(coordinator)
+
+        let operations = await spool.operations()
+        let sealAttempts = operations.filter { $0 == .seal }.count
+        XCTAssertEqual(sealAttempts, 0)
+        let phase = await MainActor.run { coordinator.phase }
+        guard case .needsAttention = phase else {
+            return XCTFail("mid-recording track loss must preserve the unsealed spool")
+        }
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        let pendingIDs = await MainActor.run { coordinator.pendingRecordingIDs }
+        XCTAssertEqual(pendingIDs, createdIDs)
+    }
+
+    private func waitUntilCoordinatorSettles(
+        _ coordinator: RecordingCoordinator,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        for _ in 0..<500 {
+            let isActive = await MainActor.run { coordinator.phase.isActive }
+            if !isActive { return }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("coordinator never left the active phase", file: file, line: line)
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(
@@ -1299,6 +1342,9 @@ private actor FakeRecordingCaptureSource: RecordingCaptureSource {
         if let stopFailure { throw stopFailure }
     }
 
+    // Deliver an event while capture is live, the way a real source reports
+    // mid-recording coverage loss.
+    func emit(_ event: RecordingCaptureEvent) { receive?(event) }
 }
 
 private struct FakeRecordingPreflight: RecordingPreflighting {
