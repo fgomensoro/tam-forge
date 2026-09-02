@@ -250,12 +250,14 @@ def test_recording_migration_enforces_postgresql_state_constraints(
             item["name"]
             for item in inspect(sync_engine).get_check_constraints("recording_tracks")
         }
+        # The metadata naming convention prefixes check constraints with
+        # ck_<table>_ when the migration creates them.
         assert {
-            "state_coverage_coherent",
-            "durable_audio_state_coherent",
-            "seal_result_state_coherent",
+            "ck_recordings_state_coverage_coherent",
+            "ck_recordings_durable_audio_state_coherent",
+            "ck_recordings_seal_result_state_coherent",
         } <= check_names
-        assert "final_manifest_state_coherent" in track_check_names
+        assert "ck_recording_tracks_final_manifest_state_coherent" in track_check_names
 
         with pytest.raises(IntegrityError, match="state_coverage_coherent"):
             with sync_engine.begin() as connection:
