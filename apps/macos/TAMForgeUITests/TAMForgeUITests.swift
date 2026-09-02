@@ -410,6 +410,7 @@ final class TAMForgeUITests: XCTestCase {
         }
         XCTAssertTrue(isClickable(element, in: scroll),
                       "Expected the control's click point inside the scrolling viewport")
+        settle(element)
     }
 
     /// A control is reachable once its click point sits inside the viewport.
@@ -458,8 +459,8 @@ final class TAMForgeUITests: XCTestCase {
 
     @MainActor
     private func fill(_ editor: XCUIElement, with text: String, in app: XCUIApplication) {
-        reveal(editor, in: app)
         for _ in 0..<3 {
+            reveal(editor, in: app)
             editor.click()
             editor.typeText(text)
             if editor.value as? String == text { return }
