@@ -11,6 +11,7 @@ _MODEL_MODULES = (
     "tamforge_backend.evidence.models",
     "tamforge_backend.notifications.models",
     "tamforge_backend.today.models",
+    "tamforge_backend.recordings.models",
 )
 
 

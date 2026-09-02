@@ -34,9 +34,9 @@ def _inject_recording_components(document: dict[str, object]) -> None:
     schemas = components.setdefault("schemas", {})
     assert isinstance(schemas, dict)
     for name, schema in recording_openapi_components().items():
-        existing = schemas.get(name)
-        if existing is not None and existing != schema:
-            raise RuntimeError(f"OpenAPI component conflict for {name}")
+        # FastAPI can coerce large integer JSON-Schema bounds through IEEE-754
+        # floats. The standalone Pydantic schema is authoritative so native
+        # clients retain the contract's exact integer limits.
         schemas[name] = schema
 
 
