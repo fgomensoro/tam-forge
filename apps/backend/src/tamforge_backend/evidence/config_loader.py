@@ -693,9 +693,7 @@ def _build_bundle(
         rubrics=rubrics_file.rubrics,
         roadmap_version=roadmap_file.roadmap_version,
         roadmap_contracts=MappingProxyType(
-            dict(roadmap_file.contracts)
-            if isinstance(roadmap_file.contracts, dict)
-            else roadmap_file.contracts.model_dump(mode="python")
+            dict(roadmap_file.contracts) if isinstance(roadmap_file, RoadmapTaskMapFile) else {}
         ),
         reconciliations=roadmap_file.reconciliations,
         roadmap_tasks=sorted_tasks,
@@ -736,6 +734,9 @@ def _build_bundle(
         ),
         coverage=(
             roadmap_file.coverage if isinstance(roadmap_file, RoadmapTaskMapV2File) else None
+        ),
+        phase1_contracts=(
+            roadmap_file.contracts if isinstance(roadmap_file, RoadmapTaskMapV2File) else None
         ),
         content_hash=content_hash,
         version_key=version_key,

@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import shutil
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -422,6 +423,11 @@ def test_v2_release_loads_with_v1_scoring_and_phase1_contracts(
     assert len(bundle.interview_queue) == 30
     assert bundle.coverage is not None
     assert len(bundle.roadmap_tasks) == 1
+    assert bundle.roadmap_contracts == {}
+    contracts = bundle.phase1_contracts
+    assert contracts is not None
+    assert contracts.sealed_final_mock.fixed_local_date == date(2026, 10, 2)
+    assert contracts.pipeline.action_types == ("application", "recruiter_reply")
 
 
 def test_v2_release_cannot_seed_scoring_even_before_session_use(
