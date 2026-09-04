@@ -80,6 +80,9 @@ struct ActivityWorkspaceView: View {
                         incompletePanel(activity)
                     } else {
                         committedOutput(activity)
+                        if model.showsSQLExecution {
+                            SqlExecutionPanel(workspace: model, model: model.sqlExecution)
+                        }
                         if let draft = model.recoverableDraft { recoveredDraftPanel(draft) }
                     }
                     if activity.state == .outputCommitted { selfReviewPanel(activity).id("activitySelfReview") }
@@ -218,6 +221,9 @@ struct ActivityWorkspaceView: View {
                         minimumHeight: field.minimumHeight,
                         limit: field.limit
                     )
+                    if field.key == "query" && model.showsSQLExecution {
+                        SqlExecutionPanel(workspace: model, model: model.sqlExecution)
+                    }
                 }
                 if model.draft.kind == .sql {
                     Picker("Assistance used", selection: draftValueBinding("assistance_used")) {

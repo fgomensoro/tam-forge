@@ -43,6 +43,8 @@
 		E30000000000000000000041 /* NativeEvidenceAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000071 /* NativeEvidenceAdapterTests.swift */; };
 		E30000000000000000000042 /* EvidenceLedgerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000072 /* EvidenceLedgerTests.swift */; };
 		E200000000000000000000B1 /* NativeActivityAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E200000000000000000000B2 /* NativeActivityAdapterTests.swift */; };
+		F50000000000000000000022 /* NativeSqlAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000072 /* NativeSqlAdapterTests.swift */; };
+		F50000000000000000000021 /* SqlExecutionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000071 /* SqlExecutionTests.swift */; };
 		E200000000000000000000A3 /* Test generator config in Resources */ = {isa = PBXBuildFile; fileRef = E200000000000000000000A5 /* openapi-generator-config.yaml */; };
 		E200000000000000000000A4 /* Test OpenAPI input in Resources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000E8 /* openapi.yaml */; };
 		E20000000000000000000049 /* NativeUIFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000079 /* NativeUIFixtures.swift */; };
@@ -83,6 +85,9 @@
 		E20000000000000000000008 /* RoadmapAdministrationModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000068 /* RoadmapAdministrationModel.swift */; };
 		E20000000000000000000009 /* RoadmapAdministrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000069 /* RoadmapAdministrationView.swift */; };
 		E2000000000000000000000A /* ActivityModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000000000000000000006A /* ActivityModels.swift */; };
+		F50000000000000000000003 /* SqlExecutionPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000063 /* SqlExecutionPanel.swift */; };
+		F50000000000000000000002 /* SqlExecutionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000062 /* SqlExecutionModel.swift */; };
+		F50000000000000000000001 /* SqlExecutionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000061 /* SqlExecutionModels.swift */; };
 		E2000000000000000000000B /* ActivityDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000000000000000000006B /* ActivityDraft.swift */; };
 		E2000000000000000000000C /* ActivityTimer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000000000000000000006C /* ActivityTimer.swift */; };
 		E2000000000000000000000D /* ActivityArtifactUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000000000000000000006D /* ActivityArtifactUploader.swift */; };
@@ -99,6 +104,9 @@
 		E20000000000000000000028 /* RoadmapAdministrationModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000068 /* RoadmapAdministrationModel.swift */; };
 		E20000000000000000000029 /* RoadmapAdministrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000069 /* RoadmapAdministrationView.swift */; };
 		E2000000000000000000002A /* ActivityModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000000000000000000006A /* ActivityModels.swift */; };
+		F50000000000000000000013 /* SqlExecutionPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000063 /* SqlExecutionPanel.swift */; };
+		F50000000000000000000012 /* SqlExecutionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000062 /* SqlExecutionModel.swift */; };
+		F50000000000000000000011 /* SqlExecutionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000061 /* SqlExecutionModels.swift */; };
 		E2000000000000000000002B /* ActivityDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000000000000000000006B /* ActivityDraft.swift */; };
 		E2000000000000000000002C /* ActivityTimer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000000000000000000006C /* ActivityTimer.swift */; };
 		E2000000000000000000002D /* ActivityArtifactUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2000000000000000000006D /* ActivityArtifactUploader.swift */; };
@@ -148,6 +156,8 @@
 		E30000000000000000000071 /* NativeEvidenceAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeEvidenceAdapterTests.swift; sourceTree = "<group>"; };
 		E30000000000000000000072 /* EvidenceLedgerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvidenceLedgerTests.swift; sourceTree = "<group>"; };
 		E200000000000000000000B2 /* NativeActivityAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeActivityAdapterTests.swift; sourceTree = "<group>"; };
+		F50000000000000000000072 /* NativeSqlAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSqlAdapterTests.swift; sourceTree = "<group>"; };
+		F50000000000000000000071 /* SqlExecutionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SqlExecutionTests.swift; sourceTree = "<group>"; };
 		E200000000000000000000A5 /* openapi-generator-config.yaml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = "openapi-generator-config.yaml"; sourceTree = "<group>"; };
 		E20000000000000000000079 /* NativeUIFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeUIFixtures.swift; sourceTree = "<group>"; };
 		A10000000000000000000011 /* TAMForgeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TAMForgeApp.swift; sourceTree = "<group>"; };
@@ -180,6 +190,9 @@
 		E20000000000000000000068 /* RoadmapAdministrationModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoadmapAdministrationModel.swift; sourceTree = "<group>"; };
 		E20000000000000000000069 /* RoadmapAdministrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoadmapAdministrationView.swift; sourceTree = "<group>"; };
 		E2000000000000000000006A /* ActivityModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityModels.swift; sourceTree = "<group>"; };
+		F50000000000000000000063 /* SqlExecutionPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SqlExecutionPanel.swift; sourceTree = "<group>"; };
+		F50000000000000000000062 /* SqlExecutionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SqlExecutionModel.swift; sourceTree = "<group>"; };
+		F50000000000000000000061 /* SqlExecutionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SqlExecutionModels.swift; sourceTree = "<group>"; };
 		E2000000000000000000006B /* ActivityDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityDraft.swift; sourceTree = "<group>"; };
 		E2000000000000000000006C /* ActivityTimer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityTimer.swift; sourceTree = "<group>"; };
 		E2000000000000000000006D /* ActivityArtifactUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityArtifactUploader.swift; sourceTree = "<group>"; };
@@ -261,6 +274,8 @@
 				E30000000000000000000071 /* NativeEvidenceAdapterTests.swift */,
 				E30000000000000000000072 /* EvidenceLedgerTests.swift */,
 				E200000000000000000000B2 /* NativeActivityAdapterTests.swift */,
+				F50000000000000000000072 /* NativeSqlAdapterTests.swift */,
+				F50000000000000000000071 /* SqlExecutionTests.swift */,
 				E200000000000000000000A5 /* openapi-generator-config.yaml */,
 				A10000000000000000000016 /* AppDependenciesTests.swift */,
 				A100000000000000000000E2 /* NativeAPITransportTests.swift */,
@@ -412,6 +427,9 @@
 			isa = PBXGroup;
 			children = (
 				E2000000000000000000006A /* ActivityModels.swift */,
+				F50000000000000000000063 /* SqlExecutionPanel.swift */,
+				F50000000000000000000062 /* SqlExecutionModel.swift */,
+				F50000000000000000000061 /* SqlExecutionModels.swift */,
 				E2000000000000000000006B /* ActivityDraft.swift */,
 				E2000000000000000000006C /* ActivityTimer.swift */,
 				E2000000000000000000006D /* ActivityArtifactUploader.swift */,
@@ -617,6 +635,9 @@
 				E20000000000000000000008 /* RoadmapAdministrationModel.swift in Sources */,
 				E20000000000000000000009 /* RoadmapAdministrationView.swift in Sources */,
 				E2000000000000000000000A /* ActivityModels.swift in Sources */,
+				F50000000000000000000003 /* SqlExecutionPanel.swift in Sources */,
+				F50000000000000000000002 /* SqlExecutionModel.swift in Sources */,
+				F50000000000000000000001 /* SqlExecutionModels.swift in Sources */,
 				E2000000000000000000000B /* ActivityDraft.swift in Sources */,
 				E2000000000000000000000C /* ActivityTimer.swift in Sources */,
 				E2000000000000000000000D /* ActivityArtifactUploader.swift in Sources */,
@@ -649,6 +670,8 @@
 				E30000000000000000000041 /* NativeEvidenceAdapterTests.swift in Sources */,
 				E30000000000000000000042 /* EvidenceLedgerTests.swift in Sources */,
 				E200000000000000000000B1 /* NativeActivityAdapterTests.swift in Sources */,
+				F50000000000000000000022 /* NativeSqlAdapterTests.swift in Sources */,
+				F50000000000000000000021 /* SqlExecutionTests.swift in Sources */,
 				A10000000000000000000004 /* AppDependenciesTests.swift in Sources */,
 				A10000000000000000000005 /* AppDependencies.swift in Sources */,
 				A100000000000000000000EA /* NativeAPITransport.swift in Sources */,
@@ -671,6 +694,9 @@
 				E20000000000000000000028 /* RoadmapAdministrationModel.swift in Sources */,
 				E20000000000000000000029 /* RoadmapAdministrationView.swift in Sources */,
 				E2000000000000000000002A /* ActivityModels.swift in Sources */,
+				F50000000000000000000013 /* SqlExecutionPanel.swift in Sources */,
+				F50000000000000000000012 /* SqlExecutionModel.swift in Sources */,
+				F50000000000000000000011 /* SqlExecutionModels.swift in Sources */,
 				E2000000000000000000002B /* ActivityDraft.swift in Sources */,
 				E2000000000000000000002C /* ActivityTimer.swift in Sources */,
 				E2000000000000000000002D /* ActivityArtifactUploader.swift in Sources */,

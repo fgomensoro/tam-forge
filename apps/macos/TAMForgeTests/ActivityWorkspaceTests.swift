@@ -394,6 +394,22 @@ final class ActivityWorkspaceTests: XCTestCase {
 @MainActor
 final class ActivityAPIStub: ActivityAPI {
     var detail: ActivityDetail
+    var sqlCommands: [SqlExecutionCommand] = []
+    var sqlHistory: [SqlExecutionReceipt] = []
+    var sqlError: Error?
+    var beforeSQL: (() async -> Void)?
+
+    func executeSQL(_ command: SqlExecutionCommand) async throws -> SqlExecutionReceipt {
+        sqlCommands.append(command)
+        await beforeSQL?()
+        if let sqlError { throw sqlError }
+        let receipt = SqlTestFixtures.receipt(query: command.query, id: sqlCommands.count)
+        sqlHistory.insert(receipt, at: 0)
+        return receipt
+    }
+
+    func fetchSQLHistory(activityID: Int) async throws -> [SqlExecutionReceipt] { sqlHistory }
+
     var detailAfterCommit: ActivityDetail?
     var detailAfterReview: ActivityDetail?
     var startError: ActivityAPIError?
