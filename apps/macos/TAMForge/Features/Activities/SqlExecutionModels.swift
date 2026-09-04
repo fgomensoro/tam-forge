@@ -6,6 +6,12 @@ struct SqlExecutionCommand: Equatable, Sendable {
     let expectedVersion: Int
     let query: String
     let idempotencyKey: String
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.activityID == rhs.activityID && lhs.expectedVersion == rhs.expectedVersion
+            && lhs.query.utf8.elementsEqual(rhs.query.utf8)
+            && lhs.idempotencyKey.utf8.elementsEqual(rhs.idempotencyKey.utf8)
+    }
 }
 
 enum SqlExecutionError: Error, Equatable, Sendable {

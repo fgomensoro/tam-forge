@@ -36,6 +36,31 @@ final class SqlExecutionTests: XCTestCase {
         workspace.disappear()
     }
 
+    func testCanonicalUnicodeEditCreatesNewRetryWithExactEditedQueryBytes() async {
+        let (workspace, api) = await workspace()
+        api.sqlError = SqlExecutionError.network
+        workspace.updateDraft(workspace.draft.setting("query", to: "select '\u{00e9}'"))
+        await workspace.runSQL()
+        workspace.updateDraft(workspace.draft.setting("query", to: "select 'e\u{0301}'"))
+        await workspace.runSQL()
+        XCTAssertEqual(api.sqlCommands.count, 2)
+        XCTAssertEqual(Array(api.sqlCommands[0].query.utf8), [115, 101, 108, 101, 99, 116, 32, 39, 195, 169, 39])
+        XCTAssertEqual(Array(api.sqlCommands[1].query.utf8), [115, 101, 108, 101, 99, 116, 32, 39, 101, 204, 129, 39])
+        XCTAssertNotEqual(api.sqlCommands[0].idempotencyKey, api.sqlCommands[1].idempotencyKey)
+        // A second unedited retry must still reuse the complete second request.
+        await workspace.runSQL()
+        XCTAssertEqual(api.sqlCommands[1], api.sqlCommands[2])
+        workspace.disappear()
+    }
+
+    func testCommandEqualityDistinguishesCanonicalUnicodeQueryBytes() {
+        let composed = SqlExecutionCommand(activityID: 41, expectedVersion: 3,
+                                           query: "select '\u{00e9}'", idempotencyKey: "same-key")
+        let decomposed = SqlExecutionCommand(activityID: 41, expectedVersion: 3,
+                                             query: "select 'e\u{0301}'", idempotencyKey: "same-key")
+        XCTAssertNotEqual(composed, decomposed)
+    }
+
     func testPendingRunBlocksAnotherRunAndCommitButPreservesEditsAndFocusedTime() async {
         let (workspace, api) = await workspace()
         workspace.updateDraft(workspace.draft.setting("query", to: "select 1"))

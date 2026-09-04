@@ -23,6 +23,24 @@ final class NativeSqlAdapterTests: XCTestCase {
         XCTAssertEqual(receipt.result.elapsedMS, 12)
     }
 
+    func testReceiptBindingRequiresExactQueryBytesIncludingUnicodeNormalization() async throws {
+        let composed = "select '\u{00e9}'"
+        let decomposed = "select 'e\u{0301}'"
+        for (query, receiptQuery, accepted) in [(composed, composed, true), (composed, decomposed, false), (decomposed, composed, false)] {
+            let fixture = URLProtocolFixture()
+            fixture.enqueue(.response(statusCode: 200, body: try receiptBody(query: receiptQuery)))
+            do {
+                let receipt = try await api(fixture).executeSQL(.init(activityID: 41, expectedVersion: 7,
+                                                                     query: query, idempotencyKey: "sql-unicode"))
+                XCTAssertTrue(accepted, "A receipt for different SQL bytes must be rejected")
+                XCTAssertEqual(Array(receipt.query.utf8), Array(query.utf8))
+            } catch let error as SqlExecutionError {
+                XCTAssertFalse(accepted, "A receipt for the exact query must be accepted")
+                XCTAssertEqual(error, .invalidResponse)
+            }
+        }
+    }
+
     func testHistoryUsesGETAndRejectsUnboundedOrMalformedReceipts() async throws {
         let valid = try JSONSerialization.jsonObject(with: receiptBody())
         for count in [1, 21] {

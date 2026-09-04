@@ -195,7 +195,7 @@ final class LiveActivityAPI: ActivityAPI {
             as: Components.Schemas.SqlExecutionResponse.self,
             map: { try SqlExecutionReceipt(api: $0, activityID: command.activityID) }
         )
-        guard receipt.query == command.query else { throw SqlExecutionError.invalidResponse }
+        guard receipt.query.utf8.elementsEqual(command.query.utf8) else { throw SqlExecutionError.invalidResponse }
         return receipt
     }
 

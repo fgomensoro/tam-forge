@@ -23,7 +23,8 @@ final class SqlExecutionModel: ObservableObject {
     }
 
     func queryDidChange(_ query: String) {
-        if pending?.query != query { pending = nil }
+        // SQL literals and the server's query hash distinguish canonical Unicode spellings.
+        if let pending, !pending.query.utf8.elementsEqual(query.utf8) { self.pending = nil }
     }
 
     func run(activityID: Int, expectedVersion: Int, query: String) async throws {
@@ -43,7 +44,7 @@ final class SqlExecutionModel: ObservableObject {
         do {
             let receipt = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
             guard generation == lifetime, !Task.isCancelled, !task.isCancelled else { return }
-            guard receipt.activityID == command.activityID, receipt.query == command.query,
+            guard receipt.activityID == command.activityID, receipt.query.utf8.elementsEqual(command.query.utf8),
                   receipt.querySHA256 == SqlExecutionReceipt.queryHash(command.query) else {
                 throw SqlExecutionError.invalidResponse
             }
