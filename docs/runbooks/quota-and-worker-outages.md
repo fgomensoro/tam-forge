@@ -28,7 +28,8 @@ producer provides fresh evidence. Ingest is critical, so missing ingest evidence
 refuses readiness even while liveness remains green.
 
 Current live wiring: database probe, request totals/duration, safe request events,
-Uvicorn access-log suppression of all targets/peer data, and ASGI error redaction.
+Uvicorn access-log suppression of all targets/peer data, and sanitization of all
+Uvicorn error-logger levels (including rejected WebSocket handshakes).
 There is **no production ingest health producer yet**. `/readyz` therefore stays
 unready by default; do not attach it to a production traffic gate until the ingest
 owner wires a real, approved durability check. Never mark ingest healthy from

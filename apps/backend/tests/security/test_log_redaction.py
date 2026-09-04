@@ -1,12 +1,65 @@
 import io
 import json
 import logging
+from contextlib import redirect_stderr
 
 import pytest
 from fastapi.testclient import TestClient
 from tamforge_backend.config import Settings
 from tamforge_backend.main import create_app
 from tamforge_backend.observability.logging import AccessLogFilter, ServerErrorFilter, safe_event
+from uvicorn.logging import AccessFormatter
+
+
+def test_stock_uvicorn_formatter_does_not_receive_incompatible_redacted_records() -> None:
+    logger = logging.getLogger("uvicorn.access")
+    stream, errors = io.StringIO(), io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(
+        AccessFormatter(
+            '%(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s',
+            use_colors=False,
+        )
+    )
+    original = (
+        logger.handlers[:],
+        logger.filters[:],
+        logger.level,
+        logger.propagate,
+        logger.disabled,
+    )
+    try:
+        logger.handlers, logger.filters = [handler], [AccessLogFilter()]
+        logger.setLevel(logging.INFO)
+        logger.propagate, logger.disabled = False, False
+        with redirect_stderr(errors):
+            logger.info(
+                '%s - "%s %s HTTP/%s" %d',
+                "127.0.0.1:1234",
+                "GET",
+                "/private/Jane?token=secret",
+                "1.1",
+                200,
+            )
+        assert errors.getvalue() == ""
+        assert "secret" not in stream.getvalue()
+        assert "Jane" not in stream.getvalue()
+    finally:
+        logger.handlers, logger.filters, logger.level, logger.propagate, logger.disabled = original
+
+
+def test_lifespan_enables_operations_logger_disabled_by_prior_server_configuration() -> None:
+    logger = logging.getLogger("tamforge.operations")
+    original_disabled = logger.disabled
+    logger.disabled = True
+    try:
+        with TestClient(create_app(Settings(environment="test", _env_file=None))) as client:
+            assert logger.isEnabledFor(logging.INFO)
+            assert client.get("/healthz").status_code == 200
+        assert logger.disabled is True
+    finally:
+        logger.disabled = original_disabled
+
 
 SECRETS = (
     "oauth-code-secret",
@@ -19,6 +72,23 @@ SECRETS = (
     "SELECT private FROM answers",
     "owners/1/private.wav",
 )
+
+
+@pytest.mark.parametrize("level", [logging.DEBUG, logging.INFO, logging.WARNING])
+def test_server_diagnostics_never_expose_websocket_targets_or_arbitrary_info(level: int) -> None:
+    record = logging.LogRecord(
+        "uvicorn.error",
+        level,
+        "",
+        0,
+        '%s - "WebSocket %s" 403',
+        ("127.0.0.1:1234", "/private-company?token=private-secret"),
+        None,
+    )
+    ServerErrorFilter().filter(record)
+    output = logging.Formatter().format(record)
+    assert "private" not in output
+    assert "127.0.0.1" not in output
 
 
 @pytest.mark.parametrize("secret", SECRETS)
@@ -52,8 +122,7 @@ def test_secret_and_content_injection_cannot_escape_any_allowed_field(secret: st
         ),
         None,
     )
-    AccessLogFilter().filter(record)
-    assert secret not in record.getMessage()
+    assert AccessLogFilter().filter(record) is False
     try:
         raise RuntimeError(secret)
     except RuntimeError:

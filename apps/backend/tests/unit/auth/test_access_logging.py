@@ -48,8 +48,7 @@ def test_lifespan_strips_auth_query_secrets_from_uvicorn_access_logs() -> None:
         logger.setLevel(original_level)
         logger.propagate = original_propagate
 
-    assert '"event":"request_completed"' in filtered_output
-    assert '"http_status":400' in filtered_output
+    assert filtered_output == ""
     assert "/api/v1/auth/callback" not in filtered_output
     assert "oauth-code-marker" not in filtered_output
     assert "oauth-state-marker" not in filtered_output

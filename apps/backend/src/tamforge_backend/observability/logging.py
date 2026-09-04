@@ -8,7 +8,15 @@ import math
 from typing import cast
 from uuid import UUID
 
-EVENTS = frozenset({"request_completed", "request_failed", "component_changed", "job_completed"})
+EVENTS = frozenset(
+    {
+        "request_completed",
+        "request_failed",
+        "component_changed",
+        "job_completed",
+        "server_event",
+    }
+)
 STATUSES = frozenset(
     {
         "ok",
@@ -74,27 +82,26 @@ def safe_event(event: str, **fields: object) -> str:
 
 
 class ServerErrorFilter(logging.Filter):
-    """Uvicorn must not serialize arbitrary ASGI exception messages or traces."""
+    """Uvicorn also logs WebSocket targets at INFO, so sanitize every level."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         if record.levelno >= logging.WARNING or record.exc_info or record.stack_info:
             record.msg = safe_event("request_failed", error_code="internal_error")
-            record.args = ()
-            record.exc_info = None
-            record.exc_text = None
-            record.stack_info = None
-        return True
-
-
-class AccessLogFilter(logging.Filter):
-    """Drop raw targets, peer addresses and other request-derived log values."""
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        args = record.args
-        status: object = args[4] if isinstance(args, tuple) and len(args) == 5 else None
-        record.msg = safe_event("request_completed", http_status=status)
+        else:
+            record.msg = safe_event("server_event")
         record.args = ()
         record.exc_info = None
         record.exc_text = None
         record.stack_info = None
         return True
+
+
+class AccessLogFilter(logging.Filter):
+    """Suppress raw access records; OperationalMiddleware emits safe events.
+
+    Uvicorn's AccessFormatter requires its original five-argument record, so
+    rewriting it to JSON would fail formatting and dump logging diagnostics.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return False

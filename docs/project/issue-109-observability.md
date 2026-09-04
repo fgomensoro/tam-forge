@@ -36,3 +36,17 @@ Do not close #109 on the strength of synthetic producer evidence alone.
 - Streaming regression proves upload input is not pre-read and SSE output is not
   buffered. A saturated metrics registry cannot fail the application request.
 - #109 remains open for real ingest/capability producers and live acceptance.
+
+## Pre-merge review corrections
+
+The independent review of `5479c6f` found that rewriting Uvicorn access records
+broke its stock formatter, and INFO-level rejected WebSocket logs retained raw
+targets. Access records are now suppressed in favor of middleware events; every
+Uvicorn error-logger level is reduced to safe structured data. Regressions use
+the stock formatter and WebSocket diagnostic shapes. The application explicitly
+enables its own logger during lifespan and restores its prior state, fixing the
+full-suite failure after Alembic configures logging.
+
+Fresh verification after these corrections: 1121 backend/protocol/CI-script tests
+passed, 2 integration-marked tests deselected; full-source Ruff and strict mypy
+(99 source files) passed. CI and renewed exact-commit review still gate merge.

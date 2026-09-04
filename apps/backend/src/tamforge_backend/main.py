@@ -31,10 +31,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         error_log_filter = ServerErrorFilter()
         operations_logger = logging.getLogger("tamforge.operations")
         previous_operations_level = operations_logger.level
+        previous_operations_disabled = operations_logger.disabled
         operations_handler = logging.StreamHandler()
         operations_handler.setFormatter(logging.Formatter("%(message)s"))
         operations_logger.addHandler(operations_handler)
         operations_logger.setLevel(logging.INFO)
+        operations_logger.disabled = False
         access_logger.addFilter(access_log_filter)
         error_logger.addFilter(error_log_filter)
         database = None
@@ -54,6 +56,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 operations_logger.removeHandler(operations_handler)
                 operations_handler.close()
                 operations_logger.setLevel(previous_operations_level)
+                operations_logger.disabled = previous_operations_disabled
 
     app = FastAPI(title="TAM Forge API", version="0.1.0", lifespan=lifespan)
     app.state.operational_health = HealthRegistry()
