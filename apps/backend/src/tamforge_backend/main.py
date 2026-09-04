@@ -10,9 +10,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api import register_routes
-from .auth.access_logging import UvicornAuthQueryFilter
 from .config import Settings
 from .database import create_database_resources
+from .observability.health import HealthRegistry
+from .observability.logging import AccessLogFilter, ServerErrorFilter
+from .observability.metrics import Metrics
+from .observability.middleware import OperationalMiddleware
+from .observability.routes import router as operational_router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -22,8 +26,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         access_logger = logging.getLogger("uvicorn.access")
-        access_log_filter = UvicornAuthQueryFilter()
+        access_log_filter = AccessLogFilter()
+        error_logger = logging.getLogger("uvicorn.error")
+        error_log_filter = ServerErrorFilter()
+        operations_logger = logging.getLogger("tamforge.operations")
+        previous_operations_level = operations_logger.level
+        operations_handler = logging.StreamHandler()
+        operations_handler.setFormatter(logging.Formatter("%(message)s"))
+        operations_logger.addHandler(operations_handler)
+        operations_logger.setLevel(logging.INFO)
         access_logger.addFilter(access_log_filter)
+        error_logger.addFilter(error_log_filter)
         database = None
         try:
             database = create_database_resources(configured)
@@ -37,8 +50,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     await database.dispose()
             finally:
                 access_logger.removeFilter(access_log_filter)
+                error_logger.removeFilter(error_log_filter)
+                operations_logger.removeHandler(operations_handler)
+                operations_handler.close()
+                operations_logger.setLevel(previous_operations_level)
 
     app = FastAPI(title="TAM Forge API", version="0.1.0", lifespan=lifespan)
+    app.state.operational_health = HealthRegistry()
+    app.state.operational_metrics = Metrics()
+    app.add_middleware(OperationalMiddleware, metrics=app.state.operational_metrics)
+    app.include_router(operational_router)
     if configured.cors_origins:
         app.add_middleware(
             CORSMiddleware,
