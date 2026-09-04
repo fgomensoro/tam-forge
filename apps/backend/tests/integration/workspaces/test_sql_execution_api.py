@@ -486,6 +486,8 @@ def test_sql_execution_api_persists_immutable_owner_scoped_bounded_receipts(
     finally:
         asyncio.run(async_engine.dispose())
         try:
-            command.downgrade(migration, "base")
+            with sync_engine.begin() as connection:
+                connection.execute(text("DROP SCHEMA public CASCADE"))
+                connection.execute(text("CREATE SCHEMA public"))
         finally:
             sync_engine.dispose()
