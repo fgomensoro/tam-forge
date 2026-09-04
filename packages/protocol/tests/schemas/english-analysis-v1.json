@@ -1,0 +1,516 @@
+{
+  "$defs": {
+    "AnalysisObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "enum": [
+            "observed_content",
+            "user_stated",
+            "inferred",
+            "unknown"
+          ],
+          "title": "Attribution",
+          "type": "string"
+        },
+        "availability": {
+          "enum": [
+            "available",
+            "unavailable"
+          ],
+          "title": "Availability",
+          "type": "string"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "title": "Confidence"
+        },
+        "references": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "artifact_text": "#/$defs/ArtifactTextReference",
+                "artifact_time": "#/$defs/ArtifactTimeReference",
+                "attempt_text": "#/$defs/AttemptTextReference"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/AttemptTextReference"
+              },
+              {
+                "$ref": "#/$defs/ArtifactTextReference"
+              },
+              {
+                "$ref": "#/$defs/ArtifactTimeReference"
+              }
+            ]
+          },
+          "maxItems": 16,
+          "title": "References",
+          "type": "array"
+        },
+        "statement": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Statement",
+          "type": "string"
+        }
+      },
+      "required": [
+        "statement",
+        "attribution",
+        "availability",
+        "confidence"
+      ],
+      "title": "AnalysisObservation",
+      "type": "object"
+    },
+    "ArtifactTextReference": {
+      "additionalProperties": false,
+      "description": "Offsets within exact UTF-8-decoded plain text, not a structured transcript.",
+      "properties": {
+        "artifact_id": {
+          "exclusiveMinimum": 0,
+          "title": "Artifact Id",
+          "type": "integer"
+        },
+        "end_codepoint": {
+          "maximum": 16777216,
+          "minimum": 0,
+          "title": "End Codepoint",
+          "type": "integer"
+        },
+        "immutable_version": {
+          "exclusiveMinimum": 0,
+          "title": "Immutable Version",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "artifact_text",
+          "title": "Kind",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "start_codepoint": {
+          "maximum": 16777216,
+          "minimum": 0,
+          "title": "Start Codepoint",
+          "type": "integer"
+        },
+        "text_kind": {
+          "enum": [
+            "written",
+            "raw_transcript",
+            "corrected_transcript"
+          ],
+          "title": "Text Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "artifact_id",
+        "immutable_version",
+        "sha256",
+        "text_kind",
+        "start_codepoint",
+        "end_codepoint"
+      ],
+      "title": "ArtifactTextReference",
+      "type": "object"
+    },
+    "ArtifactTimeReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "exclusiveMinimum": 0,
+          "title": "Artifact Id",
+          "type": "integer"
+        },
+        "end_ms": {
+          "maximum": 86400000,
+          "minimum": 0,
+          "title": "End Ms",
+          "type": "integer"
+        },
+        "immutable_version": {
+          "exclusiveMinimum": 0,
+          "title": "Immutable Version",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "artifact_time",
+          "title": "Kind",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "start_ms": {
+          "maximum": 86400000,
+          "minimum": 0,
+          "title": "Start Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "artifact_id",
+        "immutable_version",
+        "sha256",
+        "start_ms",
+        "end_ms"
+      ],
+      "title": "ArtifactTimeReference",
+      "type": "object"
+    },
+    "AttemptTextReference": {
+      "additionalProperties": false,
+      "description": "Offsets within the decoded string selected from the committed JSON envelope.",
+      "properties": {
+        "attempt_id": {
+          "exclusiveMinimum": 0,
+          "title": "Attempt Id",
+          "type": "integer"
+        },
+        "commitment_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Commitment Sha256",
+          "type": "string"
+        },
+        "end_codepoint": {
+          "maximum": 16777216,
+          "minimum": 0,
+          "title": "End Codepoint",
+          "type": "integer"
+        },
+        "json_pointer": {
+          "maxLength": 512,
+          "pattern": "^/output/(?:[^~]|~[01])*$",
+          "title": "Json Pointer",
+          "type": "string"
+        },
+        "kind": {
+          "const": "attempt_text",
+          "title": "Kind",
+          "type": "string"
+        },
+        "start_codepoint": {
+          "maximum": 16777216,
+          "minimum": 0,
+          "title": "Start Codepoint",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "attempt_id",
+        "commitment_sha256",
+        "json_pointer",
+        "start_codepoint",
+        "end_codepoint"
+      ],
+      "title": "AttemptTextReference",
+      "type": "object"
+    },
+    "EnglishDimensions": {
+      "additionalProperties": false,
+      "properties": {
+        "accuracy": {
+          "discriminator": {
+            "mapping": {
+              "not_applicable": "#/$defs/UnassessedDimension",
+              "scored": "#/$defs/ScoredDimension",
+              "unavailable": "#/$defs/UnassessedDimension"
+            },
+            "propertyName": "availability"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ScoredDimension"
+            },
+            {
+              "$ref": "#/$defs/UnassessedDimension"
+            }
+          ],
+          "title": "Accuracy"
+        },
+        "communication_effectiveness": {
+          "discriminator": {
+            "mapping": {
+              "not_applicable": "#/$defs/UnassessedDimension",
+              "scored": "#/$defs/ScoredDimension",
+              "unavailable": "#/$defs/UnassessedDimension"
+            },
+            "propertyName": "availability"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ScoredDimension"
+            },
+            {
+              "$ref": "#/$defs/UnassessedDimension"
+            }
+          ],
+          "title": "Communication Effectiveness"
+        },
+        "fluency": {
+          "discriminator": {
+            "mapping": {
+              "not_applicable": "#/$defs/UnassessedDimension",
+              "scored": "#/$defs/ScoredDimension",
+              "unavailable": "#/$defs/UnassessedDimension"
+            },
+            "propertyName": "availability"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ScoredDimension"
+            },
+            {
+              "$ref": "#/$defs/UnassessedDimension"
+            }
+          ],
+          "title": "Fluency"
+        },
+        "listening": {
+          "discriminator": {
+            "mapping": {
+              "not_applicable": "#/$defs/UnassessedDimension",
+              "scored": "#/$defs/ScoredDimension",
+              "unavailable": "#/$defs/UnassessedDimension"
+            },
+            "propertyName": "availability"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ScoredDimension"
+            },
+            {
+              "$ref": "#/$defs/UnassessedDimension"
+            }
+          ],
+          "title": "Listening"
+        },
+        "pronunciation_intelligibility": {
+          "discriminator": {
+            "mapping": {
+              "not_applicable": "#/$defs/UnassessedDimension",
+              "scored": "#/$defs/ScoredDimension",
+              "unavailable": "#/$defs/UnassessedDimension"
+            },
+            "propertyName": "availability"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ScoredDimension"
+            },
+            {
+              "$ref": "#/$defs/UnassessedDimension"
+            }
+          ],
+          "title": "Pronunciation Intelligibility"
+        },
+        "vocabulary": {
+          "discriminator": {
+            "mapping": {
+              "not_applicable": "#/$defs/UnassessedDimension",
+              "scored": "#/$defs/ScoredDimension",
+              "unavailable": "#/$defs/UnassessedDimension"
+            },
+            "propertyName": "availability"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ScoredDimension"
+            },
+            {
+              "$ref": "#/$defs/UnassessedDimension"
+            }
+          ],
+          "title": "Vocabulary"
+        }
+      },
+      "required": [
+        "communication_effectiveness",
+        "fluency",
+        "accuracy",
+        "vocabulary",
+        "pronunciation_intelligibility",
+        "listening"
+      ],
+      "title": "EnglishDimensions",
+      "type": "object"
+    },
+    "ScoredDimension": {
+      "additionalProperties": false,
+      "properties": {
+        "availability": {
+          "const": "scored",
+          "title": "Availability",
+          "type": "string"
+        },
+        "observations": {
+          "items": {
+            "$ref": "#/$defs/AnalysisObservation"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Observations",
+          "type": "array"
+        },
+        "rationale": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Rationale",
+          "type": "string"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "maximum": 4.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "title": "Score"
+        }
+      },
+      "required": [
+        "availability",
+        "score",
+        "rationale",
+        "observations"
+      ],
+      "title": "ScoredDimension",
+      "type": "object"
+    },
+    "UnassessedDimension": {
+      "additionalProperties": false,
+      "properties": {
+        "availability": {
+          "enum": [
+            "unavailable",
+            "not_applicable"
+          ],
+          "title": "Availability",
+          "type": "string"
+        },
+        "explanation": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Explanation",
+          "type": "string"
+        },
+        "reason_code": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "score": {
+          "default": null,
+          "title": "Score",
+          "type": "null"
+        }
+      },
+      "required": [
+        "availability",
+        "reason_code",
+        "explanation"
+      ],
+      "title": "UnassessedDimension",
+      "type": "object"
+    }
+  },
+  "$id": "urn:tamforge:schema:english-analysis-v1",
+  "additionalProperties": false,
+  "description": "Text judgments only; speech measurements require a future contract version.",
+  "properties": {
+    "activity_id": {
+      "exclusiveMinimum": 0,
+      "title": "Activity Id",
+      "type": "integer"
+    },
+    "analysis_kind": {
+      "const": "english_analysis",
+      "title": "Analysis Kind",
+      "type": "string"
+    },
+    "attempt_id": {
+      "exclusiveMinimum": 0,
+      "title": "Attempt Id",
+      "type": "integer"
+    },
+    "config_version_key": {
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+      "title": "Config Version Key",
+      "type": "string"
+    },
+    "dimensions": {
+      "$ref": "#/$defs/EnglishDimensions"
+    },
+    "rubric_slug": {
+      "pattern": "^[a-z][a-z0-9_]{0,63}$",
+      "title": "Rubric Slug",
+      "type": "string"
+    },
+    "rubric_version": {
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+      "title": "Rubric Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "english-analysis-v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_mode": {
+      "enum": [
+        "written",
+        "monologue_transcript",
+        "interactive_transcript"
+      ],
+      "title": "Source Mode",
+      "type": "string"
+    }
+  },
+  "required": [
+    "activity_id",
+    "attempt_id",
+    "config_version_key",
+    "rubric_slug",
+    "rubric_version",
+    "analysis_kind",
+    "schema_version",
+    "source_mode",
+    "dimensions"
+  ],
+  "title": "EnglishAnalysisV1",
+  "type": "object"
+}
