@@ -1,0 +1,16 @@
+{
+  "catalog_version": 1,
+  "exercises": [
+    {
+      "key": "support_counts",
+      "version": 1,
+      "schema_name": "learning_support",
+      "role_name": "tamforge_learning_runner_support",
+      "task_stable_ids": ["fixture.sql.support-counts"],
+      "columns": ["account_id", "ticket_count"],
+      "expected_rows": [["a", "2"], ["b", "1"]],
+      "grain_columns": ["account_id"],
+      "ordered": false
+    }
+  ]
+}
