@@ -142,7 +142,7 @@ runner, not a new runner/semaphore per request.
   CSRF. Auth and DB dependencies may be replaced only at the external boundary.
 
 - [ ] Add the append-only model and migration over the inspected Alembic head.
-  Store query/result, hashes, immutable exercise/task versions, owner/activity,
+  Store query/canonical JSON result text, hashes, immutable exercise/task versions, owner/activity,
   request digest, idempotency key and timestamp. Match ORM/check constraints,
   owner/activity composite FK and unique request identity. Trigger UPDATE/DELETE
   rejection and register model in the central registry.
@@ -156,7 +156,9 @@ runner, not a new runner/semaphore per request.
   attempts, commitment and self-review are not duplicated or modified.
 
 - [ ] Add authenticated POST and GET routes from the spec. GET returns at most
-  20 most recent receipts; no raw pagination SQL or caller owner fields. Add fixed
+  20 most recent complete receipts and at most 1 MiB encoded JSON. Omit oldest
+  receipts beyond this budget; never truncate a result. Preserve exact canonical
+  result bytes in text storage; no raw pagination SQL or caller owner fields. Add fixed
   exception mapping and dependency wiring, and regenerate OpenAPI with:
 
 ```sh

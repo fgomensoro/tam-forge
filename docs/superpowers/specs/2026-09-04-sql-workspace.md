@@ -1,9 +1,9 @@
 # Isolated SQL workspace (#89)
 
-The user approved an autonomous ten-ticket continuation on 2026-09-04, including
+The user approved an autonomous five-ticket continuation on 2026-09-04, including
 adapting obsolete ticket plans to the current six-week roadmap and prioritizing
-dependencies. This is the first ticket. The tentative sequence is #89, #90, #91,
-#92, #93, #54, #53, #55, #56, #57. A ticket counts only after full acceptance,
+dependencies. This is the first ticket. Remaining selection prioritizes dependencies under
+the user-approved scope adaptation; the total is five complete tickets. A ticket counts only after full acceptance,
 independent review and all CI checks on the exact merged commit.
 
 ## Authority and isolation
@@ -83,7 +83,7 @@ duplicate `a` is `wrong_grain`, changed count is `mismatch`.
 ## Persistence and API
 
 Add one append-only `sql_executions` model/migration with owner+activity composite
-FK, immutable task/exercise version, query, query hash, result JSON/hash, measured
+FK, immutable task/exercise version, query, query hash, canonical result JSON text/hash, measured
 elapsed time, created timestamp, idempotency key and request digest. Bound stored
 payloads. Unique owner/activity/idempotency; same request replay returns the
 same receipt and cannot execute SQL again, different input conflicts. Database
@@ -95,7 +95,10 @@ and mutation/CSRF dependency. It checks ownership, active state, SQL block and
 expected version before running the driver; serializes against activity commands
 and commits its immutable receipt before returning success. Failures leave no
 partial receipt. `GET` on the same path is owner-scoped, bounded to 20 recent
-receipts, and does not execute SQL. Missing/unsafe configuration returns a fixed
+receipts within a 1 MiB encoded response budget, and does not execute SQL. Omit
+oldest receipts that exceed the budget, never truncate a receipt or its result.
+Canonical JSON text storage preserves the exact result byte bound without
+JSONB rendering overhead. Missing/unsafe configuration returns a fixed
 503 reason; invalid query/result or rejected SQL returns safe 422; capacity
 exhaustion returns safe 429; stale state/idempotency mismatch returns 409. All
 responses/errors are no-store and never serialize raw driver exceptions.
