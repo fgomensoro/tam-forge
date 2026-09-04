@@ -1,0 +1,58 @@
+{
+  "anchor_date": "2026-08-24",
+  "coverage_assignments": 159,
+  "coverage_requirements": 159,
+  "interview_questions": 30,
+  "nominal_end_date": "2026-10-03",
+  "nominal_minutes": 6120,
+  "normalized_config_hash": "55b0c300db78bb2749ba94314f47e855888ab784650b4c09ebf3ae22e305ec26",
+  "program_key": "tam_phase_1",
+  "roadmap_version": "phase-1-six-week-v1",
+  "saturday_shapes": [
+    [
+      35,
+      45,
+      20,
+      10,
+      10
+    ],
+    [
+      30,
+      50,
+      25,
+      15
+    ],
+    [
+      30,
+      35,
+      20,
+      20,
+      15
+    ],
+    [
+      35,
+      45,
+      20,
+      10,
+      10
+    ],
+    [
+      30,
+      35,
+      20,
+      20,
+      15
+    ],
+    [
+      30,
+      55,
+      20,
+      15
+    ]
+  ],
+  "saturdays": 6,
+  "schema_version": 2,
+  "study_days": 36,
+  "task_count": 148,
+  "weekday_days": 30
+}

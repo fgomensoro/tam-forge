@@ -1,0 +1,793 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "phase-1-transition-v1.schema.json",
+  "title": "Phase 1 transition export v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "export_version",
+    "roadmap_version",
+    "mapping_version",
+    "activation_cutoff",
+    "schema_sha256",
+    "source_hashes",
+    "transition",
+    "coverage",
+    "interview_queue",
+    "weekday_sessions",
+    "saturday_sessions",
+    "resources",
+    "exit_criteria",
+    "next_phase_priorities"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "phase-1-transition-v1.schema.json"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "export_version": {
+      "const": "phase-1-transition-v1"
+    },
+    "roadmap_version": {
+      "const": "phase-1-six-week-v1"
+    },
+    "mapping_version": {
+      "const": "phase-1-transition-v1"
+    },
+    "activation_cutoff": {
+      "const": "2026-08-28"
+    },
+    "schema_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_hashes": {
+      "type": "object",
+      "minProperties": 11,
+      "maxProperties": 11,
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "propertyNames": {
+        "enum": [
+          "Roadmap/docs/Coverage Ledger.md",
+          "Roadmap/docs/Transition Ledger.md",
+          "Roadmap/docs/Interview Queue.md",
+          "Roadmap/docs/Phase 1 - Complete Roadmap.md",
+          "Roadmap/docs/Next Phase Priorities.md",
+          "Roadmap/Phase 1 - Week 1 - Transition, foundations, and baseline.md",
+          "Roadmap/Phase 1 - Week 2 - Webhooks, discovery, and retry control.md",
+          "Roadmap/Phase 1 - Week 3 - Distributed failures, incidents, and payments.md",
+          "Roadmap/Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md",
+          "Roadmap/Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md",
+          "Roadmap/Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md"
+        ]
+      }
+    },
+    "transition": {
+      "$ref": "#/$defs/transition"
+    },
+    "coverage": {
+      "type": "array",
+      "minItems": 158,
+      "maxItems": 158,
+      "items": {
+        "$ref": "#/$defs/coverage"
+      }
+    },
+    "interview_queue": {
+      "type": "array",
+      "minItems": 30,
+      "maxItems": 30,
+      "items": {
+        "$ref": "#/$defs/interview"
+      }
+    },
+    "weekday_sessions": {
+      "type": "array",
+      "minItems": 25,
+      "maxItems": 25,
+      "items": {
+        "$ref": "#/$defs/weekday"
+      }
+    },
+    "saturday_sessions": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "$ref": "#/$defs/saturday"
+      }
+    },
+    "resources": {
+      "type": "array",
+      "minItems": 50,
+      "maxItems": 50,
+      "items": {
+        "$ref": "#/$defs/resource"
+      }
+    },
+    "exit_criteria": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "items": {
+        "$ref": "#/$defs/exit"
+      }
+    },
+    "next_phase_priorities": {
+      "$ref": "#/$defs/gate"
+    }
+  },
+  "$defs": {
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "activation_cutoff",
+        "elapsed_weekday_slots",
+        "elapsed_blocks",
+        "future_weekday_count",
+        "future_saturday_count",
+        "future_schedulable_minutes",
+        "first_future_session",
+        "first_weekday_session",
+        "pipeline_target_start",
+        "no_retroactive_interview_cycles",
+        "no_retroactive_pipeline_failure"
+      ],
+      "properties": {
+        "activation_cutoff": {
+          "const": "2026-08-28"
+        },
+        "elapsed_weekday_slots": {
+          "const": 5
+        },
+        "elapsed_blocks": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "date",
+              "calendar_state",
+              "known_work",
+              "time_state",
+              "verified_focused_minutes",
+              "actual_day_minutes",
+              "scheduling_treatment"
+            ],
+            "properties": {
+              "date": {
+                "type": "string",
+                "format": "date"
+              },
+              "calendar_state": {
+                "type": "string"
+              },
+              "known_work": {
+                "type": "string"
+              },
+              "time_state": {
+                "enum": [
+                  "unknown",
+                  "partial"
+                ]
+              },
+              "verified_focused_minutes": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "actual_day_minutes": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "scheduling_treatment": {
+                "const": "zero_future_capacity"
+              }
+            }
+          }
+        },
+        "future_weekday_count": {
+          "const": 25
+        },
+        "future_saturday_count": {
+          "const": 6
+        },
+        "future_schedulable_minutes": {
+          "const": 5220
+        },
+        "first_future_session": {
+          "const": "P1-2026-08-29-SAT120"
+        },
+        "first_weekday_session": {
+          "const": "P1-2026-08-31-I60"
+        },
+        "pipeline_target_start": {
+          "const": "2026-08-31"
+        },
+        "no_retroactive_interview_cycles": {
+          "const": true
+        },
+        "no_retroactive_pipeline_failure": {
+          "const": true
+        }
+      }
+    },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowed_ai_role",
+        "constraints",
+        "contract",
+        "exercise_type",
+        "legacy_id",
+        "objective",
+        "pass_criteria",
+        "required_output",
+        "timebox_minutes"
+      ],
+      "properties": {
+        "allowed_ai_role": {
+          "type": "string"
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "contract": {
+          "type": "string"
+        },
+        "exercise_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "legacy_id": {
+          "type": "string",
+          "pattern": "^m1-w[1-4]-d[0-9]{2}-[a-z0-9-]+$"
+        },
+        "objective": {
+          "type": "string"
+        },
+        "pass_criteria": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "required_output": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timebox_minutes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "legacy_id",
+        "required",
+        "source_path",
+        "source_heading",
+        "objective_output",
+        "original_constraint",
+        "status",
+        "phase_owner",
+        "continuation",
+        "planned_minutes",
+        "actual_minutes",
+        "evidence",
+        "qualification",
+        "reconciliation",
+        "contract"
+      ],
+      "properties": {
+        "legacy_id": {
+          "type": "string",
+          "pattern": "^m1-w[1-4]-d[0-9]{2}-[a-z0-9-]+$"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "source_path": {
+          "type": "string"
+        },
+        "source_heading": {
+          "type": "string"
+        },
+        "objective_output": {
+          "type": "string"
+        },
+        "original_constraint": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "in_progress",
+            "pending",
+            "not_assessed"
+          ]
+        },
+        "phase_owner": {
+          "type": "string",
+          "pattern": "^(IMPORT-[0-9]{4}-[0-9]{2}-[0-9]{2}-D[0-9]{2}|P1-[A-Z0-9-]+)$"
+        },
+        "continuation": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^P1-[A-Z0-9-]+$"
+        },
+        "planned_minutes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "actual_minutes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "qualification": {
+          "enum": [
+            "qualifying",
+            "nonqualifying",
+            "mixed",
+            "not_assessed",
+            "not_applicable"
+          ]
+        },
+        "reconciliation": {
+          "type": "string"
+        },
+        "contract": {
+          "$ref": "#/$defs/contract"
+        }
+      }
+    },
+    "interview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "queue_id",
+        "title",
+        "exact_question",
+        "segment",
+        "default_audience",
+        "answer_limit",
+        "story_source",
+        "coverage_ids",
+        "baseline_date",
+        "baseline_session",
+        "actual_date",
+        "actual_session",
+        "attempt_status",
+        "qualification",
+        "evidence",
+        "exact_next_action"
+      ],
+      "properties": {
+        "queue_id": {
+          "type": "string",
+          "pattern": "^P1-Q[0-9]{2}$"
+        },
+        "title": {
+          "type": "string"
+        },
+        "exact_question": {
+          "type": "string"
+        },
+        "segment": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6
+        },
+        "default_audience": {
+          "type": "string"
+        },
+        "answer_limit": {
+          "type": "string"
+        },
+        "story_source": {
+          "type": "string"
+        },
+        "coverage_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^m1-w[1-4]-d[0-9]{2}-[a-z0-9-]+$"
+          }
+        },
+        "baseline_date": {
+          "type": "string"
+        },
+        "baseline_session": {
+          "type": "string",
+          "pattern": "^P1-[A-Z0-9-]+$"
+        },
+        "actual_date": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "actual_session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "attempt_status": {
+          "enum": [
+            "pending",
+            "attempt_a_committed",
+            "coaching_complete",
+            "attempt_b_saved",
+            "completed",
+            "overridden"
+          ]
+        },
+        "qualification": {
+          "enum": [
+            "not_assessed",
+            "qualifying",
+            "nonqualifying",
+            "mixed"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exact_next_action": {
+          "type": "string"
+        }
+      }
+    },
+    "weekday": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "date",
+        "interview_session",
+        "interview_minutes",
+        "queue_id",
+        "pipeline_session",
+        "pipeline_minutes",
+        "roadmap_session",
+        "roadmap_minutes",
+        "close_session",
+        "close_minutes",
+        "close_vector",
+        "total_minutes"
+      ],
+      "properties": {
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "interview_session": {
+          "type": "string",
+          "pattern": "^P1-[0-9]{4}-[0-9]{2}-[0-9]{2}-(I60|MOCK60)$"
+        },
+        "interview_minutes": {
+          "const": 60
+        },
+        "queue_id": {
+          "type": "string",
+          "pattern": "^P1-Q[0-9]{2}$"
+        },
+        "pipeline_session": {
+          "type": "string",
+          "pattern": "^P1-[0-9]{4}-[0-9]{2}-[0-9]{2}-P30$"
+        },
+        "pipeline_minutes": {
+          "const": 30
+        },
+        "roadmap_session": {
+          "type": "string",
+          "pattern": "^P1-[0-9]{4}-[0-9]{2}-[0-9]{2}-R75$"
+        },
+        "roadmap_minutes": {
+          "const": 75
+        },
+        "close_session": {
+          "type": "string",
+          "pattern": "^P1-[0-9]{4}-[0-9]{2}-[0-9]{2}-C15$"
+        },
+        "close_minutes": {
+          "const": 15
+        },
+        "close_vector": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": 5
+            },
+            {
+              "const": 5
+            },
+            {
+              "const": 3
+            },
+            {
+              "const": 2
+            }
+          ],
+          "items": false,
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "total_minutes": {
+          "const": 180
+        }
+      }
+    },
+    "saturday": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "date",
+        "session",
+        "segment_keys",
+        "minutes_vector",
+        "total_minutes"
+      ],
+      "properties": {
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "session": {
+          "type": "string",
+          "pattern": "^P1-[0-9]{4}-[0-9]{2}-[0-9]{2}-SAT120$"
+        },
+        "segment_keys": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$"
+          }
+        },
+        "minutes_vector": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 5,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "total_minutes": {
+          "const": 120
+        }
+      }
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "title",
+        "url"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z]+[0-9]+$"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "exit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exit_id",
+        "legacy_criterion",
+        "phase_owner",
+        "exit_state"
+      ],
+      "properties": {
+        "exit_id": {
+          "type": "string",
+          "pattern": "^EXIT-[A-Z-]+$"
+        },
+        "legacy_criterion": {
+          "type": "string"
+        },
+        "phase_owner": {
+          "type": "string",
+          "pattern": "^P1-[A-Z0-9-]+$"
+        },
+        "exit_state": {
+          "enum": [
+            "Not assessed",
+            "Assessed—not demonstrated",
+            "Demonstrated"
+          ]
+        }
+      }
+    },
+    "priority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "competency",
+        "demonstrated_gap",
+        "supporting_evidence",
+        "excluded_evidence",
+        "phase_2_action",
+        "fresh_transfer_check"
+      ],
+      "properties": {
+        "competency": {
+          "type": "string"
+        },
+        "demonstrated_gap": {
+          "type": "string"
+        },
+        "supporting_evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "excluded_evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "phase_2_action": {
+          "type": "string"
+        },
+        "fresh_transfer_check": {
+          "type": "string"
+        }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gate_id",
+        "owner_session",
+        "priorities",
+        "review_date",
+        "review_ref",
+        "status"
+      ],
+      "properties": {
+        "gate_id": {
+          "const": "GATE-NEXT-PHASE-PRIORITIES"
+        },
+        "owner_session": {
+          "const": "P1-2026-10-03-SAT120"
+        },
+        "priorities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/priority"
+          }
+        },
+        "review_date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "review_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "completed"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "pending"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "priorities": {
+                "maxItems": 0
+              },
+              "review_date": {
+                "type": "null"
+              },
+              "review_ref": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "completed"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "priorities": {
+                "minItems": 1
+              },
+              "review_date": {
+                "type": "string",
+                "format": "date"
+              },
+              "review_ref": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

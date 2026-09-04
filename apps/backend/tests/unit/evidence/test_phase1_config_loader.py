@@ -6,6 +6,7 @@ import json
 import shutil
 from datetime import date
 from decimal import Decimal
+from importlib import resources
 from pathlib import Path
 
 import pytest
@@ -304,6 +305,88 @@ def test_phase1_release_freezes_legacy_scoring_bytes() -> None:
         release_bytes = release_path.read_bytes()
         assert release_bytes == root_bytes[filename]
         assert _sha256(release_bytes) == EXPECTED_ROOT_SHA256[filename]
+
+
+def test_phase1_release_materializes_the_complete_six_week_contract() -> None:
+    bundle = load_config_bundle(PHASE1_RELEASE_DIR)
+
+    assert bundle.roadmap_schema_version == 2
+    assert bundle.roadmap_version == "phase-1-six-week-v1"
+    assert len(bundle.roadmap_tasks) == 148
+    assert len({task.day for task in bundle.roadmap_tasks}) == 36
+    assert sum(task.timebox_minutes for task in bundle.roadmap_tasks) == 6120
+    weekdays = {task.day for task in bundle.roadmap_tasks if task.day % 6 != 0}
+    saturdays = {task.day for task in bundle.roadmap_tasks if task.day % 6 == 0}
+    assert (len(weekdays), len(saturdays)) == (30, 6)
+    assert len(bundle.interview_queue) == 30
+    assert [item.selection_mode for item in bundle.interview_queue].count("ordered") == 29
+    assert bundle.interview_queue[-1].selection_mode == "fixed_event"
+    assert bundle.english_dimensions is not None
+    assert len(bundle.english_dimensions.dimensions) == 6
+    assert bundle.coverage is not None
+    assert len(bundle.coverage.requirements) == 159
+    assert len(bundle.coverage.assignments) == 159
+    kinds = [item.kind for item in bundle.coverage.requirements]
+    assert kinds.count("canonical_assessment") == 4
+    assert kinds.count("next_phase_priorities") == 1
+    roadmap_contract = bundle.roadmap_contracts["roadmap"]
+    assert roadmap_contract.correction_selection is not None
+    assert roadmap_contract.correction_selection.maximum_items == 1
+    assert roadmap_contract.correction_selection.maximum_minutes == 10
+    assert roadmap_contract.correction_selection.no_attempt_c
+
+    totals: dict[int, int] = {}
+    for task in bundle.roadmap_tasks:
+        totals[task.day] = totals.get(task.day, 0) + task.timebox_minutes
+    assert [totals[day] for day in range(1, 37) if day % 6 != 0] == [180] * 30
+    assert [totals[day] for day in range(1, 37) if day % 6 == 0] == [120] * 6
+
+    expected = json.loads(
+        (
+            CONFIG_DIR.parent
+            / "apps/backend/tests/fixtures/roadmaps/expected-phase-1-six-week-v1.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert expected == {
+        "anchor_date": bundle.calendar.anchor_date.isoformat(),
+        "coverage_assignments": len(bundle.coverage.assignments),
+        "coverage_requirements": len(bundle.coverage.requirements),
+        "interview_questions": len(bundle.interview_queue),
+        "nominal_end_date": bundle.calendar.nominal_end_date.isoformat(),
+        "nominal_minutes": sum(totals.values()),
+        "normalized_config_hash": bundle.content_hash.hex(),
+        "program_key": bundle.program.program_key,
+        "roadmap_version": bundle.roadmap_version,
+        "saturday_shapes": [
+            [task.timebox_minutes for task in bundle.roadmap_tasks if task.day == day]
+            for day in sorted(totals)
+            if day % 6 == 0
+        ],
+        "saturdays": len(saturdays),
+        "schema_version": bundle.roadmap_schema_version,
+        "study_days": len(totals),
+        "task_count": len(bundle.roadmap_tasks),
+        "weekday_days": len(weekdays),
+    }
+
+
+def test_transition_schema_is_pinned_as_package_data_and_matches_fixture() -> None:
+    schema_name = "phase-1-transition-v1.schema.json"
+    packaged = resources.files("tamforge_backend.roadmaps").joinpath("schemas", schema_name)
+    packaged_bytes = packaged.read_bytes()
+    fixture = (
+        CONFIG_DIR.parent
+        / "apps/backend/tests/fixtures/roadmaps"
+        / schema_name
+    ).read_bytes()
+
+    assert packaged_bytes == fixture
+    assert _sha256(packaged_bytes) == json.loads(
+        (
+            CONFIG_DIR.parent
+            / "apps/backend/tests/fixtures/roadmaps/phase-1-transition-v1.json"
+        ).read_text(encoding="utf-8")
+    )["schema_sha256"]
 
 
 def test_legacy_root_bundle_remains_schema_v1() -> None:
