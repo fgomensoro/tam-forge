@@ -70,7 +70,10 @@ Use frozen Pydantic models with extra fields forbidden:
   duplicate columns, oversized or ragged results. Hash canonical UTF-8 JSON.
 - `SqlExecutionCommand`: `expected_version`, `query`; existing `Idempotency-Key`
   header owns retries. No schema, DSN, owner or expected result in the command.
-- `SqlExecutionResponse`: `execution_id`, `activity_id`, `query_sha256`, `result`.
+- `SqlExecutionResponse`: `execution_id`, `activity_id`, `query`, `query_sha256`, `result`.
+  The query is the exact immutable submitted text, bounded to 64 KiB, available
+  only through owner-scoped receipts. History can therefore show the query that
+  produced each result after reopening, without replacing a current draft.
 - `SqlExecutionHistory`: bounded list of the most recent execution receipts.
 
 Validation compares exact columns and all rows (multiplicity preserved; ordering
