@@ -26,10 +26,14 @@ from .storage.models import ObjectStoreError
 from .today.routes import router as today_router
 from .today.routes import today_exception_handler
 from .today.service import TodayError
+from .workspaces.routes import router as sql_execution_router
+from .workspaces.routes import setup_sql_execution_runtime, sql_execution_exception_handler
+from .workspaces.sql_service import SqlExecutionError
 
 
 def register_routes(app: FastAPI) -> None:
     """Register the versioned API without importing database resources eagerly."""
+    setup_sql_execution_runtime(app)
     app.include_router(auth_router)
     app.include_router(activity_router)
     app.include_router(evidence_router)
@@ -37,6 +41,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(roadmap_router)
     app.include_router(recording_router)
     app.include_router(today_router)
+    app.include_router(sql_execution_router)
     app.add_exception_handler(AuthError, auth_exception_handler)
     app.add_exception_handler(InvalidOAuthState, auth_exception_handler)
     app.add_exception_handler(RequestValidationError, request_validation_exception_handler)
@@ -47,3 +52,4 @@ def register_routes(app: FastAPI) -> None:
     app.add_exception_handler(RecordingError, recording_exception_handler)
     app.add_exception_handler(ObjectStoreError, roadmap_exception_handler)
     app.add_exception_handler(TodayError, today_exception_handler)
+    app.add_exception_handler(SqlExecutionError, sql_execution_exception_handler)
