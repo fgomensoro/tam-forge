@@ -86,7 +86,7 @@ def _seed_activity(
             "owner_id, roadmap_version_id, local_date, planned_minutes, focused_minutes, "
             "day_type, status, started_at"
             ") VALUES ("
-            ":owner_id, :version_id, :local_date, 45, 0, 'weekday', 'in_progress', now()"
+            ":owner_id, :version_id, :local_date, 45, 0, 'weekday', 'planned', NULL"
             ") RETURNING id"
         ),
         {"owner_id": owner_id, "version_id": version_id, "local_date": local_date},
@@ -114,13 +114,6 @@ def _seed_activity(
             "version_key": f"sql-api-{suffix}-v1",
         },
     ).scalar_one()
-    connection.execute(
-        text(
-            "UPDATE activity_instances SET state = 'active', started_at = now(), "
-            "optimistic_version = 2 WHERE id = :activity_id"
-        ),
-        {"activity_id": activity_id},
-    )
     return int(activity_id)
 
 
@@ -144,6 +137,7 @@ def test_sql_execution_api_persists_immutable_owner_scoped_bounded_receipts(
     from tamforge_backend.auth.schemas import AuthenticatedOwner
     from tamforge_backend.config import Settings
     from tamforge_backend.database import database_url_to_sync
+    from tamforge_backend.learning.service import ActivityService
     from tamforge_backend.main import create_app
     from tamforge_backend.workspaces.models import SqlExecution
     from tamforge_backend.workspaces.routes import get_sql_execution_service
@@ -239,7 +233,7 @@ def test_sql_execution_api_persists_immutable_owner_scoped_bounded_receipts(
                 connection,
                 owner_id=owner_a,
                 suffix="non-sql",
-                local_date=date(2026, 9, 5),
+                local_date=date(2026, 9, 7),
                 stable_id="fixture.reading.task",
                 block="technical_learning",
             )
@@ -247,9 +241,28 @@ def test_sql_execution_api_persists_immutable_owner_scoped_bounded_receipts(
                 connection,
                 owner_id=owner_a,
                 suffix="unmapped",
-                local_date=date(2026, 9, 6),
+                local_date=date(2026, 9, 8),
                 stable_id="fixture.sql.unmapped",
             )
+
+        async def start_fixture_activities() -> None:
+            async with factory() as session:
+                service = ActivityService(session)
+                for label, seeded_activity_id in (
+                    ("mapped", activity_id),
+                    ("non-sql", non_sql_id),
+                    ("unmapped", unmapped_id),
+                ):
+                    started = await service.start(
+                        owner_id=owner_a,
+                        activity_id=seeded_activity_id,
+                        expected_version=1,
+                        idempotency_key=f"sql-api-start-{label}",
+                    )
+                    assert started.state.value == "active"
+                    assert started.optimistic_version == 2
+
+        asyncio.run(start_fixture_activities())
 
         now = datetime.now(UTC)
         owner_a_auth = AuthenticatedOwner(
@@ -340,14 +353,19 @@ def test_sql_execution_api_persists_immutable_owner_scoped_bounded_receipts(
                 large_ids.append(response.json()["execution_id"])
             history = client.get(path)
 
-            with sync_engine.begin() as connection:
-                connection.execute(
-                    text(
-                        "UPDATE activity_instances SET state = 'paused', optimistic_version = 3 "
-                        "WHERE id = :activity_id"
-                    ),
-                    {"activity_id": activity_id},
-                )
+            async def pause_fixture_activity() -> None:
+                async with factory() as session:
+                    paused = await ActivityService(session).pause(
+                        owner_id=owner_a,
+                        activity_id=activity_id,
+                        expected_version=2,
+                        client_sequence=1,
+                        idempotency_key="sql-api-pause-mapped",
+                    )
+                    assert paused.state.value == "paused"
+                    assert paused.optimistic_version == 3
+
+            asyncio.run(pause_fixture_activity())
             replay_after_progress = client.post(
                 path,
                 json={"expected_version": 2, "query": first_query},

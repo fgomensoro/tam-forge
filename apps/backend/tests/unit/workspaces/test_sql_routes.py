@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 from tamforge_backend.auth.dependencies import get_authenticated_owner, require_csrf_owner
 from tamforge_backend.auth.schemas import AuthenticatedOwner
 from tamforge_backend.config import Settings
@@ -161,6 +164,55 @@ def test_sql_execution_errors_are_fixed_and_never_leak_details(
     assert response.headers["cache-control"] == "no-store"
     assert response.json()["code"] == code
     assert str(error) not in response.text
+
+
+def test_sql_history_rollback_db_failure_is_safe_and_non_cacheable() -> None:
+    from tamforge_backend.workspaces.routes import get_sql_execution_service
+    from tamforge_backend.workspaces.sql_service import SqlExecutionService
+
+    class EmptyReceiptResult:
+        def scalars(self) -> EmptyReceiptResult:
+            return self
+
+        def all(self) -> list[object]:
+            return []
+
+    class FailingRollbackSession:
+        async def scalar(self, statement: object) -> int:
+            del statement
+            return 7
+
+        async def execute(self, statement: object) -> EmptyReceiptResult:
+            del statement
+            return EmptyReceiptResult()
+
+        async def rollback(self) -> None:
+            raise SQLAlchemyError("postgresql://user:secret@private-db/app")
+
+    app = create_app(
+        Settings(
+            environment="test",
+            github_user_id=102269369,
+            secure_cookies=False,
+            _env_file=None,
+        )
+    )
+    service = SqlExecutionService(
+        cast(AsyncSession, FailingRollbackSession()),
+        catalog=None,
+        runner=None,
+    )
+    app.dependency_overrides[get_sql_execution_service] = lambda: service
+    app.dependency_overrides[get_authenticated_owner] = lambda: OWNER
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/activities/7/sql-executions")
+
+    assert response.status_code == 503
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json()["code"] == "sql_execution_unavailable"
+    assert "private-db" not in response.text
 
 
 @pytest.mark.parametrize(

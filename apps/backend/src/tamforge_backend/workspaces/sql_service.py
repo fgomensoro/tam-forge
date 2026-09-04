@@ -200,39 +200,40 @@ class SqlExecutionService:
     async def history(self, owner_id: int, activity_id: int) -> SqlExecutionHistory:
         self._validate_identity(owner_id, activity_id)
         try:
-            activity_exists = await self._session.scalar(
-                select(ActivityInstance.id)
-                .where(ActivityInstance.owner_id == owner_id)
-                .where(ActivityInstance.id == activity_id)
-            )
-            if activity_exists is None:
-                raise SqlExecutionNotFound("activity was not found")
-            receipts = (
-                (
-                    await self._session.execute(
-                        select(SqlExecution)
-                        .where(SqlExecution.owner_id == owner_id)
-                        .where(SqlExecution.activity_instance_id == activity_id)
-                        .order_by(SqlExecution.created_at.desc(), SqlExecution.id.desc())
-                        .limit(MAX_HISTORY_ITEMS)
-                    )
+            try:
+                activity_exists = await self._session.scalar(
+                    select(ActivityInstance.id)
+                    .where(ActivityInstance.owner_id == owner_id)
+                    .where(ActivityInstance.id == activity_id)
                 )
-                .scalars()
-                .all()
-            )
-            items: list[SqlExecutionResponse] = []
-            for receipt in receipts:
-                candidate = SqlExecutionHistory(items=tuple((*items, self._response(receipt))))
-                if len(candidate.model_dump_json().encode("utf-8")) > MAX_HISTORY_BYTES:
-                    break
-                items = list(candidate.items)
-            return SqlExecutionHistory(items=tuple(items))
+                if activity_exists is None:
+                    raise SqlExecutionNotFound("activity was not found")
+                receipts = (
+                    (
+                        await self._session.execute(
+                            select(SqlExecution)
+                            .where(SqlExecution.owner_id == owner_id)
+                            .where(SqlExecution.activity_instance_id == activity_id)
+                            .order_by(SqlExecution.created_at.desc(), SqlExecution.id.desc())
+                            .limit(MAX_HISTORY_ITEMS)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                items: list[SqlExecutionResponse] = []
+                for receipt in receipts:
+                    candidate = SqlExecutionHistory(items=tuple((*items, self._response(receipt))))
+                    if len(candidate.model_dump_json().encode("utf-8")) > MAX_HISTORY_BYTES:
+                        break
+                    items = list(candidate.items)
+                return SqlExecutionHistory(items=tuple(items))
+            finally:
+                await self._session.rollback()
         except SqlExecutionError:
             raise
         except (SQLAlchemyError, UnicodeError, ValueError, TypeError, ValidationError):
             raise SqlExecutionUnavailable("SQL execution history is unavailable") from None
-        finally:
-            await self._session.rollback()
 
     async def _load_activity(
         self, *, owner_id: int, activity_id: int, lock: bool
