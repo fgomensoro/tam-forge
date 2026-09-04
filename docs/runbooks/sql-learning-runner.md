@@ -78,6 +78,14 @@ PUBLIC table/column/sequence grants outside the exercise. Revoking a direct role
 grant does not negate an inherited PUBLIC grant. Review default privileges for
 future objects as well as current grants.
 
+PostgreSQL 16 also grants PUBLIC UPDATE on the `pg_catalog.pg_settings` view by
+default, through rules that change session settings. The runner's no-write-grant
+policy rejects this default. Manually revoke PUBLIC UPDATE on that view (and any
+column UPDATE grants) in the dedicated learning database while retaining SELECT.
+The CI fixture temporarily makes this same adjustment and restores its original
+effective grants on exit. See the upstream
+[`pg_settings` grants and rules](https://github.com/postgres/postgres/blob/REL_16_15/src/backend/catalog/system_views.sql#L587).
+
 Keep exercise schemas to ordinary tables and built-in PostgreSQL data types. The
 runtime rejects access to views, materialized views, foreign tables, cross-schema
 inheritance/partitions, and functions in the exercise schema, even functions whose
@@ -95,9 +103,10 @@ This task creates no databases, roles, or grants outside its CI fixture.
 
 ## Execution and results
 
-Every run opens a new asyncpg connection, begins a read-only transaction, sets a
-two-second statement timeout and 250 ms lock timeout, fixes the search path, and
-audits connected identity and grants before preparing the learner's query. Only
+Every run opens a new asyncpg connection, starts a driver-managed read-only
+transaction, sets a two-second statement timeout and 250 ms lock timeout, fixes
+the search path, and audits connected identity and grants before preparing the
+learner's query. Only
 one PostgreSQL prepared statement is accepted; SQL prefixes/parsing are not the
 security boundary. SQL is passed separately to `prepare`, never interpolated into
 application SQL. The runner also imposes a two-second wall-clock query budget and
@@ -122,9 +131,9 @@ Validation preserves row multiplicity and checks order only when the exercise
 requires it. The SHA-256 digest covers compact UTF-8 JSON with keys `columns`,
 then `rows`; it preserves the actual returned order independently of validation.
 
-All outcomes attempt rollback and close, with synchronous connection termination
-if graceful cleanup fails or times out. Caller cancellation cannot interrupt
-cleanup. No connection is pooled or reusable after a run, and a cleanup failure
+All outcomes attempt rollback through that transaction and close, with synchronous
+connection termination if graceful cleanup fails or times out. Caller cancellation
+cannot interrupt cleanup. No connection is pooled or reusable after a run, and a cleanup failure
 cannot produce a successful result. Fixed errors include disabled/unknown exercise,
 unsafe configuration, unavailable, busy, timeout, invalid/rejected query, invalid
 result, and result too large. Do not serialize underlying database exceptions.

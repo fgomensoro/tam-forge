@@ -61,6 +61,22 @@ async def restricted_database(test_database_url: str):
                      pg_catalog.acldefault('d', d.datdba))) a
             WHERE d.datname = pg_catalog.current_database() AND a.grantee = 0
               AND a.privilege_type IN ('CREATE', 'TEMPORARY')
+            UNION ALL
+            SELECT 'REVOKE UPDATE ON pg_catalog.pg_settings FROM PUBLIC',
+                   'GRANT UPDATE ON pg_catalog.pg_settings TO PUBLIC'
+            FROM pg_catalog.pg_class c,
+                 LATERAL pg_catalog.aclexplode(c.relacl) a
+            WHERE c.oid = 'pg_catalog.pg_settings'::pg_catalog.regclass AND a.grantee = 0
+              AND a.privilege_type = 'UPDATE'
+            UNION ALL
+            SELECT pg_catalog.format('REVOKE UPDATE (%I) ON pg_catalog.pg_settings FROM PUBLIC',
+                                     att.attname),
+                   pg_catalog.format('GRANT UPDATE (%I) ON pg_catalog.pg_settings TO PUBLIC',
+                                     att.attname)
+            FROM pg_catalog.pg_attribute att,
+                 LATERAL pg_catalog.aclexplode(att.attacl) a
+            WHERE att.attrelid = 'pg_catalog.pg_settings'::pg_catalog.regclass AND a.grantee = 0
+              AND a.privilege_type = 'UPDATE'
         """)
         for change in changes:
             # Add restoration before the mutation, including uncertain outcomes.
@@ -139,6 +155,7 @@ def test_restricted_role_execution_and_cleanup(test_database_url: str) -> None:
             assert (
                 await runner.run(ex, "SELECT oid FROM pg_catalog.pg_subscription LIMIT 1")
             ).columns == ("oid",)
+            assert (await runner.run(ex, "SELECT name FROM pg_catalog.pg_settings LIMIT 1")).rows
             # A semicolon in a literal is legal; server preparation owns statement cardinality.
             assert (
                 await runner.run(ex, "SELECT ';' AS account_id, 1 AS ticket_count")
@@ -415,11 +432,24 @@ def test_system_schema_create_grant_fails_closed(
 
 @pytest.mark.parametrize(
     ("relation", "column"),
-    [("pg_catalog.pg_class", "relname"), ("information_schema.sql_features", "feature_name")],
+    [
+        ("pg_catalog.pg_class", "relname"),
+        ("pg_catalog.pg_settings", "setting"),
+        ("information_schema.sql_features", "feature_name"),
+    ],
 )
-@pytest.mark.parametrize("privilege", ["UPDATE", "UPDATE ({column})", "SELECT"])
+@pytest.mark.parametrize(
+    ("privilege", "public"),
+    [
+        ("UPDATE", False),
+        ("UPDATE", True),
+        ("UPDATE ({column})", False),
+        ("UPDATE ({column})", True),
+        ("SELECT", False),
+    ],
+)
 def test_public_system_metadata_write_or_grant_option_fails_closed(
-    test_database_url: str, relation: str, column: str, privilege: str
+    test_database_url: str, relation: str, column: str, privilege: str, public: bool
 ) -> None:
     from tamforge_backend.workspaces.sql_contracts import SqlRunnerError
     from tamforge_backend.workspaces.sql_runner import PostgresSqlRunner
@@ -430,13 +460,14 @@ def test_public_system_metadata_write_or_grant_option_fails_closed(
             assert (await runner.run(ex, "SELECT * FROM counts")).validation == "matched"
             grant = privilege.format(column=column)
             option = " WITH GRANT OPTION" if privilege == "SELECT" else ""
-            # This fresh role has no direct catalog ACLs; DROP OWNED also cleans them up.
+            recipient = "PUBLIC" if public else ex.role_name
+            # The healthy baseline proved these write/grant-option ACLs were absent.
             try:
-                await admin.execute(f"GRANT {grant} ON {relation} TO {ex.role_name}{option}")
+                await admin.execute(f"GRANT {grant} ON {relation} TO {recipient}{option}")
                 with pytest.raises(SqlRunnerError, match="^unsafe_configuration$"):
                     await runner.run(ex, "SELECT 1/0 AS marker_that_must_not_run")
             finally:
-                await admin.execute(f"REVOKE {grant} ON {relation} FROM {ex.role_name}")
+                await admin.execute(f"REVOKE {grant} ON {relation} FROM {recipient}")
             assert (await runner.run(ex, "SELECT * FROM counts")).validation == "matched"
 
     asyncio.run(scenario())

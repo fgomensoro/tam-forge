@@ -247,7 +247,13 @@ class _Statement(Protocol):
     def cursor(self) -> Awaitable[_Cursor]: ...
 
 
+class _Transaction(Protocol):
+    async def start(self) -> None: ...
+    async def rollback(self) -> None: ...
+
+
 class _Connection(Protocol):
+    def transaction(self, *, readonly: bool) -> _Transaction: ...
     async def execute(self, query: str, *args: object) -> object: ...
     async def fetchval(self, query: str, *args: object) -> object: ...
     async def prepare(self, query: str) -> _Statement: ...
@@ -271,14 +277,17 @@ def _check_query(query: str) -> None:
         raise SqlRunnerError("invalid_query")
 
 
-async def _destroy_connection(connection: _Connection, deadline: float) -> bool:
+async def _destroy_connection(
+    connection: _Connection, transaction: _Transaction | None, deadline: float
+) -> bool:
     """Bound cleanup itself; termination is synchronous if graceful I/O fails."""
     loop = asyncio.get_running_loop()
     clean = True
     try:
         try:
             async with asyncio.timeout_at(min(deadline, loop.time() + 0.3)):
-                await connection.execute("ROLLBACK")
+                if transaction is not None:
+                    await transaction.rollback()
         except Exception:
             clean = False
         try:
@@ -295,8 +304,10 @@ async def _destroy_connection(connection: _Connection, deadline: float) -> bool:
     return clean
 
 
-async def _shield_cleanup(connection: _Connection, deadline: float) -> bool:
-    cleanup = asyncio.create_task(_destroy_connection(connection, deadline))
+async def _shield_cleanup(
+    connection: _Connection, transaction: _Transaction | None, deadline: float
+) -> bool:
+    cleanup = asyncio.create_task(_destroy_connection(connection, transaction, deadline))
     cancelled = False
     while not cleanup.done():
         try:
@@ -332,6 +343,7 @@ class PostgresSqlRunner:
         loop = asyncio.get_running_loop()
         started = loop.time()
         connection: _Connection | None = None
+        transaction: _Transaction | None = None
         result: SqlResult | None = None
         error: SqlRunnerError | None = None
         stage = "configuration"
@@ -351,7 +363,9 @@ class PostgresSqlRunner:
                     },
                 )
                 stage = "audit"
-                await connection.execute("BEGIN READ ONLY")
+                # asyncpg cursors require its transaction bookkeeping, not only SQL BEGIN.
+                transaction = connection.transaction(readonly=True)
+                await transaction.start()
                 await connection.execute("SET LOCAL statement_timeout = '2s'")
                 await connection.execute("SET LOCAL lock_timeout = '250ms'")
                 await connection.execute("SET LOCAL idle_in_transaction_session_timeout = '2s'")
@@ -404,6 +418,7 @@ class PostgresSqlRunner:
             try:
                 if connection is not None and not await _shield_cleanup(
                     connection,
+                    transaction,
                     started + _OVERALL_SECONDS,
                 ):
                     error = error or SqlRunnerError("unavailable")

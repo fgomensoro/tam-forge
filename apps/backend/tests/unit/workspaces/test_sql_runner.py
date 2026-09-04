@@ -4,6 +4,8 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
+from asyncpg.cursor import BaseCursor
+from asyncpg.transaction import Transaction
 from tamforge_backend.workspaces.sql_contracts import SqlRunnerError
 from tamforge_backend.workspaces.sql_runner import PostgresSqlRunner
 from tamforge_backend.workspaces.sql_settings import SqlExerciseCatalog
@@ -12,7 +14,7 @@ from .test_sql_contracts import exercise
 
 
 class Connection:
-    """External transport only: realistic transaction/prepare/cursor lifetimes."""
+    """External wire transport; real asyncpg transaction state and cursor guard."""
 
     def __init__(
         self,
@@ -24,6 +26,7 @@ class Connection:
         pause=None,
         close_failure=False,
         rollback_pause=None,
+        start_failure=None,
     ):
         self.rows = list(rows)
         self.columns = columns
@@ -32,15 +35,25 @@ class Connection:
         self.pause = pause
         self.close_failure = close_failure
         self.rollback_pause = rollback_pause
+        self.start_failure = start_failure
         self.events = []
         self.closed = False
         self.in_transaction = False
         self.prepared = None
+        self._top_xact = None
+        self._pool_release_ctr = 0
+        self._protocol = SimpleNamespace(is_in_transaction=lambda: self.in_transaction)
+
+    def transaction(self, *, readonly):
+        return Transaction(self, isolation=None, readonly=readonly, deferrable=False)
 
     async def execute(self, sql, *args):
+        sql = sql.removesuffix(";")
         self.events.append((sql, args))
         if sql == "BEGIN READ ONLY":
             self.in_transaction = True
+            if self.start_failure:
+                raise self.start_failure
         elif sql == "ROLLBACK":
             if self.rollback_pause:
                 await self.rollback_pause.wait()
@@ -65,6 +78,10 @@ class Connection:
                 return tuple(SimpleNamespace(name=name) for name in connection.columns)
 
             async def cursor(self):
+                # SQL BEGIN alone does not establish the driver's _top_xact.
+                BaseCursor._check_ready(
+                    SimpleNamespace(_connection=connection, _state=SimpleNamespace(closed=False))
+                )
                 return connection
 
         return Statement()
@@ -105,7 +122,7 @@ def runner_for(connection: Connection) -> PostgresSqlRunner:
     return PostgresSqlRunner(catalog, connector=connect)
 
 
-def test_success_is_validated_and_transaction_destroyed() -> None:
+def test_driver_transaction_allows_cursor_and_result_validation() -> None:
     connection = Connection()
     query = "SELECT '; learner-marker' AS account_id, 2 AS ticket_count"
     result = asyncio.run(runner_for(connection).run(exercise(), query))
@@ -267,5 +284,22 @@ def test_stuck_rollback_has_bounded_cleanup_and_returns_no_success() -> None:
             await runner_for(connection).run(exercise(), "SELECT 1")
         assert connection.closed and not connection.in_transaction
         assert asyncio.get_running_loop().time() - started < 1
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_failed_transaction_start_closes_uncertain_session_and_releases_capacity(cancelled) -> None:
+    async def scenario():
+        failure = asyncio.CancelledError() if cancelled else OSError("start-secret")
+        connection = Connection(start_failure=failure)
+        runner = runner_for(connection)
+        expected = asyncio.CancelledError if cancelled else SqlRunnerError
+        with pytest.raises(expected):
+            await runner.run(exercise(), "SELECT 1")
+        assert connection.closed and not connection.in_transaction
+        assert connection.prepared is None
+        with pytest.raises(SqlRunnerError, match="^invalid_query$"):
+            await runner.run(exercise(), "")
 
     asyncio.run(scenario())
