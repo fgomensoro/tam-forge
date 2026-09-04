@@ -1,10 +1,8 @@
 # Isolated SQL workspace (#89)
 
-The user approved an autonomous five-ticket continuation on 2026-09-04, including
-adapting obsolete ticket plans to the current six-week roadmap and prioritizing
-dependencies. This is the first ticket. Remaining selection prioritizes dependencies under
-the user-approved scope adaptation; the total is five complete tickets. A ticket counts only after full acceptance,
-independent review and all CI checks on the exact merged commit.
+This delivery completes ticket #89 after the merge of PR #147. Completion requires
+full acceptance, independent review and all CI checks on the exact merged commit.
+No additional backlog tickets are included in this delivery.
 
 ## Authority and isolation
 
