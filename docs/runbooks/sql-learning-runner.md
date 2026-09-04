@@ -158,3 +158,37 @@ REVOKE would remove them.
 Relevant upstream contracts: [PostgreSQL read-only transactions](https://www.postgresql.org/docs/16/sql-set-transaction.html),
 [effective privileges and PUBLIC](https://www.postgresql.org/docs/16/ddl-priv.html), and
 [asyncpg prepared statements/cursors/connection cleanup](https://magicstack.github.io/asyncpg/current/api/index.html).
+
+## Native learner workflow
+
+Open an assigned SQL activity in the macOS workspace and start or resume it.
+Write the query in the existing SQL editor, then select **Run** below that editor.
+Blank queries and queries above 64 KiB of UTF-8 cannot run; larger manually saved
+SQL evidence remains intact. Run uses the signed-in workspace connection and the
+activity's current version. Only one run is submitted at a time; incompatible
+activity mutations wait for it, while the learner may keep editing and focused
+time continues independently.
+
+Each successful execution saves an immutable receipt containing its exact query,
+validation outcome, columns/rows, database elapsed milliseconds, row count and
+exercise version. **Matched expected result**, **Result mismatch**, and **Wrong
+result grain** describe exercise validation, not a competency score. Expand a
+receipt to inspect and copy its query and returned JSON, including SQL NULLs.
+Recent receipts reload when the activity reopens, including after commitment;
+**Refresh results** reads durable server history. History is bounded to 20 receipts
+and a 1 MiB server response, so older receipts may fall outside this recent view.
+
+Execution never fills or replaces working output automatically. Copy any desired
+result into the existing result/validation fields and author the explanation,
+business meaning and assistance disclosure. The existing immutable commitment and
+self-review actions remain separate learner decisions. Run timing does not replace
+the focused learning time stored as `solving_seconds`.
+
+A network or unavailable response preserves the draft. Retrying an unconfirmed run
+uses the original complete request, including version and idempotency key, even if
+server state was reloaded. Editing the query invalidates that retry identity; the
+next run captures a new request. Conflicts use the existing workspace reload flow.
+Leaving the workspace or sleeping cancels pending UI work; late responses cannot
+replace an edited query. Reopening reads any receipt that the server saved. Expired
+sessions use the existing workspace authentication recovery. No database exception,
+query text or returned cell is included in client logs or error copy.

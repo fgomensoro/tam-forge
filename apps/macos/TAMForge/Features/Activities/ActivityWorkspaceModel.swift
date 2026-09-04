@@ -130,6 +130,8 @@ struct ActivityArtifactConfirmCommand: Equatable, Sendable {
 @MainActor
 protocol ActivityAPI: AnyObject {
     func fetch(activityID: Int) async throws -> ActivityDetail
+    func executeSQL(_ command: SqlExecutionCommand) async throws -> SqlExecutionReceipt
+    func fetchSQLHistory(activityID: Int) async throws -> [SqlExecutionReceipt]
     func start(activityID: Int, expectedVersion: Int, idempotencyKey: String) async throws -> ActivitySummary
     func pause(_ command: ActivityHeartbeatCommand) async throws -> ActivitySummary
     func resume(activityID: Int, expectedVersion: Int, idempotencyKey: String) async throws -> ActivitySummary
@@ -161,6 +163,9 @@ final class ActivityWorkspaceModel: ObservableObject {
     @Published private(set) var uploadBlocksMutations = false
     @Published var hasAcknowledgedImmutability = false
 
+    let sqlExecution: SqlExecutionModel
+    private var sqlObservation: AnyCancellable?
+
     private let activityID: Int
     private let api: any ActivityAPI
     private let drafts: any ActivityDraftStoring
@@ -190,11 +195,15 @@ final class ActivityWorkspaceModel: ObservableObject {
     ) {
         self.activityID = activityID
         self.api = api
+        self.sqlExecution = SqlExecutionModel(api: api)
         self.drafts = drafts
         self.timer = ActivityTimerCoordinator(activityID: activityID, api: api, journal: timerJournal, idempotency: idempotency)
         self.monotonicNow = monotonicNow
         self.heartbeatSleep = heartbeatSleep
         self.draft = .init(kind: .writing, values: [:])
+        self.sqlObservation = sqlExecution.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
     }
 
     deinit {
@@ -204,10 +213,31 @@ final class ActivityWorkspaceModel: ObservableObject {
 
     var artifactReferences: [ActivityArtifactReference] { draft.artifactReferences }
     private var available: Bool { isVisible && !isSleeping && recovery != .authenticationRequired }
-    var canMutate: Bool { available && !isLoading && !isCommandRunning && !uploadBlocksMutations }
+    var canMutate: Bool { available && !isLoading && !isCommandRunning && !uploadBlocksMutations && !sqlExecution.isRunning }
     var canUpload: Bool { canMutate && (activity?.state == .active || activity?.state == .paused) }
     var canEditDraft: Bool { available && activity?.state.isEditable == true && (!isCommandRunning || heartbeatInFlight) }
     var canRetry: Bool { available && !isLoading && !isCommandRunning && recovery != .none }
+
+    var showsSQLExecution: Bool { activity?.taskContract.block == .sql }
+    var canRunSQL: Bool {
+        showsSQLExecution && canMutate && canEditDraft && activity?.state == .active
+            && !sqlExecution.isLoadingHistory && SqlExecutionModel.queryReason(draft.value(for: "query")) == nil
+    }
+    var canReadSQLHistory: Bool { showsSQLExecution && available && !isLoading && !isCommandRunning && !sqlExecution.isRunning && !sqlExecution.isLoadingHistory }
+
+    func runSQL() async {
+        guard canRunSQL, let activity else { return }
+        do {
+            try await sqlExecution.run(activityID: activity.id, expectedVersion: activity.optimisticVersion,
+                                       query: draft.value(for: "query"))
+        } catch { handle(error) }
+    }
+
+    func refreshSQLHistory() async {
+        guard canReadSQLHistory else { return }
+        do { try await sqlExecution.loadHistory(activityID: activityID) }
+        catch { handle(error) }
+    }
 
     func connect(uploader: ActivityArtifactUploader) {
         self.uploader = uploader
@@ -227,7 +257,7 @@ final class ActivityWorkspaceModel: ObservableObject {
     }
 
     func open() async {
-        guard available, !isLoading, !isCommandRunning else { return }
+        guard available, !isLoading, !isCommandRunning, !sqlExecution.isRunning else { return }
         stopHeartbeat()
         isLoading = true
         let generation = lifetime
@@ -257,6 +287,7 @@ final class ActivityWorkspaceModel: ObservableObject {
             }
             recovery = .none
             errorMessage = nil
+            if showsSQLExecution { try await sqlExecution.loadHistory(activityID: activityID) }
         } catch {
             if generation == lifetime { handle(error) }
         }
@@ -265,6 +296,7 @@ final class ActivityWorkspaceModel: ObservableObject {
     func updateDraft(_ draft: ActivityDraft) {
         guard canEditDraft else { return }
         self.draft = draft
+        sqlExecution.queryDidChange(draft.value(for: "query"))
         saveDraft()
     }
 
@@ -457,7 +489,8 @@ final class ActivityWorkspaceModel: ObservableObject {
         _ command: @escaping @MainActor () async throws -> Value,
         apply: (Value) -> Void
     ) async -> Bool {
-        guard available, !isLoading, !isCommandRunning, !uploadBlocksMutations || allowDuringUpload else { return false }
+        guard available, !isLoading, !isCommandRunning, !uploadBlocksMutations || allowDuringUpload,
+              !sqlExecution.isRunning || allowDuringUpload else { return false }
         isCommandRunning = true
         heartbeatInFlight = allowDuringUpload
         let generation = lifetime
@@ -526,6 +559,7 @@ final class ActivityWorkspaceModel: ObservableObject {
 
     private func invalidateWork() {
         lifetime += 1
+        sqlExecution.invalidate()
         stopHeartbeat()
         reloadTask?.cancel()
         reloadTask = nil
@@ -551,6 +585,7 @@ final class ActivityWorkspaceModel: ObservableObject {
         case .unauthorized:
             recovery = .authenticationRequired
             invalidateWork()
+            sqlExecution.invalidate(clearHistory: true)
             drafts.remove(activityID: activityID)
             draft = .init(kind: .writing, values: [:])
             hasAcknowledgedImmutability = false

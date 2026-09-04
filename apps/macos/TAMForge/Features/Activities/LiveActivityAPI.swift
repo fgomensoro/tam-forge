@@ -186,6 +186,69 @@ final class LiveActivityAPI: ActivityAPI {
         )
     }
 
+    func executeSQL(_ command: SqlExecutionCommand) async throws -> SqlExecutionReceipt {
+        guard SqlExecutionModel.queryReason(command.query) == nil else { throw SqlExecutionError.queryRejected }
+        let body = Components.Schemas.SqlExecutionCommand(expectedVersion: command.expectedVersion, query: command.query)
+        let receipt = try await sendSQL(
+            method: .post, activityID: command.activityID,
+            body: try NativeJSONCodec.encode(body), idempotencyKey: command.idempotencyKey,
+            as: Components.Schemas.SqlExecutionResponse.self,
+            map: { try SqlExecutionReceipt(api: $0, activityID: command.activityID) }
+        )
+        guard receipt.query == command.query else { throw SqlExecutionError.invalidResponse }
+        return receipt
+    }
+
+    func fetchSQLHistory(activityID: Int) async throws -> [SqlExecutionReceipt] {
+        try await sendSQL(method: .get, activityID: activityID,
+                          as: Components.Schemas.SqlExecutionHistory.self) { response in
+            guard response.items.count <= 20 else { throw SqlExecutionError.invalidResponse }
+            let items = try response.items.map { try SqlExecutionReceipt(api: $0, activityID: activityID) }
+            guard Set(items.map(\.id)).count == items.count else { throw SqlExecutionError.invalidResponse }
+            return items
+        }
+    }
+
+    private func sendSQL<Response: Decodable & Sendable, Value>(
+        method: HTTPRequest.Method, activityID: Int, body: Data? = nil, idempotencyKey: String? = nil,
+        as type: Response.Type, map: (Response) throws -> Value
+    ) async throws -> Value {
+        do {
+            try Task.checkCancellation()
+            let response = try await transport.send(.init(
+                method: method, path: "\(path(activityID))/sql-executions", body: body,
+                idempotencyKey: idempotencyKey, responseLimit: .standard
+            ))
+            guard let bytes = response.body, bytes.count <= 1024 * 1024 else { throw SqlExecutionError.invalidResponse }
+            return try map(response.decoded(as: type))
+        } catch is CancellationError {
+            throw ActivityAPIError.cancelled
+        } catch let error as SqlExecutionError {
+            throw error
+        } catch let error as NativeAPIError {
+            switch error {
+            case let .problem(problem):
+                switch (problem.status, problem.code) {
+                case (401, _): throw ActivityAPIError.unauthorized
+                case (409, "sql_execution_conflict"): throw ActivityAPIError.conflict
+                case (404, "sql_activity_not_found"), (503, "sql_execution_unavailable"):
+                    throw SqlExecutionError.unavailable
+                case (429, "sql_execution_busy"): throw SqlExecutionError.busy
+                case (422, "invalid_sql_execution"): throw SqlExecutionError.queryRejected
+                default: throw SqlExecutionError.network
+                }
+            case .emptyResponse, .decodingResponse, .responseTooLarge: throw SqlExecutionError.invalidResponse
+            default: throw SqlExecutionError.network
+            }
+        } catch let error as ActivityAPIError {
+            throw error
+        } catch let error as URLError where error.code == .cancelled {
+            throw ActivityAPIError.cancelled
+        } catch {
+            throw SqlExecutionError.network
+        }
+    }
+
     private func command<Body: Encodable, Response: Decodable & Sendable, Value>(
         activityID: Int,
         action: String,
@@ -521,5 +584,31 @@ private extension ActivityJSONValue {
                 return nil
             }
         }
+    }
+}
+
+private extension SqlExecutionReceipt {
+    init(api value: Components.Schemas.SqlExecutionResponse, activityID: Int) throws {
+        let source = value.result
+        guard value.activityId == activityID, value.executionId > 0,
+              value.query.utf8.count <= 64 * 1024,
+              value.querySha256 == Self.queryHash(value.query),
+              (1...32).contains(source.columns.count), Set(source.columns).count == source.columns.count,
+              source.columns.allSatisfy({ !$0.isEmpty && $0.count <= 63 }),
+              source.rows.count <= 1000, source.rowCount == source.rows.count,
+              source.rows.allSatisfy({ $0.count == source.columns.count }),
+              source.elapsedMs >= 0, source.exerciseVersion > 0,
+              source.exerciseKey.range(of: "^[a-z_][a-z0-9_]{0,62}$", options: .regularExpression) != nil,
+              source.resultSha256.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
+              let validation = SqlValidation(rawValue: source.validation.rawValue) else {
+            throw SqlExecutionError.invalidResponse
+        }
+        let result = SqlExecutionResult(columns: source.columns, rows: source.rows, elapsedMS: source.elapsedMs,
+                                        rowCount: source.rowCount, resultSHA256: source.resultSha256,
+                                        validation: validation, exerciseKey: source.exerciseKey,
+                                        exerciseVersion: source.exerciseVersion)
+        guard try result.encodedRows().count <= 256 * 1024 else { throw SqlExecutionError.invalidResponse }
+        self.init(executionID: value.executionId, activityID: value.activityId, query: value.query,
+                  querySHA256: value.querySha256, result: result)
     }
 }
