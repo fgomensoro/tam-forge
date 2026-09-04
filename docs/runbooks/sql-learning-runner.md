@@ -31,7 +31,7 @@ available. A configured example is not evidence of a usable production mapping.
 
 ## Required PostgreSQL boundary
 
-Use a separately provisioned learning database with synthetic/non-sensitive data,
+Use a separately provisioned PostgreSQL 16 learning database with synthetic/non-sensitive data,
 resource isolation, and trusted administrative ownership. Application credentials
 and application data must not be present in this database. Keep PostgreSQL updated
 and control extension installation and changes to schema objects/ACLs. Do not
@@ -44,7 +44,31 @@ large-object access, or server-file/program privileges. Grant only database
 CONNECT, USAGE on its exercise schema, and SELECT on its ordinary exercise tables,
 without grant options. There must be no write or column-level write privileges,
 sequence privileges, database CREATE/TEMPORARY, or grants outside that schema.
-Standard `pg_catalog` and `information_schema` access remains available.
+Ordinary publicly readable `pg_catalog` and `information_schema` metadata remains
+available; extra system-relation reads, writes, grant options, and system-schema
+CREATE or USAGE grant options fail the audit.
+
+System reads use a positive baseline, not the current PUBLIC grants. For catalog
+tables and columns, the baseline is PUBLIC SELECT recorded by initdb in
+[`pg_init_privs`](https://www.postgresql.org/docs/16/catalog-pg-init-privs.html)
+with `privtype = 'i'`; extension initial grants do not qualify. Table and column
+grants to the runner or PUBLIC must be SELECT without a grant option, covered by
+an initial table-level read or the same initial column-level read. For example,
+the standard public columns of `pg_subscription` remain readable while a grant
+on its `subconninfo` column, `pg_authid`, or `pg_authid.rolpassword` is refused.
+Missing initial read privileges fail closed.
+
+PostgreSQL 16 creates `information_schema` after recording those initial ACLs.
+The runner therefore has one explicit list of all 62 PUBLIC SELECT relations from
+the upstream
+[`REL_16_15` information-schema script](https://github.com/postgres/postgres/blob/REL_16_15/src/backend/catalog/information_schema.sql),
+also restricted to built-in object OIDs below 16384. Private helper views and
+later-created relations cannot gain read access through new grants. The audit
+requires PostgreSQL major version 16; a major upgrade requires baseline review,
+an updated supported-version check, and the real PostgreSQL integration matrix
+before execution can resume. Preserve trusted ownership and the initdb baseline;
+this is an ACL-drift boundary, not protection against a malicious database
+administrator or administrator changes to system object definitions.
 
 The runtime evaluates effective privileges, including `PUBLIC`. Default PostgreSQL
 grants generally require explicit administrative adjustment in the dedicated
@@ -115,6 +139,12 @@ PUBLIC ACLs, restoring the original effective privilege sets and dropping tempor
 objects in `finally`, including on assertion failures. Default NULL ACLs may become
 explicit equivalent ACLs through GRANT restoration; no direct catalog writes occur.
 Run these cases serially without concurrent migrations or other ACL-mutating tests.
+Every negative privilege-drift case first completes a matching own-schema query
+before changing grants or identity, so an audit exception cannot masquerade as a
+successful rejection. Catalog cases cover direct/PUBLIC table and column reads,
+system-schema CREATE, writes and grant options, and ordinary metadata access.
+Restoration also preserves pre-existing PUBLIC column grants when a table-level
+REVOKE would remove them.
 
 Relevant upstream contracts: [PostgreSQL read-only transactions](https://www.postgresql.org/docs/16/sql-set-transaction.html),
 [effective privileges and PUBLIC](https://www.postgresql.org/docs/16/ddl-priv.html), and

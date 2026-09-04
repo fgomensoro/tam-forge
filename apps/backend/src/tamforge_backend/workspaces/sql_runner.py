@@ -25,8 +25,80 @@ _CAPACITY_WAIT_SECONDS = 0.1
 _STATEMENT_SECONDS = 2.0
 _BATCH_ROWS = 25
 
+# PG16 creates information_schema after recording initdb ACLs in pg_init_privs.
+# Its complete PUBLIC SELECT relation list therefore needs an explicit baseline.
+# Source: postgres/postgres REL_16_15, src/backend/catalog/information_schema.sql
+# https://github.com/postgres/postgres/blob/REL_16_15/src/backend/catalog/information_schema.sql
+# The audit also requires the built-in OID range; later objects cannot join it.
+_PG16_INFORMATION_SCHEMA_PUBLIC_RELATIONS = (
+    "administrable_role_authorizations",
+    "applicable_roles",
+    "attributes",
+    "character_sets",
+    "check_constraint_routine_usage",
+    "check_constraints",
+    "collation_character_set_applicability",
+    "collations",
+    "column_column_usage",
+    "column_domain_usage",
+    "column_options",
+    "column_privileges",
+    "column_udt_usage",
+    "columns",
+    "constraint_column_usage",
+    "constraint_table_usage",
+    "data_type_privileges",
+    "domain_constraints",
+    "domain_udt_usage",
+    "domains",
+    "element_types",
+    "enabled_roles",
+    "foreign_data_wrapper_options",
+    "foreign_data_wrappers",
+    "foreign_server_options",
+    "foreign_servers",
+    "foreign_table_options",
+    "foreign_tables",
+    "information_schema_catalog_name",
+    "key_column_usage",
+    "parameters",
+    "referential_constraints",
+    "role_column_grants",
+    "role_routine_grants",
+    "role_table_grants",
+    "role_udt_grants",
+    "role_usage_grants",
+    "routine_column_usage",
+    "routine_privileges",
+    "routine_routine_usage",
+    "routine_sequence_usage",
+    "routine_table_usage",
+    "routines",
+    "schemata",
+    "sequences",
+    "sql_features",
+    "sql_implementation_info",
+    "sql_sizing",
+    "table_constraints",
+    "table_privileges",
+    "tables",
+    "triggered_update_columns",
+    "triggers",
+    "udt_privileges",
+    "usage_privileges",
+    "user_defined_types",
+    "user_mapping_options",
+    "user_mappings",
+    "view_column_usage",
+    "view_routine_usage",
+    "view_table_usage",
+    "views",
+)
+
 # All catalog references are qualified. has_*_privilege includes effective PUBLIC
-# grants and column grants; checking only explicit ACL entries would be unsafe.
+# grants and column grants. System ACL checks can use grantees 0/current role
+# because memberships and ownership are independently forbidden. Their baseline
+# is initdb PUBLIC reads, never today's PUBLIC grants or an extension's ACLs.
 # This deliberately permits only ordinary exercise tables, not executable schema
 # objects, owner-rights views, foreign tables, or cross-schema inheritance.
 _AUDIT_SQL = """
@@ -34,6 +106,7 @@ SELECT COALESCE((
  SELECT
    current_user = $1 AND session_user = $1 AND r.rolcanlogin
    AND NOT (r.rolsuper OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication OR r.rolbypassrls)
+   AND pg_catalog.current_setting('server_version_num')::integer / 10000 = 16
    AND pg_catalog.current_setting('transaction_read_only') = 'on'
    AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members m WHERE m.member = r.oid)
    AND NOT EXISTS (
@@ -63,6 +136,11 @@ SELECT COALESCE((
        AND pg_catalog.has_schema_privilege(r.oid, n.oid, 'USAGE,CREATE')
    )
    AND NOT EXISTS (
+     SELECT 1 FROM pg_catalog.pg_namespace n
+     WHERE n.nspname IN ('pg_catalog', 'information_schema')
+       AND pg_catalog.has_schema_privilege(r.oid, n.oid, 'CREATE,USAGE WITH GRANT OPTION')
+   )
+   AND NOT EXISTS (
      SELECT 1 FROM pg_catalog.pg_class c
      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
@@ -80,8 +158,38 @@ SELECT COALESCE((
    )
    AND NOT EXISTS (
      SELECT 1 FROM pg_catalog.pg_class c
-     WHERE c.relkind = 'S'
-       AND pg_catalog.has_sequence_privilege(r.oid, c.oid, 'USAGE,SELECT,UPDATE')
+     JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+     CROSS JOIN LATERAL (
+       SELECT 0 AS objsubid, COALESCE(c.relacl, pg_catalog.acldefault('r', c.relowner)) AS acl
+       UNION ALL
+       SELECT att.attnum, att.attacl FROM pg_catalog.pg_attribute att
+       WHERE att.attrelid = c.oid AND NOT att.attisdropped AND att.attacl IS NOT NULL
+     ) granted
+     CROSS JOIN LATERAL pg_catalog.aclexplode(granted.acl) a
+     WHERE n.nspname IN ('pg_catalog', 'information_schema')
+       AND c.relkind IN ('r', 'p', 'v', 'm', 'f') AND a.grantee IN (0, r.oid)
+       AND (
+         a.privilege_type <> 'SELECT' OR a.is_grantable
+         OR NOT (
+           EXISTS (
+             SELECT 1 FROM pg_catalog.pg_init_privs i
+             CROSS JOIN LATERAL pg_catalog.aclexplode(i.initprivs) initial
+             WHERE i.classoid = 'pg_catalog.pg_class'::pg_catalog.regclass
+               AND i.objoid = c.oid AND i.objsubid IN (0, granted.objsubid)
+               AND i.privtype = 'i' AND initial.grantee = 0
+               AND initial.privilege_type = 'SELECT'
+           )
+           OR (n.nspname = 'information_schema' AND c.oid < 16384
+               AND c.relname = ANY($3::text[]))
+         )
+       )
+   )
+   AND NOT EXISTS (
+     SELECT 1 FROM pg_catalog.pg_class c
+     -- AND predicates may be reordered; CASE must guard this type-sensitive call.
+     WHERE CASE WHEN c.relkind = 'S' THEN
+       pg_catalog.has_sequence_privilege(r.oid, c.oid, 'USAGE,SELECT,UPDATE')
+       ELSE false END
    )
    AND NOT EXISTS (
      SELECT 1 FROM pg_catalog.pg_proc p
@@ -256,6 +364,7 @@ class PostgresSqlRunner:
                         _AUDIT_SQL,
                         exercise.role_name,
                         exercise.schema_name,
+                        _PG16_INFORMATION_SCHEMA_PUBLIC_RELATIONS,
                     )
                     is not True
                 ):
