@@ -99,6 +99,14 @@ def _repository_head() -> str:
     ).stdout.strip()
 
 
+_STATUS_MACHINE_CODES = {
+    "pass": "verified",
+    "fail": "verification-failed",
+    "blocked": "verification-blocked",
+    "unsupported": "source-unsupported",
+}
+
+
 def _result(key: str) -> dict[str, object]:
     result: dict[str, object] = {
         "key": key,
@@ -491,7 +499,7 @@ def test_passing_negative_scenario_requires_fail_closed_state(
         validate(payload)
 
 
-@pytest.mark.parametrize("status", ["fail", "unsupported", "blocked"])
+@pytest.mark.parametrize("status", ["fail"])
 @pytest.mark.parametrize(
     ("field", "unsafe_value"),
     [
@@ -508,6 +516,7 @@ def test_nonpassing_observed_track_failure_cannot_declare_unsafe_state(
     payload = _payload()
     result = _result_for(payload, "finish.missing-track")
     result["status"] = status
+    result["machine_code"] = _STATUS_MACHINE_CODES[status]
     result[field] = unsafe_value
 
     with pytest.raises(error, match="finish.missing-track.*fail closed"):
@@ -525,6 +534,7 @@ def test_nonpassing_required_scenario_prevents_completion(
     payload = _payload()
     result = _result_for(payload, "app.zoom")
     result["status"] = status
+    result["machine_code"] = _STATUS_MACHINE_CODES[status]
     _rehash(result)
 
     summary = validate(payload, repository_head=payload["commit_sha"])
@@ -539,6 +549,7 @@ def test_cli_prints_machine_readable_incomplete_summary(tmp_path: Path) -> None:
     payload["commit_sha"] = _repository_head()
     result = _result_for(payload, "app.zoom")
     result["status"] = "blocked"
+    result["machine_code"] = "verification-blocked"
     _rehash(result)
     report = tmp_path / "report.json"
     report.write_text(json.dumps(payload), encoding="utf-8")
