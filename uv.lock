@@ -1479,6 +1479,7 @@ dependencies = [
     { name = "python-multipart" },
     { name = "pyyaml" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "tamforge-protocol" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1516,6 +1517,7 @@ requires-dist = [
     { name = "respx", marker = "extra == 'dev'", specifier = ">=0.22,<1" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9,<1" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.36,<3" },
+    { name = "tamforge-protocol", editable = "packages/protocol" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6,<7" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34,<1" },
 ]
