@@ -148,6 +148,9 @@ final class RecordingCoordinator: ObservableObject {
     // Terminal coverage loss (a required track never anchored). The unsealed
     // spool must drain and stay recoverable; it can never seal.
     private var fatalCaptureFailure: RecordingCaptureFailure?
+    // Environment loss reported while the source is still starting; applied
+    // the moment the recording phase begins so it is never dropped.
+    private var pendingEnvironmentEvent: RecordingEnvironmentEvent?
 
     init(
         preflight: any RecordingPreflighting = LiveRecordingPreflight(),
@@ -196,6 +199,7 @@ final class RecordingCoordinator: ObservableObject {
         accumulatedGaps.removeAll(keepingCapacity: true)
         activeStorageFailure = nil
         fatalCaptureFailure = nil
+        pendingEnvironmentEvent = nil
         let result = await preflight.run()
         guard case let .ready(snapshot) = result else {
             if case let .blocked(failure) = result { phase = .blocked(failure) }
@@ -252,6 +256,10 @@ final class RecordingCoordinator: ObservableObject {
                 try? await Task.sleep(for: .seconds(RecordingDiskPolicy.maximumDurationSeconds))
                 guard !Task.isCancelled else { return }
                 await self?.stop(reason: "120-minute recording limit")
+            }
+            if let pending = pendingEnvironmentEvent {
+                pendingEnvironmentEvent = nil
+                await handle(pending)
             }
         } catch {
             var cleanupFailed = false
@@ -317,6 +325,10 @@ final class RecordingCoordinator: ObservableObject {
     // the accepted prefix plus the source's final events, then keep the spool
     // recoverable.
     private func handle(_ event: RecordingEnvironmentEvent) async {
+        if case .preflighting = phase {
+            pendingEnvironmentEvent = event
+            return
+        }
         guard case let .recording(recordingID) = phase else { return }
         phase = .stopping(recordingID)
         let reason: String
