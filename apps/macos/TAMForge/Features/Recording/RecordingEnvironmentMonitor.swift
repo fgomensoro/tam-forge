@@ -34,16 +34,21 @@ private final class LiveEnvironmentSubscription: @unchecked Sendable {
         observe(NSWorkspace.shared.notificationCenter, NSWorkspace.willSleepNotification) { _ in
             continuation.yield(.willSleep)
         }
-        for name in [
-            AVCaptureDevice.wasConnectedNotification,
-            AVCaptureDevice.wasDisconnectedNotification,
-        ] {
-            observe(.default, name) { notification in
-                guard let device = notification.object as? AVCaptureDevice,
-                      device.hasMediaType(.audio)
-                else { return }
-                continuation.yield(Self.deviceEvent(kAudioHardwarePropertyDefaultInputDevice))
-            }
+        // Permission can only be revoked outside the app; re-check when it
+        // returns to the foreground.
+        observe(.default, NSApplication.didBecomeActiveNotification) { _ in
+            guard !Self.permissionsGranted else { return }
+            continuation.yield(.permissionLost)
+        }
+        // Connecting a device never loses the environment; a plain plug-in is
+        // ignored. ponytail: any audio-device disconnect stops, not only the
+        // selected microphone; narrow to the captured uniqueID if the runtime
+        // window shows unrelated unplugs ending recordings.
+        observe(.default, AVCaptureDevice.wasDisconnectedNotification) { notification in
+            guard let device = notification.object as? AVCaptureDevice,
+                  device.hasMediaType(.audio)
+            else { return }
+            continuation.yield(Self.deviceEvent(kAudioHardwarePropertyDefaultInputDevice))
         }
         listen(kAudioHardwarePropertyDefaultInputDevice) {
             continuation.yield(Self.deviceEvent(kAudioHardwarePropertyDefaultInputDevice))
@@ -89,12 +94,15 @@ private final class LiveEnvironmentSubscription: @unchecked Sendable {
         listeners.append((address, block))
     }
 
+    private static var permissionsGranted: Bool {
+        AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+            && CGPreflightScreenCaptureAccess()
+    }
+
     private static func deviceEvent(
         _ selector: AudioObjectPropertySelector
     ) -> RecordingEnvironmentEvent {
-        guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
-              CGPreflightScreenCaptureAccess()
-        else { return .permissionLost }
+        guard permissionsGranted else { return .permissionLost }
         let route = defaultDeviceName(selector)
         return selector == kAudioHardwarePropertyDefaultOutputDevice
             ? .outputRouteChanged(route: route)

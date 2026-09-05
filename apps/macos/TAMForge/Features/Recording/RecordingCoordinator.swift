@@ -317,6 +317,8 @@ final class RecordingCoordinator: ObservableObject {
     // the accepted prefix plus the source's final events, then keep the spool
     // recoverable.
     private func handle(_ event: RecordingEnvironmentEvent) async {
+        guard case let .recording(recordingID) = phase else { return }
+        phase = .stopping(recordingID)
         let reason: String
         switch event {
         case .permissionLost:
@@ -330,8 +332,6 @@ final class RecordingCoordinator: ObservableObject {
         case .willSleep:
             reason = "Mac sleep"
         }
-        guard case let .recording(recordingID) = phase else { return }
-        phase = .stopping(recordingID)
         durationLimitTask?.cancel()
         durationLimitTask = nil
         try? await source.stop()
