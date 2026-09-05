@@ -7,18 +7,18 @@
   "results": [
     {
       "key": "app.zoom",
-      "status": "blocked",
-      "started_at": "2026-09-05T04:54:20Z",
-      "ended_at": "2026-09-05T04:54:21Z",
-      "microphone_track_present": false,
-      "system_audio_track_present": false,
+      "status": "pass",
+      "started_at": "2026-09-05T17:58:39Z",
+      "ended_at": "2026-09-05T17:59:28Z",
+      "microphone_track_present": true,
+      "system_audio_track_present": true,
       "required_tracks_failure": false,
       "gap_count": 0,
-      "sealed": false,
-      "spool_retained": false,
-      "upload_state": "not-started",
-      "machine_code": "verification-blocked",
-      "artifact_sha256": "627c7417e83c9defb1e42947ab25eeeee67f275d99cef72cbe8b47f8816bd3c6"
+      "sealed": true,
+      "spool_retained": true,
+      "upload_state": "pending",
+      "machine_code": "verified",
+      "artifact_sha256": "8f8d6a0267e70af0adccc9191437f7a57aefaee5c75ebf40b2311bb8f8700e74"
     },
     {
       "key": "app.teams",
@@ -277,18 +277,18 @@
     },
     {
       "key": "microphone.in-use",
-      "status": "blocked",
-      "started_at": "2026-09-05T04:54:20Z",
-      "ended_at": "2026-09-05T04:54:21Z",
-      "microphone_track_present": false,
-      "system_audio_track_present": false,
+      "status": "pass",
+      "started_at": "2026-09-05T17:58:39Z",
+      "ended_at": "2026-09-05T17:59:28Z",
+      "microphone_track_present": true,
+      "system_audio_track_present": true,
       "required_tracks_failure": false,
       "gap_count": 0,
-      "sealed": false,
-      "spool_retained": false,
-      "upload_state": "not-started",
-      "machine_code": "verification-blocked",
-      "artifact_sha256": "5117dd7939b6a6a3a8042919075121b9b21f168b912e2e63641f016e9fed099a"
+      "sealed": true,
+      "spool_retained": true,
+      "upload_state": "pending",
+      "machine_code": "verified",
+      "artifact_sha256": "cd5915e5c1301319c73647d0095121765a934d3d8dfaa783731aaf84c7e4e194"
     },
     {
       "key": "silence.microphone",
@@ -559,6 +559,12 @@
       "upload_state": "not-started",
       "machine_code": "verified",
       "artifact_sha256": "45b2fbaf207f687c2c6fc5260facf7efb96aa3c54034df59b1e20c304a133480"
+    }
+  ],
+  "additional_windows": [
+    {
+      "started_at": "2026-09-05T17:58:00Z",
+      "ended_at": "2026-09-05T18:05:00Z"
     }
   ]
 }

@@ -56,7 +56,6 @@ PRESTART_BLOCK_SCENARIO_KEYS = frozenset(
         "permission.denied",
         "permission.restricted",
         "microphone.absent",
-        "microphone.in-use",
         "storage.disk-reserve-pressure",
     }
 )
@@ -1190,4 +1189,32 @@ def test_additional_windows_are_separated_and_bounded_in_calendar_span(
     _rehash(result)
 
     with pytest.raises(error, match=message):
+        validate(payload, repository_head=payload["commit_sha"])
+
+
+def test_microphone_in_use_passes_as_a_shared_capture_with_both_tracks() -> None:
+    # Decision 2026-09-05: macOS shares the microphone, so recording while
+    # another app (a call) holds it is the normal interview case, not a block.
+    validate, error = _validator()
+    payload = _payload()
+    result = _result_for(payload, "microphone.in-use")
+    result.update(
+        {
+            "microphone_track_present": True,
+            "system_audio_track_present": True,
+            "required_tracks_failure": False,
+            "sealed": True,
+            "spool_retained": True,
+            "upload_state": "pending",
+            "machine_code": "verified",
+        }
+    )
+    _rehash(result)
+
+    assert validate(payload, repository_head=payload["commit_sha"]).complete is True
+
+    result["system_audio_track_present"] = False
+    result["sealed"] = False
+    _rehash(result)
+    with pytest.raises(error, match="microphone.in-use must contain both required tracks"):
         validate(payload, repository_head=payload["commit_sha"])

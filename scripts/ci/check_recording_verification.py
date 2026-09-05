@@ -65,14 +65,13 @@ CAPTURE_SCENARIO_KEYS = frozenset(
     key
     for key in REQUIRED_SCENARIO_KEYS
     if key.startswith(("app.", "placement.", "display.", "output.", "silence."))
-) | {"permission.allowed", "startup.callback-order"}
+) | {"permission.allowed", "startup.callback-order", "microphone.in-use"}
 
 PRESTART_BLOCK_SCENARIO_KEYS = frozenset(
     {
         "permission.denied",
         "permission.restricted",
         "microphone.absent",
-        "microphone.in-use",
         "storage.disk-reserve-pressure",
     }
 )
