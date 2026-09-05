@@ -134,13 +134,14 @@ final class RecordingCoordinator: ObservableObject {
     private let source: any RecordingCaptureSource
     private let spoolFactory: any RecordingSpoolCreating
     private let uploader: (any RecordingUploading)?
+    private let environmentMonitor: any RecordingEnvironmentMonitoring
     private var uploadQueue: [UUID] = []
     private var uploadWorkerTask: Task<Void, Never>?
     private var spool: (any RecordingSpoolWriting)?
     private var eventContinuation: AsyncStream<RecordingCaptureEvent>.Continuation?
     private var writerTask: Task<Void, Never>?
     private var pendingGapWrites: PendingGapWrites?
-    private var lifecycleTask: Task<Void, Never>?
+    private var environmentTask: Task<Void, Never>?
     private var durationLimitTask: Task<Void, Never>?
     private var accumulatedGaps: [RecordingGap] = []
     private var activeStorageFailure: Error?
@@ -152,18 +153,20 @@ final class RecordingCoordinator: ObservableObject {
         preflight: any RecordingPreflighting = LiveRecordingPreflight(),
         source: any RecordingCaptureSource = ScreenCaptureAudioSource(),
         spoolFactory: any RecordingSpoolCreating = EncryptedRecordingSpoolFactory(),
-        uploader: (any RecordingUploading)? = nil
+        uploader: (any RecordingUploading)? = nil,
+        environmentMonitor: any RecordingEnvironmentMonitoring = LiveRecordingEnvironmentMonitor()
     ) {
         self.preflight = preflight
         self.source = source
         self.spoolFactory = spoolFactory
         self.uploader = uploader
-        lifecycleTask = Task { [weak self] in
-            for await _ in NotificationCenter.default.notifications(
-                named: NSWorkspace.willSleepNotification
-            ) {
+        self.environmentMonitor = environmentMonitor
+        // Every environment event enters the same ordered coordinator path as
+        // capture events; notification callbacks never write state directly.
+        environmentTask = Task { [weak self] in
+            for await event in environmentMonitor.events() {
                 guard !Task.isCancelled else { return }
-                await self?.stop(reason: "Mac sleep")
+                await self?.handle(event)
             }
         }
         Task { [weak self] in
@@ -173,7 +176,7 @@ final class RecordingCoordinator: ObservableObject {
     }
 
     deinit {
-        lifecycleTask?.cancel()
+        environmentTask?.cancel()
         durationLimitTask?.cancel()
         writerTask?.cancel()
         uploadWorkerTask?.cancel()
@@ -308,6 +311,35 @@ final class RecordingCoordinator: ObservableObject {
         } catch {
             await abandonActiveSpool(recordingID: recordingID)
         }
+    }
+
+    // Environment loss is terminal and never seals: stop the source once, drain
+    // the accepted prefix plus the source's final events, then keep the spool
+    // recoverable.
+    private func handle(_ event: RecordingEnvironmentEvent) async {
+        let reason: String
+        switch event {
+        case .permissionLost:
+            reason = "permission lost"
+        case let .inputDeviceChanged(route):
+            health.routeDescription = route
+            reason = "microphone changed"
+        case let .outputRouteChanged(route):
+            health.routeDescription = route
+            reason = "audio output changed"
+        case .willSleep:
+            reason = "Mac sleep"
+        }
+        guard case let .recording(recordingID) = phase else { return }
+        phase = .stopping(recordingID)
+        durationLimitTask?.cancel()
+        durationLimitTask = nil
+        try? await source.stop()
+        try? await finishEventStreamAndPendingGaps()
+        await abandonActiveSpool(
+            recordingID: recordingID,
+            message: "Stopped: \(reason); recording needs recovery"
+        )
     }
 
     func resetSealedState() {
@@ -466,14 +498,17 @@ final class RecordingCoordinator: ObservableObject {
 
     // Drop live handles only after all registered writes have settled. The
     // authenticated state, journal, media files, and key remain for recovery.
-    private func abandonActiveSpool(recordingID: UUID) async {
+    private func abandonActiveSpool(
+        recordingID: UUID,
+        message: String = "Recording needs recovery"
+    ) async {
         eventContinuation?.finish()
         eventContinuation = nil
         writerTask = nil
         pendingGapWrites = nil
         spool = nil
         await refreshPendingRecordings()
-        phase = .needsAttention(recordingID, "Recording needs recovery")
+        phase = .needsAttention(recordingID, message)
     }
 
     private func refreshPendingRecordings() async {
