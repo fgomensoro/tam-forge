@@ -252,7 +252,8 @@ private final class NativeShellComposition: ObservableObject {
             uploader: RecordingUploadPipeline(
                 spoolFactory: recordingSpool,
                 server: recordingServer
-            )
+            ),
+            environmentMonitor: LiveRecordingEnvironmentMonitor()
         )
     }
 

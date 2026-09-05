@@ -16,6 +16,7 @@
 		F30000000000000000000007 /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000107 /* RecordingView.swift */; };
 		F30000000000000000000008 /* RecordingUploadModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000108 /* RecordingUploadModels.swift */; };
 		F30000000000000000000009 /* RecordingUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000109 /* RecordingUploader.swift */; };
+		F3000000000000000000000A /* RecordingEnvironmentMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3000000000000000000010A /* RecordingEnvironmentMonitor.swift */; };
 		F30000000000000000000011 /* RecordingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000101 /* RecordingModels.swift */; };
 		F30000000000000000000012 /* RecordingTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000102 /* RecordingTimeline.swift */; };
 		F30000000000000000000013 /* RecordingPreflight.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000103 /* RecordingPreflight.swift */; };
@@ -25,6 +26,7 @@
 		F30000000000000000000017 /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000107 /* RecordingView.swift */; };
 		F30000000000000000000018 /* RecordingUploadModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000108 /* RecordingUploadModels.swift */; };
 		F30000000000000000000019 /* RecordingUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000109 /* RecordingUploader.swift */; };
+		F3000000000000000000001A /* RecordingEnvironmentMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3000000000000000000010A /* RecordingEnvironmentMonitor.swift */; };
 		F30000000000000000000021 /* RecordingFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000121 /* RecordingFeatureTests.swift */; };
 		F30000000000000000000022 /* RecordingUploadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000122 /* RecordingUploadTests.swift */; };
 		F40000000000000000000001 /* NativeParityFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40000000000000000000011 /* NativeParityFixtureTests.swift */; };
@@ -143,6 +145,7 @@
 		F30000000000000000000107 /* RecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
 		F30000000000000000000108 /* RecordingUploadModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingUploadModels.swift; sourceTree = "<group>"; };
 		F30000000000000000000109 /* RecordingUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingUploader.swift; sourceTree = "<group>"; };
+		F3000000000000000000010A /* RecordingEnvironmentMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingEnvironmentMonitor.swift; sourceTree = "<group>"; };
 		F30000000000000000000121 /* RecordingFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingFeatureTests.swift; sourceTree = "<group>"; };
 		F30000000000000000000122 /* RecordingUploadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingUploadTests.swift; sourceTree = "<group>"; };
 		F40000000000000000000011 /* NativeParityFixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeParityFixtureTests.swift; sourceTree = "<group>"; };
@@ -388,6 +391,7 @@
 				F30000000000000000000107 /* RecordingView.swift */,
 				F30000000000000000000108 /* RecordingUploadModels.swift */,
 				F30000000000000000000109 /* RecordingUploader.swift */,
+				F3000000000000000000010A /* RecordingEnvironmentMonitor.swift */,
 			);
 			path = Recording;
 			sourceTree = "<group>";
@@ -609,6 +613,7 @@
 				F30000000000000000000007 /* RecordingView.swift in Sources */,
 				F30000000000000000000008 /* RecordingUploadModels.swift in Sources */,
 				F30000000000000000000009 /* RecordingUploader.swift in Sources */,
+				F3000000000000000000000A /* RecordingEnvironmentMonitor.swift in Sources */,
 				E30000000000000000000001 /* EvidenceModels.swift in Sources */,
 				F40000000000000000000005 /* NativeParityUIFixture.swift in Sources */,
 				E30000000000000000000002 /* LiveEvidenceAPI.swift in Sources */,
@@ -660,6 +665,7 @@
 				F30000000000000000000017 /* RecordingView.swift in Sources */,
 				F30000000000000000000018 /* RecordingUploadModels.swift in Sources */,
 				F30000000000000000000019 /* RecordingUploader.swift in Sources */,
+				F3000000000000000000001A /* RecordingEnvironmentMonitor.swift in Sources */,
 				F30000000000000000000021 /* RecordingFeatureTests.swift in Sources */,
 				F30000000000000000000022 /* RecordingUploadTests.swift in Sources */,
 				F40000000000000000000001 /* NativeParityFixtureTests.swift in Sources */,

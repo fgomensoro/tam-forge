@@ -1168,6 +1168,507 @@ final class RecordingFeatureTests: XCTestCase {
         XCTAssertEqual(pendingIDs, createdIDs)
     }
 
+    func testCoordinatorPermissionLostOrdersStopAfterAcceptedAudioDrainsRequiredTrackFailureAndNeverSeals() async {
+        let microphone = RecordingPCMChunk.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 4_800
+        )
+        let systemAudio = RecordingPCMChunk.fixture(
+            track: .systemAudio,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 4_800
+        )
+        let source = FakeRecordingCaptureSource(
+            finalEventsOnStop: [.failure(.requiredTracksMissing)]
+        )
+        let monitor = FakeRecordingEnvironmentMonitor()
+        let spool = GatedFakeRecordingSpool()
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: spool)
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: spoolFactory,
+                environmentMonitor: monitor
+            )
+        }
+        await coordinator.start()
+
+        await source.emit(.chunk(microphone))
+        await source.emit(.chunk(systemAudio))
+        await spool.waitUntilFirstWrite()
+        monitor.emit(.permissionLost)
+        await spool.releaseWrites()
+        await waitUntilCoordinatorSettles(coordinator)
+
+        let operations = await spool.operations()
+        XCTAssertEqual(operations, [.chunk(microphone), .chunk(systemAudio)])
+        XCTAssertFalse(operations.contains(.seal))
+        let health = await MainActor.run { coordinator.health }
+        XCTAssertEqual(health.microphone.warning, .requiredTracksMissing)
+        XCTAssertEqual(health.systemAudio.warning, .requiredTracksMissing)
+        let phase = await MainActor.run { coordinator.phase }
+        guard case .needsAttention = phase else {
+            return XCTFail("permission loss must retain an unsealed recording needing attention")
+        }
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        let pendingIDs = await MainActor.run { coordinator.pendingRecordingIDs }
+        XCTAssertEqual(pendingIDs, createdIDs)
+    }
+
+    func testCoordinatorInputDeviceChangeOrdersExplicitRouteChangeGapBeforeStopAndNeverSeals() async {
+        let microphone = RecordingPCMChunk.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 4_800
+        )
+        let systemAudio = RecordingPCMChunk.fixture(
+            track: .systemAudio,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 4_800
+        )
+        let routeChangeGap = RecordingGap(
+            track: .microphone,
+            sampleStart: 4_800,
+            sampleCount: 1,
+            reason: .routeChange
+        )
+        let source = FakeRecordingCaptureSource(
+            finalEventsOnStop: [.gap(routeChangeGap)]
+        )
+        let monitor = FakeRecordingEnvironmentMonitor()
+        let spool = GatedFakeRecordingSpool()
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: spool)
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: spoolFactory,
+                environmentMonitor: monitor
+            )
+        }
+        await coordinator.start()
+
+        await source.emit(.chunk(microphone))
+        await source.emit(.chunk(systemAudio))
+        await spool.waitUntilFirstWrite()
+        monitor.emit(.inputDeviceChanged(route: "USB Test Microphone"))
+        await spool.releaseWrites()
+        await waitUntilCoordinatorSettles(coordinator)
+
+        let operations = await spool.operations()
+        XCTAssertEqual(operations, [
+            .chunk(microphone),
+            .chunk(systemAudio),
+            .gap(routeChangeGap),
+        ])
+        XCTAssertFalse(operations.contains(.seal))
+        let health = await MainActor.run { coordinator.health }
+        XCTAssertEqual(health.routeDescription, "USB Test Microphone")
+        let phase = await MainActor.run { coordinator.phase }
+        guard case .needsAttention = phase else {
+            return XCTFail("input-device change must retain an unsealed recording needing attention")
+        }
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        let pendingIDs = await MainActor.run { coordinator.pendingRecordingIDs }
+        XCTAssertEqual(pendingIDs, createdIDs)
+    }
+
+    func testCoordinatorOutputRouteChangeDrainsExactNewLineageBoundaryBeforeStopAndNeverSeals() async {
+        let microphone = RecordingPCMChunk.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 4_800
+        )
+        let oldRouteSystemAudio = RecordingPCMChunk.fixture(
+            track: .systemAudio,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 4_800,
+            initialRoute: "Built-in Output"
+        )
+        let newRouteSystemAudio = RecordingPCMChunk.fixture(
+            track: .systemAudio,
+            presentationNanoseconds: 1_100_000_000,
+            sampleStart: 4_800,
+            sampleCount: 4_800,
+            initialRoute: "Test Headphones"
+        )
+        let source = FakeRecordingCaptureSource(
+            finalEventsOnStop: [.chunk(newRouteSystemAudio)]
+        )
+        let monitor = FakeRecordingEnvironmentMonitor()
+        let spool = GatedFakeRecordingSpool()
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: spool)
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: spoolFactory,
+                environmentMonitor: monitor
+            )
+        }
+        await coordinator.start()
+
+        await source.emit(.chunk(microphone))
+        await source.emit(.chunk(oldRouteSystemAudio))
+        await spool.waitUntilFirstWrite()
+        monitor.emit(.outputRouteChanged(route: "Test Headphones"))
+        await spool.releaseWrites()
+        await waitUntilCoordinatorSettles(coordinator)
+
+        let operations = await spool.operations()
+        XCTAssertEqual(operations, [
+            .chunk(microphone),
+            .chunk(oldRouteSystemAudio),
+            .chunk(newRouteSystemAudio),
+        ])
+        XCTAssertFalse(operations.contains(.seal))
+        let persistedSystemRoutes = operations.compactMap { operation -> String? in
+            guard case let .chunk(chunk) = operation, chunk.track == .systemAudio else {
+                return nil
+            }
+            return chunk.source.initialRoute
+        }
+        XCTAssertEqual(persistedSystemRoutes, ["Built-in Output", "Test Headphones"])
+        let health = await MainActor.run { coordinator.health }
+        XCTAssertEqual(health.routeDescription, "Test Headphones")
+        let phase = await MainActor.run { coordinator.phase }
+        guard case .needsAttention = phase else {
+            return XCTFail("output-route change must retain an unsealed recording needing attention")
+        }
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        let pendingIDs = await MainActor.run { coordinator.pendingRecordingIDs }
+        XCTAssertEqual(pendingIDs, createdIDs)
+    }
+
+    func testCoordinatorWillSleepStopsAfterDrainingAcceptedGapAndNeverSealsUnresolvedRequiredTrackFailure() async {
+        let microphone = RecordingPCMChunk.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 4_800
+        )
+        let systemAudio = RecordingPCMChunk.fixture(
+            track: .systemAudio,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 4_800
+        )
+        let finalGap = RecordingGap(
+            track: .systemAudio,
+            sampleStart: 4_800,
+            sampleCount: 4_800,
+            reason: .missingAudio
+        )
+        let source = FakeRecordingCaptureSource(
+            finalEventsOnStop: [.gap(finalGap), .failure(.requiredTracksMissing)]
+        )
+        let monitor = FakeRecordingEnvironmentMonitor()
+        let spool = GatedFakeRecordingSpool()
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: spool)
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: spoolFactory,
+                environmentMonitor: monitor
+            )
+        }
+        await coordinator.start()
+
+        await source.emit(.chunk(microphone))
+        await source.emit(.chunk(systemAudio))
+        await spool.waitUntilFirstWrite()
+        monitor.emit(.willSleep)
+        await spool.releaseWrites()
+        await waitUntilCoordinatorSettles(coordinator)
+
+        let operations = await spool.operations()
+        XCTAssertEqual(operations, [
+            .chunk(microphone),
+            .chunk(systemAudio),
+            .gap(finalGap),
+        ])
+        XCTAssertFalse(operations.contains(.seal))
+        let health = await MainActor.run { coordinator.health }
+        XCTAssertEqual(health.microphone.warning, .requiredTracksMissing)
+        XCTAssertEqual(health.systemAudio.warning, .requiredTracksMissing)
+        let phase = await MainActor.run { coordinator.phase }
+        guard case .needsAttention = phase else {
+            return XCTFail("sleep must retain an unsealed recording needing attention")
+        }
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        let pendingIDs = await MainActor.run { coordinator.pendingRecordingIDs }
+        XCTAssertEqual(pendingIDs, createdIDs)
+    }
+
+    func testCoordinatorPreflightReserveRefusalBlocksWithoutSpoolOrSource() async {
+        let source = FakeRecordingCaptureSource()
+        let spoolFactory = FakeRecordingSpoolFactory()
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: BlockedRecordingPreflight(failure: .insufficientDiskReserve),
+                source: source,
+                spoolFactory: spoolFactory,
+                environmentMonitor: FakeRecordingEnvironmentMonitor()
+            )
+        }
+
+        await coordinator.start()
+
+        let phase = await MainActor.run { coordinator.phase }
+        XCTAssertEqual(phase, .blocked(.insufficientDiskReserve))
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        XCTAssertEqual(createdIDs, [])
+        let startCount = await source.startCount
+        XCTAssertEqual(startCount, 0)
+    }
+
+    func testCoordinatorAppendFailureWhileRecordingStopsOnceAndNeverSeals() async {
+        let microphone = RecordingPCMChunk.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 4_800
+        )
+        let source = FakeRecordingCaptureSource()
+        let spool = WriteFailingRecordingSpool(failure: .append)
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: spool)
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: spoolFactory,
+                environmentMonitor: FakeRecordingEnvironmentMonitor()
+            )
+        }
+        await coordinator.start()
+
+        await source.emit(.chunk(microphone))
+        await waitUntilCoordinatorSettles(coordinator)
+
+        let sealAttempts = await spool.sealAttempts
+        XCTAssertEqual(sealAttempts, 0)
+        let stopCount = await source.stopCount
+        XCTAssertEqual(stopCount, 1)
+        let phase = await MainActor.run { coordinator.phase }
+        guard case .needsAttention = phase else {
+            return XCTFail("disk failure while recording must retain an unsealed recording")
+        }
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        let pendingIDs = await MainActor.run { coordinator.pendingRecordingIDs }
+        XCTAssertEqual(pendingIDs, createdIDs)
+        let discardedIDs = await spoolFactory.discardedRecordingIDs
+        XCTAssertEqual(discardedIDs, [])
+    }
+
+    func testCoordinatorRelaunchAfterEnvironmentLossKeepsUnsealedSpoolPendingWithoutDiscard() async {
+        let spool = OrderedFakeRecordingSpool()
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: spool)
+        do {
+            let source = FakeRecordingCaptureSource(
+                finalEventsOnStop: [.failure(.requiredTracksMissing)]
+            )
+            let monitor = FakeRecordingEnvironmentMonitor()
+            let coordinator = await MainActor.run {
+                RecordingCoordinator(
+                    preflight: FakeRecordingPreflight(),
+                    source: source,
+                    spoolFactory: spoolFactory,
+                    environmentMonitor: monitor
+                )
+            }
+            await coordinator.start()
+            monitor.emit(.willSleep)
+            await waitUntilCoordinatorSettles(coordinator)
+            // The app-style coordinator is destroyed here without any cleanup.
+        }
+
+        let relaunched = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: spoolFactory,
+                environmentMonitor: FakeRecordingEnvironmentMonitor()
+            )
+        }
+        for _ in 0..<500 {
+            let pending = await MainActor.run { relaunched.pendingRecordingIDs }
+            if !pending.isEmpty { break }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        XCTAssertEqual(createdIDs.count, 1)
+        let pendingIDs = await MainActor.run { relaunched.pendingRecordingIDs }
+        XCTAssertEqual(pendingIDs, createdIDs)
+        let uploadStates = await MainActor.run { relaunched.uploadStates }
+        XCTAssertEqual(uploadStates, Dictionary(uniqueKeysWithValues: createdIDs.map { ($0, .pending) }))
+        let discardedIDs = await spoolFactory.discardedRecordingIDs
+        XCTAssertEqual(discardedIDs, [])
+        let operations = await spool.operations()
+        XCTAssertFalse(operations.contains(.seal))
+    }
+
+    func testCoordinatorSleepBeforeSecondTrackAnchorsNeverSeals() async {
+        let microphone = RecordingPCMChunk.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 4_800
+        )
+        let source = FakeRecordingCaptureSource(
+            finalEventsOnStop: [.failure(.requiredTracksMissing)]
+        )
+        let monitor = FakeRecordingEnvironmentMonitor()
+        let spool = OrderedFakeRecordingSpool()
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: spool)
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: spoolFactory,
+                environmentMonitor: monitor
+            )
+        }
+        await coordinator.start()
+
+        await source.emit(.chunk(microphone))
+        monitor.emit(.willSleep)
+        await waitUntilCoordinatorSettles(coordinator)
+
+        let operations = await spool.operations()
+        XCTAssertEqual(operations, [.chunk(microphone)])
+        let health = await MainActor.run { coordinator.health }
+        XCTAssertEqual(health.systemAudio.warning, .requiredTracksMissing)
+        let phase = await MainActor.run { coordinator.phase }
+        guard case .needsAttention = phase else {
+            return XCTFail("sleep before both anchors must retain an unsealed recording")
+        }
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        let pendingIDs = await MainActor.run { coordinator.pendingRecordingIDs }
+        XCTAssertEqual(pendingIDs, createdIDs)
+    }
+
+    func testCoordinatorPermissionLossAfterOnlyOneTrackNeverSeals() async {
+        let systemAudio = RecordingPCMChunk.fixture(
+            track: .systemAudio,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 4_800
+        )
+        let source = FakeRecordingCaptureSource(
+            finalEventsOnStop: [.failure(.requiredTracksMissing)]
+        )
+        let monitor = FakeRecordingEnvironmentMonitor()
+        let spool = OrderedFakeRecordingSpool()
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: spool)
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: spoolFactory,
+                environmentMonitor: monitor
+            )
+        }
+        await coordinator.start()
+
+        await source.emit(.chunk(systemAudio))
+        monitor.emit(.permissionLost)
+        await waitUntilCoordinatorSettles(coordinator)
+
+        let operations = await spool.operations()
+        XCTAssertEqual(operations, [.chunk(systemAudio)])
+        let stopCount = await source.stopCount
+        XCTAssertEqual(stopCount, 1)
+        let health = await MainActor.run { coordinator.health }
+        XCTAssertEqual(health.microphone.warning, .requiredTracksMissing)
+        let phase = await MainActor.run { coordinator.phase }
+        guard case .needsAttention = phase else {
+            return XCTFail("permission loss after one track must retain an unsealed recording")
+        }
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        let pendingIDs = await MainActor.run { coordinator.pendingRecordingIDs }
+        XCTAssertEqual(pendingIDs, createdIDs)
+    }
+
+    func testCoordinatorSourceStopFailureAfterBothTracksKeepsAcceptedAudioUnsealed() async {
+        let microphone = RecordingPCMChunk.fixture(
+            track: .microphone,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 4_800
+        )
+        let systemAudio = RecordingPCMChunk.fixture(
+            track: .systemAudio,
+            presentationNanoseconds: 1_000_000_000,
+            sampleCount: 4_800
+        )
+        let source = FakeRecordingCaptureSource(stopFailure: .streamStopped)
+        let spool = OrderedFakeRecordingSpool()
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: spool)
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: spoolFactory,
+                environmentMonitor: FakeRecordingEnvironmentMonitor()
+            )
+        }
+        await coordinator.start()
+
+        await source.emit(.chunk(microphone))
+        await source.emit(.chunk(systemAudio))
+        await coordinator.stop()
+
+        let operations = await spool.operations()
+        XCTAssertEqual(operations, [.chunk(microphone), .chunk(systemAudio)])
+        let phase = await MainActor.run { coordinator.phase }
+        guard case .needsAttention = phase else {
+            return XCTFail("source stop failure must retain accepted audio unsealed")
+        }
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        let pendingIDs = await MainActor.run { coordinator.pendingRecordingIDs }
+        XCTAssertEqual(pendingIDs, createdIDs)
+        let discardedIDs = await spoolFactory.discardedRecordingIDs
+        XCTAssertEqual(discardedIDs, [])
+    }
+
+    func testCoordinatorEnvironmentLossDuringSourceStartStopsAfterStartAndNeverSeals() async {
+        let source = FakeRecordingCaptureSource(
+            finalEventsOnStop: [.failure(.requiredTracksMissing)],
+            blockStart: true
+        )
+        let monitor = FakeRecordingEnvironmentMonitor()
+        let spool = OrderedFakeRecordingSpool()
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: spool)
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: spoolFactory,
+                environmentMonitor: monitor
+            )
+        }
+        let startTask = Task { await coordinator.start() }
+        await source.waitUntilStartRequested()
+
+        // Sleep arrives while the source is still starting; it must not be lost.
+        monitor.emit(.willSleep)
+        // Give the coordinator time to observe the event before start completes.
+        try? await Task.sleep(for: .milliseconds(100))
+        await source.releaseStart()
+        await startTask.value
+        await waitUntilCoordinatorSettles(coordinator)
+
+        let stopCount = await source.stopCount
+        XCTAssertEqual(stopCount, 1)
+        let operations = await spool.operations()
+        XCTAssertFalse(operations.contains(.seal))
+        let phase = await MainActor.run { coordinator.phase }
+        guard case .needsAttention = phase else {
+            return XCTFail("environment loss during startup must retain an unsealed recording")
+        }
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        let pendingIDs = await MainActor.run { coordinator.pendingRecordingIDs }
+        XCTAssertEqual(pendingIDs, createdIDs)
+    }
+
     private func waitUntilCoordinatorSettles(
         _ coordinator: RecordingCoordinator,
         file: StaticString = #filePath,
@@ -1224,6 +1725,7 @@ private extension RecordingPCMChunk {
     static func fixture(
         track: RecordingTrackKind,
         presentationNanoseconds: Int64,
+        sampleStart: Int64 = 0,
         sampleCount: Int,
         byte: UInt8 = 0,
         initialRoute: String = "Test Route",
@@ -1233,7 +1735,7 @@ private extension RecordingPCMChunk {
         return .init(
             track: track,
             presentationNanoseconds: presentationNanoseconds,
-            sampleStart: 0,
+            sampleStart: sampleStart,
             sampleCount: sampleCount,
             format: try! RecordingPCMFormat(track: track, channelCount: channels),
             source: .init(
@@ -1312,17 +1814,25 @@ private actor FakeRecordingCaptureSource: RecordingCaptureSource {
     private(set) var stopCount = 0
     private let startFailure: RecordingCaptureFailure?
     private let stopFailure: RecordingCaptureFailure?
-    private let finalEventOnStop: RecordingCaptureEvent?
+    private let finalEventsOnStop: [RecordingCaptureEvent]
+    private let blockStart: Bool
+    private var startRequested = false
+    private var startReleased = false
+    private var startRequestWaiter: CheckedContinuation<Void, Never>?
+    private var startGate: CheckedContinuation<Void, Never>?
     private var receive: (@Sendable (RecordingCaptureEvent) -> Void)?
 
     init(
         startFailure: RecordingCaptureFailure? = nil,
         stopFailure: RecordingCaptureFailure? = nil,
-        finalEventOnStop: RecordingCaptureEvent? = nil
+        finalEventOnStop: RecordingCaptureEvent? = nil,
+        finalEventsOnStop: [RecordingCaptureEvent] = [],
+        blockStart: Bool = false
     ) {
         self.startFailure = startFailure
         self.stopFailure = stopFailure
-        self.finalEventOnStop = finalEventOnStop
+        self.finalEventsOnStop = [finalEventOnStop].compactMap { $0 } + finalEventsOnStop
+        self.blockStart = blockStart
     }
 
     func start(
@@ -1332,12 +1842,29 @@ private actor FakeRecordingCaptureSource: RecordingCaptureSource {
     ) async throws {
         startCount += 1
         if let startFailure { throw startFailure }
+        if blockStart, !startReleased {
+            startRequested = true
+            startRequestWaiter?.resume()
+            startRequestWaiter = nil
+            await withCheckedContinuation { continuation in startGate = continuation }
+        }
         self.receive = receive
+    }
+
+    func waitUntilStartRequested() async {
+        if startRequested { return }
+        await withCheckedContinuation { continuation in startRequestWaiter = continuation }
+    }
+
+    func releaseStart() {
+        startReleased = true
+        startGate?.resume()
+        startGate = nil
     }
 
     func stop() async throws {
         stopCount += 1
-        if let finalEventOnStop { receive?(finalEventOnStop) }
+        for event in finalEventsOnStop { receive?(event) }
         receive = nil
         if let stopFailure { throw stopFailure }
     }
@@ -1347,8 +1874,30 @@ private actor FakeRecordingCaptureSource: RecordingCaptureSource {
     func emit(_ event: RecordingCaptureEvent) { receive?(event) }
 }
 
+private final class FakeRecordingEnvironmentMonitor: RecordingEnvironmentMonitoring, @unchecked Sendable {
+    private let stream: AsyncStream<RecordingEnvironmentEvent>
+    private let continuation: AsyncStream<RecordingEnvironmentEvent>.Continuation
+
+    init() {
+        let pair = AsyncStream.makeStream(of: RecordingEnvironmentEvent.self)
+        stream = pair.stream
+        continuation = pair.continuation
+    }
+
+    func events() -> AsyncStream<RecordingEnvironmentEvent> { stream }
+    func emit(_ event: RecordingEnvironmentEvent) { continuation.yield(event) }
+
+    deinit { continuation.finish() }
+}
+
 private struct FakeRecordingPreflight: RecordingPreflighting {
     func run() async -> RecordingPreflightResult { .ready(.fixture) }
+}
+
+private struct BlockedRecordingPreflight: RecordingPreflighting {
+    let failure: RecordingPreflightFailure
+
+    func run() async -> RecordingPreflightResult { .blocked(failure) }
 }
 
 private actor FakeRecordingSpoolFactory: RecordingSpoolCreating {
@@ -1375,6 +1924,7 @@ private struct SingleRecordingSpoolFactory: RecordingSpoolCreating {
 private actor RecoveryTrackingSpoolFactory: RecordingSpoolCreating {
     let spool: any RecordingSpoolWriting
     private(set) var createdRecordingIDs: [UUID] = []
+    private(set) var discardedRecordingIDs: [UUID] = []
 
     init(spool: any RecordingSpoolWriting) { self.spool = spool }
 
@@ -1384,7 +1934,7 @@ private actor RecoveryTrackingSpoolFactory: RecordingSpoolCreating {
     }
 
     func pendingRecordingIDs() async -> [UUID] { createdRecordingIDs }
-    func discard(recordingID: UUID) async throws {}
+    func discard(recordingID: UUID) async throws { discardedRecordingIDs.append(recordingID) }
 }
 
 private actor FakeRecordingSpool: RecordingSpoolWriting {
@@ -1415,9 +1965,17 @@ private actor GatedFakeRecordingSpool: RecordingSpoolWriting {
     private var firstWriteWaiter: CheckedContinuation<Void, Never>?
     private var gate: CheckedContinuation<Void, Never>?
 
-    func append(_ chunk: RecordingPCMChunk) async throws {}
+    func append(_ chunk: RecordingPCMChunk) async throws {
+        await waitForReleaseOnFirstWrite()
+        recordedOperations.append(.chunk(chunk))
+    }
 
     func record(gap: RecordingGap) async throws {
+        await waitForReleaseOnFirstWrite()
+        recordedOperations.append(.gap(gap))
+    }
+
+    private func waitForReleaseOnFirstWrite() async {
         if !firstWriteStarted {
             firstWriteStarted = true
             firstWriteWaiter?.resume()
@@ -1426,7 +1984,6 @@ private actor GatedFakeRecordingSpool: RecordingSpoolWriting {
         if !writesReleased {
             await withCheckedContinuation { continuation in gate = continuation }
         }
-        recordedOperations.append(.gap(gap))
     }
 
     func seal(gaps: [RecordingGap], startedAt: Date, endedAt: Date) async throws {

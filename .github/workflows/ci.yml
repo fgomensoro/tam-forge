@@ -79,6 +79,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Recording evidence is bound to an ancestor commit of the checked-out head.
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -88,6 +91,9 @@ jobs:
           enable-cache: true
       - run: uv sync --all-packages --all-extras --frozen
       - run: uv run ruff check .
+      # Structural and privacy check only; live runtime evidence is never
+      # implied by a report that merely parses.
+      - run: uv run python scripts/ci/check_recording_verification.py docs/project/recording-verification-v1.json
       - run: uv run mypy apps/backend/src packages/protocol/src
       - run: MYPYPATH=apps/backend/src:packages/protocol/src uv run mypy scripts/ci/check_openapi.py scripts/ci/check_repository_policy.py scripts/ci/verify_bootstrap.py scripts/ci/verify_compose.py scripts/dev/seed_foundation_demo.py
       - run: uv run python -m scripts.ci.verify_bootstrap
