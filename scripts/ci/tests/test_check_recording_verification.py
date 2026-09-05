@@ -1016,3 +1016,28 @@ def test_status_and_machine_code_must_agree(status: str, machine_code: str) -> N
 
     with pytest.raises(error, match="machine_code"):
         validate(payload, repository_head=payload["commit_sha"])
+
+
+@pytest.mark.parametrize("status", ["blocked", "unsupported"])
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"sealed": True, "microphone_track_present": False}, "sealing missing tracks"),
+        ({"sealed": True, "required_tracks_failure": True}, "sealing missing tracks"),
+        ({"upload_state": "released", "sealed": False}, "releasing unsafe evidence"),
+    ],
+)
+def test_unobserved_entries_still_cannot_record_an_unsafe_seal_or_release(
+    status: str, overrides: dict[str, object], message: str
+) -> None:
+    # Blocked and unsupported entries may carry observed fields, but never a
+    # seal over missing tracks or a release without a safe seal.
+    validate, error = _validator()
+    payload = _payload()
+    result = _result_for(payload, "app.zoom")
+    result.update({"status": status, "machine_code": _STATUS_MACHINE_CODES[status]})
+    result.update(overrides)
+    _rehash(result)
+
+    with pytest.raises(error, match=message):
+        validate(payload, repository_head=payload["commit_sha"])
