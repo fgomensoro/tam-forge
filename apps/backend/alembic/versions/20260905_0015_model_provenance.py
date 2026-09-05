@@ -54,6 +54,31 @@ LANGUAGE sql IMMUTABLE AS $$
    public.tamforge_provenance_int(j->'id',1,9223372036854775807) AND
    public.tamforge_provenance_hash(j->'content_hash')
 $$;
+-- Frozen legacy config byte domain: already-canonical payloads contain integer numbers,
+-- strings (including all Decimal configuration values), booleans, nulls, arrays and objects.
+-- Reject fractional numeric storage rather than silently reformatting historical floats.
+CREATE FUNCTION public.tamforge_provenance_legacy_config_json(j jsonb) RETURNS text
+LANGUAGE plpgsql IMMUTABLE STRICT SET search_path = pg_catalog AS $$
+DECLARE result text;
+BEGIN
+ CASE jsonb_typeof(j)
+ WHEN 'object' THEN
+   SELECT '{' || coalesce(string_agg(to_jsonb(key)::text || ':' ||
+     public.tamforge_provenance_legacy_config_json(value), ',' ORDER BY key COLLATE "C"), '') || '}'
+     INTO result FROM jsonb_each(j);
+ WHEN 'array' THEN
+   SELECT '[' || coalesce(string_agg(public.tamforge_provenance_legacy_config_json(value), ','
+     ORDER BY ordinal), '') || ']' INTO result FROM jsonb_array_elements(j)
+     WITH ORDINALITY AS items(value, ordinal);
+ WHEN 'number' THEN
+   result := j::text;
+   IF result !~ '^-?(0|[1-9][0-9]*)$' THEN
+     RAISE EXCEPTION 'unsupported legacy config number';
+   END IF;
+ ELSE result := j::text;
+ END CASE;
+ RETURN result;
+END $$;
 CREATE FUNCTION public.tamforge_provenance_rubric(owner bigint, rubric bigint) RETURNS jsonb
 LANGUAGE plpgsql STABLE SET search_path = pg_catalog AS $$
 DECLARE r record; c record; entry jsonb; d record; item jsonb; n integer := 0;
@@ -62,6 +87,10 @@ BEGIN
  IF NOT FOUND THEN RETURN NULL; END IF;
  SELECT * INTO c FROM public.config_seed_versions
    WHERE owner_id = owner AND id = r.config_seed_version_id;
+ IF c.content_hash IS DISTINCT FROM public.digest(convert_to(
+   public.tamforge_provenance_legacy_config_json(c.canonical_payload),'UTF8'),'sha256') THEN
+   RAISE EXCEPTION 'invalid config provenance';
+ END IF;
  SELECT value INTO STRICT entry FROM jsonb_array_elements(c.canonical_payload->'rubrics'->'rubrics')
    WHERE value->>'slug' = r.rubric_key AND value->>'version' = r.version_key;
  IF entry->>'name' IS DISTINCT FROM r.name OR entry->>'scope' IS DISTINCT FROM r.scope_code
@@ -471,7 +500,7 @@ BEGIN
    IF TG_TABLE_NAME = 'model_run_context_items' THEN
      IF NOT public.tamforge_provenance_context(NEW.owner_id, run.activity_id, j)
        OR j->'reference'->>'attempt_id' <> run.attempt_id::text
-       OR run.canonical_json::jsonb->'manifest'->>(j->>'ordinal')::integer <>
+       OR run.canonical_json::jsonb->'manifest'->>(j->>'ordinal')::integer IS DISTINCT FROM
          encode(NEW.content_hash,'hex') THEN RAISE EXCEPTION 'invalid context provenance'; END IF;
    ELSE
      IF j->>'run_hash' IS DISTINCT FROM encode(run.content_hash,'hex')
@@ -581,6 +610,7 @@ END $$;
 CREATE FUNCTION public.tamforge_provenance_seal() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog AS $$
 DECLARE run record; manifest jsonb; n integer; refs integer;
+ first_ordinal integer; last_ordinal integer;
 BEGIN
  IF TG_TABLE_NAME = 'model_runs' THEN
    SELECT * INTO run FROM public.model_runs WHERE id = NEW.id;
@@ -588,9 +618,11 @@ BEGIN
    SELECT * INTO run FROM public.model_runs WHERE id = NEW.run_id;
  END IF;
  SELECT coalesce(jsonb_agg(encode(content_hash,'hex') ORDER BY ordinal),'[]'::jsonb), count(*),
-   count(DISTINCT canonical_json::jsonb->'reference') INTO manifest, n, refs
+   count(DISTINCT canonical_json::jsonb->'reference'), min(ordinal), max(ordinal)
+   INTO manifest, n, refs, first_ordinal, last_ordinal
    FROM public.model_run_context_items WHERE run_id = run.id;
- IF manifest IS DISTINCT FROM run.canonical_json::jsonb->'manifest' OR n <> refs THEN
+ IF manifest IS DISTINCT FROM run.canonical_json::jsonb->'manifest' OR n <> refs
+   OR first_ordinal IS DISTINCT FROM 0 OR last_ordinal IS DISTINCT FROM n-1 THEN
    RAISE EXCEPTION 'context manifest is not complete'; END IF;
  RETURN NULL;
 END $$;
@@ -639,6 +671,7 @@ def downgrade() -> None:
         "immutable()",
         "context(bigint,bigint,jsonb)",
         "rubric(bigint,bigint)",
+        "legacy_config_json(jsonb)",
         "pin(jsonb)",
         "hash(jsonb)",
         "key(jsonb)",

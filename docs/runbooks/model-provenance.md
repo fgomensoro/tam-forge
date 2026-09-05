@@ -18,8 +18,15 @@ same content.
 `bind_rubric(owner_id=..., rubric_id=...)` addresses an existing rubric. PostgreSQL
 extracts its release entry and checks name, scope, scale and every dimension's
 ordinal, key, name, weight, maximum and availability against the persisted rows.
-The binding pins the original config hash and extracted definition hash. It never
-changes historical rubric/config rows, substitutes a release, or creates weights.
+Before binding, PostgreSQL also recomputes the original config digest from its
+stored complete payload. The frozen legacy byte rules are UTF-8, sorted object
+keys, compact separators and preserved array order; Decimal configuration values
+remain JSON strings. The accepted legacy value domain includes strings, booleans,
+null, arrays, objects and integer JSON numbers. Fractional numeric storage is
+rejected rather than normalized into a new historical hash. This full-payload
+verification uses the existing 8 MiB config bound, not the smaller run-envelope
+bound. The binding pins the verified original config hash and extracted definition
+hash. It never changes historical rubric/config rows, substitutes a release, or creates weights.
 
 `ModelRunRepository.register(RunRequest(...))` atomically writes a frozen header
 and 1–64 context rows. Every pinned version includes both row ID and SHA256 hex.
