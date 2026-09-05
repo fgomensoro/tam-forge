@@ -3,7 +3,7 @@
   "commit_sha": "0000000000000000000000000000000000000000",
   "window_started_at": "2026-09-04T19:00:00Z",
   "window_ended_at": "2026-09-04T20:00:00Z",
-  "machine_profile": "macbook-pro-apple-m2-8gb",
+  "machine_profile": "macbook-air-apple-m5-24gb",
   "results": [
     {
       "key": "app.zoom",

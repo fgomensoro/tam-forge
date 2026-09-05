@@ -134,7 +134,7 @@ def _payload() -> dict[str, object]:
         "commit_sha": "0123456789abcdef0123456789abcdef01234567",
         "window_started_at": "2026-09-04T19:00:00Z",
         "window_ended_at": "2026-09-04T20:00:00Z",
-        "machine_profile": "macbook-pro-apple-m2-8gb",
+        "machine_profile": "macbook-air-apple-m5-24gb",
         "results": [_result(key) for key in REQUIRED_SCENARIO_KEYS],
     }
 
@@ -908,3 +908,27 @@ def test_cli_require_complete_accepts_complete_report_on_repository_head(
 
     assert completed.returncode == 0, completed.stderr
     assert json.loads(completed.stdout)["complete"] is True
+
+
+WINDOW_MACHINE_PROFILE = "macbook-air-apple-m5-24gb"
+
+
+def test_supported_machine_profile_names_the_real_window_machine() -> None:
+    # The single runtime window runs on the owner's MacBook Air (Apple M5,
+    # 24 GB); evidence may never claim a machine the window did not use.
+    module = importlib.import_module("scripts.ci.check_recording_verification")
+    validate, _ = _validator()
+    schema = json.loads(
+        Path("docs/project/recording-verification-v1.schema.json").read_text(encoding="utf-8")
+    )
+    payload = _payload()
+    payload["machine_profile"] = WINDOW_MACHINE_PROFILE
+
+    assert module.SUPPORTED_MACHINE_PROFILE == WINDOW_MACHINE_PROFILE
+    assert schema["properties"]["machine_profile"] == {"const": WINDOW_MACHINE_PROFILE}
+    assert validate(payload, repository_head=payload["commit_sha"]).complete is True
+    for report in (
+        "docs/project/recording-verification-v1.json",
+        "docs/project/recording-verification-v1.example.json",
+    ):
+        assert json.loads(Path(report).read_text())["machine_profile"] == WINDOW_MACHINE_PROFILE

@@ -85,7 +85,7 @@ RETAINED_FAILURE_SCENARIO_KEYS = frozenset(
     }
 )
 
-SUPPORTED_MACHINE_PROFILE = "macbook-pro-apple-m2-8gb"
+SUPPORTED_MACHINE_PROFILE = "macbook-air-apple-m5-24gb"
 UTC_TIMESTAMP_PATTERN = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 COMMIT_SHA_PATTERN = r"^[0-9a-f]{40}$"
@@ -135,7 +135,7 @@ class _RecordingVerification(BaseModel):
     commit_sha: Annotated[StrictStr, Field(pattern=COMMIT_SHA_PATTERN)]
     window_started_at: UtcTimestamp
     window_ended_at: UtcTimestamp
-    machine_profile: Literal["macbook-pro-apple-m2-8gb"]
+    machine_profile: Literal["macbook-air-apple-m5-24gb"]
     results: Annotated[list[_ScenarioResult], Field(min_length=1)]
 
 

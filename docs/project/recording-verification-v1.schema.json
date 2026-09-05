@@ -27,7 +27,7 @@
       "$ref": "#/$defs/utc_timestamp"
     },
     "machine_profile": {
-      "const": "macbook-pro-apple-m2-8gb"
+      "const": "macbook-air-apple-m5-24gb"
     },
     "results": {
       "type": "array",
