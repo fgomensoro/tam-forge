@@ -1525,6 +1525,12 @@ provides-extras = ["dev"]
 name = "tamforge-protocol"
 version = "0.1.0"
 source = { editable = "packages/protocol" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.12.5,<3" }]
 
 [[package]]
 name = "types-pyyaml"

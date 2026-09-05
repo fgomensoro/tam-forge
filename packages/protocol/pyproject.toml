@@ -3,7 +3,7 @@ name = "tamforge-protocol"
 version = "0.1.0"
 description = "Shared TAM Forge protocol types"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["pydantic>=2.12.5,<3"]
 
 [build-system]
 requires = ["hatchling"]
