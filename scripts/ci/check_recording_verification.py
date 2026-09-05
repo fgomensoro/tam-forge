@@ -275,7 +275,13 @@ def _validate_scenario_invariants(results: list[_ScenarioResult]) -> None:
             raise RecordingVerificationError(
                 f"scenario {result.key} must contain both required tracks to pass"
             )
-        evidence_was_observed = result.machine_code != "verification-not-run"
+        # Only codes produced by running a scenario count as observations;
+        # blocked and unsupported entries never have to claim fail-closed fields.
+        evidence_was_observed = result.machine_code in {
+            "verified",
+            "verification-failed",
+            "required-tracks-unavailable",
+        }
         if (
             result.key in PRESTART_BLOCK_SCENARIO_KEYS
             and (result.status == "pass" or evidence_was_observed)

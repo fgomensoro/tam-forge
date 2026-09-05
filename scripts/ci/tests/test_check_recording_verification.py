@@ -873,7 +873,7 @@ def test_cli_require_complete_rejects_blocked_runtime_report() -> None:
         [
             sys.executable,
             "scripts/ci/check_recording_verification.py",
-            str(RUNTIME_REPORT),
+            "docs/project/recording-verification-v1.example.json",
             "--require-complete",
         ],
         check=False,
@@ -932,3 +932,39 @@ def test_supported_machine_profile_names_the_real_window_machine() -> None:
         "docs/project/recording-verification-v1.example.json",
     ):
         assert json.loads(Path(report).read_text())["machine_profile"] == WINDOW_MACHINE_PROFILE
+
+
+@pytest.mark.parametrize(
+    ("key", "status", "machine_code"),
+    [
+        ("permission.restricted", "unsupported", "source-unsupported"),
+        ("microphone.in-use", "blocked", "verification-blocked"),
+        ("silence.microphone", "blocked", "verification-blocked"),
+    ],
+)
+def test_unobserved_scenarios_never_have_to_claim_a_required_track_failure(
+    key: str, status: str, machine_code: str
+) -> None:
+    # Blocked and unsupported entries record that nothing was observed; the
+    # fail-closed field rules apply only to evidence that was actually run.
+    validate, _ = _validator()
+    payload = _payload()
+    result = _result_for(payload, key)
+    result.update(
+        {
+            "status": status,
+            "machine_code": machine_code,
+            "microphone_track_present": False,
+            "system_audio_track_present": False,
+            "required_tracks_failure": False,
+            "sealed": False,
+            "spool_retained": False,
+            "upload_state": "not-started",
+        }
+    )
+    _rehash(result)
+
+    summary = validate(payload, repository_head=payload["commit_sha"])
+
+    assert summary.complete is False
+    assert getattr(summary, status) == 1

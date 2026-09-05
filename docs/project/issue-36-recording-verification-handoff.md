@@ -86,6 +86,8 @@ The single window ran on the exact verified code of `1660618` (verified paths by
 | blocked | 7 | app.zoom, app.teams (not installed), microphone.in-use, storage.disk-reserve-pressure, storage.disk-write-pressure (no safe local injection), silence.microphone, silence.system-audio (see below) |
 | unsupported | 3 | app.tam-forge-tts-interviewer (feature absent from the build), microphone.absent (built-in microphone cannot be removed), permission.restricted (no MDM restriction available) |
 
+Provenance of the entries: one live recording may evidence several keys, so identical timestamps are shared recordings, not copies. `server.restart`, `part.*`, `corruption.ciphertext`, and `corruption.upload` were evidenced by the Docker-free backend matrix and validator suites run locally inside the window (04:47:11–04:47:14Z) on top of the required CI backend-integration job on the same verified code; they are not live server restarts. `corruption.aligned-truncation`, `tracks.missing-expected`, `startup.missing-track-bound`, and `finish.missing-track` were evidenced by the TAMForgeTests XCTest run inside the window (04:54:23–04:54:55Z) after the one full-scheme run. `network.loss` records the upload queue holding sealed spools in "waiting for a network connection" against the unreachable fixture server while the other scenarios ran. Blocked and unsupported entries carry only what was observed (the silence entries show the sealed, both-track recordings the contract does not accept); the contract was corrected so unobserved entries never have to claim a required-track failure.
+
 Live observations worth keeping:
 
 - Task 2 environment-loss paths fired exactly as designed on real hardware: output route change, microphone change, and Mac sleep each stopped once, left the spool unsealed and retained, and showed the reason in `needsAttention`.
@@ -99,18 +101,10 @@ Issue #36 therefore cannot close on this head. Closing needs a planning decision
 
 ## Remaining order
 
-1. Confirm required CI is green on the exact PR head and obtain an independent review of that exact SHA. Fix anything P0–P2 test-first and re-review.
-2. Tell the user the single 45–60 minute verification window is ready and wait for the exact response `ready`.
-3. Only after `ready`, run Task 7 once on the exact reviewed head: shared Xcode with `-jobs 2`, one DerivedData root, installed apps, display/routes, permissions, sleep/wake, crash/relaunch, disk pressure, network loss, backend restart through the approved isolated CI backend. Commit no audio or transcript.
-4. Populate `docs/project/recording-verification-v1.json` with `commit_sha` equal to the verified code head and validate **before** committing the evidence:
-
-   ```bash
-   uv run python scripts/ci/check_recording_verification.py \
-     docs/project/recording-verification-v1.json --require-complete
-   ```
-
-   The locked plan's Task 7 text still shows an `--expected-head` flag; the CLI rejects it by design. The CLI resolves the head itself.
-5. Commit the evidence, push, obtain a fresh exact-head review (the evidence commit changes HEAD), confirm all required checks green (structural CI accepts the ancestor-bound evidence), confirm ancestry and mergeability, mark PR #151 ready, and merge.
-6. If live evidence disproves the single-stream ScreenCaptureKit topology, stop and return to planning. Do not add a second stream ad hoc.
+1. Planning decision on the `silence.*` contract: keep "warn and seal" (change the contract) or make silence a retained failure (change the design, with new RED tests). Until then those two keys cannot pass.
+2. Install Zoom and Teams and repeat a short window with consenting calls for `app.zoom` and `app.teams`; decide a safe disk-pressure injection (or a contract change) for `storage.*`, and a second capture tool for `microphone.in-use`.
+3. Any commit that touches `apps/macos`, `apps/backend/src/tamforge_backend/recordings`, or `apps/backend/src/tamforge_backend/storage` invalidates the committed evidence in CI: either revert the report to the sentinel template or repeat the window on the new head.
+4. Keep PR #151 draft and unmerged until every required scenario passes on an exact head with fresh review and green CI; the completion gate is intentionally unmet.
+5. Before a repeat window: grant Screen Recording and Microphone to the `~/Applications/TAMForge.app` copy first, then start the 60-minute clock. Issue #38 removes the ad-hoc-signature cause.
 
 Do not begin issue #37 until #36 is merged.

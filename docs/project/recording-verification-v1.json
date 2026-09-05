@@ -252,13 +252,13 @@
       "ended_at": "2026-09-05T04:54:21Z",
       "microphone_track_present": false,
       "system_audio_track_present": false,
-      "required_tracks_failure": true,
+      "required_tracks_failure": false,
       "gap_count": 0,
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
       "machine_code": "source-unsupported",
-      "artifact_sha256": "3affb76bb2853e494fc67c462bc0c95d64a9a7ff1806ba65956c1551f0d6d577"
+      "artifact_sha256": "e30b4efdbb4186eb9a65deaecbf01eb78590afd2f49ddfba08557516d6954c40"
     },
     {
       "key": "microphone.absent",
@@ -267,13 +267,13 @@
       "ended_at": "2026-09-05T04:54:21Z",
       "microphone_track_present": false,
       "system_audio_track_present": false,
-      "required_tracks_failure": true,
+      "required_tracks_failure": false,
       "gap_count": 0,
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
       "machine_code": "source-unsupported",
-      "artifact_sha256": "31804c0c58641d32ca1afd564a5f3939b5dc5cdcd091fd1f101ceccee23661b9"
+      "artifact_sha256": "96bd09b3d1fe48e2044605bdc7e4fd48367889dbba02b2ecd4e2e7123a0c58d7"
     },
     {
       "key": "microphone.in-use",
@@ -282,13 +282,13 @@
       "ended_at": "2026-09-05T04:54:21Z",
       "microphone_track_present": false,
       "system_audio_track_present": false,
-      "required_tracks_failure": true,
+      "required_tracks_failure": false,
       "gap_count": 0,
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
       "machine_code": "verification-blocked",
-      "artifact_sha256": "21f32d9c07bf5308dda16c2cb1ca4a4997f4db3d7675a97ea4d46574ffa61c88"
+      "artifact_sha256": "5117dd7939b6a6a3a8042919075121b9b21f168b912e2e63641f016e9fed099a"
     },
     {
       "key": "silence.microphone",
@@ -297,13 +297,13 @@
       "ended_at": "2026-09-05T04:54:21Z",
       "microphone_track_present": true,
       "system_audio_track_present": true,
-      "required_tracks_failure": true,
+      "required_tracks_failure": false,
       "gap_count": 0,
-      "sealed": false,
+      "sealed": true,
       "spool_retained": true,
-      "upload_state": "not-started",
+      "upload_state": "pending",
       "machine_code": "verification-blocked",
-      "artifact_sha256": "567dff5dd0f5a33299469cf63878055b1a475abf6223b5701d2d11e6052ac967"
+      "artifact_sha256": "479eedbc46c841461ea02cecd6bf3b349e0317b54551d843e631b0faa3852692"
     },
     {
       "key": "silence.system-audio",
@@ -312,13 +312,13 @@
       "ended_at": "2026-09-05T04:54:21Z",
       "microphone_track_present": true,
       "system_audio_track_present": true,
-      "required_tracks_failure": true,
+      "required_tracks_failure": false,
       "gap_count": 0,
-      "sealed": false,
+      "sealed": true,
       "spool_retained": true,
-      "upload_state": "not-started",
+      "upload_state": "pending",
       "machine_code": "verification-blocked",
-      "artifact_sha256": "bc2102e97d88031369daa84ba12162e5f91b14a89c671f30301eca40f196f08f"
+      "artifact_sha256": "8277b0a9962695a0fe96e4a0349ea1b9358396e8590d9a0166c5299ffb15b661"
     },
     {
       "key": "lifecycle.sleep-wake",
@@ -346,9 +346,9 @@
       "gap_count": 0,
       "sealed": false,
       "spool_retained": true,
-      "upload_state": "pending",
+      "upload_state": "not-started",
       "machine_code": "verified",
-      "artifact_sha256": "36a04b632ee3b9232c07d2b200427575982e9860cc8dc762ffa7fd6d862dcdd1"
+      "artifact_sha256": "1a86ce174c355e518b9e3a412f0a802f944951091989509a3fd24d0bf1f59e8e"
     },
     {
       "key": "storage.disk-reserve-pressure",
