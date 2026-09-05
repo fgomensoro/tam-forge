@@ -84,11 +84,9 @@ RETAINED_FAILURE_SCENARIO_KEYS = frozenset(
 
 SUPPORTED_MACHINE_PROFILE = "macbook-pro-apple-m2-8gb"
 UTC_TIMESTAMP_PATTERN = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
-SHA256_PATTERN = r"^[0-9a-f]{64}$"
 COMMIT_SHA_PATTERN = r"^[0-9a-f]{40}$"
 
 UtcTimestamp = Annotated[StrictStr, Field(pattern=UTC_TIMESTAMP_PATTERN)]
-Sha256 = Annotated[StrictStr, Field(pattern=SHA256_PATTERN)]
 MachineCode = Literal[
     "verified",
     "verification-not-run",
@@ -120,7 +118,6 @@ class _ScenarioResult(BaseModel):
         "not-started", "pending", "audio-accepted", "lineage-accepted", "released"
     ]
     machine_code: MachineCode
-    artifact_hashes: Annotated[list[Sha256], Field(min_length=1, max_length=16)]
 
 
 class _RecordingVerification(BaseModel):
@@ -211,8 +208,13 @@ def _scan_for_private_data(value: object) -> None:
             raise RecordingVerificationError("URL fragment data is forbidden")
 
 
-def _timestamp(value: str) -> datetime:
-    return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+def _timestamp(value: str, field: str) -> datetime:
+    try:
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError as exc:
+        raise RecordingVerificationError(
+            f"{field} must be a valid UTC timestamp"
+        ) from exc
 
 
 def _validated_report(payload: object) -> _RecordingVerification:
@@ -241,16 +243,16 @@ def _validate_inventory(results: list[_ScenarioResult]) -> None:
 
 
 def _validate_time_bounds(report: _RecordingVerification) -> None:
-    window_start = _timestamp(report.window_started_at)
-    window_end = _timestamp(report.window_ended_at)
+    window_start = _timestamp(report.window_started_at, "window_started_at")
+    window_end = _timestamp(report.window_ended_at, "window_ended_at")
     if window_end <= window_start:
         raise RecordingVerificationError("window_ended_at must be after window_started_at")
     if window_end - window_start > timedelta(minutes=60):
         raise RecordingVerificationError("verification window cannot exceed 60 minutes")
 
     for result in report.results:
-        started = _timestamp(result.started_at)
-        ended = _timestamp(result.ended_at)
+        started = _timestamp(result.started_at, f"{result.key}.started_at")
+        ended = _timestamp(result.ended_at, f"{result.key}.ended_at")
         if ended < started or started < window_start or ended > window_end:
             raise RecordingVerificationError(
                 f"scenario {result.key} timestamps must be ordered inside the verification window"
@@ -259,35 +261,62 @@ def _validate_time_bounds(report: _RecordingVerification) -> None:
 
 def _validate_scenario_invariants(results: list[_ScenarioResult]) -> None:
     for result in results:
-        if result.status != "pass":
-            continue
-        if result.key in CAPTURE_SCENARIO_KEYS and not (
+        if result.status == "pass" and result.key in CAPTURE_SCENARIO_KEYS and not (
             result.microphone_track_present and result.system_audio_track_present
         ):
             raise RecordingVerificationError(
                 f"scenario {result.key} must contain both required tracks to pass"
             )
-        if result.key in PRESTART_BLOCK_SCENARIO_KEYS and not (
-            result.required_tracks_failure
-            and not result.sealed
-            and not result.spool_retained
-            and result.upload_state == "not-started"
+        evidence_was_observed = result.machine_code != "verification-not-run"
+        if (
+            result.key in PRESTART_BLOCK_SCENARIO_KEYS
+            and (result.status == "pass" or evidence_was_observed)
+            and not (
+                result.required_tracks_failure
+                and not result.sealed
+                and not result.spool_retained
+                and result.upload_state == "not-started"
+            )
         ):
             raise RecordingVerificationError(
                 f"scenario {result.key} must fail closed before capture starts"
             )
-        if result.key in RETAINED_FAILURE_SCENARIO_KEYS and not (
-            result.required_tracks_failure
-            and not result.sealed
-            and result.spool_retained
-            and result.upload_state == "not-started"
+        if (
+            result.key in RETAINED_FAILURE_SCENARIO_KEYS
+            and (result.status == "pass" or evidence_was_observed)
+            and not (
+                result.required_tracks_failure
+                and not result.sealed
+                and result.spool_retained
+                and result.upload_state == "not-started"
+            )
         ):
             raise RecordingVerificationError(
                 f"scenario {result.key} must fail closed with its spool retained"
             )
+        if result.sealed and (
+            result.required_tracks_failure
+            or not result.microphone_track_present
+            or not result.system_audio_track_present
+        ):
+            raise RecordingVerificationError(
+                f"scenario {result.key} must fail closed instead of sealing missing tracks"
+            )
+        if result.upload_state == "released" and (
+            not result.sealed
+            or result.required_tracks_failure
+            or result.spool_retained
+            or not result.microphone_track_present
+            or not result.system_audio_track_present
+        ):
+            raise RecordingVerificationError(
+                f"scenario {result.key} must fail closed instead of releasing unsafe evidence"
+            )
 
 
-def validate_recording_verification(payload: object) -> RecordingVerificationSummary:
+def validate_recording_verification(
+    payload: object, *, expected_head: str | None = None
+) -> RecordingVerificationSummary:
     """Validate a report and return counts without treating incompleteness as validity."""
 
     report = _validated_report(payload)
@@ -298,6 +327,18 @@ def validate_recording_verification(payload: object) -> RecordingVerificationSum
     counts = Counter(result.status for result in report.results)
     passed = counts["pass"]
     total = len(report.results)
+    if expected_head is not None:
+        expected_head_is_valid = isinstance(expected_head, str) and re.fullmatch(
+            COMMIT_SHA_PATTERN, expected_head
+        )
+        if not expected_head_is_valid:
+            raise RecordingVerificationError(
+                "expected_head must be a full lowercase 40-character commit SHA"
+            )
+        if report.commit_sha != expected_head:
+            raise RecordingVerificationError("commit_sha does not match expected_head")
+    elif passed == total:
+        raise RecordingVerificationError("expected_head is required for a complete report")
     return RecordingVerificationSummary(
         total=total,
         passed=passed,
@@ -318,9 +359,12 @@ def _load_json(path: Path) -> object:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("report", type=Path)
+    parser.add_argument("--expected-head")
     args = parser.parse_args()
     try:
-        summary = validate_recording_verification(_load_json(args.report))
+        summary = validate_recording_verification(
+            _load_json(args.report), expected_head=args.expected_head
+        )
     except RecordingVerificationError as exc:
         parser.error(str(exc))
     print(json.dumps(asdict(summary), sort_keys=True))

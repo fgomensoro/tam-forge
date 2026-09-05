@@ -89,7 +89,6 @@ def _result(key: str) -> dict[str, object]:
         "spool_retained": False,
         "upload_state": "released",
         "machine_code": "verified",
-        "artifact_hashes": ["a" * 64],
     }
     if key in PRESTART_BLOCK_SCENARIO_KEYS | RETAINED_FAILURE_SCENARIO_KEYS:
         result.update(
@@ -123,8 +122,9 @@ def _result_for(payload: dict[str, object], key: str) -> dict[str, object]:
 
 def test_complete_payload_returns_complete_summary() -> None:
     validate, _ = _validator()
+    payload = _payload()
 
-    summary = validate(_payload())
+    summary = validate(payload, expected_head=payload["commit_sha"])
 
     assert summary.total == 37
     assert summary.passed == 37
@@ -132,6 +132,23 @@ def test_complete_payload_returns_complete_summary() -> None:
     assert summary.unsupported == 0
     assert summary.blocked == 0
     assert summary.complete is True
+
+
+def test_complete_payload_requires_expected_head() -> None:
+    validate, error = _validator()
+
+    with pytest.raises(error, match="expected_head.*required"):
+        validate(_payload())
+
+
+def test_complete_payload_rejects_stale_commit() -> None:
+    validate, error = _validator()
+
+    with pytest.raises(error, match="commit_sha.*expected_head"):
+        validate(
+            _payload(),
+            expected_head="fedcba9876543210fedcba9876543210fedcba98",
+        )
 
 
 @pytest.mark.parametrize("schema_version", [0, 2, "1", True])
@@ -289,14 +306,19 @@ def test_private_or_free_form_evidence_is_rejected(
         validate(payload)
 
 
-@pytest.mark.parametrize(
-    "artifact_hash",
-    ["A" * 64, "a" * 63, "g" * 64, "sha256:" + "a" * 64],
-)
-def test_artifact_hashes_are_bare_lowercase_sha256(artifact_hash: str) -> None:
+def test_arbitrary_artifact_hash_channel_is_rejected() -> None:
     validate, error = _validator()
     payload = _payload()
-    _result_for(payload, "app.zoom")["artifact_hashes"] = [artifact_hash]
+    _result_for(payload, "app.zoom")["artifact_hashes"] = ["a" * 64]
+
+    with pytest.raises(error, match="artifact_hashes"):
+        validate(payload)
+
+
+def test_duplicate_artifact_hash_channel_is_rejected_by_python() -> None:
+    validate, error = _validator()
+    payload = _payload()
+    _result_for(payload, "app.zoom")["artifact_hashes"] = ["a" * 64, "a" * 64]
 
     with pytest.raises(error, match="artifact_hashes"):
         validate(payload)
@@ -354,6 +376,29 @@ def test_passing_negative_scenario_requires_fail_closed_state(
         validate(payload)
 
 
+@pytest.mark.parametrize("status", ["fail", "unsupported", "blocked"])
+@pytest.mark.parametrize(
+    ("field", "unsafe_value"),
+    [
+        ("required_tracks_failure", False),
+        ("sealed", True),
+        ("spool_retained", False),
+        ("upload_state", "released"),
+    ],
+)
+def test_nonpassing_observed_track_failure_cannot_declare_unsafe_state(
+    status: str, field: str, unsafe_value: object
+) -> None:
+    validate, error = _validator()
+    payload = _payload()
+    result = _result_for(payload, "finish.missing-track")
+    result["status"] = status
+    result[field] = unsafe_value
+
+    with pytest.raises(error, match="finish.missing-track.*fail closed"):
+        validate(payload)
+
+
 @pytest.mark.parametrize(
     ("status", "summary_field"),
     [("fail", "failed"), ("unsupported", "unsupported"), ("blocked", "blocked")],
@@ -400,6 +445,78 @@ def test_cli_prints_machine_readable_incomplete_summary(tmp_path: Path) -> None:
     }
 
 
+def test_cli_rejects_complete_report_for_stale_expected_head(tmp_path: Path) -> None:
+    payload = _payload()
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps(payload), encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/ci/check_recording_verification.py",
+            str(report),
+            "--expected-head",
+            "fedcba9876543210fedcba9876543210fedcba98",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert "commit_sha does not match expected_head" in completed.stderr
+    assert "Traceback" not in completed.stderr
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("window_started_at", "2026-02-30T19:00:00Z"),
+        ("window_ended_at", "2026-13-04T20:00:00Z"),
+    ],
+)
+def test_invalid_calendar_window_date_raises_contract_error(
+    field: str, value: str
+) -> None:
+    validate, error = _validator()
+    payload = _payload()
+    payload[field] = value
+
+    with pytest.raises(error, match=f"{field}.*valid UTC timestamp"):
+        validate(payload)
+
+
+def test_invalid_calendar_scenario_date_raises_contract_error() -> None:
+    validate, error = _validator()
+    payload = _payload()
+    _result_for(payload, "app.zoom")["started_at"] = "2026-02-30T19:00:00Z"
+
+    with pytest.raises(error, match="app.zoom.started_at.*valid UTC timestamp"):
+        validate(payload)
+
+
+def test_cli_reports_invalid_calendar_date_without_traceback(tmp_path: Path) -> None:
+    payload = _payload()
+    payload["window_started_at"] = "2026-02-30T19:00:00Z"
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps(payload), encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/ci/check_recording_verification.py",
+            str(report),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert "window_started_at must be a valid UTC timestamp" in completed.stderr
+    assert "Traceback" not in completed.stderr
+
+
 def test_schema_is_closed_and_declares_the_validator_contract() -> None:
     schema_path = Path("docs/project/recording-verification-v1.schema.json")
 
@@ -429,7 +546,6 @@ def test_schema_is_closed_and_declares_the_validator_contract() -> None:
         "spool_retained",
         "upload_state",
         "machine_code",
-        "artifact_hashes",
     }
     assert set(result_schema["properties"]["machine_code"]["enum"]) == {
         "verified",
@@ -448,6 +564,7 @@ def test_example_is_safe_structurally_valid_and_deliberately_incomplete() -> Non
     payload = json.loads(example_path.read_text(encoding="utf-8"))
     summary = validate(payload)
 
+    assert all("artifact_hashes" not in result for result in payload["results"])
     assert summary.total == 37
     assert summary.blocked == 37
     assert summary.complete is False

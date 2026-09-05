@@ -17,10 +17,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "f70eaa246136a41bcb2d22ac83a926867016e6e6bd8e82e9206525850daa40c9"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "app.teams",
@@ -34,10 +31,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "839ce5f5137584e768b14c56a31441339c00b8664fe675fb806b4ba124575b7c"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "app.meet-browser-call",
@@ -51,10 +45,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "c09ad4f80eae6fc7cd1cad5aa74d5ad33ba4e6752b07379d6339cc74a384f021"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "app.tam-forge-tts-interviewer",
@@ -68,10 +59,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "46de7d320c9e4cc2f6ba1b2bc20cb336aa52955841ed336cefa946d154197163"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "app.browser-local-playback",
@@ -85,10 +73,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "51503974ca29ba4a635499f85cdf0b9465aeb913c6d0a5dae9e5f98144daf045"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "placement.foreground",
@@ -102,10 +87,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "3c4302ddff21c1d069e2df8f344a8d755a6ba314b3dc0030bcd3f881a141051f"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "placement.background",
@@ -119,10 +101,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "c732e76fda67b5973672591c35618d0b2e355de8f86a3a033d44762847756747"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "placement.minimized",
@@ -136,10 +115,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "362a714f0709f1ad52280b1d66945cdeb8b853b86d9aa1dc87fe8e93c2c3f785"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "display.internal",
@@ -153,10 +129,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "8db77b8160f8904fbca996b59e91823abdff52416c526a0aec50190588a72466"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "display.external",
@@ -170,10 +143,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "b4471852d6b0f8ea1f18ec7d9ab1610600d6882d2f67cdb8e01d8046d4739209"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "output.headphones",
@@ -187,10 +157,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "0c508b35a7a043700107e9f9fda6435327c9f5994136ca326cef8d044760123b"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "output.speakers",
@@ -204,10 +171,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "f74d8b4eac98fa6efe747e423948cac8fbf542a1c808b80acf59b5303c1363d1"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "route.microphone-change",
@@ -221,10 +185,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "2367793691f9cd64e043a07c1e0f18fe1366bf91736c93fa3811f9f4b18c097d"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "route.output-change",
@@ -238,10 +199,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "df6b9fe313e6a73855d3ebdee74dc3f5973383eefbed07d074cc8f1edc204404"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "permission.allowed",
@@ -255,10 +213,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "2a356033621de95ccb5cb18a76ff9a24deeb506689b399788310638cbc6ea594"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "permission.denied",
@@ -272,10 +227,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "43e0ae1dd62c133e8c0674421dfffde8fd6c85e7e434c78d7fec6a9695f1265c"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "permission.restricted",
@@ -289,10 +241,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "de39e99f4d3ed4c1f57b2c7e68671dc083b1213a4b4ccbb553ed4a798e2e97e7"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "microphone.absent",
@@ -306,10 +255,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "b3edf8f4b0b6276cae68fcaaca296d0046886664118bdef9cb91beabadad087c"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "microphone.in-use",
@@ -323,10 +269,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "b0b16d2a78be4284c41651adf6c0926d6acb0fdd0e70dceaa2cb8c7a98f0fa72"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "silence.microphone",
@@ -340,10 +283,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "3d2ec63a83e4119225fb27428eb17b37b4c333c9fc1c2ebec5428459c732a6db"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "silence.system-audio",
@@ -357,10 +297,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "58331ccbefbe06fe90433bbca035ba67f76aa3a6a46981eb913c165bc44fa466"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "lifecycle.sleep-wake",
@@ -374,10 +311,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "e8af4c744161c6b1f1a395927323788a33d44a7cad1e035f71cda7e932685a92"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "lifecycle.app-crash-relaunch",
@@ -391,10 +325,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "6cebeb5beeaad092313b7108382d527df3196e68721e00d77cf5f310c7e5e438"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "storage.disk-reserve-pressure",
@@ -408,10 +339,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "5427668a6855298e02381f0c72e7676d8984bb43cf32fe1240684444b02a30e0"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "storage.disk-write-pressure",
@@ -425,10 +353,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "468f6a00191b88a9018d6079ddbc4ac4e9038af9004ce1aba7db302c3af12ec1"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "network.loss",
@@ -442,10 +367,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "d083d32be8a17a14964ae74ccb69c0fe2657f4385dcf822bcf11753c584fd0d4"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "server.restart",
@@ -459,10 +381,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "ac6c2e659a65b64f75132cce056dd53b76538b5a18257e3aa2d3c3241ce5214d"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "part.duplicate-identical",
@@ -476,10 +395,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "67a7d92583bf4e43baf2e852324bade3fcdd043eea17e2118b36eefaa9876a35"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "part.duplicate-conflicting",
@@ -493,10 +409,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "85a55c96e98cd239338fe36f0571d3c49417194f067e9aa6e9c173633126704d"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "part.reordered",
@@ -510,10 +423,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "1a869378e1b9a67269354491504ee7213362237400584a6557e14517d92ab3e9"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "corruption.ciphertext",
@@ -527,10 +437,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "e9d6b2299f69970899ae9841658c5ad7cd694f8f727b7d0666019c170f012008"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "corruption.upload",
@@ -544,10 +451,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "2e7b9a70f199c8097dc20db4550467df434fefb90b2be4cd143191bc26c7bcd8"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "corruption.aligned-truncation",
@@ -561,10 +465,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "ab0da8afedbb2553371d267b914672323a787e1d447108535a635a4b968a9fb7"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "tracks.missing-expected",
@@ -578,10 +479,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "f434c2d67103f687645c6cd13ef56df755168c9b8db3c41de964f00f7cf39daa"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "startup.callback-order",
@@ -595,10 +493,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "b766454a41396a92ae1769ef8adf1e787713927c69b94a610533ba5a0bcb2701"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "startup.missing-track-bound",
@@ -612,10 +507,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "a6e1d30e66eaa4cf528a683216301ce30b72a50c7381c32ad93ba02689e8d846"
-      ]
+      "machine_code": "verification-not-run"
     },
     {
       "key": "finish.missing-track",
@@ -629,10 +521,7 @@
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-not-run",
-      "artifact_hashes": [
-        "c8354b91776a52c4fdfe2203becb90da873a4f7a77da3b2cdf0c87cec1aa975e"
-      ]
+      "machine_code": "verification-not-run"
     }
   ]
 }
