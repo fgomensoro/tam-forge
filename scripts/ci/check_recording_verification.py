@@ -132,6 +132,13 @@ class _ScenarioResult(BaseModel):
     artifact_sha256: Sha256
 
 
+class _VerificationWindow(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    started_at: UtcTimestamp
+    ended_at: UtcTimestamp
+
+
 class _RecordingVerification(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -139,6 +146,9 @@ class _RecordingVerification(BaseModel):
     commit_sha: Annotated[StrictStr, Field(pattern=COMMIT_SHA_PATTERN)]
     window_started_at: UtcTimestamp
     window_ended_at: UtcTimestamp
+    # Later bounded windows on the same head (decision 2026-09-05); each one
+    # obeys the same 60-minute limit and follows the previous window.
+    additional_windows: Annotated[list[_VerificationWindow], Field(max_length=4)] = []
     machine_profile: Literal["macbook-air-apple-m5-24gb"]
     results: Annotated[list[_ScenarioResult], Field(min_length=1)]
 
@@ -261,13 +271,32 @@ def _validate_time_bounds(report: _RecordingVerification) -> None:
         raise RecordingVerificationError("window_ended_at must be after window_started_at")
     if window_end - window_start > timedelta(minutes=60):
         raise RecordingVerificationError("verification window cannot exceed 60 minutes")
+    windows = [(window_start, window_end)]
+    for index, window in enumerate(report.additional_windows):
+        start = _timestamp(window.started_at, f"additional_windows.{index}.started_at")
+        end = _timestamp(window.ended_at, f"additional_windows.{index}.ended_at")
+        if end <= start:
+            raise RecordingVerificationError(
+                f"additional_windows.{index} ended_at must be after started_at"
+            )
+        if end - start > timedelta(minutes=60):
+            raise RecordingVerificationError(
+                f"additional_windows.{index} cannot exceed 60 minutes"
+            )
+        if start <= windows[-1][1]:
+            raise RecordingVerificationError(
+                f"additional_windows.{index} must not overlap the previous window"
+            )
+        windows.append((start, end))
 
     for result in report.results:
         started = _timestamp(result.started_at, f"{result.key}.started_at")
         ended = _timestamp(result.ended_at, f"{result.key}.ended_at")
-        if ended < started or started < window_start or ended > window_end:
+        if ended < started or not any(
+            start <= started and ended <= end for start, end in windows
+        ):
             raise RecordingVerificationError(
-                f"scenario {result.key} timestamps must be ordered inside the verification window"
+                f"scenario {result.key} timestamps must be ordered inside one verification window"
             )
 
 

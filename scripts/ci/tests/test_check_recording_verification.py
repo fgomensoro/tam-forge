@@ -1110,3 +1110,61 @@ def test_disk_write_pressure_must_keep_an_unsealed_retained_spool() -> None:
     _rehash(result)
     with pytest.raises(error, match="storage.disk-write-pressure must stop unsealed"):
         validate(payload, repository_head=payload["commit_sha"])
+
+
+def _with_additional_window(payload: dict[str, object]) -> dict[str, object]:
+    payload["additional_windows"] = [
+        {"started_at": "2026-09-04T21:00:00Z", "ended_at": "2026-09-04T21:30:00Z"}
+    ]
+    result = _result_for(payload, "app.zoom")
+    result["started_at"] = "2026-09-04T21:05:00Z"
+    result["ended_at"] = "2026-09-04T21:06:00Z"
+    _rehash(result)
+    return payload
+
+
+def test_scenario_may_be_observed_in_an_additional_bounded_window() -> None:
+    # Decision 2026-09-05: evidence on one head may accumulate across several
+    # 60-minute windows, so a later Zoom-only window does not force every
+    # physical scenario to be repeated.
+    validate, _ = _validator()
+    payload = _with_additional_window(_payload())
+    schema = json.loads(
+        Path("docs/project/recording-verification-v1.schema.json").read_text(encoding="utf-8")
+    )
+
+    assert validate(payload, repository_head=payload["commit_sha"]).complete is True
+    assert schema["properties"]["additional_windows"]["maxItems"] == 4
+    assert "additional_windows" not in schema["required"]
+
+
+def _window(payload: dict[str, object]) -> dict[str, str]:
+    windows = payload["additional_windows"]
+    assert isinstance(windows, list)
+    return windows[0]
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda p: _window(p).update(ended_at="2026-09-04T22:00:01Z"), "60 minutes"),
+        (
+            lambda p: _window(p).update(
+                started_at="2026-09-04T19:30:00Z", ended_at="2026-09-04T20:20:00Z"
+            ),
+            "overlap",
+        ),
+        (lambda p: _window(p).update(ended_at="2026-09-04T21:00:00Z"), "after"),
+        (lambda p: _result_for(p, "app.zoom").update(ended_at="2026-09-04T21:31:00Z"), "inside"),
+    ],
+)
+def test_additional_windows_stay_bounded_ordered_and_cover_their_scenarios(
+    mutate: object, message: str
+) -> None:
+    validate, error = _validator()
+    payload = _with_additional_window(_payload())
+    mutate(payload)  # type: ignore[operator]
+    _rehash(_result_for(payload, "app.zoom"))
+
+    with pytest.raises(error, match=message):
+        validate(payload, repository_head=payload["commit_sha"])

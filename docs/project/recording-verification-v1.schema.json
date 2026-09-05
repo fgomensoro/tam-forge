@@ -26,6 +26,26 @@
     "window_ended_at": {
       "$ref": "#/$defs/utc_timestamp"
     },
+    "additional_windows": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "started_at",
+          "ended_at"
+        ],
+        "properties": {
+          "started_at": {
+            "$ref": "#/$defs/utc_timestamp"
+          },
+          "ended_at": {
+            "$ref": "#/$defs/utc_timestamp"
+          }
+        }
+      }
+    },
     "machine_profile": {
       "const": "macbook-air-apple-m5-24gb"
     },
@@ -107,7 +127,12 @@
         },
         "status": {
           "type": "string",
-          "enum": ["pass", "fail", "unsupported", "blocked"]
+          "enum": [
+            "pass",
+            "fail",
+            "unsupported",
+            "blocked"
+          ]
         },
         "started_at": {
           "$ref": "#/$defs/utc_timestamp"
