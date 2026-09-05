@@ -743,21 +743,93 @@ RUNTIME_REPORT = Path("docs/project/recording-verification-v1.json")
 CI_WORKFLOW = Path(".github/workflows/ci.yml")
 
 
-def test_runtime_report_template_is_blocked_on_the_zero_sentinel() -> None:
-    validate, _ = _validator()
+def test_runtime_report_is_the_blocked_template_or_exact_ancestor_evidence() -> None:
     payload = json.loads(RUNTIME_REPORT.read_text(encoding="utf-8"))
-    summary = validate(payload)
 
-    assert payload["commit_sha"] == "0" * 40
     assert {result["key"] for result in payload["results"]} == {
         result["key"] for result in _payload()["results"]
     }
     assert all(
         result["artifact_sha256"] == _artifact_sha256(result) for result in payload["results"]
     )
-    assert summary.total == 37
-    assert summary.blocked == 37
-    assert summary.complete is False
+    blocked = sum(result["status"] == "blocked" for result in payload["results"])
+    assert len(payload["results"]) == 37
+    # The template stays on the sentinel until the one runtime window; after
+    # it, the evidence must name a real commit in this history.
+    assert (payload["commit_sha"] == "0" * 40) == (blocked == 37)
+    assert _is_ancestor_of_head(payload["commit_sha"]) or blocked == 37
+
+
+def _is_ancestor_of_head(commit_sha: str) -> bool:
+    return (
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", commit_sha, "HEAD"],
+            check=False,
+            capture_output=True,
+        ).returncode
+        == 0
+    )
+
+
+def _repository_parent() -> str:
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD~1"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def test_cli_structural_mode_accepts_evidence_recorded_on_an_ancestor_commit(
+    tmp_path: Path,
+) -> None:
+    # Committing the evidence moves HEAD past the verified head, and pull
+    # request CI checks out a merge commit; ancestry keeps the binding honest.
+    payload = _payload()
+    payload["commit_sha"] = _repository_parent()
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps(payload), encoding="utf-8")
+
+    completed = subprocess.run(
+        [sys.executable, "scripts/ci/check_recording_verification.py", str(report)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout)["complete"] is True
+
+
+def test_cli_require_complete_still_requires_the_exact_repository_head(
+    tmp_path: Path,
+) -> None:
+    payload = _payload()
+    payload["commit_sha"] = _repository_parent()
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps(payload), encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/ci/check_recording_verification.py",
+            str(report),
+            "--require-complete",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert "commit_sha does not match repository_head" in completed.stderr
+
+
+def test_ci_checks_out_full_history_so_evidence_ancestry_can_be_verified() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    backend_unit = workflow.split("  backend-unit:", 1)[1].split("\n  backend-integration:", 1)[0]
+
+    assert "fetch-depth: 0" in backend_unit
 
 
 def test_ci_validates_runtime_report_structure_without_requiring_completion() -> None:

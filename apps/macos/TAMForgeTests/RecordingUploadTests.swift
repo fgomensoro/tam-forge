@@ -520,6 +520,7 @@ final class RecordingUploadTests: XCTestCase {
         let server = FakeRecordingServer()
         _ = try await RecordingUploadPipeline(spoolFactory: fixture.factory, server: server)
             .upload(recordingID: fixture.recordingID, progress: { _ in })
+        let attemptsAfterFirstRun = await server.uploadAttempts
 
         let gates = try await RecordingUploadPipeline(
             spoolFactory: fixture.factory,
@@ -530,7 +531,7 @@ final class RecordingUploadTests: XCTestCase {
         XCTAssertFalse(gates.transcriptLineageAccepted)
         XCTAssertFalse(gates.mayDeleteLocalSpool)
         let uploadAttempts = await server.uploadAttempts
-        XCTAssertEqual(uploadAttempts, 2)
+        XCTAssertEqual(uploadAttempts, attemptsAfterFirstRun)
         let createCalls = await server.createCalls
         XCTAssertEqual(createCalls, 1)
         let sealCommands = await server.sealCommands

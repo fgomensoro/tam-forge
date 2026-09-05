@@ -352,9 +352,18 @@ def _validated_repository_head(repository_head: object) -> str:
 
 
 def validate_recording_verification(
-    payload: object, *, repository_head: str | None = None
+    payload: object,
+    *,
+    repository_head: str | None = None,
+    is_repository_ancestor: Callable[[str], bool] | None = None,
 ) -> RecordingVerificationSummary:
-    """Validate a report and return counts without treating incompleteness as validity."""
+    """Validate a report and return counts without treating incompleteness as validity.
+
+    Non-blocked evidence must name the resolved repository head. Structural
+    runs may also accept an ancestor of that head, because committing the
+    evidence itself moves the head and pull-request CI checks out a merge
+    commit; completion checks never use that allowance.
+    """
 
     report = _validated_report(payload)
     _validate_inventory(report.results)
@@ -377,7 +386,9 @@ def validate_recording_verification(
                 "repository_head is required for non-blocked evidence"
             )
         trusted_head = _validated_repository_head(repository_head)
-        if report.commit_sha != trusted_head:
+        if report.commit_sha != trusted_head and not (
+            is_repository_ancestor is not None and is_repository_ancestor(report.commit_sha)
+        ):
             raise RecordingVerificationError("commit_sha does not match repository_head")
     return RecordingVerificationSummary(
         total=total,
@@ -408,6 +419,15 @@ def _resolve_repository_head() -> str:
     return _validated_repository_head(completed.stdout.strip())
 
 
+def _is_repository_ancestor(commit_sha: str) -> bool:
+    completed = subprocess.run(
+        ["git", "-C", str(REPOSITORY_ROOT), "merge-base", "--is-ancestor", commit_sha, "HEAD"],
+        check=False,
+        capture_output=True,
+    )
+    return completed.returncode == 0
+
+
 def main(*, repository_head_resolver: Callable[[], str] = _resolve_repository_head) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("report", type=Path)
@@ -416,7 +436,9 @@ def main(*, repository_head_resolver: Callable[[], str] = _resolve_repository_he
     args = parser.parse_args()
     try:
         summary = validate_recording_verification(
-            _load_json(args.report), repository_head=repository_head_resolver()
+            _load_json(args.report),
+            repository_head=repository_head_resolver(),
+            is_repository_ancestor=None if args.require_complete else _is_repository_ancestor,
         )
     except RecordingVerificationError as exc:
         parser.error(str(exc))

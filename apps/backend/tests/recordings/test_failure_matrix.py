@@ -1,9 +1,12 @@
 """Docker-free ingest failure matrix for native recording parts and seals.
 
 The real ``RecordingService`` runs against ``InMemoryObjectStore`` and an
-in-memory repository double that keeps the SQL repository's identity, replay,
-and high-water rules (it reuses the repository's static helpers and ORM row
-objects). PostgreSQL durability itself is covered by the integration job.
+in-memory repository double. The double reuses the SQL repository's static
+helpers and ORM row objects but re-implements its identity, replay, overlap,
+high-water, and seal-state rules in Python, so those rules are pinned here as
+a regression contract while the service orchestration (decrypt before
+reserve, immutable object handling, seal replay) is production code. The
+PostgreSQL repository itself is covered by the integration job.
 """
 
 from __future__ import annotations
@@ -656,7 +659,7 @@ async def test_seal_replay_returns_the_same_receipt_and_rejects_a_reused_identit
 
 
 async def test_service_restart_resumes_durable_state_without_choosing_between_bytes() -> None:
-    service, repository, store, recording_id = await started_service()
+    _, repository, store, recording_id = await started_service()
     part = encrypted_part(recording_id=recording_id)
     conflicting = encrypted_part(recording_id=recording_id, marker=9)
 
@@ -691,4 +694,3 @@ async def test_service_restart_resumes_durable_state_without_choosing_between_by
     assert stored.sha256 == part[0].plaintext_sha256
     pending = await restarted.pending(owner_id=OWNER_ID)
     assert [item.recording_id for item in pending] == [recording_id]
-    del service
