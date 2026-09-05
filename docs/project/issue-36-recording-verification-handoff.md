@@ -70,11 +70,11 @@ Seven new coordinator tests (preflight reserve refusal, append failure while rec
 - `docs/project/recording-verification-v1.json` is the blocked runtime template (37/37 blocked, sentinel commit).
 - `backend-unit` validates it structurally on every PR and never passes `--require-complete`.
 - `--require-complete` fails unless every scenario passes on the exact repository head.
-- Structural runs accept non-blocked evidence whose `commit_sha` is an ancestor of the checked-out head (resolved by the CLI through `git merge-base --is-ancestor`; `backend-unit` checks out full history). This is required because the evidence commit can never name itself and pull-request CI checks out a merge commit. Completion still requires the exact head.
+- Structural runs accept non-blocked evidence whose `commit_sha` is an ancestor of the checked-out head with no change under `apps/macos`, `apps/backend/src/tamforge_backend/recordings`, or `apps/backend/src/tamforge_backend/storage` between the two (resolved by the CLI through `git merge-base --is-ancestor` and `git diff --quiet`; `backend-unit` checks out full history). This is required because the evidence commit can never name itself and pull-request CI checks out a merge commit. Completion still requires the exact head. Any later change under those paths invalidates the committed evidence in CI until the window is repeated.
 
 ### Task 6: broad independent review — approved with fixes, fixes applied
 
-The review of the pre-rebase head found one Critical (the evidence gate above) and Important items (rebase, stale handoff, honest matrix docstring, plan Task 7 command). All are fixed in the commits after `e2d7b86`'s equivalent. The rebased head needs a fresh exact-SHA review and all seven checks green before the window.
+The review of the pre-rebase head found one Critical (the evidence gate above) and Important items (rebase, stale handoff, honest matrix docstring, plan Task 7 command). All are fixed in `2184dc3`, `ac3bcad`, and the verified-ancestor tightening that followed the re-review. The final head needs a fresh exact-SHA review and all seven checks green before the window.
 
 ## Remaining order
 

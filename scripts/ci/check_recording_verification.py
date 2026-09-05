@@ -355,14 +355,15 @@ def validate_recording_verification(
     payload: object,
     *,
     repository_head: str | None = None,
-    is_repository_ancestor: Callable[[str], bool] | None = None,
+    is_verified_ancestor: Callable[[str], bool] | None = None,
 ) -> RecordingVerificationSummary:
     """Validate a report and return counts without treating incompleteness as validity.
 
     Non-blocked evidence must name the resolved repository head. Structural
-    runs may also accept an ancestor of that head, because committing the
-    evidence itself moves the head and pull-request CI checks out a merge
-    commit; completion checks never use that allowance.
+    runs may also accept an ancestor of that head whose verified code is
+    unchanged, because committing the evidence itself moves the head and
+    pull-request CI checks out a merge commit; completion checks never use
+    that allowance.
     """
 
     report = _validated_report(payload)
@@ -387,7 +388,7 @@ def validate_recording_verification(
             )
         trusted_head = _validated_repository_head(repository_head)
         if report.commit_sha != trusted_head and not (
-            is_repository_ancestor is not None and is_repository_ancestor(report.commit_sha)
+            is_verified_ancestor is not None and is_verified_ancestor(report.commit_sha)
         ):
             raise RecordingVerificationError("commit_sha does not match repository_head")
     return RecordingVerificationSummary(
@@ -419,13 +420,27 @@ def _resolve_repository_head() -> str:
     return _validated_repository_head(completed.stdout.strip())
 
 
-def _is_repository_ancestor(commit_sha: str) -> bool:
-    completed = subprocess.run(
-        ["git", "-C", str(REPOSITORY_ROOT), "merge-base", "--is-ancestor", commit_sha, "HEAD"],
-        check=False,
-        capture_output=True,
+# Evidence stays bound to code: an ancestor qualifies only when none of the
+# paths the runtime window verifies changed between it and the head.
+VERIFIED_CODE_PATHS = (
+    "apps/macos",
+    "apps/backend/src/tamforge_backend/recordings",
+    "apps/backend/src/tamforge_backend/storage",
+)
+
+
+def _is_verified_ancestor(commit_sha: str) -> bool:
+    def git(*arguments: str) -> int:
+        return subprocess.run(
+            ["git", "-C", str(REPOSITORY_ROOT), *arguments],
+            check=False,
+            capture_output=True,
+        ).returncode
+
+    return (
+        git("merge-base", "--is-ancestor", commit_sha, "HEAD") == 0
+        and git("diff", "--quiet", commit_sha, "HEAD", "--", *VERIFIED_CODE_PATHS) == 0
     )
-    return completed.returncode == 0
 
 
 def main(*, repository_head_resolver: Callable[[], str] = _resolve_repository_head) -> None:
@@ -438,7 +453,7 @@ def main(*, repository_head_resolver: Callable[[], str] = _resolve_repository_he
         summary = validate_recording_verification(
             _load_json(args.report),
             repository_head=repository_head_resolver(),
-            is_repository_ancestor=None if args.require_complete else _is_repository_ancestor,
+            is_verified_ancestor=None if args.require_complete else _is_verified_ancestor,
         )
     except RecordingVerificationError as exc:
         parser.error(str(exc))

@@ -757,27 +757,35 @@ def test_runtime_report_is_the_blocked_template_or_exact_ancestor_evidence() -> 
     # The template stays on the sentinel until the one runtime window; after
     # it, the evidence must name a real commit in this history.
     assert (payload["commit_sha"] == "0" * 40) == (blocked == 37)
-    assert _is_ancestor_of_head(payload["commit_sha"]) or blocked == 37
+    assert _is_verified_ancestor_of_head(payload["commit_sha"]) or blocked == 37
 
 
-def _is_ancestor_of_head(commit_sha: str) -> bool:
+VERIFIED_PATHS = (
+    "apps/macos",
+    "apps/backend/src/tamforge_backend/recordings",
+    "apps/backend/src/tamforge_backend/storage",
+)
+
+
+def _git(*arguments: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", *arguments], check=False, capture_output=True, text=True)
+
+
+def _is_verified_ancestor_of_head(commit_sha: str) -> bool:
     return (
-        subprocess.run(
-            ["git", "merge-base", "--is-ancestor", commit_sha, "HEAD"],
-            check=False,
-            capture_output=True,
-        ).returncode
-        == 0
+        _git("merge-base", "--is-ancestor", commit_sha, "HEAD").returncode == 0
+        and _git("diff", "--quiet", commit_sha, "HEAD", "--", *VERIFIED_PATHS).returncode == 0
     )
 
 
-def _repository_parent() -> str:
-    return subprocess.run(
-        ["git", "rev-parse", "HEAD~1"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+def _ancestor(*, verified_code_unchanged: bool) -> str:
+    """Pick a real ancestor of HEAD (never HEAD) with or without verified-code changes."""
+    history = _git("rev-list", "--max-count=200", "HEAD").stdout.split()[1:]
+    for commit_sha in history:
+        unchanged = _git("diff", "--quiet", commit_sha, "HEAD", "--", *VERIFIED_PATHS)
+        if (unchanged.returncode == 0) == verified_code_unchanged:
+            return commit_sha
+    pytest.skip("history has no suitable ancestor commit")
 
 
 def test_cli_structural_mode_accepts_evidence_recorded_on_an_ancestor_commit(
@@ -786,7 +794,7 @@ def test_cli_structural_mode_accepts_evidence_recorded_on_an_ancestor_commit(
     # Committing the evidence moves HEAD past the verified head, and pull
     # request CI checks out a merge commit; ancestry keeps the binding honest.
     payload = _payload()
-    payload["commit_sha"] = _repository_parent()
+    payload["commit_sha"] = _ancestor(verified_code_unchanged=True)
     report = tmp_path / "report.json"
     report.write_text(json.dumps(payload), encoding="utf-8")
 
@@ -801,11 +809,31 @@ def test_cli_structural_mode_accepts_evidence_recorded_on_an_ancestor_commit(
     assert json.loads(completed.stdout)["complete"] is True
 
 
+def test_cli_structural_mode_rejects_ancestor_evidence_once_verified_code_changed(
+    tmp_path: Path,
+) -> None:
+    payload = _payload()
+    payload["commit_sha"] = _ancestor(verified_code_unchanged=False)
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps(payload), encoding="utf-8")
+
+    completed = subprocess.run(
+        [sys.executable, "scripts/ci/check_recording_verification.py", str(report)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert "commit_sha does not match repository_head" in completed.stderr
+    assert "Traceback" not in completed.stderr
+
+
 def test_cli_require_complete_still_requires_the_exact_repository_head(
     tmp_path: Path,
 ) -> None:
     payload = _payload()
-    payload["commit_sha"] = _repository_parent()
+    payload["commit_sha"] = _ancestor(verified_code_unchanged=True)
     report = tmp_path / "report.json"
     report.write_text(json.dumps(payload), encoding="utf-8")
 
