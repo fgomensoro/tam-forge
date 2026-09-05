@@ -267,8 +267,20 @@ def _validate_time_bounds(report: _RecordingVerification) -> None:
             )
 
 
+STATUS_MACHINE_CODES: dict[str, frozenset[str]] = {
+    "pass": frozenset({"verified", "required-tracks-unavailable"}),
+    "fail": frozenset({"verification-failed"}),
+    "blocked": frozenset({"verification-blocked", "verification-not-run"}),
+    "unsupported": frozenset({"source-unsupported"}),
+}
+
+
 def _validate_scenario_invariants(results: list[_ScenarioResult]) -> None:
     for result in results:
+        if result.machine_code not in STATUS_MACHINE_CODES[result.status]:
+            raise RecordingVerificationError(
+                f"scenario {result.key} machine_code does not agree with its status"
+            )
         if result.status == "pass" and result.key in CAPTURE_SCENARIO_KEYS and not (
             result.microphone_track_present and result.system_audio_track_present
         ):

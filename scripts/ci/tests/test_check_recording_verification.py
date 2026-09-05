@@ -968,3 +968,40 @@ def test_unobserved_scenarios_never_have_to_claim_a_required_track_failure(
 
     assert summary.complete is False
     assert getattr(summary, status) == 1
+
+
+@pytest.mark.parametrize(
+    ("status", "machine_code"),
+    [
+        ("pass", "verification-blocked"),
+        ("pass", "verification-not-run"),
+        ("pass", "source-unsupported"),
+        ("pass", "verification-failed"),
+        ("fail", "verified"),
+        ("blocked", "verified"),
+        ("unsupported", "verified"),
+        ("unsupported", "verification-blocked"),
+    ],
+)
+def test_status_and_machine_code_must_agree(status: str, machine_code: str) -> None:
+    # A scenario cannot count as passing unless its machine code says it ran
+    # and was verified, and no unobserved code may dress up as a verdict.
+    validate, error = _validator()
+    payload = _payload()
+    result = _result_for(payload, "app.zoom")
+    result.update({"status": status, "machine_code": machine_code})
+    if status != "pass":
+        result.update(
+            {
+                "microphone_track_present": False,
+                "system_audio_track_present": False,
+                "required_tracks_failure": False,
+                "sealed": False,
+                "spool_retained": False,
+                "upload_state": "not-started",
+            }
+        )
+    _rehash(result)
+
+    with pytest.raises(error, match="machine_code"):
+        validate(payload, repository_head=payload["commit_sha"])
