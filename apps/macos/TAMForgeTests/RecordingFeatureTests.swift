@@ -1650,6 +1650,8 @@ final class RecordingFeatureTests: XCTestCase {
 
         // Sleep arrives while the source is still starting; it must not be lost.
         monitor.emit(.willSleep)
+        // Give the coordinator time to observe the event before start completes.
+        try? await Task.sleep(for: .milliseconds(100))
         await source.releaseStart()
         await startTask.value
         await waitUntilCoordinatorSettles(coordinator)
