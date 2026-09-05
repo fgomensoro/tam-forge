@@ -411,6 +411,8 @@ def _resolve_repository_head() -> str:
 def main(*, repository_head_resolver: Callable[[], str] = _resolve_repository_head) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("report", type=Path)
+    # Structural CI runs never pass this flag: a parsed report is not evidence.
+    parser.add_argument("--require-complete", action="store_true")
     args = parser.parse_args()
     try:
         summary = validate_recording_verification(
@@ -418,6 +420,11 @@ def main(*, repository_head_resolver: Callable[[], str] = _resolve_repository_he
         )
     except RecordingVerificationError as exc:
         parser.error(str(exc))
+    if args.require_complete and not summary.complete:
+        parser.error(
+            "recording verification is not complete: "
+            f"{summary.passed}/{summary.total} scenarios pass"
+        )
     print(json.dumps(asdict(summary), sort_keys=True))
 
 

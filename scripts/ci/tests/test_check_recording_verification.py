@@ -737,3 +737,74 @@ def test_example_is_safe_structurally_valid_and_deliberately_incomplete() -> Non
     assert summary.total == 37
     assert summary.blocked == 37
     assert summary.complete is False
+
+
+RUNTIME_REPORT = Path("docs/project/recording-verification-v1.json")
+CI_WORKFLOW = Path(".github/workflows/ci.yml")
+
+
+def test_runtime_report_template_is_blocked_on_the_zero_sentinel() -> None:
+    validate, _ = _validator()
+    payload = json.loads(RUNTIME_REPORT.read_text(encoding="utf-8"))
+    summary = validate(payload)
+
+    assert payload["commit_sha"] == "0" * 40
+    assert {result["key"] for result in payload["results"]} == {
+        result["key"] for result in _payload()["results"]
+    }
+    assert all(
+        result["artifact_sha256"] == _artifact_sha256(result) for result in payload["results"]
+    )
+    assert summary.total == 37
+    assert summary.blocked == 37
+    assert summary.complete is False
+
+
+def test_ci_validates_runtime_report_structure_without_requiring_completion() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    invocation = f"scripts/ci/check_recording_verification.py {RUNTIME_REPORT}"
+
+    assert invocation in workflow
+    assert "--require-complete" not in workflow
+
+
+def test_cli_require_complete_rejects_blocked_runtime_report() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/ci/check_recording_verification.py",
+            str(RUNTIME_REPORT),
+            "--require-complete",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert "recording verification is not complete" in completed.stderr
+    assert "Traceback" not in completed.stderr
+
+
+def test_cli_require_complete_accepts_complete_report_on_repository_head(
+    tmp_path: Path,
+) -> None:
+    payload = _payload()
+    payload["commit_sha"] = _repository_head()
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps(payload), encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/ci/check_recording_verification.py",
+            str(report),
+            "--require-complete",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout)["complete"] is True
