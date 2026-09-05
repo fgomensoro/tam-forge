@@ -20,7 +20,7 @@ from sqlalchemy import (
     event,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, make_transient_to_detached, mapped_column
 
 from ..models.base import Base
 from .contracts import ImmutableVersionConflict
@@ -247,3 +247,12 @@ def reject_mutation(*args: Any, **kwargs: Any) -> None:
 for _model in RECORD_TYPES:
     event.listen(_model, "before_update", reject_mutation)
     event.listen(_model, "before_delete", reject_mutation)
+
+
+def snapshot_record[R: Record](row: R) -> R:
+    """Return loaded provenance independent of later session commits or rollbacks."""
+    snapshot = type(row)(
+        **{column.key: getattr(row, column.key) for column in row.__table__.columns}
+    )
+    make_transient_to_detached(snapshot)
+    return snapshot

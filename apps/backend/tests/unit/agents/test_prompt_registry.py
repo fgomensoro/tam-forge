@@ -125,3 +125,51 @@ def test_all_provenance_tables_have_unique_constraint_names_and_orm_mutation_gua
             model.__mapper__.dispatch.before_update(model.__mapper__, None, row._sa_instance_state)
         with pytest.raises(ImmutableVersionConflict):
             model.__mapper__.dispatch.before_delete(model.__mapper__, None, row._sa_instance_state)
+
+
+def test_published_record_survives_later_conflict_rollback_in_same_session():
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy.orm import make_transient_to_detached
+    from tamforge_backend.agents.contracts import ImmutableVersionConflict
+    from tamforge_backend.agents.models import PromptVersion
+    from tamforge_backend.agents.prompt_registry import PromptRegistry
+
+    class QuerySession(AsyncSession):
+        # Replace database reads only; transactions and expiration use real SQLAlchemy.
+        async def scalar(self, statement, *args, **kwargs):
+            if "FROM owners" in str(statement):
+                return 1
+            identity = (PromptVersion, (1,), None)
+            row = self.sync_session.identity_map.get(identity)
+            if row is None:
+                row = PromptVersion(
+                    id=1,
+                    owner_id=1,
+                    key="reviewer",
+                    version="v1",
+                    canonical_json="prompt A",
+                    hash_format=1,
+                    content_hash=sha256(b"prompt A").digest(),
+                    created_at=None,
+                )
+                make_transient_to_detached(row)
+                self.add(row)
+            return row
+
+    async def exercise():
+        async with QuerySession(expire_on_commit=False) as session:
+            registry = PromptRegistry(session)
+            first = await registry.publish_prompt(
+                owner_id=1, key="reviewer", version="v1", content="prompt A"
+            )
+            with pytest.raises(ImmutableVersionConflict):
+                await registry.publish_prompt(
+                    owner_id=1, key="reviewer", version="v1", content="changed"
+                )
+            assert first.id == 1
+            assert first.content_hash == sha256(b"prompt A").digest()
+            assert first.canonical_json == "prompt A"
+
+    asyncio.run(exercise())

@@ -34,7 +34,8 @@ The owner and activity locks serialize registration with the existing learning
 boundary. Same owner/invocation key and original request replays; changed input
 raises `ImmutableVersionConflict`. Job and same-activity predecessor links are
 optional. The repository owns its transaction: use a session without an active
-transaction and keep `expire_on_commit=False` when returning ORM records.
+transaction. Returned records are fully loaded detached snapshots, so subsequent
+failed transactions cannot expire previously returned provenance.
 
 `append_event(owner_id=..., run_hash=..., expected_sequence=..., expected_state=...,
 event=Lifecycle(...))` accepts registered → running → succeeded/failed/cancelled,

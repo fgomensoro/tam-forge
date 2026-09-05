@@ -27,7 +27,7 @@ from .contracts import (
     validate_transition,
 )
 from .hashing import canonical_bytes, digest
-from .models import AgentToolCall, ModelRun, ModelRunContextItem, ModelRunEvent
+from .models import AgentToolCall, ModelRun, ModelRunContextItem, ModelRunEvent, snapshot_record
 from .prompt_registry import lock_owner, verified
 
 # Scalar fields or one array index only. Task metadata is intentionally absent.
@@ -149,7 +149,7 @@ class ModelRunRepository:
                 if existing is not None:
                     if verified(existing).canonical_json != record_data["canonical_json"]:
                         raise ImmutableVersionConflict()
-                    return existing
+                    return snapshot_record(existing)
                 run = ModelRun(owner_id=request.owner_id, **record_data)
                 self.session.add(run)
                 await self.session.flush()
@@ -162,7 +162,7 @@ class ModelRunRepository:
                         )
                     )
                 await self.session.flush()
-                return run
+                return snapshot_record(run)
         except (SQLAlchemyError, ValidationError):
             raise InvalidProvenance() from None
 
@@ -222,7 +222,7 @@ class ModelRunRepository:
                 row = ModelRunEvent(owner_id=owner_id, run_id=run.id, **_record_data(payload))
                 self.session.add(row)
                 await self.session.flush()
-                return row
+                return snapshot_record(row)
         except (SQLAlchemyError, ValidationError):
             raise InvalidProvenance() from None
 
@@ -256,7 +256,7 @@ class ModelRunRepository:
                 row = AgentToolCall(owner_id=owner_id, run_id=run.id, **_record_data(payload))
                 self.session.add(row)
                 await self.session.flush()
-                return row
+                return snapshot_record(row)
         except (SQLAlchemyError, ValidationError):
             raise InvalidProvenance() from None
 
@@ -298,6 +298,11 @@ class ModelRunRepository:
                     item.content_hash.hex() for item in contexts
                 ]:
                     raise InvalidProvenance()
-                return CompleteRun(run, contexts, events, tools)
+                return CompleteRun(
+                    snapshot_record(run),
+                    tuple(snapshot_record(row) for row in contexts),
+                    tuple(snapshot_record(row) for row in events),
+                    tuple(snapshot_record(row) for row in tools),
+                )
         except SQLAlchemyError:
             raise ProvenanceNotFound() from None

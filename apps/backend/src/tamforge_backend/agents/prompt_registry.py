@@ -21,7 +21,7 @@ from .contracts import (
     Publication,
 )
 from .hashing import canonical_bytes, prompt_bytes
-from .models import OutputSchemaVersion, PromptVersion, Record, RubricVersionHash
+from .models import OutputSchemaVersion, PromptVersion, Record, RubricVersionHash, snapshot_record
 
 R = TypeVar("R", bound=Record)
 
@@ -96,7 +96,7 @@ class PromptRegistry:
                 if row is not None:
                     if verified(row).canonical_json.encode() != data:
                         raise ImmutableVersionConflict()
-                    return row
+                    return snapshot_record(row)
                 row = model(
                     owner_id=identity.owner_id,
                     key=identity.key,
@@ -106,7 +106,7 @@ class PromptRegistry:
                 )
                 self.session.add(row)
                 await self.session.flush()
-                return row
+                return snapshot_record(row)
         except SQLAlchemyError:
             raise InvalidProvenance() from None
 
@@ -139,7 +139,8 @@ class PromptRegistry:
                 if not rows:
                     raise ProvenanceNotFound()
                 return tuple(
-                    cast(PromptVersion | OutputSchemaVersion, verified(row)) for row in rows
+                    cast(PromptVersion | OutputSchemaVersion, snapshot_record(verified(row)))
+                    for row in rows
                 )
         except SQLAlchemyError:
             raise InvalidProvenance() from None
@@ -167,7 +168,7 @@ class PromptRegistry:
                 if row is not None:
                     if verified(row).canonical_json.encode() != data:
                         raise ImmutableVersionConflict()
-                    return row
+                    return snapshot_record(row)
                 row = RubricVersionHash(
                     owner_id=owner_id,
                     canonical_json=data.decode(),
@@ -175,6 +176,6 @@ class PromptRegistry:
                 )
                 self.session.add(row)
                 await self.session.flush()
-                return row
+                return snapshot_record(row)
         except (SQLAlchemyError, ValidationError):
             raise InvalidProvenance() from None
