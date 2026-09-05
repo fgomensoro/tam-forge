@@ -76,6 +76,27 @@ Seven new coordinator tests (preflight reserve refusal, append failure while rec
 
 The review of the pre-rebase head found one Critical (the evidence gate above) and Important items (rebase, stale handoff, honest matrix docstring, plan Task 7 command). All are fixed in `2184dc3`, `ac3bcad`, and the verified-ancestor tightening that followed the re-review. The final head needs a fresh exact-SHA review and all seven checks green before the window.
 
+## Task 7: runtime window executed (2026-09-05, one window, incomplete by contract)
+
+The single window ran on the exact verified code of `1660618` (verified paths byte-identical to the reviewed `e0dca81`), on the MacBook Air profile, in the Debug build launched with `-ui-test-signed-in -ui-test-native-features` because no live backend exists for a production sign-in. Evidence lives in `docs/project/recording-verification-v1.json` and validates structurally; `--require-complete` fails by design.
+
+| Result | Count | Keys |
+|---|---|---|
+| pass | 27 | all placement, display, output, route, permission.allowed/denied, sleep/wake, crash/relaunch, browser playback, Meet browser call, network loss, deterministic and backend scenarios |
+| blocked | 7 | app.zoom, app.teams (not installed), microphone.in-use, storage.disk-reserve-pressure, storage.disk-write-pressure (no safe local injection), silence.microphone, silence.system-audio (see below) |
+| unsupported | 3 | app.tam-forge-tts-interviewer (feature absent from the build), microphone.absent (built-in microphone cannot be removed), permission.restricted (no MDM restriction available) |
+
+Live observations worth keeping:
+
+- Task 2 environment-loss paths fired exactly as designed on real hardware: output route change, microphone change, and Mac sleep each stopped once, left the spool unsealed and retained, and showed the reason in `needsAttention`.
+- Crash (`kill -9`) and relaunch listed every spool for recovery, never deleted anything; recovery reports "needs attention" because the fixture key store is ephemeral by design.
+- Silence scenarios: the merged design records a `silentInput` warning and still seals; the Task 1 contract expects `silence.*` to stay unsealed. This is a contract-versus-design conflict that planning must resolve before those keys can pass.
+- Permission denial after the initial grant surfaced twice: once as `Recording could not start` (source start failed after a denied macOS consent dialog; no spool left behind) and later, after the window, as the preflight block "Microphone access is denied". Both fail closed.
+- Recording is unreachable without a live backend; the ad-hoc Debug signature also blocks TCC registration until the app is copied to `~/Applications` and added manually. Issue #38 owns both.
+- The first attempt overran the 60-minute contract limit while permissions were being granted; the reported window is the second, contiguous 60-minute span in which every automatable scenario was re-run.
+
+Issue #36 therefore cannot close on this head. Closing needs a planning decision on the silence contract, Zoom and Teams installed for a consenting call, and either a disk-pressure injection strategy or a contract change for the unsupported keys.
+
 ## Remaining order
 
 1. Confirm required CI is green on the exact PR head and obtain an independent review of that exact SHA. Fix anything P0–P2 test-first and re-review.
