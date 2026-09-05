@@ -428,6 +428,17 @@ def test_mutating_result_without_rehash_is_rejected() -> None:
         validate(payload)
 
 
+def test_gap_count_decimal_above_disk_policy_limit_is_rejected() -> None:
+    validate, error = _validator()
+    payload = _payload()
+    result = _result_for(payload, "app.zoom")
+    result["gap_count"] = 14_401
+    _rehash(result)
+
+    with pytest.raises(error, match=r"(?s)gap_count.*less than or equal to 14400"):
+        validate(payload, repository_head=payload["commit_sha"])
+
+
 @pytest.mark.parametrize(
     "machine_code",
     [
@@ -703,6 +714,11 @@ def test_schema_is_closed_and_declares_the_validator_contract() -> None:
     assert result_schema["properties"]["artifact_sha256"] == {
         "type": "string",
         "pattern": "^[0-9a-f]{64}$",
+    }
+    assert result_schema["properties"]["gap_count"] == {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 14_400,
     }
 
 

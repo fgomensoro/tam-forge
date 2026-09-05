@@ -126,7 +126,8 @@
         },
         "gap_count": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 14400
         },
         "sealed": {
           "type": "boolean"

@@ -118,7 +118,7 @@ class _ScenarioResult(BaseModel):
     microphone_track_present: StrictBool
     system_audio_track_present: StrictBool
     required_tracks_failure: StrictBool
-    gap_count: Annotated[StrictInt, Field(ge=0)]
+    gap_count: Annotated[StrictInt, Field(ge=0, le=14_400)]
     sealed: StrictBool
     spool_retained: StrictBool
     upload_state: Literal[
