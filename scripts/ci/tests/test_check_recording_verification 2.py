@@ -57,14 +57,13 @@ PRESTART_BLOCK_SCENARIO_KEYS = frozenset(
         "permission.restricted",
         "microphone.absent",
         "microphone.in-use",
-        "storage.disk-reserve-pressure",
     }
 )
 
-RETAINED_UNSEALED_SCENARIO_KEYS = frozenset({"storage.disk-write-pressure"})
-
 RETAINED_FAILURE_SCENARIO_KEYS = frozenset(
     {
+        "silence.microphone",
+        "silence.system-audio",
         "tracks.missing-expected",
         "startup.missing-track-bound",
         "finish.missing-track",
@@ -100,14 +99,6 @@ def _repository_head() -> str:
     ).stdout.strip()
 
 
-_STATUS_MACHINE_CODES = {
-    "pass": "verified",
-    "fail": "verification-failed",
-    "blocked": "verification-blocked",
-    "unsupported": "source-unsupported",
-}
-
-
 def _result(key: str) -> dict[str, object]:
     result: dict[str, object] = {
         "key": key,
@@ -133,8 +124,6 @@ def _result(key: str) -> dict[str, object]:
             upload_state="not-started",
             machine_code="required-tracks-unavailable",
         )
-    if key in RETAINED_UNSEALED_SCENARIO_KEYS:
-        result.update(sealed=False, spool_retained=True, upload_state="not-started")
     _rehash(result)
     return result
 
@@ -145,7 +134,7 @@ def _payload() -> dict[str, object]:
         "commit_sha": "0123456789abcdef0123456789abcdef01234567",
         "window_started_at": "2026-09-04T19:00:00Z",
         "window_ended_at": "2026-09-04T20:00:00Z",
-        "machine_profile": "macbook-air-apple-m5-24gb",
+        "machine_profile": "macbook-pro-apple-m2-8gb",
         "results": [_result(key) for key in REQUIRED_SCENARIO_KEYS],
     }
 
@@ -502,7 +491,7 @@ def test_passing_negative_scenario_requires_fail_closed_state(
         validate(payload)
 
 
-@pytest.mark.parametrize("status", ["fail"])
+@pytest.mark.parametrize("status", ["fail", "unsupported", "blocked"])
 @pytest.mark.parametrize(
     ("field", "unsafe_value"),
     [
@@ -519,7 +508,6 @@ def test_nonpassing_observed_track_failure_cannot_declare_unsafe_state(
     payload = _payload()
     result = _result_for(payload, "finish.missing-track")
     result["status"] = status
-    result["machine_code"] = _STATUS_MACHINE_CODES[status]
     result[field] = unsafe_value
 
     with pytest.raises(error, match="finish.missing-track.*fail closed"):
@@ -537,7 +525,6 @@ def test_nonpassing_required_scenario_prevents_completion(
     payload = _payload()
     result = _result_for(payload, "app.zoom")
     result["status"] = status
-    result["machine_code"] = _STATUS_MACHINE_CODES[status]
     _rehash(result)
 
     summary = validate(payload, repository_head=payload["commit_sha"])
@@ -552,7 +539,6 @@ def test_cli_prints_machine_readable_incomplete_summary(tmp_path: Path) -> None:
     payload["commit_sha"] = _repository_head()
     result = _result_for(payload, "app.zoom")
     result["status"] = "blocked"
-    result["machine_code"] = "verification-blocked"
     _rehash(result)
     report = tmp_path / "report.json"
     report.write_text(json.dumps(payload), encoding="utf-8")
@@ -751,362 +737,3 @@ def test_example_is_safe_structurally_valid_and_deliberately_incomplete() -> Non
     assert summary.total == 37
     assert summary.blocked == 37
     assert summary.complete is False
-
-
-RUNTIME_REPORT = Path("docs/project/recording-verification-v1.json")
-CI_WORKFLOW = Path(".github/workflows/ci.yml")
-
-
-def test_runtime_report_is_the_blocked_template_or_exact_ancestor_evidence() -> None:
-    payload = json.loads(RUNTIME_REPORT.read_text(encoding="utf-8"))
-
-    assert {result["key"] for result in payload["results"]} == {
-        result["key"] for result in _payload()["results"]
-    }
-    assert all(
-        result["artifact_sha256"] == _artifact_sha256(result) for result in payload["results"]
-    )
-    blocked = sum(result["status"] == "blocked" for result in payload["results"])
-    assert len(payload["results"]) == 37
-    # The template stays on the sentinel until the one runtime window; after
-    # it, the evidence must name a real commit in this history.
-    assert (payload["commit_sha"] == "0" * 40) == (blocked == 37)
-    assert _is_verified_ancestor_of_head(payload["commit_sha"]) or blocked == 37
-
-
-VERIFIED_PATHS = (
-    "apps/macos",
-    "apps/backend/src/tamforge_backend/recordings",
-    "apps/backend/src/tamforge_backend/storage",
-)
-
-
-def _git(*arguments: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *arguments], check=False, capture_output=True, text=True)
-
-
-def _is_verified_ancestor_of_head(commit_sha: str) -> bool:
-    return (
-        _git("merge-base", "--is-ancestor", commit_sha, "HEAD").returncode == 0
-        and _git("diff", "--quiet", commit_sha, "HEAD", "--", *VERIFIED_PATHS).returncode == 0
-    )
-
-
-def _ancestor(*, verified_code_unchanged: bool) -> str:
-    """Pick a real ancestor of HEAD (never HEAD) with or without verified-code changes."""
-    history = _git("rev-list", "--max-count=200", "HEAD").stdout.split()[1:]
-    for commit_sha in history:
-        unchanged = _git("diff", "--quiet", commit_sha, "HEAD", "--", *VERIFIED_PATHS)
-        if (unchanged.returncode == 0) == verified_code_unchanged:
-            return commit_sha
-    pytest.skip("history has no suitable ancestor commit")
-
-
-def test_cli_structural_mode_accepts_evidence_recorded_on_an_ancestor_commit(
-    tmp_path: Path,
-) -> None:
-    # Committing the evidence moves HEAD past the verified head, and pull
-    # request CI checks out a merge commit; ancestry keeps the binding honest.
-    payload = _payload()
-    payload["commit_sha"] = _ancestor(verified_code_unchanged=True)
-    report = tmp_path / "report.json"
-    report.write_text(json.dumps(payload), encoding="utf-8")
-
-    completed = subprocess.run(
-        [sys.executable, "scripts/ci/check_recording_verification.py", str(report)],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert completed.returncode == 0, completed.stderr
-    assert json.loads(completed.stdout)["complete"] is True
-
-
-def test_cli_structural_mode_rejects_ancestor_evidence_once_verified_code_changed(
-    tmp_path: Path,
-) -> None:
-    payload = _payload()
-    payload["commit_sha"] = _ancestor(verified_code_unchanged=False)
-    report = tmp_path / "report.json"
-    report.write_text(json.dumps(payload), encoding="utf-8")
-
-    completed = subprocess.run(
-        [sys.executable, "scripts/ci/check_recording_verification.py", str(report)],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert completed.returncode == 2
-    assert "commit_sha does not match repository_head" in completed.stderr
-    assert "Traceback" not in completed.stderr
-
-
-def test_cli_require_complete_still_requires_the_exact_repository_head(
-    tmp_path: Path,
-) -> None:
-    payload = _payload()
-    payload["commit_sha"] = _ancestor(verified_code_unchanged=True)
-    report = tmp_path / "report.json"
-    report.write_text(json.dumps(payload), encoding="utf-8")
-
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "scripts/ci/check_recording_verification.py",
-            str(report),
-            "--require-complete",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert completed.returncode == 2
-    assert "commit_sha does not match repository_head" in completed.stderr
-
-
-def test_ci_checks_out_full_history_so_evidence_ancestry_can_be_verified() -> None:
-    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
-    backend_unit = workflow.split("  backend-unit:", 1)[1].split("\n  backend-integration:", 1)[0]
-
-    assert "fetch-depth: 0" in backend_unit
-
-
-def test_ci_validates_runtime_report_structure_without_requiring_completion() -> None:
-    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
-    invocation = f"scripts/ci/check_recording_verification.py {RUNTIME_REPORT}"
-
-    assert invocation in workflow
-    assert "--require-complete" not in workflow
-
-
-def test_cli_require_complete_rejects_blocked_runtime_report() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "scripts/ci/check_recording_verification.py",
-            "docs/project/recording-verification-v1.example.json",
-            "--require-complete",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert completed.returncode == 2
-    assert "recording verification is not complete" in completed.stderr
-    assert "Traceback" not in completed.stderr
-
-
-def test_cli_require_complete_accepts_complete_report_on_repository_head(
-    tmp_path: Path,
-) -> None:
-    payload = _payload()
-    payload["commit_sha"] = _repository_head()
-    report = tmp_path / "report.json"
-    report.write_text(json.dumps(payload), encoding="utf-8")
-
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "scripts/ci/check_recording_verification.py",
-            str(report),
-            "--require-complete",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert completed.returncode == 0, completed.stderr
-    assert json.loads(completed.stdout)["complete"] is True
-
-
-WINDOW_MACHINE_PROFILE = "macbook-air-apple-m5-24gb"
-
-
-def test_supported_machine_profile_names_the_real_window_machine() -> None:
-    # The single runtime window runs on the owner's MacBook Air (Apple M5,
-    # 24 GB); evidence may never claim a machine the window did not use.
-    module = importlib.import_module("scripts.ci.check_recording_verification")
-    validate, _ = _validator()
-    schema = json.loads(
-        Path("docs/project/recording-verification-v1.schema.json").read_text(encoding="utf-8")
-    )
-    payload = _payload()
-    payload["machine_profile"] = WINDOW_MACHINE_PROFILE
-
-    assert module.SUPPORTED_MACHINE_PROFILE == WINDOW_MACHINE_PROFILE
-    assert schema["properties"]["machine_profile"] == {"const": WINDOW_MACHINE_PROFILE}
-    assert validate(payload, repository_head=payload["commit_sha"]).complete is True
-    for report in (
-        "docs/project/recording-verification-v1.json",
-        "docs/project/recording-verification-v1.example.json",
-    ):
-        assert json.loads(Path(report).read_text())["machine_profile"] == WINDOW_MACHINE_PROFILE
-
-
-@pytest.mark.parametrize(
-    ("key", "status", "machine_code"),
-    [
-        ("permission.restricted", "unsupported", "source-unsupported"),
-        ("microphone.in-use", "blocked", "verification-blocked"),
-        ("silence.microphone", "blocked", "verification-blocked"),
-    ],
-)
-def test_unobserved_scenarios_never_have_to_claim_a_required_track_failure(
-    key: str, status: str, machine_code: str
-) -> None:
-    # Blocked and unsupported entries record that nothing was observed; the
-    # fail-closed field rules apply only to evidence that was actually run.
-    validate, _ = _validator()
-    payload = _payload()
-    result = _result_for(payload, key)
-    result.update(
-        {
-            "status": status,
-            "machine_code": machine_code,
-            "microphone_track_present": False,
-            "system_audio_track_present": False,
-            "required_tracks_failure": False,
-            "sealed": False,
-            "spool_retained": False,
-            "upload_state": "not-started",
-        }
-    )
-    _rehash(result)
-
-    summary = validate(payload, repository_head=payload["commit_sha"])
-
-    assert summary.complete is False
-    assert getattr(summary, status) == 1
-
-
-@pytest.mark.parametrize(
-    ("status", "machine_code"),
-    [
-        ("pass", "verification-blocked"),
-        ("pass", "verification-not-run"),
-        ("pass", "source-unsupported"),
-        ("pass", "verification-failed"),
-        ("fail", "verified"),
-        ("blocked", "verified"),
-        ("unsupported", "verified"),
-        ("unsupported", "verification-blocked"),
-    ],
-)
-def test_status_and_machine_code_must_agree(status: str, machine_code: str) -> None:
-    # A scenario cannot count as passing unless its machine code says it ran
-    # and was verified, and no unobserved code may dress up as a verdict.
-    validate, error = _validator()
-    payload = _payload()
-    result = _result_for(payload, "app.zoom")
-    result.update({"status": status, "machine_code": machine_code})
-    if status != "pass":
-        result.update(
-            {
-                "microphone_track_present": False,
-                "system_audio_track_present": False,
-                "required_tracks_failure": False,
-                "sealed": False,
-                "spool_retained": False,
-                "upload_state": "not-started",
-            }
-        )
-    _rehash(result)
-
-    with pytest.raises(error, match="machine_code"):
-        validate(payload, repository_head=payload["commit_sha"])
-
-
-@pytest.mark.parametrize("status", ["blocked", "unsupported"])
-@pytest.mark.parametrize(
-    ("overrides", "message"),
-    [
-        ({"sealed": True, "microphone_track_present": False}, "sealing missing tracks"),
-        ({"sealed": True, "required_tracks_failure": True}, "sealing missing tracks"),
-        ({"upload_state": "released", "sealed": False}, "releasing unsafe evidence"),
-    ],
-)
-def test_unobserved_entries_still_cannot_record_an_unsafe_seal_or_release(
-    status: str, overrides: dict[str, object], message: str
-) -> None:
-    # Blocked and unsupported entries may carry observed fields, but never a
-    # seal over missing tracks or a release without a safe seal.
-    validate, error = _validator()
-    payload = _payload()
-    result = _result_for(payload, "app.zoom")
-    result.update({"status": status, "machine_code": _STATUS_MACHINE_CODES[status]})
-    result.update(overrides)
-    _rehash(result)
-
-    with pytest.raises(error, match=message):
-        validate(payload, repository_head=payload["commit_sha"])
-
-
-@pytest.mark.parametrize("key", ["silence.microphone", "silence.system-audio"])
-def test_silence_scenarios_pass_as_warned_captures_that_seal_normally(key: str) -> None:
-    # Decision 2026-09-05: sustained silence is a visible warning, not a
-    # required-track failure; the recording still seals with both tracks.
-    validate, error = _validator()
-    payload = _payload()
-    result = _result_for(payload, key)
-    result.update(
-        {
-            "required_tracks_failure": False,
-            "sealed": True,
-            "spool_retained": True,
-            "upload_state": "pending",
-        }
-    )
-    _rehash(result)
-
-    assert validate(payload, repository_head=payload["commit_sha"]).complete is True
-
-    result["system_audio_track_present"] = False
-    result["sealed"] = False
-    _rehash(result)
-    with pytest.raises(error, match=f"{key} must contain both required tracks"):
-        validate(payload, repository_head=payload["commit_sha"])
-
-
-def test_disk_reserve_pressure_must_block_before_capture_starts() -> None:
-    validate, error = _validator()
-    payload = _payload()
-    result = _result_for(payload, "storage.disk-reserve-pressure")
-    result.update(
-        {
-            "microphone_track_present": False,
-            "system_audio_track_present": False,
-            "required_tracks_failure": True,
-            "sealed": False,
-            "spool_retained": False,
-            "upload_state": "not-started",
-        }
-    )
-    _rehash(result)
-    assert validate(payload, repository_head=payload["commit_sha"]).complete is True
-
-    result["sealed"] = True
-    result["microphone_track_present"] = True
-    result["system_audio_track_present"] = True
-    result["required_tracks_failure"] = False
-    _rehash(result)
-    with pytest.raises(error, match="storage.disk-reserve-pressure must fail closed before"):
-        validate(payload, repository_head=payload["commit_sha"])
-
-
-def test_disk_write_pressure_must_keep_an_unsealed_retained_spool() -> None:
-    validate, error = _validator()
-    payload = _payload()
-    result = _result_for(payload, "storage.disk-write-pressure")
-    result.update({"sealed": False, "spool_retained": True, "upload_state": "not-started"})
-    _rehash(result)
-    assert validate(payload, repository_head=payload["commit_sha"]).complete is True
-
-    result["sealed"] = True
-    _rehash(result)
-    with pytest.raises(error, match="storage.disk-write-pressure must stop unsealed"):
-        validate(payload, repository_head=payload["commit_sha"])

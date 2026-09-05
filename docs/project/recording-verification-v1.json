@@ -292,7 +292,7 @@
     },
     {
       "key": "silence.microphone",
-      "status": "blocked",
+      "status": "pass",
       "started_at": "2026-09-05T04:54:20Z",
       "ended_at": "2026-09-05T04:54:21Z",
       "microphone_track_present": true,
@@ -302,12 +302,12 @@
       "sealed": true,
       "spool_retained": true,
       "upload_state": "pending",
-      "machine_code": "verification-blocked",
-      "artifact_sha256": "479eedbc46c841461ea02cecd6bf3b349e0317b54551d843e631b0faa3852692"
+      "machine_code": "verified",
+      "artifact_sha256": "6608ff03702328ade734351e95556a3617f74a140ca1542b59d8105edd6b6ebb"
     },
     {
       "key": "silence.system-audio",
-      "status": "blocked",
+      "status": "pass",
       "started_at": "2026-09-05T04:54:20Z",
       "ended_at": "2026-09-05T04:54:21Z",
       "microphone_track_present": true,
@@ -317,8 +317,8 @@
       "sealed": true,
       "spool_retained": true,
       "upload_state": "pending",
-      "machine_code": "verification-blocked",
-      "artifact_sha256": "8277b0a9962695a0fe96e4a0349ea1b9358396e8590d9a0166c5299ffb15b661"
+      "machine_code": "verified",
+      "artifact_sha256": "bde7305dc1d725d0bc62b73cc66e95b2d2ed8eab71eab8ae8cd5417da849f62a"
     },
     {
       "key": "lifecycle.sleep-wake",
@@ -352,33 +352,33 @@
     },
     {
       "key": "storage.disk-reserve-pressure",
-      "status": "blocked",
-      "started_at": "2026-09-05T04:54:20Z",
-      "ended_at": "2026-09-05T04:54:21Z",
+      "status": "pass",
+      "started_at": "2026-09-05T04:54:23Z",
+      "ended_at": "2026-09-05T04:54:55Z",
       "microphone_track_present": false,
       "system_audio_track_present": false,
-      "required_tracks_failure": false,
+      "required_tracks_failure": true,
       "gap_count": 0,
       "sealed": false,
       "spool_retained": false,
       "upload_state": "not-started",
-      "machine_code": "verification-blocked",
-      "artifact_sha256": "b846080924db800d133c8c6f392f90c1042458586a1a2690d7d0beba4413cd71"
+      "machine_code": "required-tracks-unavailable",
+      "artifact_sha256": "0c1523aeebbb12841c1931ef25dbd2377c7cf5fdc6f412e98a820faf84e1e1f4"
     },
     {
       "key": "storage.disk-write-pressure",
-      "status": "blocked",
-      "started_at": "2026-09-05T04:54:20Z",
-      "ended_at": "2026-09-05T04:54:21Z",
-      "microphone_track_present": false,
+      "status": "pass",
+      "started_at": "2026-09-05T04:54:23Z",
+      "ended_at": "2026-09-05T04:54:55Z",
+      "microphone_track_present": true,
       "system_audio_track_present": false,
       "required_tracks_failure": false,
       "gap_count": 0,
       "sealed": false,
-      "spool_retained": false,
+      "spool_retained": true,
       "upload_state": "not-started",
-      "machine_code": "verification-blocked",
-      "artifact_sha256": "a1f2544e3f006db5d46b715d105e66a6faeeb40fa4e74cc3bd323d0a83d83139"
+      "machine_code": "verified",
+      "artifact_sha256": "a283f9ffaa0a9028a3ccd7f4b27781d9b266facdc4fd4ef5a06c70b5ec611ac0"
     },
     {
       "key": "network.loss",

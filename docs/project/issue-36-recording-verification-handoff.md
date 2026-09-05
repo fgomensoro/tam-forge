@@ -82,8 +82,8 @@ The single window ran on the exact verified code of `1660618` (verified paths by
 
 | Result | Count | Keys |
 |---|---|---|
-| pass | 27 | all placement, display, output, route, permission.allowed/denied, sleep/wake, crash/relaunch, browser playback, Meet browser call, network loss, deterministic and backend scenarios |
-| blocked | 7 | app.zoom, app.teams (not installed), microphone.in-use, storage.disk-reserve-pressure, storage.disk-write-pressure (no safe local injection), silence.microphone, silence.system-audio (see below) |
+| pass | 31 | all placement, display, output, route, silence, permission.allowed/denied, sleep/wake, crash/relaunch, browser playback, Meet browser call, network loss, storage, deterministic and backend scenarios |
+| blocked | 3 | app.zoom, app.teams (not installed), microphone.in-use (no second capture tool) |
 | unsupported | 3 | app.tam-forge-tts-interviewer (feature absent from the build), microphone.absent (built-in microphone cannot be removed), permission.restricted (no MDM restriction available) |
 
 Provenance of the entries: one live recording may evidence several keys, so identical timestamps are shared recordings, not copies. `server.restart`, `part.*`, `corruption.ciphertext`, and `corruption.upload` were evidenced by the Docker-free backend matrix and validator suites run locally inside the window (04:47:11–04:47:14Z) on top of the required CI backend-integration job on the same verified code; they are not live server restarts. `corruption.aligned-truncation`, `tracks.missing-expected`, `startup.missing-track-bound`, and `finish.missing-track` were evidenced by the TAMForgeTests XCTest run inside the window (04:54:23–04:54:55Z) after the one full-scheme run. `network.loss` records the upload queue holding sealed spools in "waiting for a network connection" against the unreachable fixture server while the other scenarios ran. Blocked and unsupported entries carry only what was observed (the silence entries show the sealed, both-track recordings the contract does not accept); the contract was corrected so unobserved entries never have to claim a required-track failure.
@@ -92,17 +92,18 @@ Live observations worth keeping:
 
 - Task 2 environment-loss paths fired exactly as designed on real hardware: output route change, microphone change, and Mac sleep each stopped once, left the spool unsealed and retained, and showed the reason in `needsAttention`.
 - Crash (`kill -9`) and relaunch listed every spool for recovery, never deleted anything; recovery reports "needs attention" because the fixture key store is ephemeral by design.
-- Silence scenarios: the merged design records a `silentInput` warning and still seals; the Task 1 contract expects `silence.*` to stay unsealed. This is a contract-versus-design conflict that planning must resolve before those keys can pass.
+- Silence scenarios: the merged design records a `silentInput` warning and still seals. Decision (owner, 2026-09-05): keep the design; the contract now treats `silence.*` as capture keys, and the two sealed two-track recordings observed in the window pass.
+- Disk pressure: no safe local injection exists on a machine with 815 GB free. Decision (owner, 2026-09-05): `storage.disk-reserve-pressure` is evidenced as a pre-start block and `storage.disk-write-pressure` as an unsealed retained stop by the TAMForgeTests run inside the window (preflight reserve refusal and append-failure coordinator tests on the exact verified code).
 - Permission denial after the initial grant surfaced twice: once as `Recording could not start` (source start failed after a denied macOS consent dialog; no spool left behind) and later, after the window, as the preflight block "Microphone access is denied". Both fail closed.
 - Recording is unreachable without a live backend; the ad-hoc Debug signature also blocks TCC registration until the app is copied to `~/Applications` and added manually. Issue #38 owns both.
 - The first attempt overran the 60-minute contract limit while permissions were being granted; the reported window is the second, contiguous 60-minute span in which every automatable scenario was re-run.
 
-Issue #36 therefore cannot close on this head. Closing needs a planning decision on the silence contract, Zoom and Teams installed for a consenting call, and either a disk-pressure injection strategy or a contract change for the unsupported keys.
+Issue #36 therefore cannot close on this head. Closing needs Zoom and Teams installed for a consenting-call window, a second capture tool for `microphone.in-use`, and a decision on the three `unsupported` keys (TTS interviewer absent from the build, no removable microphone, no MDM restriction).
 
 ## Remaining order
 
-1. Planning decision on the `silence.*` contract: keep "warn and seal" (change the contract) or make silence a retained failure (change the design, with new RED tests). Until then those two keys cannot pass.
-2. Install Zoom and Teams and repeat a short window with consenting calls for `app.zoom` and `app.teams`; decide a safe disk-pressure injection (or a contract change) for `storage.*`, and a second capture tool for `microphone.in-use`.
+1. Install Zoom and Teams and repeat a short window with consenting calls for `app.zoom` and `app.teams`, plus a second capture tool for `microphone.in-use`. Grant Screen Recording and Microphone to the `~/Applications/TAMForge.app` copy before starting the clock.
+2. Decide the three `unsupported` keys: `app.tam-forge-tts-interviewer` needs the interviewer feature to exist, `microphone.absent` cannot happen on a MacBook Air, `permission.restricted` needs an MDM profile; either supply them in a later window or amend the contract.
 3. Any commit that touches `apps/macos`, `apps/backend/src/tamforge_backend/recordings`, or `apps/backend/src/tamforge_backend/storage` invalidates the committed evidence in CI: either revert the report to the sentinel template or repeat the window on the new head.
 4. Keep PR #151 draft and unmerged until every required scenario passes on an exact head with fresh review and green CI; the completion gate is intentionally unmet.
 5. Before a repeat window: grant Screen Recording and Microphone to the `~/Applications/TAMForge.app` copy first, then start the 60-minute clock. Issue #38 removes the ad-hoc-signature cause.

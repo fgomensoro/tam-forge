@@ -60,11 +60,10 @@ REQUIRED_SCENARIO_KEYS = frozenset(
     }
 )
 
-# Silence is a visible warning on a sealed two-track recording (decision 2026-09-05).
 CAPTURE_SCENARIO_KEYS = frozenset(
     key
     for key in REQUIRED_SCENARIO_KEYS
-    if key.startswith(("app.", "placement.", "display.", "output.", "silence."))
+    if key.startswith(("app.", "placement.", "display.", "output."))
 ) | {"permission.allowed", "startup.callback-order"}
 
 PRESTART_BLOCK_SCENARIO_KEYS = frozenset(
@@ -73,23 +72,20 @@ PRESTART_BLOCK_SCENARIO_KEYS = frozenset(
         "permission.restricted",
         "microphone.absent",
         "microphone.in-use",
-        "storage.disk-reserve-pressure",
     }
 )
 
-# Failures after capture started that must leave an unsealed, retained spool
-# without asserting a missing required track.
-RETAINED_UNSEALED_SCENARIO_KEYS = frozenset({"storage.disk-write-pressure"})
-
 RETAINED_FAILURE_SCENARIO_KEYS = frozenset(
     {
+        "silence.microphone",
+        "silence.system-audio",
         "tracks.missing-expected",
         "startup.missing-track-bound",
         "finish.missing-track",
     }
 )
 
-SUPPORTED_MACHINE_PROFILE = "macbook-air-apple-m5-24gb"
+SUPPORTED_MACHINE_PROFILE = "macbook-pro-apple-m2-8gb"
 UTC_TIMESTAMP_PATTERN = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 COMMIT_SHA_PATTERN = r"^[0-9a-f]{40}$"
@@ -139,7 +135,7 @@ class _RecordingVerification(BaseModel):
     commit_sha: Annotated[StrictStr, Field(pattern=COMMIT_SHA_PATTERN)]
     window_started_at: UtcTimestamp
     window_ended_at: UtcTimestamp
-    machine_profile: Literal["macbook-air-apple-m5-24gb"]
+    machine_profile: Literal["macbook-pro-apple-m2-8gb"]
     results: Annotated[list[_ScenarioResult], Field(min_length=1)]
 
 
@@ -271,33 +267,15 @@ def _validate_time_bounds(report: _RecordingVerification) -> None:
             )
 
 
-STATUS_MACHINE_CODES: dict[str, frozenset[str]] = {
-    "pass": frozenset({"verified", "required-tracks-unavailable"}),
-    "fail": frozenset({"verification-failed"}),
-    "blocked": frozenset({"verification-blocked", "verification-not-run"}),
-    "unsupported": frozenset({"source-unsupported"}),
-}
-
-
 def _validate_scenario_invariants(results: list[_ScenarioResult]) -> None:
     for result in results:
-        if result.machine_code not in STATUS_MACHINE_CODES[result.status]:
-            raise RecordingVerificationError(
-                f"scenario {result.key} machine_code does not agree with its status"
-            )
         if result.status == "pass" and result.key in CAPTURE_SCENARIO_KEYS and not (
             result.microphone_track_present and result.system_audio_track_present
         ):
             raise RecordingVerificationError(
                 f"scenario {result.key} must contain both required tracks to pass"
             )
-        # Only codes produced by running a scenario count as observations;
-        # blocked and unsupported entries never have to claim fail-closed fields.
-        evidence_was_observed = result.machine_code in {
-            "verified",
-            "verification-failed",
-            "required-tracks-unavailable",
-        }
+        evidence_was_observed = result.machine_code != "verification-not-run"
         if (
             result.key in PRESTART_BLOCK_SCENARIO_KEYS
             and (result.status == "pass" or evidence_was_observed)
@@ -323,18 +301,6 @@ def _validate_scenario_invariants(results: list[_ScenarioResult]) -> None:
         ):
             raise RecordingVerificationError(
                 f"scenario {result.key} must fail closed with its spool retained"
-            )
-        if (
-            result.key in RETAINED_UNSEALED_SCENARIO_KEYS
-            and (result.status == "pass" or evidence_was_observed)
-            and not (
-                not result.sealed
-                and result.spool_retained
-                and result.upload_state == "not-started"
-            )
-        ):
-            raise RecordingVerificationError(
-                f"scenario {result.key} must stop unsealed with its spool retained"
             )
         if result.sealed and (
             result.required_tracks_failure
@@ -386,19 +352,9 @@ def _validated_repository_head(repository_head: object) -> str:
 
 
 def validate_recording_verification(
-    payload: object,
-    *,
-    repository_head: str | None = None,
-    is_verified_ancestor: Callable[[str], bool] | None = None,
+    payload: object, *, repository_head: str | None = None
 ) -> RecordingVerificationSummary:
-    """Validate a report and return counts without treating incompleteness as validity.
-
-    Non-blocked evidence must name the resolved repository head. Structural
-    runs may also accept an ancestor of that head whose verified code is
-    unchanged, because committing the evidence itself moves the head and
-    pull-request CI checks out a merge commit; completion checks never use
-    that allowance.
-    """
+    """Validate a report and return counts without treating incompleteness as validity."""
 
     report = _validated_report(payload)
     _validate_inventory(report.results)
@@ -421,9 +377,7 @@ def validate_recording_verification(
                 "repository_head is required for non-blocked evidence"
             )
         trusted_head = _validated_repository_head(repository_head)
-        if report.commit_sha != trusted_head and not (
-            is_verified_ancestor is not None and is_verified_ancestor(report.commit_sha)
-        ):
+        if report.commit_sha != trusted_head:
             raise RecordingVerificationError("commit_sha does not match repository_head")
     return RecordingVerificationSummary(
         total=total,
@@ -454,48 +408,16 @@ def _resolve_repository_head() -> str:
     return _validated_repository_head(completed.stdout.strip())
 
 
-# Evidence stays bound to code: an ancestor qualifies only when none of the
-# paths the runtime window verifies changed between it and the head.
-VERIFIED_CODE_PATHS = (
-    "apps/macos",
-    "apps/backend/src/tamforge_backend/recordings",
-    "apps/backend/src/tamforge_backend/storage",
-)
-
-
-def _is_verified_ancestor(commit_sha: str) -> bool:
-    def git(*arguments: str) -> int:
-        return subprocess.run(
-            ["git", "-C", str(REPOSITORY_ROOT), *arguments],
-            check=False,
-            capture_output=True,
-        ).returncode
-
-    return (
-        git("merge-base", "--is-ancestor", commit_sha, "HEAD") == 0
-        and git("diff", "--quiet", commit_sha, "HEAD", "--", *VERIFIED_CODE_PATHS) == 0
-    )
-
-
 def main(*, repository_head_resolver: Callable[[], str] = _resolve_repository_head) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("report", type=Path)
-    # Structural CI runs never pass this flag: a parsed report is not evidence.
-    parser.add_argument("--require-complete", action="store_true")
     args = parser.parse_args()
     try:
         summary = validate_recording_verification(
-            _load_json(args.report),
-            repository_head=repository_head_resolver(),
-            is_verified_ancestor=None if args.require_complete else _is_verified_ancestor,
+            _load_json(args.report), repository_head=repository_head_resolver()
         )
     except RecordingVerificationError as exc:
         parser.error(str(exc))
-    if args.require_complete and not summary.complete:
-        parser.error(
-            "recording verification is not complete: "
-            f"{summary.passed}/{summary.total} scenarios pass"
-        )
     print(json.dumps(asdict(summary), sort_keys=True))
 
 

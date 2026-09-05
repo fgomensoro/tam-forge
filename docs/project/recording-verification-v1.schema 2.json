@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tamforge.invalid/schemas/recording-verification-v1.schema.json",
+  "title": "TAM Forge recording verification v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "commit_sha",
+    "window_started_at",
+    "window_ended_at",
+    "machine_profile",
+    "results"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "commit_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "window_started_at": {
+      "$ref": "#/$defs/utc_timestamp"
+    },
+    "window_ended_at": {
+      "$ref": "#/$defs/utc_timestamp"
+    },
+    "machine_profile": {
+      "const": "macbook-pro-apple-m2-8gb"
+    },
+    "results": {
+      "type": "array",
+      "minItems": 37,
+      "maxItems": 37,
+      "items": {
+        "$ref": "#/$defs/scenario_result"
+      }
+    }
+  },
+  "$defs": {
+    "utc_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "scenario_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "status",
+        "started_at",
+        "ended_at",
+        "microphone_track_present",
+        "system_audio_track_present",
+        "required_tracks_failure",
+        "gap_count",
+        "sealed",
+        "spool_retained",
+        "upload_state",
+        "machine_code",
+        "artifact_sha256"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "enum": [
+            "app.zoom",
+            "app.teams",
+            "app.meet-browser-call",
+            "app.tam-forge-tts-interviewer",
+            "app.browser-local-playback",
+            "placement.foreground",
+            "placement.background",
+            "placement.minimized",
+            "display.internal",
+            "display.external",
+            "output.headphones",
+            "output.speakers",
+            "route.microphone-change",
+            "route.output-change",
+            "permission.allowed",
+            "permission.denied",
+            "permission.restricted",
+            "microphone.absent",
+            "microphone.in-use",
+            "silence.microphone",
+            "silence.system-audio",
+            "lifecycle.sleep-wake",
+            "lifecycle.app-crash-relaunch",
+            "storage.disk-reserve-pressure",
+            "storage.disk-write-pressure",
+            "network.loss",
+            "server.restart",
+            "part.duplicate-identical",
+            "part.duplicate-conflicting",
+            "part.reordered",
+            "corruption.ciphertext",
+            "corruption.upload",
+            "corruption.aligned-truncation",
+            "tracks.missing-expected",
+            "startup.callback-order",
+            "startup.missing-track-bound",
+            "finish.missing-track"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pass", "fail", "unsupported", "blocked"]
+        },
+        "started_at": {
+          "$ref": "#/$defs/utc_timestamp"
+        },
+        "ended_at": {
+          "$ref": "#/$defs/utc_timestamp"
+        },
+        "microphone_track_present": {
+          "type": "boolean"
+        },
+        "system_audio_track_present": {
+          "type": "boolean"
+        },
+        "required_tracks_failure": {
+          "type": "boolean"
+        },
+        "gap_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 14400
+        },
+        "sealed": {
+          "type": "boolean"
+        },
+        "spool_retained": {
+          "type": "boolean"
+        },
+        "upload_state": {
+          "type": "string",
+          "enum": [
+            "not-started",
+            "pending",
+            "audio-accepted",
+            "lineage-accepted",
+            "released"
+          ]
+        },
+        "machine_code": {
+          "type": "string",
+          "enum": [
+            "verified",
+            "verification-not-run",
+            "verification-failed",
+            "verification-blocked",
+            "source-unsupported",
+            "required-tracks-unavailable"
+          ]
+        },
+        "artifact_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}
