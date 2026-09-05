@@ -515,6 +515,30 @@ final class RecordingUploadTests: XCTestCase {
         }
     }
 
+    func testRelaunchAfterAudio201WithoutTranscriptKeepsSpoolAndNeverResubmitsParts() async throws {
+        let fixture = try await sealedSpool()
+        let server = FakeRecordingServer()
+        _ = try await RecordingUploadPipeline(spoolFactory: fixture.factory, server: server)
+            .upload(recordingID: fixture.recordingID, progress: { _ in })
+
+        let gates = try await RecordingUploadPipeline(
+            spoolFactory: fixture.factory,
+            server: server
+        ).upload(recordingID: fixture.recordingID, progress: { _ in })
+
+        XCTAssertTrue(gates.audioCreatedOnServer)
+        XCTAssertFalse(gates.transcriptLineageAccepted)
+        XCTAssertFalse(gates.mayDeleteLocalSpool)
+        let uploadAttempts = await server.uploadAttempts
+        XCTAssertEqual(uploadAttempts, 2)
+        let createCalls = await server.createCalls
+        XCTAssertEqual(createCalls, 1)
+        let sealCommands = await server.sealCommands
+        XCTAssertEqual(sealCommands.count, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.directory.path))
+        _ = try await fixture.keyStore.load(recordingID: fixture.recordingID)
+    }
+
     func testOfflineFailureLeavesSpoolAndDeterministicRetryConverges() async throws {
         let fixture = try await sealedSpool()
         let server = FakeRecordingServer(failureOnUploadAttempt: 2)
