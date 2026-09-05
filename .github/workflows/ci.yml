@@ -144,7 +144,9 @@ jobs:
           done
           exit 1
       - run: uv run alembic -c apps/backend/alembic.ini upgrade head
-      - run: uv run pytest -m integration apps/backend/tests/integration -q
+      - run: uv run pytest -m "integration and not postgres_integration" apps/backend/tests/integration -q
+      - name: Require complete model provenance PostgreSQL coverage
+        run: scripts/run-plan-03-integration.sh apps/backend/tests/integration/agents
 
   e2e:
     runs-on: ubuntu-latest

@@ -15,6 +15,7 @@ package = false
 addopts = "-m 'not integration'"
 markers = [
   "integration: tests that require external services",
+  "postgres_integration: required real PostgreSQL provenance checks",
 ]
 pythonpath = ["."]
 testpaths = [
@@ -33,6 +34,7 @@ target-version = "py312"
 select = ["E", "F", "I", "UP"]
 
 [tool.mypy]
+mypy_path = ["apps/backend/src", "packages/protocol/src"]
 python_version = "3.12"
 strict = true
 explicit_package_bases = true
