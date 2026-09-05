@@ -59,7 +59,8 @@
         "sealed",
         "spool_retained",
         "upload_state",
-        "machine_code"
+        "machine_code",
+        "artifact_sha256"
       ],
       "properties": {
         "key": {
@@ -153,6 +154,10 @@
             "source-unsupported",
             "required-tracks-unavailable"
           ]
+        },
+        "artifact_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
         }
       }
     }

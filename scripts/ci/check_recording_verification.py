@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
+import subprocess
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -84,9 +87,13 @@ RETAINED_FAILURE_SCENARIO_KEYS = frozenset(
 
 SUPPORTED_MACHINE_PROFILE = "macbook-pro-apple-m2-8gb"
 UTC_TIMESTAMP_PATTERN = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
+SHA256_PATTERN = r"^[0-9a-f]{64}$"
 COMMIT_SHA_PATTERN = r"^[0-9a-f]{40}$"
+BLOCKED_COMMIT_SENTINEL = "0" * 40
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 UtcTimestamp = Annotated[StrictStr, Field(pattern=UTC_TIMESTAMP_PATTERN)]
+Sha256 = Annotated[StrictStr, Field(pattern=SHA256_PATTERN)]
 MachineCode = Literal[
     "verified",
     "verification-not-run",
@@ -118,6 +125,7 @@ class _ScenarioResult(BaseModel):
         "not-started", "pending", "audio-accepted", "lineage-accepted", "released"
     ]
     machine_code: MachineCode
+    artifact_sha256: Sha256
 
 
 class _RecordingVerification(BaseModel):
@@ -314,8 +322,37 @@ def _validate_scenario_invariants(results: list[_ScenarioResult]) -> None:
             )
 
 
+def _canonical_result_sha256(result: _ScenarioResult) -> str:
+    payload = result.model_dump(exclude={"artifact_sha256"}, mode="json")
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _validate_artifact_hashes(results: list[_ScenarioResult]) -> None:
+    for result in results:
+        if result.artifact_sha256 != _canonical_result_sha256(result):
+            raise RecordingVerificationError(
+                f"scenario {result.key} artifact_sha256 does not match canonical result"
+            )
+
+
+def _validated_repository_head(repository_head: object) -> str:
+    if not isinstance(repository_head, str) or re.fullmatch(
+        COMMIT_SHA_PATTERN, repository_head
+    ) is None:
+        raise RecordingVerificationError(
+            "repository_head must be a full lowercase 40-character commit SHA"
+        )
+    return repository_head
+
+
 def validate_recording_verification(
-    payload: object, *, expected_head: str | None = None
+    payload: object, *, repository_head: str | None = None
 ) -> RecordingVerificationSummary:
     """Validate a report and return counts without treating incompleteness as validity."""
 
@@ -323,22 +360,25 @@ def validate_recording_verification(
     _validate_inventory(report.results)
     _validate_time_bounds(report)
     _validate_scenario_invariants(report.results)
+    _validate_artifact_hashes(report.results)
 
     counts = Counter(result.status for result in report.results)
     passed = counts["pass"]
     total = len(report.results)
-    if expected_head is not None:
-        expected_head_is_valid = isinstance(expected_head, str) and re.fullmatch(
-            COMMIT_SHA_PATTERN, expected_head
-        )
-        if not expected_head_is_valid:
+    fully_blocked = counts["blocked"] == total
+    if fully_blocked:
+        if report.commit_sha != BLOCKED_COMMIT_SENTINEL:
             raise RecordingVerificationError(
-                "expected_head must be a full lowercase 40-character commit SHA"
+                "fully blocked template must use the zero commit sentinel"
             )
-        if report.commit_sha != expected_head:
-            raise RecordingVerificationError("commit_sha does not match expected_head")
-    elif passed == total:
-        raise RecordingVerificationError("expected_head is required for a complete report")
+    else:
+        if repository_head is None:
+            raise RecordingVerificationError(
+                "repository_head is required for non-blocked evidence"
+            )
+        trusted_head = _validated_repository_head(repository_head)
+        if report.commit_sha != trusted_head:
+            raise RecordingVerificationError("commit_sha does not match repository_head")
     return RecordingVerificationSummary(
         total=total,
         passed=passed,
@@ -356,14 +396,25 @@ def _load_json(path: Path) -> object:
         raise RecordingVerificationError(f"cannot read recording verification: {exc}") from exc
 
 
-def main() -> None:
+def _resolve_repository_head() -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(REPOSITORY_ROOT), "rev-parse", "HEAD"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise RecordingVerificationError("cannot resolve repository_head from git")
+    return _validated_repository_head(completed.stdout.strip())
+
+
+def main(*, repository_head_resolver: Callable[[], str] = _resolve_repository_head) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("report", type=Path)
-    parser.add_argument("--expected-head")
     args = parser.parse_args()
     try:
         summary = validate_recording_verification(
-            _load_json(args.report), expected_head=args.expected_head
+            _load_json(args.report), repository_head=repository_head_resolver()
         )
     except RecordingVerificationError as exc:
         parser.error(str(exc))

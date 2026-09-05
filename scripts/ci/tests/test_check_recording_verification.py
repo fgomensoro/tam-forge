@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import subprocess
@@ -75,6 +76,29 @@ def _validator() -> tuple[Callable[[object], object], type[Exception]]:
     return module.validate_recording_verification, module.RecordingVerificationError
 
 
+def _artifact_sha256(result: dict[str, object]) -> str:
+    canonical = json.dumps(
+        {key: value for key, value in result.items() if key != "artifact_sha256"},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _rehash(result: dict[str, object]) -> None:
+    result["artifact_sha256"] = _artifact_sha256(result)
+
+
+def _repository_head() -> str:
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
 def _result(key: str) -> dict[str, object]:
     result: dict[str, object] = {
         "key": key,
@@ -100,6 +124,7 @@ def _result(key: str) -> dict[str, object]:
             upload_state="not-started",
             machine_code="required-tracks-unavailable",
         )
+    _rehash(result)
     return result
 
 
@@ -114,6 +139,27 @@ def _payload() -> dict[str, object]:
     }
 
 
+def _blocked_payload() -> dict[str, object]:
+    payload = _payload()
+    payload["commit_sha"] = "0" * 40
+    results = payload["results"]
+    assert isinstance(results, list)
+    for result in results:
+        result.update(
+            status="blocked",
+            microphone_track_present=False,
+            system_audio_track_present=False,
+            required_tracks_failure=False,
+            gap_count=0,
+            sealed=False,
+            spool_retained=False,
+            upload_state="not-started",
+            machine_code="verification-not-run",
+        )
+        _rehash(result)
+    return payload
+
+
 def _result_for(payload: dict[str, object], key: str) -> dict[str, object]:
     results = payload["results"]
     assert isinstance(results, list)
@@ -124,7 +170,7 @@ def test_complete_payload_returns_complete_summary() -> None:
     validate, _ = _validator()
     payload = _payload()
 
-    summary = validate(payload, expected_head=payload["commit_sha"])
+    summary = validate(payload, repository_head=payload["commit_sha"])
 
     assert summary.total == 37
     assert summary.passed == 37
@@ -134,21 +180,59 @@ def test_complete_payload_returns_complete_summary() -> None:
     assert summary.complete is True
 
 
-def test_complete_payload_requires_expected_head() -> None:
+def test_complete_payload_requires_repository_head() -> None:
     validate, error = _validator()
 
-    with pytest.raises(error, match="expected_head.*required"):
+    with pytest.raises(error, match="repository_head.*required"):
         validate(_payload())
 
 
-def test_complete_payload_rejects_stale_commit() -> None:
+def test_complete_payload_rejects_stale_repository_head() -> None:
     validate, error = _validator()
 
-    with pytest.raises(error, match="commit_sha.*expected_head"):
+    with pytest.raises(error, match="commit_sha.*repository_head"):
         validate(
             _payload(),
-            expected_head="fedcba9876543210fedcba9876543210fedcba98",
+            repository_head="fedcba9876543210fedcba9876543210fedcba98",
         )
+
+
+def test_partly_observed_payload_requires_repository_head() -> None:
+    validate, error = _validator()
+    payload = _payload()
+    result = _result_for(payload, "app.zoom")
+    result.update(
+        status="blocked",
+        microphone_track_present=False,
+        system_audio_track_present=False,
+        required_tracks_failure=False,
+        sealed=False,
+        spool_retained=False,
+        upload_state="not-started",
+        machine_code="verification-not-run",
+    )
+    _rehash(result)
+
+    with pytest.raises(error, match="repository_head.*non-blocked evidence"):
+        validate(payload)
+
+
+def test_fully_blocked_template_requires_zero_commit_sentinel() -> None:
+    validate, error = _validator()
+    payload = _blocked_payload()
+    payload["commit_sha"] = "1" * 40
+
+    with pytest.raises(error, match="blocked template.*zero commit sentinel"):
+        validate(payload)
+
+
+def test_fully_blocked_template_accepts_only_zero_commit_sentinel() -> None:
+    validate, _ = _validator()
+
+    summary = validate(_blocked_payload())
+
+    assert summary.blocked == 37
+    assert summary.complete is False
 
 
 @pytest.mark.parametrize("schema_version", [0, 2, "1", True])
@@ -306,7 +390,7 @@ def test_private_or_free_form_evidence_is_rejected(
         validate(payload)
 
 
-def test_arbitrary_artifact_hash_channel_is_rejected() -> None:
+def test_plural_artifact_hash_channel_is_rejected() -> None:
     validate, error = _validator()
     payload = _payload()
     _result_for(payload, "app.zoom")["artifact_hashes"] = ["a" * 64]
@@ -315,12 +399,32 @@ def test_arbitrary_artifact_hash_channel_is_rejected() -> None:
         validate(payload)
 
 
-def test_duplicate_artifact_hash_channel_is_rejected_by_python() -> None:
+def test_artifact_sha256_is_required() -> None:
     validate, error = _validator()
     payload = _payload()
-    _result_for(payload, "app.zoom")["artifact_hashes"] = ["a" * 64, "a" * 64]
+    _result_for(payload, "app.zoom").pop("artifact_sha256")
 
-    with pytest.raises(error, match="artifact_hashes"):
+    with pytest.raises(
+        error, match=r"(?s)results\.0\.artifact_sha256.*Field required"
+    ):
+        validate(payload)
+
+
+def test_arbitrary_artifact_sha256_is_rejected() -> None:
+    validate, error = _validator()
+    payload = _payload()
+    _result_for(payload, "app.zoom")["artifact_sha256"] = "a" * 64
+
+    with pytest.raises(error, match="artifact_sha256 does not match canonical result"):
+        validate(payload)
+
+
+def test_mutating_result_without_rehash_is_rejected() -> None:
+    validate, error = _validator()
+    payload = _payload()
+    _result_for(payload, "app.zoom")["gap_count"] = 1
+
+    with pytest.raises(error, match="artifact_sha256 does not match canonical result"):
         validate(payload)
 
 
@@ -408,9 +512,11 @@ def test_nonpassing_required_scenario_prevents_completion(
 ) -> None:
     validate, _ = _validator()
     payload = _payload()
-    _result_for(payload, "app.zoom")["status"] = status
+    result = _result_for(payload, "app.zoom")
+    result["status"] = status
+    _rehash(result)
 
-    summary = validate(payload)
+    summary = validate(payload, repository_head=payload["commit_sha"])
 
     assert summary.complete is False
     assert summary.passed == 36
@@ -419,7 +525,10 @@ def test_nonpassing_required_scenario_prevents_completion(
 
 def test_cli_prints_machine_readable_incomplete_summary(tmp_path: Path) -> None:
     payload = _payload()
-    _result_for(payload, "app.zoom")["status"] = "blocked"
+    payload["commit_sha"] = _repository_head()
+    result = _result_for(payload, "app.zoom")
+    result["status"] = "blocked"
+    _rehash(result)
     report = tmp_path / "report.json"
     report.write_text(json.dumps(payload), encoding="utf-8")
 
@@ -445,7 +554,7 @@ def test_cli_prints_machine_readable_incomplete_summary(tmp_path: Path) -> None:
     }
 
 
-def test_cli_rejects_complete_report_for_stale_expected_head(tmp_path: Path) -> None:
+def test_cli_rejects_caller_supplied_expected_head(tmp_path: Path) -> None:
     payload = _payload()
     report = tmp_path / "report.json"
     report.write_text(json.dumps(payload), encoding="utf-8")
@@ -464,7 +573,41 @@ def test_cli_rejects_complete_report_for_stale_expected_head(tmp_path: Path) -> 
     )
 
     assert completed.returncode == 2
-    assert "commit_sha does not match expected_head" in completed.stderr
+    assert "unrecognized arguments: --expected-head" in completed.stderr
+    assert "Traceback" not in completed.stderr
+
+
+def test_cli_resolves_repository_head_for_complete_report(tmp_path: Path) -> None:
+    payload = _payload()
+    payload["commit_sha"] = _repository_head()
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps(payload), encoding="utf-8")
+
+    completed = subprocess.run(
+        [sys.executable, "scripts/ci/check_recording_verification.py", str(report)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout)["complete"] is True
+
+
+def test_cli_rejects_nonblocked_report_for_stale_commit(tmp_path: Path) -> None:
+    payload = _payload()
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps(payload), encoding="utf-8")
+
+    completed = subprocess.run(
+        [sys.executable, "scripts/ci/check_recording_verification.py", str(report)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert "commit_sha does not match repository_head" in completed.stderr
     assert "Traceback" not in completed.stderr
 
 
@@ -546,6 +689,7 @@ def test_schema_is_closed_and_declares_the_validator_contract() -> None:
         "spool_retained",
         "upload_state",
         "machine_code",
+        "artifact_sha256",
     }
     assert set(result_schema["properties"]["machine_code"]["enum"]) == {
         "verified",
@@ -554,6 +698,11 @@ def test_schema_is_closed_and_declares_the_validator_contract() -> None:
         "verification-blocked",
         "source-unsupported",
         "required-tracks-unavailable",
+    }
+    assert "artifact_sha256" in result_schema["required"]
+    assert result_schema["properties"]["artifact_sha256"] == {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
     }
 
 
@@ -564,7 +713,11 @@ def test_example_is_safe_structurally_valid_and_deliberately_incomplete() -> Non
     payload = json.loads(example_path.read_text(encoding="utf-8"))
     summary = validate(payload)
 
-    assert all("artifact_hashes" not in result for result in payload["results"])
+    assert payload["commit_sha"] == "0" * 40
+    assert all(
+        result["artifact_sha256"] == _artifact_sha256(result)
+        for result in payload["results"]
+    )
     assert summary.total == 37
     assert summary.blocked == 37
     assert summary.complete is False
