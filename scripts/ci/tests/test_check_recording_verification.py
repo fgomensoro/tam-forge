@@ -1168,3 +1168,26 @@ def test_additional_windows_stay_bounded_ordered_and_cover_their_scenarios(
 
     with pytest.raises(error, match=message):
         validate(payload, repository_head=payload["commit_sha"])
+
+
+@pytest.mark.parametrize(
+    ("started_at", "ended_at", "message"),
+    [
+        # Less than 60 minutes after the primary window ends: windows would chain into one session.
+        ("2026-09-04T20:30:00Z", "2026-09-04T21:00:00Z", "at least 60 minutes"),
+        # More than 14 days after the first window: no longer the same setup.
+        ("2026-09-19T00:00:00Z", "2026-09-19T00:30:00Z", "14 days"),
+    ],
+)
+def test_additional_windows_are_separated_and_bounded_in_calendar_span(
+    started_at: str, ended_at: str, message: str
+) -> None:
+    validate, error = _validator()
+    payload = _with_additional_window(_payload())
+    _window(payload).update(started_at=started_at, ended_at=ended_at)
+    result = _result_for(payload, "app.zoom")
+    result.update(started_at=started_at, ended_at=ended_at)
+    _rehash(result)
+
+    with pytest.raises(error, match=message):
+        validate(payload, repository_head=payload["commit_sha"])

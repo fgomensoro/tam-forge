@@ -287,6 +287,14 @@ def _validate_time_bounds(report: _RecordingVerification) -> None:
             raise RecordingVerificationError(
                 f"additional_windows.{index} must not overlap the previous window"
             )
+        if start - windows[-1][1] < timedelta(minutes=60):
+            raise RecordingVerificationError(
+                f"additional_windows.{index} must start at least 60 minutes after the previous one"
+            )
+        if end - window_start > timedelta(days=14):
+            raise RecordingVerificationError(
+                f"additional_windows.{index} must end within 14 days of the first window"
+            )
         windows.append((start, end))
 
     for result in report.results:

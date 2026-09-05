@@ -72,7 +72,7 @@ Seven new coordinator tests (preflight reserve refusal, append failure while rec
 - `--require-complete` fails unless every scenario passes on the exact repository head.
 - Structural runs accept non-blocked evidence whose `commit_sha` is an ancestor of the checked-out head with no change under `apps/macos`, `apps/backend/src/tamforge_backend/recordings`, or `apps/backend/src/tamforge_backend/storage` between the two (resolved by the CLI through `git merge-base --is-ancestor` and `git diff --quiet`; `backend-unit` checks out full history). This is required because the evidence commit can never name itself and pull-request CI checks out a merge commit. Completion still requires the exact head. Any later change under those paths invalidates the committed evidence in CI until the window is repeated.
 
-Evidence may accumulate across several bounded windows on the same verified head (owner decision, 2026-09-05): the report's `additional_windows` list holds later 60-minute windows, each after the previous one, and every scenario must lie inside one window. This lets a later Zoom-only window add keys without repeating the physical scenarios.
+Evidence may accumulate across several bounded windows on the same verified head (owner decision, 2026-09-05): the report's `additional_windows` list holds later 60-minute windows, each starting at least 60 minutes after the previous one and ending within 14 days of the first, and every scenario must lie inside one window. This lets a later Zoom-only window add keys without repeating the physical scenarios.
 
 ### Task 6: broad independent review — approved with fixes, fixes applied
 
