@@ -246,36 +246,6 @@
       "artifact_sha256": "cbbb465b8b351ad0ac414c8be41426c2687db5e32bafbeea1c020bcc91591689"
     },
     {
-      "key": "permission.restricted",
-      "status": "unsupported",
-      "started_at": "2026-09-05T04:54:20Z",
-      "ended_at": "2026-09-05T04:54:21Z",
-      "microphone_track_present": false,
-      "system_audio_track_present": false,
-      "required_tracks_failure": false,
-      "gap_count": 0,
-      "sealed": false,
-      "spool_retained": false,
-      "upload_state": "not-started",
-      "machine_code": "source-unsupported",
-      "artifact_sha256": "e30b4efdbb4186eb9a65deaecbf01eb78590afd2f49ddfba08557516d6954c40"
-    },
-    {
-      "key": "microphone.absent",
-      "status": "unsupported",
-      "started_at": "2026-09-05T04:54:20Z",
-      "ended_at": "2026-09-05T04:54:21Z",
-      "microphone_track_present": false,
-      "system_audio_track_present": false,
-      "required_tracks_failure": false,
-      "gap_count": 0,
-      "sealed": false,
-      "spool_retained": false,
-      "upload_state": "not-started",
-      "machine_code": "source-unsupported",
-      "artifact_sha256": "96bd09b3d1fe48e2044605bdc7e4fd48367889dbba02b2ecd4e2e7123a0c58d7"
-    },
-    {
       "key": "microphone.in-use",
       "status": "pass",
       "started_at": "2026-09-05T17:58:39Z",

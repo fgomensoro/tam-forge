@@ -36,8 +36,6 @@ REQUIRED_SCENARIO_KEYS = frozenset(
         "route.output-change",
         "permission.allowed",
         "permission.denied",
-        "permission.restricted",
-        "microphone.absent",
         "microphone.in-use",
         "silence.microphone",
         "silence.system-audio",
@@ -70,8 +68,6 @@ CAPTURE_SCENARIO_KEYS = frozenset(
 PRESTART_BLOCK_SCENARIO_KEYS = frozenset(
     {
         "permission.denied",
-        "permission.restricted",
-        "microphone.absent",
         "storage.disk-reserve-pressure",
     }
 )

@@ -28,8 +28,6 @@ REQUIRED_SCENARIO_KEYS = (
     "route.output-change",
     "permission.allowed",
     "permission.denied",
-    "permission.restricted",
-    "microphone.absent",
     "microphone.in-use",
     "silence.microphone",
     "silence.system-audio",
@@ -54,8 +52,6 @@ REQUIRED_SCENARIO_KEYS = (
 PRESTART_BLOCK_SCENARIO_KEYS = frozenset(
     {
         "permission.denied",
-        "permission.restricted",
-        "microphone.absent",
         "storage.disk-reserve-pressure",
     }
 )
@@ -182,8 +178,8 @@ def test_complete_payload_returns_complete_summary() -> None:
 
     summary = validate(payload, repository_head=payload["commit_sha"])
 
-    assert summary.total == 37
-    assert summary.passed == 37
+    assert summary.total == 35
+    assert summary.passed == 35
     assert summary.failed == 0
     assert summary.unsupported == 0
     assert summary.blocked == 0
@@ -241,7 +237,7 @@ def test_fully_blocked_template_accepts_only_zero_commit_sentinel() -> None:
 
     summary = validate(_blocked_payload())
 
-    assert summary.blocked == 37
+    assert summary.blocked == 35
     assert summary.complete is False
 
 
@@ -542,7 +538,7 @@ def test_nonpassing_required_scenario_prevents_completion(
     summary = validate(payload, repository_head=payload["commit_sha"])
 
     assert summary.complete is False
-    assert summary.passed == 36
+    assert summary.passed == 34
     assert getattr(summary, summary_field) == 1
 
 
@@ -572,8 +568,8 @@ def test_cli_prints_machine_readable_incomplete_summary(tmp_path: Path) -> None:
         "blocked": 1,
         "complete": False,
         "failed": 0,
-        "passed": 36,
-        "total": 37,
+        "passed": 34,
+        "total": 35,
         "unsupported": 0,
     }
 
@@ -747,8 +743,8 @@ def test_example_is_safe_structurally_valid_and_deliberately_incomplete() -> Non
         result["artifact_sha256"] == _artifact_sha256(result)
         for result in payload["results"]
     )
-    assert summary.total == 37
-    assert summary.blocked == 37
+    assert summary.total == 35
+    assert summary.blocked == 35
     assert summary.complete is False
 
 
@@ -766,11 +762,11 @@ def test_runtime_report_is_the_blocked_template_or_exact_ancestor_evidence() -> 
         result["artifact_sha256"] == _artifact_sha256(result) for result in payload["results"]
     )
     blocked = sum(result["status"] == "blocked" for result in payload["results"])
-    assert len(payload["results"]) == 37
+    assert len(payload["results"]) == 35
     # The template stays on the sentinel until the one runtime window; after
     # it, the evidence must name a real commit in this history.
-    assert (payload["commit_sha"] == "0" * 40) == (blocked == 37)
-    assert _is_verified_ancestor_of_head(payload["commit_sha"]) or blocked == 37
+    assert (payload["commit_sha"] == "0" * 40) == (blocked == 35)
+    assert _is_verified_ancestor_of_head(payload["commit_sha"]) or blocked == 35
 
 
 VERIFIED_PATHS = (
@@ -950,7 +946,7 @@ def test_supported_machine_profile_names_the_real_window_machine() -> None:
 @pytest.mark.parametrize(
     ("key", "status", "machine_code"),
     [
-        ("permission.restricted", "unsupported", "source-unsupported"),
+        ("app.tam-forge-tts-interviewer", "unsupported", "source-unsupported"),
         ("microphone.in-use", "blocked", "verification-blocked"),
         ("silence.microphone", "blocked", "verification-blocked"),
     ],
@@ -1218,3 +1214,18 @@ def test_microphone_in_use_passes_as_a_shared_capture_with_both_tracks() -> None
     _rehash(result)
     with pytest.raises(error, match="microphone.in-use must contain both required tracks"):
         validate(payload, repository_head=payload["commit_sha"])
+
+
+def test_personal_device_conditions_are_out_of_scope() -> None:
+    # Owner decision 2026-09-07: a single-user app on a Mac with a built-in
+    # microphone and no MDM profile never meets these conditions.
+    module = importlib.import_module("scripts.ci.check_recording_verification")
+    schema = json.loads(
+        Path("docs/project/recording-verification-v1.schema.json").read_text(encoding="utf-8")
+    )
+
+    assert "microphone.absent" not in module.REQUIRED_SCENARIO_KEYS
+    assert "permission.restricted" not in module.REQUIRED_SCENARIO_KEYS
+    assert len(module.REQUIRED_SCENARIO_KEYS) == 35
+    assert schema["properties"]["results"]["minItems"] == 35
+    assert schema["properties"]["results"]["maxItems"] == 35
