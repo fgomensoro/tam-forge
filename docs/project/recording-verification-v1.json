@@ -38,8 +38,8 @@
     {
       "key": "app.meet-browser-call",
       "status": "pass",
-      "started_at": "2026-09-05T04:45:52Z",
-      "ended_at": "2026-09-05T04:46:31Z",
+      "started_at": "2026-09-07T16:47:51Z",
+      "ended_at": "2026-09-07T16:48:57Z",
       "microphone_track_present": true,
       "system_audio_track_present": true,
       "required_tracks_failure": false,
@@ -48,7 +48,7 @@
       "spool_retained": true,
       "upload_state": "pending",
       "machine_code": "verified",
-      "artifact_sha256": "908845942d0fa48572ffaad7033152d0e67ad177f18a58bd6ec0da8a7f46c339"
+      "artifact_sha256": "0c18cb2f151d84af591fb885c432312b684ea3d2bcb33d40df1ed27940dd7819"
     },
     {
       "key": "app.tam-forge-tts-interviewer",
@@ -565,6 +565,10 @@
     {
       "started_at": "2026-09-05T17:58:00Z",
       "ended_at": "2026-09-05T18:05:00Z"
+    },
+    {
+      "started_at": "2026-09-07T16:47:00Z",
+      "ended_at": "2026-09-07T16:50:00Z"
     }
   ]
 }
