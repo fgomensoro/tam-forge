@@ -11,7 +11,7 @@ This is the authoritative continuation point for GitHub issue [#36](https://gith
 - Branch: `codex/issue-36-recording-verification`
 - Draft PR: [#151](https://github.com/fgomensoro/tam-forge/pull/151)
 - Base: `origin/main` at `dd9552dd5d438e9951ce56a6bace85abc6734e98` (PR #150, model provenance, merged after the earlier base `022fcdb`; the branch was rebased cleanly onto it).
-- Deterministic code head before this handoff commit: `2184dc3a7ee0acd2533c60a8ba8eb432966f14c1`. The handoff commit itself is `HEAD`; resolve it with `git rev-parse HEAD`.
+- Verified code head for all committed evidence: `166061868f543b57a55b7cd201f387f0f7d54d35`; every later commit is docs, scripts/ci, or the evidence itself. The handoff commit is `HEAD`; resolve it with `git rev-parse HEAD`.
 
 Do not use the primary checkout's local `main` as a base; it is intentionally divergent. Do not touch `/Users/frank/Documents/mias/tam-forge-issue-109`.
 
