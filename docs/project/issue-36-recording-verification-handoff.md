@@ -67,7 +67,7 @@ Seven new coordinator tests (preflight reserve refusal, append failure while rec
 
 ### Task 5: exact-head evidence gate — green
 
-- `docs/project/recording-verification-v1.json` is the blocked runtime template (37/37 blocked, sentinel commit).
+- `docs/project/recording-verification-v1.json` started as the blocked template (sentinel commit, every key blocked) and now carries the populated evidence described under Task 7; the example file keeps the blocked template shape (35 keys).
 - `backend-unit` validates it structurally on every PR and never passes `--require-complete`.
 - `--require-complete` fails unless every scenario passes on the exact repository head.
 - Structural runs accept non-blocked evidence whose `commit_sha` is an ancestor of the checked-out head with no change under `apps/macos`, `apps/backend/src/tamforge_backend/recordings`, or `apps/backend/src/tamforge_backend/storage` between the two (resolved by the CLI through `git merge-base --is-ancestor` and `git diff --quiet`; `backend-unit` checks out full history). This is required because the evidence commit can never name itself and pull-request CI checks out a merge commit. Completion still requires the exact head. Any later change under those paths invalidates the committed evidence in CI until the window is repeated.
@@ -102,11 +102,11 @@ Live observations worth keeping:
 - Recording is unreachable without a live backend; the ad-hoc Debug signature also blocks TCC registration until the app is copied to `~/Applications` and added manually. Issue #38 owns both.
 - The first attempt overran the 60-minute contract limit while permissions were being granted; the reported window is the second, contiguous 60-minute span in which every automatable scenario was re-run.
 
-Owner decision (2026-09-07): `microphone.absent` and `permission.restricted` are out of scope for a single-user app on a Mac with a built-in microphone and no MDM profile, so the contract now has 35 required keys; `app.teams` stays pending until the owner tests Teams, and `app.tam-forge-tts-interviewer` stays unsupported until the interviewer voice exists. Issue #36 therefore cannot close on this head until those two keys are evidenced.
+Owner decision (2026-09-07): `microphone.absent` and `permission.restricted` are out of scope for a single-user app on a Mac with a built-in microphone and no MDM profile, so the contract now has 35 required keys (this amends Task 1 Step 3 and Task 5 Step 3 of the locked plan, which still list them; the plan file is intentionally left unedited, as with the earlier silence, microphone-in-use, and accumulated-window decisions); `app.teams` stays pending until the owner tests Teams, and `app.tam-forge-tts-interviewer` stays unsupported until the interviewer voice exists. Issue #36 therefore cannot close on this head until those two keys are evidenced.
 
 ## Remaining order
 
-1. Decide `app.teams`: the owner does not use Teams; either amend the contract or run a Teams window later. Grant Screen Recording and Microphone to the `~/Applications/TAMForge.app` copy before starting any further window.
+1. Run a Teams window when the owner is ready to test Teams (`app.teams` is kept pending by owner decision). Grant Screen Recording and Microphone to the `~/Applications/TAMForge.app` copy before starting any further window.
 2. `app.tam-forge-tts-interviewer` needs the interviewer voice feature to exist; evidence it in a short window once built.
 3. Any commit that touches `apps/macos`, `apps/backend/src/tamforge_backend/recordings`, or `apps/backend/src/tamforge_backend/storage` invalidates the committed evidence in CI: either revert the report to the sentinel template or repeat the window on the new head.
 4. Keep PR #151 draft and unmerged until every required scenario passes on an exact head with fresh review and green CI; the completion gate is intentionally unmet.
