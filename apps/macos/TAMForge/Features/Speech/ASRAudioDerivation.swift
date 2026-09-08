@@ -79,6 +79,9 @@ final class ASRAudioDeriver {
               chunk.format.channelCount == channelCount,
               chunk.format.sampleEncoding == "pcm_s16le"
         else { throw ASRDerivationError.unsupportedFormat }
+        guard chunk.payload.count == chunk.sampleCount * channelCount * 2 else {
+            throw ASRDerivationError.malformedPayload
+        }
         guard chunk.sampleStart >= expectedSampleStart else {
             throw ASRDerivationError.chunkOutOfOrder(expected: expectedSampleStart, actual: chunk.sampleStart)
         }
@@ -88,9 +91,6 @@ final class ASRAudioDeriver {
             quality.noteDiscontinuity()
             history.append(contentsOf: repeatElement(0, count: missing))
             sourceHasher.update(data: Data(count: missing * channelCount * 2))
-        }
-        guard chunk.payload.count == chunk.sampleCount * channelCount * 2 else {
-            throw ASRDerivationError.malformedPayload
         }
         quality.observe(chunk: chunk)
         sourceHasher.update(data: chunk.payload)
