@@ -180,6 +180,26 @@ def test_activity_before_self_review_completion_withholds(activity_state):
     )
 
 
+@pytest.mark.parametrize(
+    "activity_state",
+    [
+        "self_review_complete",
+        "ai_processing",
+        "feedback_ready",
+        "correction_due",
+        "demonstrated",
+        "needs_work",
+    ],
+)
+def test_every_state_at_or_past_self_review_releases(activity_state):
+    from tamforge_backend.agents.roles.reviewer import evaluate_release
+
+    assert (
+        evaluate_release(english=english(), tam=tam(), state=state(activity_state=activity_state))
+        is None
+    )
+
+
 def test_rubric_version_disagreement_withholds():
     from tamforge_backend.agents.roles.reviewer import evaluate_release
 

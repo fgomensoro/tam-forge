@@ -14,9 +14,18 @@ from tamforge_protocol.agents import (
     WithheldReason,
 )
 
-# Publication is possible only once the learner's own reflection is on record.
+# Publication is possible only once the learner's own reflection is on record. These are every
+# state at or past self_review_complete, matching what evidence/repository.py already accepts for
+# external evaluation, so a closed activity is not mistaken for a pending self-review.
 RELEASABLE_ACTIVITY_STATES = frozenset(
-    {"self_review_complete", "ai_processing", "feedback_ready", "correction_due"}
+    {
+        "self_review_complete",
+        "ai_processing",
+        "feedback_ready",
+        "correction_due",
+        "demonstrated",
+        "needs_work",
+    }
 )
 FORBIDDEN_ARTIFACT_CLASSES = frozenset({"original_audio"})
 

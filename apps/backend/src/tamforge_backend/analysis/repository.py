@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from tamforge_protocol.agents import (
@@ -18,6 +19,8 @@ from ..agents.models import AnalysisPublication, ModelRun
 from ..agents.prompt_registry import verified
 from ..learning.models import ActivityInstance, Attempt
 
+RELEASED_KINDS = frozenset({"english_analysis", "tam_analysis"})
+
 
 class FeedbackError(Exception):
     """Base safe feedback read error."""
@@ -25,6 +28,10 @@ class FeedbackError(Exception):
 
 class FeedbackNotFound(FeedbackError):
     """The owner has no such activity and attempt."""
+
+
+class FeedbackUnreadable(FeedbackError):
+    """Stored provenance did not satisfy the read contract."""
 
 
 class FeedbackRepository:
@@ -49,46 +56,66 @@ class FeedbackRepository:
         )
         if attempt is None:
             raise FeedbackNotFound()
-        run = await self.session.scalar(
-            select(ModelRun)
-            .where(
-                ModelRun.owner_id == owner_id,
-                ModelRun.activity_id == activity_id,
-                ModelRun.attempt_id == attempt_id,
-            )
-            .order_by(ModelRun.id.desc())
-            .limit(1)
-        )
-        if run is None:
-            return FeedbackRead(
-                status="processing", activity_id=activity_id, attempt_id=attempt_id
-            )
-        published = {
-            row.analysis_kind: json.loads(verified(row).canonical_json)["analysis"]
-            for row in (
-                await self.session.scalars(
-                    select(AnalysisPublication).where(
-                        AnalysisPublication.owner_id == owner_id,
-                        AnalysisPublication.run_id == run.id,
-                    )
+        # Newest run first, but a later unpublished run must not retract feedback the learner can
+        # already see, so the newest run holding BOTH analyses wins rather than the newest run.
+        rows = (
+            await self.session.execute(
+                select(ModelRun, AnalysisPublication)
+                .join(
+                    AnalysisPublication,
+                    (AnalysisPublication.owner_id == ModelRun.owner_id)
+                    & (AnalysisPublication.run_id == ModelRun.id),
                 )
-            ).all()
-        }
-        if {"english_analysis", "tam_analysis"} - published.keys():
-            return FeedbackRead(
-                status="processing", activity_id=activity_id, attempt_id=attempt_id
+                .where(
+                    ModelRun.owner_id == owner_id,
+                    ModelRun.activity_id == activity_id,
+                    ModelRun.attempt_id == attempt_id,
+                )
+                .order_by(ModelRun.id.desc())
             )
+        ).all()
+        by_run: dict[int, tuple[ModelRun, dict[str, object]]] = {}
+        for run, publication in rows:
+            analyses = by_run.setdefault(run.id, (run, {}))[1]
+            analyses[publication.analysis_kind] = json.loads(
+                verified(publication).canonical_json
+            )["analysis"]
+        for run_id in sorted(by_run, reverse=True):
+            run, published = by_run[run_id]
+            if RELEASED_KINDS - published.keys():
+                continue
+            return self._released(
+                run=run,
+                activity_id=activity_id,
+                attempt_id=attempt_id,
+                published=published,
+            )
+        return FeedbackRead(status="processing", activity_id=activity_id, attempt_id=attempt_id)
+
+    def _released(
+        self,
+        *,
+        run: ModelRun,
+        activity_id: int,
+        attempt_id: int,
+        published: dict[str, object],
+    ) -> FeedbackRead:
         header = json.loads(verified(run).canonical_json)
-        return FeedbackRead(
-            status="ready",
-            activity_id=activity_id,
-            attempt_id=attempt_id,
-            versions=AnalysisVersions(
-                model_run=PinnedRecord(id=run.id, content_hash=run.content_hash.hex()),
-                prompt=PinnedRecord(**header["prompt"]),
-                output_schema=PinnedRecord(**header["schema_version"]),
-                rubric_binding=PinnedRecord(**header["rubric_binding"]),
-            ),
-            english=EnglishAnalysisV1.model_validate(published["english_analysis"]),
-            tam=TAMAnalysisV1.model_validate(published["tam_analysis"]),
-        )
+        try:
+            return FeedbackRead(
+                status="ready",
+                activity_id=activity_id,
+                attempt_id=attempt_id,
+                versions=AnalysisVersions(
+                    model_run=PinnedRecord(id=run.id, content_hash=run.content_hash.hex()),
+                    prompt=PinnedRecord(**header["prompt"]),
+                    output_schema=PinnedRecord(**header["schema_version"]),
+                    rubric_binding=PinnedRecord(**header["rubric_binding"]),
+                ),
+                english=EnglishAnalysisV1.model_validate(published["english_analysis"]),
+                tam=TAMAnalysisV1.model_validate(published["tam_analysis"]),
+            )
+        except (ValidationError, ValueError, KeyError, TypeError):
+            # Stored rows that no longer satisfy the contract are a provenance fault, not a
+            # crash. Never leak the offending payload into the response.
+            raise FeedbackUnreadable() from None

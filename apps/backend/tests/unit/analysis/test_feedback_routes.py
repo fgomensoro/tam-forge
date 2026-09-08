@@ -71,6 +71,130 @@ def test_withheld_feedback_reports_only_a_closed_reason():
     assert body["english"] is None and body["tam"] is None
 
 
+def released_feedback() -> FeedbackRead:
+    """A ready read, so the one path that actually hands over analysis is exercised."""
+    from tamforge_protocol.agents import (
+        AnalysisVersions,
+        EnglishAnalysisV1,
+        PinnedRecord,
+        TAMAnalysisV1,
+    )
+
+    unscored = {
+        "availability": "not_applicable",
+        "score": None,
+        "reason_code": "not_exercised",
+        "explanation": "This dimension was not exercised.",
+    }
+    scored = {
+        "availability": "scored",
+        "score": 3,
+        "rationale": "Supported by prepared text.",
+        "observations": [
+            {
+                "statement": "The answer named the customer impact.",
+                "attribution": "observed_content",
+                "availability": "available",
+                "confidence": "0.8",
+                "references": [
+                    {
+                        "kind": "attempt_text",
+                        "attempt_id": 9,
+                        "commitment_sha256": "a" * 64,
+                        "json_pointer": "/output/draft_markdown",
+                        "start_codepoint": 0,
+                        "end_codepoint": 4,
+                    }
+                ],
+            }
+        ],
+    }
+    common = {
+        "activity_id": 7,
+        "attempt_id": 9,
+        "config_version_key": "seed-v1",
+        "rubric_slug": "tam_case",
+        "rubric_version": "seed-v1",
+    }
+    english = EnglishAnalysisV1.model_validate(
+        {
+            "analysis_kind": "english_analysis",
+            "schema_version": "english-analysis-v1",
+            "source_mode": "written",
+            **common,
+            "dimensions": {
+                "communication_effectiveness": scored,
+                "accuracy": unscored,
+                "vocabulary": unscored,
+                "fluency": {
+                    "availability": "unavailable",
+                    "score": None,
+                    "reason_code": "speech_pipeline_unavailable",
+                    "explanation": "Speech pipeline is not installed.",
+                },
+                "pronunciation_intelligibility": {
+                    "availability": "unavailable",
+                    "score": None,
+                    "reason_code": "pronunciation_not_measured",
+                    "explanation": "Calibrated diagnostic did not run.",
+                },
+                "listening": {
+                    "availability": "not_applicable",
+                    "score": None,
+                    "reason_code": "written_source",
+                    "explanation": "Written submission has no listening evidence.",
+                },
+            },
+        }
+    )
+    tam_keys = (
+        "structure",
+        "relevance",
+        "customer_judgment",
+        "technical_reasoning",
+        "business_framing",
+        "trade_offs",
+        "audience_adaptation",
+        "decision_quality",
+    )
+    tam = TAMAnalysisV1.model_validate(
+        {
+            "analysis_kind": "tam_analysis",
+            "schema_version": "tam-analysis-v1",
+            **common,
+            "dimensions": {"correctness": scored, **{key: unscored for key in tam_keys}},
+        }
+    )
+    pin = PinnedRecord(id=1, content_hash="a" * 64)
+    return FeedbackRead(
+        status="ready",
+        activity_id=7,
+        attempt_id=9,
+        versions=AnalysisVersions(
+            model_run=pin, prompt=pin, output_schema=pin, rubric_binding=pin
+        ),
+        english=english,
+        tam=tam,
+    )
+
+
+def test_ready_feedback_hands_over_both_analyses_and_their_versions():
+    body = client(StubFeedbackRepository(released_feedback())).get(
+        "/api/v1/activities/7/attempts/9/feedback"
+    ).json()
+    assert body["status"] == "ready"
+    assert body["withheld_reason"] is None
+    assert body["english"]["analysis_kind"] == "english_analysis"
+    assert body["tam"]["analysis_kind"] == "tam_analysis"
+    assert body["versions"]["model_run"]["id"] == 1
+    assert (
+        body["english"]["dimensions"]["communication_effectiveness"]["observations"][0][
+            "references"
+        ][0]["attempt_id"]
+        == 9
+    )
+
+
 def test_feedback_read_is_never_stored_by_a_cache():
     response = client(StubFeedbackRepository()).get("/api/v1/activities/7/attempts/9/feedback")
     assert response.headers["Cache-Control"] == "no-store"
