@@ -712,7 +712,10 @@ def test_publication_rejects_mutation():
 def test_migration_creates_the_table_and_its_immutability_trigger():
     from pathlib import Path
 
-    source = Path("apps/backend/alembic/versions/20260908_0016_analysis_publications.py").read_text()
+    root = Path(__file__).resolve().parents[4]
+    source = (
+        root / "apps/backend/alembic/versions/20260908_0016_analysis_publications.py"
+    ).read_text()
     assert "CREATE TABLE analysis_publications" in source
     assert "trg_analysis_publications_immutable" in source
     assert 'down_revision = "20260905_0015_model_provenance"' in source
@@ -841,7 +844,7 @@ git commit -m "feat(agents): store released analyses as append-only provenance"
 - Test: `apps/backend/tests/unit/analysis/test_feedback_routes.py`
 
 **Interfaces:**
-- Consumes: `FeedbackRead` (Task 1), `evaluate_release`/`ReleaseInput`/`ArtifactFact` (Task 2), `AnalysisPublication` (Task 3), plus the existing `get_authenticated_owner`, `get_db_session`, and `ProblemResponse`.
+- Consumes: `FeedbackRead`, `AnalysisVersions`, `PinnedRecord` (Task 1), `AnalysisPublication` (Task 3), plus the existing `get_authenticated_owner`, `get_db_session`, and `ProblemResponse`. It does **not** call Task 2's `evaluate_release`: this slice has no producer, and the gate runs at publication time, which #67 owns.
 - Produces: `FeedbackRepository`, `get_feedback_repository`, `router`, `feedback_exception_handler`, and the errors `FeedbackNotFound` / `FeedbackError`.
 
 Follow `evidence/routes.py` exactly for the authenticated read shape, the `no-store` headers, and the problem-response handler. The unit test stubs the repository through `dependency_overrides`, so no database is involved.
