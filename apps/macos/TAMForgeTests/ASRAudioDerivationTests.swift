@@ -114,6 +114,18 @@ final class ASRAudioDerivationTests: XCTestCase {
         }
     }
 
+    func testTruncatedPayloadFailsClosedInsteadOfTrapping() {
+        let deriver = ASRAudioDeriver(recordingID: recordingID, track: .microphone)
+        var truncated = chunk(track: .microphone, samples: sine(frequency: 440, seconds: 0.1), sampleStart: 0)
+        truncated = RecordingPCMChunk(
+            track: truncated.track, presentationNanoseconds: 0, sampleStart: 0,
+            sampleCount: truncated.sampleCount, format: truncated.format, source: truncated.source,
+            payload: truncated.payload.prefix(truncated.payload.count / 2))
+        XCTAssertThrowsError(try deriver.append(truncated)) { error in
+            XCTAssertEqual(error as? ASRDerivationError, .malformedPayload)
+        }
+    }
+
     func testEmptyInputYieldsEmptySilentLineage() {
         let deriver = ASRAudioDeriver(recordingID: recordingID, track: .microphone)
         let (block, lineage) = deriver.finish()

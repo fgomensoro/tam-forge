@@ -9,6 +9,7 @@ enum ASRDerivationError: Error, Equatable {
     case unsupportedFormat
     case chunkOutOfOrder(expected: Int64, actual: Int64)
     case trackMismatch
+    case malformedPayload
 }
 
 struct ASRDerivationLineage: Sendable, Equatable {
@@ -87,6 +88,9 @@ final class ASRAudioDeriver {
             quality.noteDiscontinuity()
             history.append(contentsOf: repeatElement(0, count: missing))
             sourceHasher.update(data: Data(count: missing * channelCount * 2))
+        }
+        guard chunk.payload.count == chunk.sampleCount * channelCount * 2 else {
+            throw ASRDerivationError.malformedPayload
         }
         quality.observe(chunk: chunk)
         sourceHasher.update(data: chunk.payload)
