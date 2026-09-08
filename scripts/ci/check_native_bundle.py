@@ -298,11 +298,31 @@ def _swift_compatibility_violations(app: Path) -> tuple[str, ...]:
     return tuple(violations)
 
 
-def check_bundle(app: Path, *, require_ad_hoc: bool) -> None:
+def signature_identity_violation(signature_details: str, identity: str) -> str | None:
+    """Require the stable local identity so macOS privacy grants survive rebuilds."""
+    if "Signature=adhoc" in signature_details:
+        return "Release app is ad-hoc signed; macOS forgets its privacy grants on every build"
+    authorities = [
+        line.split("=", 1)[1].strip()
+        for line in signature_details.splitlines()
+        if line.startswith("Authority=")
+    ]
+    if identity not in authorities:
+        return f"Release app is not signed by the stable identity {identity!r}"
+    return None
+
+
+def check_bundle(
+    app: Path, *, require_ad_hoc: bool, require_identity: str | None = None
+) -> None:
     _run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)])
     signature_details = _run(["codesign", "-dv", "--verbose=4", str(app)])
     if require_ad_hoc and "Signature=adhoc" not in signature_details:
         raise NativeBundleError("Release app does not have the required ad-hoc signature")
+    if require_identity is not None:
+        violation = signature_identity_violation(signature_details, require_identity)
+        if violation is not None:
+            raise NativeBundleError(violation)
     violations = bundle_violations(app)
     if violations:
         raise NativeBundleError("; ".join(violations))
@@ -351,8 +371,15 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("app", type=Path)
     parser.add_argument("--require-ad-hoc", action="store_true")
+    parser.add_argument("--require-identity")
     args = parser.parse_args()
-    check_bundle(args.app, require_ad_hoc=args.require_ad_hoc)
+    if args.require_ad_hoc and args.require_identity:
+        parser.error("--require-ad-hoc and --require-identity are mutually exclusive")
+    check_bundle(
+        args.app,
+        require_ad_hoc=args.require_ad_hoc,
+        require_identity=args.require_identity,
+    )
     print(f"native Release bundle is standalone and signed: {args.app}")
 
 

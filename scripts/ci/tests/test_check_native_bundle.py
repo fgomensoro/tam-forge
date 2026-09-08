@@ -358,3 +358,40 @@ def test_checker_does_not_inspect_rejected_binary(tmp_path: Path, monkeypatch: o
         raise AssertionError("unexpected binary payload was accepted")
 
     assert all(command[0] != "otool" for command in calls)
+
+
+def test_signature_identity_check_requires_the_stable_local_identity() -> None:
+    from scripts.ci.check_native_bundle import signature_identity_violation
+
+    stable = (
+        "Identifier=com.fgomensoro.tamforge\n"
+        "Authority=TAM Forge Local Development\n"
+        "Signature size=8981\n"
+    )
+    adhoc = "Identifier=com.fgomensoro.tamforge\nSignature=adhoc\n"
+    other = "Identifier=com.fgomensoro.tamforge\nAuthority=Apple Development: Someone\n"
+
+    assert signature_identity_violation(stable, "TAM Forge Local Development") is None
+    assert "ad-hoc" in signature_identity_violation(adhoc, "TAM Forge Local Development")
+    assert "TAM Forge Local Development" in signature_identity_violation(
+        other, "TAM Forge Local Development"
+    )
+
+
+def test_check_bundle_rejects_ad_hoc_when_identity_is_required(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    import pytest
+
+    app = _app(tmp_path)
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str]) -> str:
+        calls.append(command)
+        return "Identifier=com.fgomensoro.tamforge\nSignature=adhoc\n"
+
+    monkeypatch.setattr(check_native_bundle, "_run", fake_run)  # type: ignore[attr-defined]
+
+    with pytest.raises(NativeBundleError, match="ad-hoc"):
+        check_bundle(app, require_ad_hoc=False, require_identity="TAM Forge Local Development")
+    assert calls[0][:2] == ["codesign", "--verify"]

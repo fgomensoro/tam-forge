@@ -1,4 +1,4 @@
-.PHONY: install test check check-openapi check-policy integration e2e macos-check
+.PHONY: install test check check-openapi check-policy integration e2e macos-check macos-release-dmg
 
 # Keep local verification comfortable on the 8 GB development Mac. Callers can
 # also supply -derivedDataPath here to reuse an existing task-specific cache.
@@ -40,3 +40,7 @@ macos-check:
 	else \
 		echo "Skipping macOS check: xcodebuild is unavailable."; \
 	fi
+
+# Signed Release app plus DMG with the stable local identity (never in CI).
+macos-release-dmg:
+	scripts/dev/build_release_dmg.sh
