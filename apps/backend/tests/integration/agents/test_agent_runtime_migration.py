@@ -793,21 +793,23 @@ def test_a_real_interview_submission_declared_releasable_is_refused(case):
     """A real interview carries a second person's words, so releasable understates it.
 
     The attempt kind is flipped for the duration of this check and restored afterwards, so
-    the test owns its own state and does not depend on running last.
+    the test owns its own state and does not depend on running last. Every statement sits
+    inside an explicit transaction block: a bare execute would autobegin one and leave it
+    open, and the next `session.begin()` would then fail.
     """
 
     async def exercise():
         engine, factory = case.factory()
         try:
             async with factory() as session:
-                original = await session.scalar(
-                    select(Attempt.attempt_kind).where(
-                        Attempt.owner_id == case.owner,
-                        Attempt.id == case.request.attempt.id,
-                    )
-                )
-                assert original is not None and original != "real_interview"
                 async with session.begin():
+                    original = await session.scalar(
+                        select(Attempt.attempt_kind).where(
+                            Attempt.owner_id == case.owner,
+                            Attempt.id == case.request.attempt.id,
+                        )
+                    )
+                    assert original is not None and original != "real_interview"
                     await session.execute(
                         update(Attempt)
                         .where(
@@ -824,28 +826,29 @@ def test_a_real_interview_submission_declared_releasable_is_refused(case):
                                 update={"invocation_key": "refused-understated-scope"}
                             )
                         )
-                    refusals = (
-                        await session.scalars(
-                            select(AuditEvent).where(
-                                AuditEvent.owner_id == case.owner,
-                                AuditEvent.action == "model_run.refused",
+                    async with session.begin():
+                        refusals = (
+                            await session.scalars(
+                                select(AuditEvent).where(
+                                    AuditEvent.owner_id == case.owner,
+                                    AuditEvent.action == "model_run.refused",
+                                )
                             )
-                        )
-                    ).all()
-                    assert len(refusals) == 1
-                    event = refusals[0]
-                    assert event.aggregate_type == "activity"
-                    assert event.aggregate_id == str(case.request.activity_id)
-                    assert event.redacted_metadata["outcome"] == "denied"
-                    assert event.redacted_metadata["reason_code"] == "unauthorized"
-                    assert (
-                        await session.scalar(
-                            select(ModelRun).where(
-                                ModelRun.owner_id == case.owner,
-                                ModelRun.invocation_key == "refused-understated-scope",
+                        ).all()
+                        assert len(refusals) == 1
+                        event = refusals[0]
+                        assert event.aggregate_type == "activity"
+                        assert event.aggregate_id == str(case.request.activity_id)
+                        assert event.redacted_metadata["outcome"] == "denied"
+                        assert event.redacted_metadata["reason_code"] == "unauthorized"
+                        assert (
+                            await session.scalar(
+                                select(ModelRun).where(
+                                    ModelRun.owner_id == case.owner,
+                                    ModelRun.invocation_key == "refused-understated-scope",
+                                )
                             )
-                        )
-                    ) is None
+                        ) is None
                 finally:
                     async with session.begin():
                         await session.execute(
