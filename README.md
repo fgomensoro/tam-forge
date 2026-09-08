@@ -84,6 +84,15 @@ Database schemas are created, upgraded, downgraded, and removed only through
 Alembic migrations. Direct `Base.metadata.create_all()` and `drop_all()` calls
 are guarded so tests and application code cannot emit a partial parallel schema.
 
+Local transcription runs on a pinned `whisper.cpp` runtime (XCFramework `b4938`,
+Metal-accelerated, English word timestamps, whisper's built-in VAD). The framework
+and its two models are one-time fetches: `make whisper-framework` installs the
+XCFramework into `apps/macos/Vendor` (gitignored), and `make whisper-models`
+installs `ggml-base.en-q5_1.bin` and `ggml-silero-v5.1.2.bin` into
+`~/Library/Application Support/TAM Forge/Models`. Every pin (URL, byte size,
+SHA-256, license) lives in `config/speech-models.yaml`; nothing downloads at app
+runtime.
+
 ## Production object-storage gates
 
 Before enabling production traffic, create a known canary object through the
