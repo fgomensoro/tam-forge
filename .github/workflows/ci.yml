@@ -24,6 +24,18 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      # The fetch script reads its pins from config/speech-models.yaml with PyYAML,
+      # which the macOS runners only have through uv.
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Cache whisper framework
+        uses: actions/cache@v4
+        with:
+          path: apps/macos/Vendor
+          key: whisper-xcframework-b4938
+      - name: Fetch whisper framework
+        run: scripts/dev/fetch_whisper_framework.sh
       - name: Build native macOS shell
         # The Apple build-tool plugin is exactly pinned in the project and Package.resolved.
         run: >-
@@ -54,6 +66,18 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      # The fetch script reads its pins from config/speech-models.yaml with PyYAML,
+      # which the macOS runners only have through uv.
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Cache whisper framework
+        uses: actions/cache@v4
+        with:
+          path: apps/macos/Vendor
+          key: whisper-xcframework-b4938
+      - name: Fetch whisper framework
+        run: scripts/dev/fetch_whisper_framework.sh
       - name: Run complete native UI target with ad-hoc signing
         run: >-
           xcodebuild -jobs 2 -skipPackagePluginValidation

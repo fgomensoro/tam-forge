@@ -41,6 +41,7 @@ FORBIDDEN_LINK_MARKERS = ("chromium", "electron", "node", "postgres", "python")
 ALLOWED_BINARY_PATHS = (
     Path("Contents/MacOS/TAMForge"),
     Path("Contents/Frameworks/libswiftCompatibilitySpan.dylib"),
+    Path("Contents/Frameworks/whisper.framework/Versions/A/whisper"),
 )
 SWIFT_COMPATIBILITY_PATH = ALLOWED_BINARY_PATHS[1]
 SWIFT_COMPATIBILITY_IDENTIFIER = "com.apple.dt.runtime.swiftCompatibilitySpan"
@@ -93,7 +94,9 @@ def _is_executable_or_macho(path: Path) -> bool:
 def _binary_payloads(app: Path) -> tuple[Path, ...]:
     return tuple(
         path
-        for path in sorted(item for item in app.rglob("*") if item.is_file())
+        for path in sorted(
+            item for item in app.rglob("*") if item.is_file() and not item.is_symlink()
+        )
         if _is_executable_or_macho(path)
     )
 
@@ -190,6 +193,7 @@ def _is_standalone_library_reference(library: str) -> bool:
         library.startswith("/System/Library/Frameworks/")
         or library.startswith("/usr/lib/")
         or library == "@rpath/libswiftCompatibilitySpan.dylib"
+        or library == "@rpath/whisper.framework/Versions/Current/whisper"
     )
 
 
