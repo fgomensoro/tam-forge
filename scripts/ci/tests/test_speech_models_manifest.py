@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 MANIFEST = Path("config/speech-models.yaml")
-REQUIRED_KEYS = {"whisper_framework", "transcription_model", "vad_model"}
+REQUIRED_KEYS = {"whisper_framework", "transcription_model", "vad_model", "benchmark_model"}
 FIELDS = {"version", "url", "filename", "bytes", "sha256", "license", "installs_to", "consumed_by"}
 
 
@@ -86,3 +86,17 @@ def test_transcription_model_sha256_constant_matches_the_manifest() -> None:
     assert match, "transcriptionModelSHA256 constant not found in SpeechModelCatalog.swift"
     artifacts = manifest()["artifacts"]
     assert match.group(1) == artifacts["transcription_model"]["sha256"]
+
+
+def test_benchmark_model_is_pinned_with_the_same_quantization() -> None:
+    artifacts = manifest()["artifacts"]
+    assert "benchmark_model" in artifacts
+    benchmark = artifacts["benchmark_model"]
+    assert benchmark["filename"] == "ggml-small.en-q5_1.bin"
+    assert benchmark["bytes"] == 190098681
+    assert benchmark["sha256"] == (
+        "bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30"
+    )
+    # Same quantization as the shipped model, so the comparison isolates size.
+    assert benchmark["version"] == artifacts["transcription_model"]["version"]
+    assert benchmark["installs_to"] == artifacts["transcription_model"]["installs_to"]
