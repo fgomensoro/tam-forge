@@ -16,6 +16,7 @@
 		F30000000000000000000007 /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000107 /* RecordingView.swift */; };
 		F30000000000000000000008 /* RecordingUploadModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000108 /* RecordingUploadModels.swift */; };
 		F30000000000000000000009 /* RecordingUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000109 /* RecordingUploader.swift */; };
+		F60000000000000000000001 /* AudioQualityObservations.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000001001 /* AudioQualityObservations.swift */; };
 		F30000000000000000000011 /* RecordingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000101 /* RecordingModels.swift */; };
 		F30000000000000000000012 /* RecordingTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000102 /* RecordingTimeline.swift */; };
 		F30000000000000000000013 /* RecordingPreflight.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000103 /* RecordingPreflight.swift */; };
@@ -25,6 +26,7 @@
 		F30000000000000000000017 /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000107 /* RecordingView.swift */; };
 		F30000000000000000000018 /* RecordingUploadModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000108 /* RecordingUploadModels.swift */; };
 		F30000000000000000000019 /* RecordingUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000109 /* RecordingUploader.swift */; };
+		F60000000000000000000002 /* AudioQualityObservations.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000001001 /* AudioQualityObservations.swift */; };
 		F30000000000000000000021 /* RecordingFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000121 /* RecordingFeatureTests.swift */; };
 		F60000000000000000000003 /* AudioQualityObservationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000001002 /* AudioQualityObservationsTests.swift */; };
 		F30000000000000000000022 /* RecordingUploadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000122 /* RecordingUploadTests.swift */; };
@@ -144,6 +146,7 @@
 		F30000000000000000000107 /* RecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
 		F30000000000000000000108 /* RecordingUploadModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingUploadModels.swift; sourceTree = "<group>"; };
 		F30000000000000000000109 /* RecordingUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingUploader.swift; sourceTree = "<group>"; };
+		F60000000000000000001001 /* AudioQualityObservations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioQualityObservations.swift; sourceTree = "<group>"; };
 		F30000000000000000000121 /* RecordingFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingFeatureTests.swift; sourceTree = "<group>"; };
 		F60000000000000000001002 /* AudioQualityObservationsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioQualityObservationsTests.swift; sourceTree = "<group>"; };
 		F30000000000000000000122 /* RecordingUploadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingUploadTests.swift; sourceTree = "<group>"; };
@@ -370,6 +373,7 @@
 			isa = PBXGroup;
 			children = (
 				F30000000000000000000201 /* Recording */,
+				F60000000000000000002001 /* Speech */,
 				E30000000000000000000091 /* Evidence */,
 				E20000000000000000000091 /* Today */,
 				C10000000000000000000018 /* Notifications */,
@@ -393,6 +397,14 @@
 				F30000000000000000000109 /* RecordingUploader.swift */,
 			);
 			path = Recording;
+			sourceTree = "<group>";
+		};
+		F60000000000000000002001 /* Speech */ = {
+			isa = PBXGroup;
+			children = (
+				F60000000000000000001001 /* AudioQualityObservations.swift */,
+			);
+			path = Speech;
 			sourceTree = "<group>";
 		};
 		C10000000000000000000018 /* Notifications */ = {
@@ -612,6 +624,7 @@
 				F30000000000000000000007 /* RecordingView.swift in Sources */,
 				F30000000000000000000008 /* RecordingUploadModels.swift in Sources */,
 				F30000000000000000000009 /* RecordingUploader.swift in Sources */,
+				F60000000000000000000001 /* AudioQualityObservations.swift in Sources */,
 				E30000000000000000000001 /* EvidenceModels.swift in Sources */,
 				F40000000000000000000005 /* NativeParityUIFixture.swift in Sources */,
 				E30000000000000000000002 /* LiveEvidenceAPI.swift in Sources */,
@@ -663,6 +676,7 @@
 				F30000000000000000000017 /* RecordingView.swift in Sources */,
 				F30000000000000000000018 /* RecordingUploadModels.swift in Sources */,
 				F30000000000000000000019 /* RecordingUploader.swift in Sources */,
+				F60000000000000000000002 /* AudioQualityObservations.swift in Sources */,
 				F30000000000000000000021 /* RecordingFeatureTests.swift in Sources */,
 				F30000000000000000000022 /* RecordingUploadTests.swift in Sources */,
 				F60000000000000000000003 /* AudioQualityObservationsTests.swift in Sources */,
