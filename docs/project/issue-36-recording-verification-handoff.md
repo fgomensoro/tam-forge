@@ -108,7 +108,7 @@ Owner decision (2026-09-07): `microphone.absent` and `permission.restricted` are
 
 1. Run a Teams window when the owner is ready to test Teams (`app.teams` is kept pending by owner decision). Grant Screen Recording and Microphone to the `~/Applications/TAMForge.app` copy before starting any further window.
 2. `app.tam-forge-tts-interviewer` needs the interviewer voice feature to exist; evidence it in a short window once built.
-3. Any commit that touches `apps/macos`, `apps/backend/src/tamforge_backend/recordings`, or `apps/backend/src/tamforge_backend/storage` invalidates the committed evidence in CI: either revert the report to the sentinel template or repeat the window on the new head.
+3. Any commit that touches `apps/macos`, `apps/backend/src/tamforge_backend/recordings`, or `apps/backend/src/tamforge_backend/storage` invalidates the committed evidence in CI: either revert the report to the sentinel template or repeat the window on the new head. Never rebase this branch: rewriting history removes `1660618` from the ancestry and the evidence gate fails; integrate `main` with merge commits only.
 4. Keep PR #151 draft and unmerged until every required scenario passes on an exact head with fresh review and green CI; the completion gate is intentionally unmet.
 5. Before a repeat window: grant Screen Recording and Microphone to the `~/Applications/TAMForge.app` copy first, then start the 60-minute clock. Issue #38 removes the ad-hoc-signature cause.
 
