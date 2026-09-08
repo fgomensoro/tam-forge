@@ -1,0 +1,3587 @@
+schema_version: 2
+roadmap_version: phase-1-six-week-v1
+mapping_version: seed-v1
+month: 1
+default_required: true
+program:
+  program_key: tam_phase_1
+  display_name: TAM Study Phase 1
+  target_label: Phase 1 target — six weeks
+  nominal_weeks: 6
+lineage:
+  predecessor_roadmap_version: month-1-v2
+  legacy_task_map_sha256: 44206a242e9c6b9219b2de7cf27ff709e96e5f553ba4c378d3a83092d03fc814
+  compatibility_month: 1
+calendar:
+  anchor_date: '2026-08-24'
+  nominal_end_date: '2026-10-03'
+  weekday_minutes: 180
+  saturday_minutes: 120
+  sunday_minutes: 0
+  ordinary_interview_minutes: 60
+  pipeline_minutes: 30
+  roadmap_minutes: 75
+  close_minutes: 15
+week7:
+  available: true
+  starts_on: '2026-10-05'
+  ends_on: '2026-10-10'
+  completion_only: true
+  variance_trigger_percent: 15
+  provisional_trigger_codes:
+  - actual_variance_above_threshold
+  activation_trigger_codes:
+  - coverage_incomplete
+  - exit_not_assessed
+  - exit_assessed_not_demonstrated
+interview_queue:
+- ordinal: 1
+  segment: 1
+  question_key: p1_q01
+  selection_mode: ordered
+  prompt: Tell me about yourself.
+- ordinal: 2
+  segment: 1
+  question_key: p1_q02
+  selection_mode: ordered
+  prompt: What is your current role and scope?
+- ordinal: 3
+  segment: 1
+  question_key: p1_q03
+  selection_mode: ordered
+  prompt: Why do you want to become a Technical Account Manager?
+- ordinal: 4
+  segment: 1
+  question_key: p1_q04
+  selection_mode: ordered
+  prompt: Why are you considering a change now?
+- ordinal: 5
+  segment: 1
+  question_key: p1_q05
+  selection_mode: ordered
+  prompt: What is your strongest achievement relevant to this role?
+- ordinal: 6
+  segment: 2
+  question_key: p1_q06
+  selection_mode: ordered
+  prompt: Why this company?
+- ordinal: 7
+  segment: 2
+  question_key: p1_q07
+  selection_mode: ordered
+  prompt: Tell me about a difficult customer.
+- ordinal: 8
+  segment: 2
+  question_key: p1_q08
+  selection_mode: ordered
+  prompt: Tell me about a conflict you handled.
+- ordinal: 9
+  segment: 2
+  question_key: p1_q09
+  selection_mode: ordered
+  prompt: Tell me about a failure and what you learned.
+- ordinal: 10
+  segment: 2
+  question_key: p1_q10
+  selection_mode: ordered
+  prompt: How do you prioritize when requirements are ambiguous?
+- ordinal: 11
+  segment: 3
+  question_key: p1_q11
+  selection_mode: ordered
+  prompt: Tell me about a major incident you handled.
+- ordinal: 12
+  segment: 3
+  question_key: p1_q12
+  selection_mode: ordered
+  prompt: How would you troubleshoot a failing API integration?
+- ordinal: 13
+  segment: 3
+  question_key: p1_q13
+  selection_mode: ordered
+  prompt: How do you communicate when the ETA is uncertain?
+- ordinal: 14
+  segment: 3
+  question_key: p1_q14
+  selection_mode: ordered
+  prompt: How would you explain payments and reconciliation to a customer?
+- ordinal: 15
+  segment: 3
+  question_key: p1_q15
+  selection_mode: ordered
+  prompt: How do you prioritize competing customers?
+- ordinal: 16
+  segment: 4
+  question_key: p1_q16
+  selection_mode: ordered
+  prompt: Explain APIs and webhooks to a non-technical customer.
+- ordinal: 17
+  segment: 4
+  question_key: p1_q17
+  selection_mode: ordered
+  prompt: How do OAuth and API security work?
+- ordinal: 18
+  segment: 4
+  question_key: p1_q18
+  selection_mode: ordered
+  prompt: Explain idempotency and safe retries.
+- ordinal: 19
+  segment: 4
+  question_key: p1_q19
+  selection_mode: ordered
+  prompt: How do observability and SLOs help customers?
+- ordinal: 20
+  segment: 4
+  question_key: p1_q20
+  selection_mode: ordered
+  prompt: How do you evaluate architecture trade-offs?
+- ordinal: 21
+  segment: 5
+  question_key: p1_q21
+  selection_mode: ordered
+  prompt: Tell me about leading an implementation.
+- ordinal: 22
+  segment: 5
+  question_key: p1_q22
+  selection_mode: ordered
+  prompt: How do you make a launch decision?
+- ordinal: 23
+  segment: 5
+  question_key: p1_q23
+  selection_mode: ordered
+  prompt: How would you build a proactive account strategy?
+- ordinal: 24
+  segment: 5
+  question_key: p1_q24
+  selection_mode: ordered
+  prompt: How do you communicate technical risk to executives?
+- ordinal: 25
+  segment: 5
+  question_key: p1_q25
+  selection_mode: ordered
+  prompt: Tell me about influencing without authority.
+- ordinal: 26
+  segment: 6
+  question_key: p1_q26
+  selection_mode: ordered
+  prompt: Prepare for the selected company's recruiter screen.
+- ordinal: 27
+  segment: 6
+  question_key: p1_q27
+  selection_mode: ordered
+  prompt: Complete a fresh behavioral interview round.
+- ordinal: 28
+  segment: 6
+  question_key: p1_q28
+  selection_mode: ordered
+  prompt: Complete a Technical TAM interview round.
+- ordinal: 29
+  segment: 6
+  question_key: p1_q29
+  selection_mode: ordered
+  prompt: Complete the portfolio and customer simulation.
+- ordinal: 30
+  segment: 6
+  question_key: p1_q30
+  selection_mode: fixed_event
+  fixed_local_date: '2026-10-02'
+  prompt: Complete the sealed 45-minute final mock.
+english_dimensions:
+  policy_version: phase-1-english-v1
+  aggregate_skill_slug: tam_english
+  scale_min: 0
+  scale_max: 4
+  unavailable_state: not_assessed
+  accent_scored: false
+  dimensions:
+  - dimension_key: communication_effectiveness
+    weight: '0.30'
+    modalities:
+    - written
+    - spoken
+  - dimension_key: fluency
+    weight: '0.25'
+    modalities:
+    - spoken_audio
+  - dimension_key: accuracy
+    weight: '0.15'
+    modalities:
+    - written
+    - spoken
+  - dimension_key: vocabulary
+    weight: '0.10'
+    modalities:
+    - written
+    - spoken
+  - dimension_key: pronunciation_intelligibility
+    weight: '0.10'
+    modalities:
+    - spoken_audio
+  - dimension_key: listening
+    weight: '0.10'
+    modalities:
+    - interactive_spoken
+coverage:
+  requirements:
+  - requirement_key: task:m1-w1-d01-case
+    kind: task
+    legacy_stable_id: m1-w1-d01-case
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 1 — Baseline and HTTP
+  - requirement_key: task:m1-w1-d01-close
+    kind: task
+    legacy_stable_id: m1-w1-d01-close
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 1 — Baseline and HTTP
+  - requirement_key: task:m1-w1-d01-communication
+    kind: task
+    legacy_stable_id: m1-w1-d01-communication
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 1 — Baseline and HTTP
+  - requirement_key: task:m1-w1-d01-correction
+    kind: task
+    legacy_stable_id: m1-w1-d01-correction
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 1 — Baseline and HTTP
+  - requirement_key: task:m1-w1-d01-pipeline
+    kind: task
+    legacy_stable_id: m1-w1-d01-pipeline
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 1 — Baseline and HTTP
+  - requirement_key: task:m1-w1-d01-sql
+    kind: task
+    legacy_stable_id: m1-w1-d01-sql
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 1 — Baseline and HTTP
+  - requirement_key: task:m1-w1-d01-technical
+    kind: task
+    legacy_stable_id: m1-w1-d01-technical
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 1 — Baseline and HTTP
+  - requirement_key: task:m1-w1-d02-case
+    kind: task
+    legacy_stable_id: m1-w1-d02-case
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 2 — Joins and diagnostic questions
+  - requirement_key: task:m1-w1-d02-close
+    kind: task
+    legacy_stable_id: m1-w1-d02-close
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 2 — Joins and diagnostic questions
+  - requirement_key: task:m1-w1-d02-communication
+    kind: task
+    legacy_stable_id: m1-w1-d02-communication
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 2 — Joins and diagnostic questions
+  - requirement_key: task:m1-w1-d02-correction
+    kind: task
+    legacy_stable_id: m1-w1-d02-correction
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 2 — Joins and diagnostic questions
+  - requirement_key: task:m1-w1-d02-pipeline
+    kind: task
+    legacy_stable_id: m1-w1-d02-pipeline
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 2 — Joins and diagnostic questions
+  - requirement_key: task:m1-w1-d02-sql
+    kind: task
+    legacy_stable_id: m1-w1-d02-sql
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 2 — Joins and diagnostic questions
+  - requirement_key: task:m1-w1-d02-technical
+    kind: task
+    legacy_stable_id: m1-w1-d02-technical
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 2 — Joins and diagnostic questions
+  - requirement_key: task:m1-w1-d03-case
+    kind: task
+    legacy_stable_id: m1-w1-d03-case
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 3 — Aggregation, idempotency, and audience switching
+  - requirement_key: task:m1-w1-d03-close
+    kind: task
+    legacy_stable_id: m1-w1-d03-close
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 3 — Aggregation, idempotency, and audience switching
+  - requirement_key: task:m1-w1-d03-communication
+    kind: task
+    legacy_stable_id: m1-w1-d03-communication
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 3 — Aggregation, idempotency, and audience switching
+  - requirement_key: task:m1-w1-d03-correction
+    kind: task
+    legacy_stable_id: m1-w1-d03-correction
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 3 — Aggregation, idempotency, and audience switching
+  - requirement_key: task:m1-w1-d03-pipeline
+    kind: task
+    legacy_stable_id: m1-w1-d03-pipeline
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 3 — Aggregation, idempotency, and audience switching
+  - requirement_key: task:m1-w1-d03-sql
+    kind: task
+    legacy_stable_id: m1-w1-d03-sql
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 3 — Aggregation, idempotency, and audience switching
+  - requirement_key: task:m1-w1-d03-technical
+    kind: task
+    legacy_stable_id: m1-w1-d03-technical
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 3 — Aggregation, idempotency, and audience switching
+  - requirement_key: task:m1-w1-d04-case
+    kind: task
+    legacy_stable_id: m1-w1-d04-case
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 4 — Webhooks, rate limits, and incident writing
+  - requirement_key: task:m1-w1-d04-close
+    kind: task
+    legacy_stable_id: m1-w1-d04-close
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 4 — Webhooks, rate limits, and incident writing
+  - requirement_key: task:m1-w1-d04-communication
+    kind: task
+    legacy_stable_id: m1-w1-d04-communication
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 4 — Webhooks, rate limits, and incident writing
+  - requirement_key: task:m1-w1-d04-correction
+    kind: task
+    legacy_stable_id: m1-w1-d04-correction
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 4 — Webhooks, rate limits, and incident writing
+  - requirement_key: task:m1-w1-d04-pipeline
+    kind: task
+    legacy_stable_id: m1-w1-d04-pipeline
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 4 — Webhooks, rate limits, and incident writing
+  - requirement_key: task:m1-w1-d04-sql
+    kind: task
+    legacy_stable_id: m1-w1-d04-sql
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 4 — Webhooks, rate limits, and incident writing
+  - requirement_key: task:m1-w1-d04-technical
+    kind: task
+    legacy_stable_id: m1-w1-d04-technical
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 4 — Webhooks, rate limits, and incident writing
+  - requirement_key: task:m1-w1-d05-case
+    kind: task
+    legacy_stable_id: m1-w1-d05-case
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 5 — Discovery and first complete behavioral story
+  - requirement_key: task:m1-w1-d05-close
+    kind: task
+    legacy_stable_id: m1-w1-d05-close
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 5 — Discovery and first complete behavioral story
+  - requirement_key: task:m1-w1-d05-communication
+    kind: task
+    legacy_stable_id: m1-w1-d05-communication
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 5 — Discovery and first complete behavioral story
+  - requirement_key: task:m1-w1-d05-correction
+    kind: task
+    legacy_stable_id: m1-w1-d05-correction
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 5 — Discovery and first complete behavioral story
+  - requirement_key: task:m1-w1-d05-pipeline
+    kind: task
+    legacy_stable_id: m1-w1-d05-pipeline
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 5 — Discovery and first complete behavioral story
+  - requirement_key: task:m1-w1-d05-sql
+    kind: task
+    legacy_stable_id: m1-w1-d05-sql
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 5 — Discovery and first complete behavioral story
+  - requirement_key: task:m1-w1-d05-technical
+    kind: task
+    legacy_stable_id: m1-w1-d05-technical
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 5 — Discovery and first complete behavioral story
+  - requirement_key: task:m1-w1-d06-behavioral
+    kind: canonical_assessment
+    legacy_stable_id: m1-w1-d06-behavioral
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 6 — Week 1 assessment — 2 hours
+  - requirement_key: task:m1-w1-d06-case
+    kind: task
+    legacy_stable_id: m1-w1-d06-case
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 6 — Week 1 assessment — 2 hours
+  - requirement_key: task:m1-w1-d06-scoring
+    kind: task
+    legacy_stable_id: m1-w1-d06-scoring
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 6 — Week 1 assessment — 2 hours
+  - requirement_key: task:m1-w1-d06-sql
+    kind: task
+    legacy_stable_id: m1-w1-d06-sql
+    source_path: Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md
+    source_heading: Day 6 — Week 1 assessment — 2 hours
+  - requirement_key: task:m1-w2-d07-case
+    kind: task
+    legacy_stable_id: m1-w2-d07-case
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 7 — Timeouts, retries, and indeterminate outcomes
+  - requirement_key: task:m1-w2-d07-close
+    kind: task
+    legacy_stable_id: m1-w2-d07-close
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 7 — Timeouts, retries, and indeterminate outcomes
+  - requirement_key: task:m1-w2-d07-communication
+    kind: task
+    legacy_stable_id: m1-w2-d07-communication
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 7 — Timeouts, retries, and indeterminate outcomes
+  - requirement_key: task:m1-w2-d07-correction
+    kind: task
+    legacy_stable_id: m1-w2-d07-correction
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 7 — Timeouts, retries, and indeterminate outcomes
+  - requirement_key: task:m1-w2-d07-pipeline
+    kind: task
+    legacy_stable_id: m1-w2-d07-pipeline
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 7 — Timeouts, retries, and indeterminate outcomes
+  - requirement_key: task:m1-w2-d07-sql
+    kind: task
+    legacy_stable_id: m1-w2-d07-sql
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 7 — Timeouts, retries, and indeterminate outcomes
+  - requirement_key: task:m1-w2-d07-technical
+    kind: task
+    legacy_stable_id: m1-w2-d07-technical
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 7 — Timeouts, retries, and indeterminate outcomes
+  - requirement_key: task:m1-w2-d08-case
+    kind: task
+    legacy_stable_id: m1-w2-d08-case
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 8 — Circuit breakers, DLQs, and backlog control
+  - requirement_key: task:m1-w2-d08-close
+    kind: task
+    legacy_stable_id: m1-w2-d08-close
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 8 — Circuit breakers, DLQs, and backlog control
+  - requirement_key: task:m1-w2-d08-communication
+    kind: task
+    legacy_stable_id: m1-w2-d08-communication
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 8 — Circuit breakers, DLQs, and backlog control
+  - requirement_key: task:m1-w2-d08-correction
+    kind: task
+    legacy_stable_id: m1-w2-d08-correction
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 8 — Circuit breakers, DLQs, and backlog control
+  - requirement_key: task:m1-w2-d08-pipeline
+    kind: task
+    legacy_stable_id: m1-w2-d08-pipeline
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 8 — Circuit breakers, DLQs, and backlog control
+  - requirement_key: task:m1-w2-d08-sql
+    kind: task
+    legacy_stable_id: m1-w2-d08-sql
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 8 — Circuit breakers, DLQs, and backlog control
+  - requirement_key: task:m1-w2-d08-technical
+    kind: task
+    legacy_stable_id: m1-w2-d08-technical
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 8 — Circuit breakers, DLQs, and backlog control
+  - requirement_key: task:m1-w2-d09-case
+    kind: task
+    legacy_stable_id: m1-w2-d09-case
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 9 — Payment lifecycle
+  - requirement_key: task:m1-w2-d09-close
+    kind: task
+    legacy_stable_id: m1-w2-d09-close
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 9 — Payment lifecycle
+  - requirement_key: task:m1-w2-d09-communication
+    kind: task
+    legacy_stable_id: m1-w2-d09-communication
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 9 — Payment lifecycle
+  - requirement_key: task:m1-w2-d09-correction
+    kind: task
+    legacy_stable_id: m1-w2-d09-correction
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 9 — Payment lifecycle
+  - requirement_key: task:m1-w2-d09-pipeline
+    kind: task
+    legacy_stable_id: m1-w2-d09-pipeline
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 9 — Payment lifecycle
+  - requirement_key: task:m1-w2-d09-sql
+    kind: task
+    legacy_stable_id: m1-w2-d09-sql
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 9 — Payment lifecycle
+  - requirement_key: task:m1-w2-d09-technical
+    kind: task
+    legacy_stable_id: m1-w2-d09-technical
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 9 — Payment lifecycle
+  - requirement_key: task:m1-w2-d10-case
+    kind: task
+    legacy_stable_id: m1-w2-d10-case
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 10 — Incident command
+  - requirement_key: task:m1-w2-d10-close
+    kind: task
+    legacy_stable_id: m1-w2-d10-close
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 10 — Incident command
+  - requirement_key: task:m1-w2-d10-communication
+    kind: task
+    legacy_stable_id: m1-w2-d10-communication
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 10 — Incident command
+  - requirement_key: task:m1-w2-d10-correction
+    kind: task
+    legacy_stable_id: m1-w2-d10-correction
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 10 — Incident command
+  - requirement_key: task:m1-w2-d10-pipeline
+    kind: task
+    legacy_stable_id: m1-w2-d10-pipeline
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 10 — Incident command
+  - requirement_key: task:m1-w2-d10-sql
+    kind: task
+    legacy_stable_id: m1-w2-d10-sql
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 10 — Incident command
+  - requirement_key: task:m1-w2-d10-technical
+    kind: task
+    legacy_stable_id: m1-w2-d10-technical
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 10 — Incident command
+  - requirement_key: task:m1-w2-d11-case
+    kind: task
+    legacy_stable_id: m1-w2-d11-case
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 11 — Postmortem and business value
+  - requirement_key: task:m1-w2-d11-close
+    kind: task
+    legacy_stable_id: m1-w2-d11-close
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 11 — Postmortem and business value
+  - requirement_key: task:m1-w2-d11-communication
+    kind: task
+    legacy_stable_id: m1-w2-d11-communication
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 11 — Postmortem and business value
+  - requirement_key: task:m1-w2-d11-correction
+    kind: task
+    legacy_stable_id: m1-w2-d11-correction
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 11 — Postmortem and business value
+  - requirement_key: task:m1-w2-d11-pipeline
+    kind: task
+    legacy_stable_id: m1-w2-d11-pipeline
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 11 — Postmortem and business value
+  - requirement_key: task:m1-w2-d11-sql
+    kind: task
+    legacy_stable_id: m1-w2-d11-sql
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 11 — Postmortem and business value
+  - requirement_key: task:m1-w2-d11-technical
+    kind: task
+    legacy_stable_id: m1-w2-d11-technical
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 11 — Postmortem and business value
+  - requirement_key: task:m1-w2-d12-case
+    kind: canonical_assessment
+    legacy_stable_id: m1-w2-d12-case
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 12 — Week 2 assessment — 2 hours
+  - requirement_key: task:m1-w2-d12-portfolio
+    kind: task
+    legacy_stable_id: m1-w2-d12-portfolio
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 12 — Week 2 assessment — 2 hours
+  - requirement_key: task:m1-w2-d12-scoring
+    kind: task
+    legacy_stable_id: m1-w2-d12-scoring
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 12 — Week 2 assessment — 2 hours
+  - requirement_key: task:m1-w2-d12-sql
+    kind: task
+    legacy_stable_id: m1-w2-d12-sql
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 12 — Week 2 assessment — 2 hours
+  - requirement_key: task:m1-w2-d12-writing
+    kind: task
+    legacy_stable_id: m1-w2-d12-writing
+    source_path: Week 2 - Distributed failures, incidents, and payments.md
+    source_heading: Day 12 — Week 2 assessment — 2 hours
+  - requirement_key: task:m1-w3-d13-case
+    kind: task
+    legacy_stable_id: m1-w3-d13-case
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 13 — OAuth fundamentals
+  - requirement_key: task:m1-w3-d13-close
+    kind: task
+    legacy_stable_id: m1-w3-d13-close
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 13 — OAuth fundamentals
+  - requirement_key: task:m1-w3-d13-communication
+    kind: task
+    legacy_stable_id: m1-w3-d13-communication
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 13 — OAuth fundamentals
+  - requirement_key: task:m1-w3-d13-correction
+    kind: task
+    legacy_stable_id: m1-w3-d13-correction
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 13 — OAuth fundamentals
+  - requirement_key: task:m1-w3-d13-pipeline
+    kind: task
+    legacy_stable_id: m1-w3-d13-pipeline
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 13 — OAuth fundamentals
+  - requirement_key: task:m1-w3-d13-sql
+    kind: task
+    legacy_stable_id: m1-w3-d13-sql
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 13 — OAuth fundamentals
+  - requirement_key: task:m1-w3-d13-technical
+    kind: task
+    legacy_stable_id: m1-w3-d13-technical
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 13 — OAuth fundamentals
+  - requirement_key: task:m1-w3-d14-case
+    kind: task
+    legacy_stable_id: m1-w3-d14-case
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 14 — PKCE, webhook verification, and security failures
+  - requirement_key: task:m1-w3-d14-close
+    kind: task
+    legacy_stable_id: m1-w3-d14-close
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 14 — PKCE, webhook verification, and security failures
+  - requirement_key: task:m1-w3-d14-communication
+    kind: task
+    legacy_stable_id: m1-w3-d14-communication
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 14 — PKCE, webhook verification, and security failures
+  - requirement_key: task:m1-w3-d14-correction
+    kind: task
+    legacy_stable_id: m1-w3-d14-correction
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 14 — PKCE, webhook verification, and security failures
+  - requirement_key: task:m1-w3-d14-pipeline
+    kind: task
+    legacy_stable_id: m1-w3-d14-pipeline
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 14 — PKCE, webhook verification, and security failures
+  - requirement_key: task:m1-w3-d14-sql
+    kind: task
+    legacy_stable_id: m1-w3-d14-sql
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 14 — PKCE, webhook verification, and security failures
+  - requirement_key: task:m1-w3-d14-technical
+    kind: task
+    legacy_stable_id: m1-w3-d14-technical
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 14 — PKCE, webhook verification, and security failures
+  - requirement_key: task:m1-w3-d15-case
+    kind: task
+    legacy_stable_id: m1-w3-d15-case
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 15 — Logs, metrics, traces, and SLOs
+  - requirement_key: task:m1-w3-d15-close
+    kind: task
+    legacy_stable_id: m1-w3-d15-close
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 15 — Logs, metrics, traces, and SLOs
+  - requirement_key: task:m1-w3-d15-communication
+    kind: task
+    legacy_stable_id: m1-w3-d15-communication
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 15 — Logs, metrics, traces, and SLOs
+  - requirement_key: task:m1-w3-d15-correction
+    kind: task
+    legacy_stable_id: m1-w3-d15-correction
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 15 — Logs, metrics, traces, and SLOs
+  - requirement_key: task:m1-w3-d15-pipeline
+    kind: task
+    legacy_stable_id: m1-w3-d15-pipeline
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 15 — Logs, metrics, traces, and SLOs
+  - requirement_key: task:m1-w3-d15-sql
+    kind: task
+    legacy_stable_id: m1-w3-d15-sql
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 15 — Logs, metrics, traces, and SLOs
+  - requirement_key: task:m1-w3-d15-technical
+    kind: task
+    legacy_stable_id: m1-w3-d15-technical
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 15 — Logs, metrics, traces, and SLOs
+  - requirement_key: task:m1-w3-d16-case
+    kind: task
+    legacy_stable_id: m1-w3-d16-case
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 16 — Implementation planning
+  - requirement_key: task:m1-w3-d16-close
+    kind: task
+    legacy_stable_id: m1-w3-d16-close
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 16 — Implementation planning
+  - requirement_key: task:m1-w3-d16-communication
+    kind: task
+    legacy_stable_id: m1-w3-d16-communication
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 16 — Implementation planning
+  - requirement_key: task:m1-w3-d16-correction
+    kind: task
+    legacy_stable_id: m1-w3-d16-correction
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 16 — Implementation planning
+  - requirement_key: task:m1-w3-d16-pipeline
+    kind: task
+    legacy_stable_id: m1-w3-d16-pipeline
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 16 — Implementation planning
+  - requirement_key: task:m1-w3-d16-sql
+    kind: task
+    legacy_stable_id: m1-w3-d16-sql
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 16 — Implementation planning
+  - requirement_key: task:m1-w3-d16-technical
+    kind: task
+    legacy_stable_id: m1-w3-d16-technical
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 16 — Implementation planning
+  - requirement_key: task:m1-w3-d17-case
+    kind: task
+    legacy_stable_id: m1-w3-d17-case
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 17 — Technical account strategy
+  - requirement_key: task:m1-w3-d17-close
+    kind: task
+    legacy_stable_id: m1-w3-d17-close
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 17 — Technical account strategy
+  - requirement_key: task:m1-w3-d17-communication
+    kind: task
+    legacy_stable_id: m1-w3-d17-communication
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 17 — Technical account strategy
+  - requirement_key: task:m1-w3-d17-correction
+    kind: task
+    legacy_stable_id: m1-w3-d17-correction
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 17 — Technical account strategy
+  - requirement_key: task:m1-w3-d17-pipeline
+    kind: task
+    legacy_stable_id: m1-w3-d17-pipeline
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 17 — Technical account strategy
+  - requirement_key: task:m1-w3-d17-sql
+    kind: task
+    legacy_stable_id: m1-w3-d17-sql
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 17 — Technical account strategy
+  - requirement_key: task:m1-w3-d17-technical
+    kind: task
+    legacy_stable_id: m1-w3-d17-technical
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 17 — Technical account strategy
+  - requirement_key: task:m1-w3-d18-case
+    kind: canonical_assessment
+    legacy_stable_id: m1-w3-d18-case
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 18 — Week 3 assessment — 2 hours
+  - requirement_key: task:m1-w3-d18-executive
+    kind: task
+    legacy_stable_id: m1-w3-d18-executive
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 18 — Week 3 assessment — 2 hours
+  - requirement_key: task:m1-w3-d18-portfolio
+    kind: task
+    legacy_stable_id: m1-w3-d18-portfolio
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 18 — Week 3 assessment — 2 hours
+  - requirement_key: task:m1-w3-d18-scoring
+    kind: task
+    legacy_stable_id: m1-w3-d18-scoring
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 18 — Week 3 assessment — 2 hours
+  - requirement_key: task:m1-w3-d18-sql
+    kind: task
+    legacy_stable_id: m1-w3-d18-sql
+    source_path: Week 3 - OAuth, observability, implementation, and account strategy.md
+    source_heading: Day 18 — Week 3 assessment — 2 hours
+  - requirement_key: task:m1-w4-d19-case
+    kind: task
+    legacy_stable_id: m1-w4-d19-case
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 19 — TAM-adapted payment-system design
+  - requirement_key: task:m1-w4-d19-close
+    kind: task
+    legacy_stable_id: m1-w4-d19-close
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 19 — TAM-adapted payment-system design
+  - requirement_key: task:m1-w4-d19-communication
+    kind: task
+    legacy_stable_id: m1-w4-d19-communication
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 19 — TAM-adapted payment-system design
+  - requirement_key: task:m1-w4-d19-correction
+    kind: task
+    legacy_stable_id: m1-w4-d19-correction
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 19 — TAM-adapted payment-system design
+  - requirement_key: task:m1-w4-d19-pipeline
+    kind: task
+    legacy_stable_id: m1-w4-d19-pipeline
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 19 — TAM-adapted payment-system design
+  - requirement_key: task:m1-w4-d19-sql
+    kind: task
+    legacy_stable_id: m1-w4-d19-sql
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 19 — TAM-adapted payment-system design
+  - requirement_key: task:m1-w4-d19-technical
+    kind: task
+    legacy_stable_id: m1-w4-d19-technical
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 19 — TAM-adapted payment-system design
+  - requirement_key: task:m1-w4-d20-case
+    kind: task
+    legacy_stable_id: m1-w4-d20-case
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 20 — Launch judgment under pressure
+  - requirement_key: task:m1-w4-d20-close
+    kind: task
+    legacy_stable_id: m1-w4-d20-close
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 20 — Launch judgment under pressure
+  - requirement_key: task:m1-w4-d20-communication
+    kind: task
+    legacy_stable_id: m1-w4-d20-communication
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 20 — Launch judgment under pressure
+  - requirement_key: task:m1-w4-d20-correction
+    kind: task
+    legacy_stable_id: m1-w4-d20-correction
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 20 — Launch judgment under pressure
+  - requirement_key: task:m1-w4-d20-pipeline
+    kind: task
+    legacy_stable_id: m1-w4-d20-pipeline
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 20 — Launch judgment under pressure
+  - requirement_key: task:m1-w4-d20-sql
+    kind: task
+    legacy_stable_id: m1-w4-d20-sql
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 20 — Launch judgment under pressure
+  - requirement_key: task:m1-w4-d20-technical
+    kind: task
+    legacy_stable_id: m1-w4-d20-technical
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 20 — Launch judgment under pressure
+  - requirement_key: task:m1-w4-d21-case
+    kind: task
+    legacy_stable_id: m1-w4-d21-case
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 21 — QBR-lite and executive narrative
+  - requirement_key: task:m1-w4-d21-close
+    kind: task
+    legacy_stable_id: m1-w4-d21-close
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 21 — QBR-lite and executive narrative
+  - requirement_key: task:m1-w4-d21-communication
+    kind: task
+    legacy_stable_id: m1-w4-d21-communication
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 21 — QBR-lite and executive narrative
+  - requirement_key: task:m1-w4-d21-correction
+    kind: task
+    legacy_stable_id: m1-w4-d21-correction
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 21 — QBR-lite and executive narrative
+  - requirement_key: task:m1-w4-d21-pipeline
+    kind: task
+    legacy_stable_id: m1-w4-d21-pipeline
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 21 — QBR-lite and executive narrative
+  - requirement_key: task:m1-w4-d21-sql
+    kind: task
+    legacy_stable_id: m1-w4-d21-sql
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 21 — QBR-lite and executive narrative
+  - requirement_key: task:m1-w4-d21-technical
+    kind: task
+    legacy_stable_id: m1-w4-d21-technical
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 21 — QBR-lite and executive narrative
+  - requirement_key: task:m1-w4-d22-case
+    kind: task
+    legacy_stable_id: m1-w4-d22-case
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 22 — Cross-functional conflict
+  - requirement_key: task:m1-w4-d22-close
+    kind: task
+    legacy_stable_id: m1-w4-d22-close
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 22 — Cross-functional conflict
+  - requirement_key: task:m1-w4-d22-communication
+    kind: task
+    legacy_stable_id: m1-w4-d22-communication
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 22 — Cross-functional conflict
+  - requirement_key: task:m1-w4-d22-correction
+    kind: task
+    legacy_stable_id: m1-w4-d22-correction
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 22 — Cross-functional conflict
+  - requirement_key: task:m1-w4-d22-pipeline
+    kind: task
+    legacy_stable_id: m1-w4-d22-pipeline
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 22 — Cross-functional conflict
+  - requirement_key: task:m1-w4-d22-sql
+    kind: task
+    legacy_stable_id: m1-w4-d22-sql
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 22 — Cross-functional conflict
+  - requirement_key: task:m1-w4-d22-technical
+    kind: task
+    legacy_stable_id: m1-w4-d22-technical
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 22 — Cross-functional conflict
+  - requirement_key: task:m1-w4-d23-case
+    kind: task
+    legacy_stable_id: m1-w4-d23-case
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 23 — Dress rehearsal and final behavioral assessment
+  - requirement_key: task:m1-w4-d23-close
+    kind: task
+    legacy_stable_id: m1-w4-d23-close
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 23 — Dress rehearsal and final behavioral assessment
+  - requirement_key: task:m1-w4-d23-communication
+    kind: task
+    legacy_stable_id: m1-w4-d23-communication
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 23 — Dress rehearsal and final behavioral assessment
+  - requirement_key: task:m1-w4-d23-correction
+    kind: task
+    legacy_stable_id: m1-w4-d23-correction
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 23 — Dress rehearsal and final behavioral assessment
+  - requirement_key: task:m1-w4-d23-pipeline
+    kind: task
+    legacy_stable_id: m1-w4-d23-pipeline
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 23 — Dress rehearsal and final behavioral assessment
+  - requirement_key: task:m1-w4-d23-sql
+    kind: task
+    legacy_stable_id: m1-w4-d23-sql
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 23 — Dress rehearsal and final behavioral assessment
+  - requirement_key: task:m1-w4-d23-technical
+    kind: task
+    legacy_stable_id: m1-w4-d23-technical
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 23 — Dress rehearsal and final behavioral assessment
+  - requirement_key: task:m1-w4-d24-gauntlet
+    kind: canonical_assessment
+    legacy_stable_id: m1-w4-d24-gauntlet
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 24 — Month 1 final assessment — 2 hours
+  - requirement_key: task:m1-w4-d24-scoring
+    kind: task
+    legacy_stable_id: m1-w4-d24-scoring
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 24 — Month 1 final assessment — 2 hours
+  - requirement_key: task:m1-w4-d24-sql
+    kind: task
+    legacy_stable_id: m1-w4-d24-sql
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 24 — Month 1 final assessment — 2 hours
+  - requirement_key: task:m1-w4-d24-writing
+    kind: task
+    legacy_stable_id: m1-w4-d24-writing
+    source_path: Week 4 - Integrated interview performance and final assessment.md
+    source_heading: Day 24 — Month 1 final assessment — 2 hours
+  - requirement_key: gate:next-phase-priorities
+    kind: next_phase_priorities
+    source_path: docs/Next Phase Priorities.md
+    source_heading: Next Phase Priorities
+  assignments:
+  - requirement_key: task:m1-w1-d01-case
+    phase_task_ids:
+    - p1-w01-d01-roadmap
+    completion_owner_task_id: p1-w01-d01-roadmap
+    treatment: transition_import
+    reconciliation_note: The case artifact and coached practice are complete. The uninterrupted final recording remains absent
+      and nonqualifying, without resetting artifact completion.
+  - requirement_key: task:m1-w1-d01-close
+    phase_task_ids:
+    - p1-w01-d01-close
+    completion_owner_task_id: p1-w01-d01-close
+    treatment: transition_import
+    reconciliation_note: A retrospective record exists, but every score dimension remains not assessed and full-day actual
+      time remains unknown.
+  - requirement_key: task:m1-w1-d01-communication
+    phase_task_ids:
+    - p1-w02-d07-interview
+    completion_owner_task_id: p1-w02-d07-interview
+    treatment: scheduled
+    reconciliation_note: Skipped once before activation with no recordings, transcript, or score. It returns as P1-Q01 without
+      retroactive failure or backfill.
+  - requirement_key: task:m1-w1-d01-correction
+    phase_task_ids:
+    - p1-w02-d07-roadmap
+    completion_owner_task_id: p1-w02-d07-roadmap
+    treatment: scheduled
+    reconciliation_note: No activation evidence records a due correction or a skip under this exact legacy ID, so no import
+      closure is claimed; the optional row carries zero extra minutes and no skill evidence.
+  - requirement_key: task:m1-w1-d01-pipeline
+    phase_task_ids:
+    - p1-w01-d01-pipeline
+    completion_owner_task_id: p1-w01-d01-pipeline
+    treatment: transition_import
+    reconciliation_note: Completed as the five-role market-requirements artifact required by the legacy objective; it is not
+      evidence of five submitted applications.
+  - requirement_key: task:m1-w1-d01-sql
+    phase_task_ids:
+    - p1-w01-d01-roadmap
+    completion_owner_task_id: p1-w01-d01-roadmap
+    treatment: transition_import
+    reconciliation_note: Completion preserved. Only 40 focused minutes and 45–50 elapsed minutes are verified in the SQL note;
+      full-day actual remains unknown, and guided validation limits qualification.
+  - requirement_key: task:m1-w1-d01-technical
+    phase_task_ids:
+    - p1-w01-d01-roadmap
+    completion_owner_task_id: p1-w01-d01-roadmap
+    treatment: transition_import
+    reconciliation_note: The HTTP artifact was completed across Days 1–2 and is claimed once here; unknown time is not duplicated.
+  - requirement_key: task:m1-w1-d02-case
+    phase_task_ids:
+    - p1-w01-d01-roadmap
+    completion_owner_task_id: p1-w01-d01-roadmap
+    treatment: transition_import
+    reconciliation_note: The Northstar artifact is complete as guided work and remains nonqualifying for independent performance.
+  - requirement_key: task:m1-w1-d02-close
+    phase_task_ids:
+    - p1-w01-d01-close
+    completion_owner_task_id: p1-w01-d01-close
+    treatment: transition_import
+    reconciliation_note: The scorecard is complete, but its accepted historical scores are not converted into current competency
+      estimates; full-day actual time is unknown.
+  - requirement_key: task:m1-w1-d02-communication
+    phase_task_ids:
+    - p1-w01-d01-interview
+    completion_owner_task_id: p1-w01-d01-interview
+    treatment: transition_import
+    reconciliation_note: The ten-story catalog and mapping are complete. Supplemental spoken-practice feedback remains pending;
+      no returned handoff, recording, transcript, or extra legacy task is inferred.
+  - requirement_key: task:m1-w1-d02-correction
+    phase_task_ids:
+    - p1-w02-d09-roadmap
+    completion_owner_task_id: p1-w02-d09-roadmap
+    treatment: scheduled
+    reconciliation_note: No activation note proves a due correction was completed or explicitly skipped under this exact ID;
+      it remains optional, claims zero extra minutes, and creates no skill evidence.
+  - requirement_key: task:m1-w1-d02-pipeline
+    phase_task_ids:
+    - p1-w01-d01-pipeline
+    completion_owner_task_id: p1-w01-d01-pipeline
+    treatment: transition_import
+    reconciliation_note: The strongest stories were mapped to repeated TAM requirements as the exact saved legacy artifact;
+      no application submission is inferred.
+  - requirement_key: task:m1-w1-d02-sql
+    phase_task_ids:
+    - p1-w01-d01-roadmap
+    completion_owner_task_id: p1-w01-d01-roadmap
+    treatment: transition_import
+    reconciliation_note: Joins and NULL work is complete with guided validation; elapsed and full-day actual time remain unknown.
+  - requirement_key: task:m1-w1-d02-technical
+    phase_task_ids:
+    - p1-w01-d01-roadmap
+    completion_owner_task_id: p1-w01-d01-roadmap
+    treatment: transition_import
+    reconciliation_note: The troubleshooting checklist is complete; this does not create a second completion claim for the
+      Day 1 HTTP artifact.
+  - requirement_key: task:m1-w1-d03-case
+    phase_task_ids:
+    - p1-w02-d08-roadmap
+    completion_owner_task_id: p1-w02-d08-roadmap
+    treatment: scheduled
+    reconciliation_note: The duplicate-order case remains pending. R75 owns completion and the aligned I60 may carry presentation
+      and defense without a second completion or duplicate minute claim.
+  - requirement_key: task:m1-w1-d03-close
+    phase_task_ids:
+    - p1-w02-d08-close
+    completion_owner_task_id: p1-w02-d08-close
+    treatment: scheduled
+    reconciliation_note: The Day 3 close remains pending and actual time is unknown; it follows the saved idempotency checkpoint
+      rather than reopening completed SQL.
+  - requirement_key: task:m1-w1-d03-communication
+    phase_task_ids:
+    - p1-w02-d08-interview
+    completion_owner_task_id: p1-w02-d08-interview
+    treatment: scheduled
+    reconciliation_note: All three audience-specific recordings remain pending; no spoken artifact is inferred.
+  - requirement_key: task:m1-w1-d03-correction
+    phase_task_ids:
+    - p1-w02-d08-roadmap
+    completion_owner_task_id: p1-w02-d08-roadmap
+    treatment: scheduled
+    reconciliation_note: The optional correction has no activation evidence; it claims zero extra minutes and, if due, may
+      replace only the first ten minutes of this R75 session.
+  - requirement_key: task:m1-w1-d03-pipeline
+    phase_task_ids:
+    - p1-w02-d07-pipeline
+    completion_owner_task_id: p1-w02-d07-pipeline
+    treatment: scheduled
+    reconciliation_note: Three résumé bullets remain pending and are assigned once to the first future pipeline block; no
+      prior output is inferred.
+  - requirement_key: task:m1-w1-d03-sql
+    phase_task_ids:
+    - p1-w01-d01-roadmap
+    completion_owner_task_id: p1-w01-d01-roadmap
+    treatment: transition_import
+    reconciliation_note: SQLBolt 9–12 is complete by learner report with guided validation. Elapsed time is unknown and the
+      future plan must not redo SQL.
+  - requirement_key: task:m1-w1-d03-technical
+    phase_task_ids:
+    - p1-w02-d07-roadmap
+    completion_owner_task_id: p1-w02-d07-roadmap
+    treatment: scheduled
+    reconciliation_note: Focused reading and closed-source recall are complete. Resume exactly with the idempotency application
+      sequence, then teach-back; this future owner closes the record without redoing SQL.
+  - requirement_key: task:m1-w1-d04-case
+    phase_task_ids:
+    - p1-w02-d09-roadmap
+    completion_owner_task_id: p1-w02-d09-roadmap
+    treatment: scheduled
+    reconciliation_note: Case production is owned once by R75; presentation and defense align to I60 without a second completion
+      or duplicate legacy-minute claim. Canonical output remains unchanged.
+  - requirement_key: task:m1-w1-d04-close
+    phase_task_ids:
+    - p1-w02-d09-close
+    completion_owner_task_id: p1-w02-d09-close
+    treatment: scheduled
+    reconciliation_note: Assigned once to C15; the close preserves evidence, classification, and exact-next-action duties
+      without extending the day.
+  - requirement_key: task:m1-w1-d04-communication
+    phase_task_ids:
+    - p1-w02-d09-interview
+    completion_owner_task_id: p1-w02-d09-interview
+    treatment: scheduled
+    reconciliation_note: Integrated into the aligned interview block while preserving the exact audience, output limit, independent
+      Attempt A, and self-review contract.
+  - requirement_key: task:m1-w1-d04-correction
+    phase_task_ids:
+    - p1-w02-d09-roadmap
+    completion_owner_task_id: p1-w02-d09-roadmap
+    treatment: scheduled
+    reconciliation_note: Optional correction claims zero planned minutes unless due; if due, it replaces the first ten minutes
+      of R75, never adds time, and creates no skill-level evidence.
+  - requirement_key: task:m1-w1-d04-pipeline
+    phase_task_ids:
+    - p1-w02-d08-pipeline
+    completion_owner_task_id: p1-w02-d08-pipeline
+    treatment: scheduled
+    reconciliation_note: Assigned to one P30 block as the exact saved legacy artifact; weekly pipeline volume is accounted
+      separately and no application outcome is assumed.
+  - requirement_key: task:m1-w1-d04-sql
+    phase_task_ids:
+    - p1-w02-d07-roadmap
+    completion_owner_task_id: p1-w02-d07-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact query, explanation, self-review, and independent-first
+      contract remain required despite the shorter new allocation.
+  - requirement_key: task:m1-w1-d04-technical
+    phase_task_ids:
+    - p1-w02-d09-roadmap
+    completion_owner_task_id: p1-w02-d09-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact recall, application, teach-back, and AI-after-commit
+      constraints remain required despite the changed timing.
+  - requirement_key: task:m1-w1-d05-case
+    phase_task_ids:
+    - p1-w02-d10-roadmap
+    completion_owner_task_id: p1-w02-d10-roadmap
+    treatment: scheduled
+    reconciliation_note: Case production is owned once by R75; presentation and defense align to I60 without a second completion
+      or duplicate legacy-minute claim. Canonical output remains unchanged.
+  - requirement_key: task:m1-w1-d05-close
+    phase_task_ids:
+    - p1-w02-d10-close
+    completion_owner_task_id: p1-w02-d10-close
+    treatment: scheduled
+    reconciliation_note: Assigned once to C15; the close preserves evidence, classification, and exact-next-action duties
+      without extending the day.
+  - requirement_key: task:m1-w1-d05-communication
+    phase_task_ids:
+    - p1-w02-d10-interview
+    completion_owner_task_id: p1-w02-d10-interview
+    treatment: scheduled
+    reconciliation_note: Integrated into the aligned interview block while preserving the exact audience, output limit, independent
+      Attempt A, and self-review contract.
+  - requirement_key: task:m1-w1-d05-correction
+    phase_task_ids:
+    - p1-w02-d10-roadmap
+    completion_owner_task_id: p1-w02-d10-roadmap
+    treatment: scheduled
+    reconciliation_note: Optional correction claims zero planned minutes unless due; if due, it replaces the first ten minutes
+      of R75, never adds time, and creates no skill-level evidence.
+  - requirement_key: task:m1-w1-d05-pipeline
+    phase_task_ids:
+    - p1-w02-d09-pipeline
+    completion_owner_task_id: p1-w02-d09-pipeline
+    treatment: scheduled
+    reconciliation_note: Assigned to one P30 block as the exact saved legacy artifact; weekly pipeline volume is accounted
+      separately and no application outcome is assumed.
+  - requirement_key: task:m1-w1-d05-sql
+    phase_task_ids:
+    - p1-w02-d10-roadmap
+    completion_owner_task_id: p1-w02-d10-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact query, explanation, self-review, and independent-first
+      contract remain required despite the shorter new allocation.
+  - requirement_key: task:m1-w1-d05-technical
+    phase_task_ids:
+    - p1-w02-d10-roadmap
+    completion_owner_task_id: p1-w02-d10-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact recall, application, teach-back, and AI-after-commit
+      constraints remain required despite the changed timing.
+  - requirement_key: task:m1-w1-d06-behavioral
+    phase_task_ids:
+    - p1-w02-d12-sat-no-ai-sql
+    - p1-w02-d12-sat-integrated-case
+    - p1-w02-d12-sat-behavioral
+    - p1-w02-d12-sat-scoring
+    completion_owner_task_id: p1-w02-d12-sat-no-ai-sql
+    treatment: scheduled
+    reconciliation_note: Canonical assessment segment retains its exact timebox and independent no-coaching or no-AI constraint;
+      no performance evidence is inferred before the attempt.
+  - requirement_key: task:m1-w1-d06-case
+    phase_task_ids:
+    - p1-w02-d12-sat-no-ai-sql
+    - p1-w02-d12-sat-integrated-case
+    - p1-w02-d12-sat-behavioral
+    - p1-w02-d12-sat-scoring
+    completion_owner_task_id: p1-w02-d12-sat-no-ai-sql
+    treatment: scheduled
+    reconciliation_note: Canonical assessment segment retains its exact timebox and independent no-coaching or no-AI constraint;
+      no performance evidence is inferred before the attempt.
+  - requirement_key: task:m1-w1-d06-scoring
+    phase_task_ids:
+    - p1-w02-d12-sat-no-ai-sql
+    - p1-w02-d12-sat-integrated-case
+    - p1-w02-d12-sat-behavioral
+    - p1-w02-d12-sat-scoring
+    completion_owner_task_id: p1-w02-d12-sat-no-ai-sql
+    treatment: scheduled
+    reconciliation_note: Canonical assessment segment retains its exact timebox and independent no-coaching or no-AI constraint;
+      no performance evidence is inferred before the attempt.
+  - requirement_key: task:m1-w1-d06-sql
+    phase_task_ids:
+    - p1-w02-d12-sat-no-ai-sql
+    - p1-w02-d12-sat-integrated-case
+    - p1-w02-d12-sat-behavioral
+    - p1-w02-d12-sat-scoring
+    completion_owner_task_id: p1-w02-d12-sat-no-ai-sql
+    treatment: scheduled
+    reconciliation_note: Canonical assessment segment retains its exact timebox and independent no-coaching or no-AI constraint;
+      no performance evidence is inferred before the attempt.
+  - requirement_key: task:m1-w2-d07-case
+    phase_task_ids:
+    - p1-w02-d11-roadmap
+    completion_owner_task_id: p1-w02-d11-roadmap
+    treatment: scheduled
+    reconciliation_note: Case production is owned once by R75; presentation and defense align to I60 without a second completion
+      or duplicate legacy-minute claim. Canonical output remains unchanged.
+  - requirement_key: task:m1-w2-d07-close
+    phase_task_ids:
+    - p1-w02-d11-close
+    completion_owner_task_id: p1-w02-d11-close
+    treatment: scheduled
+    reconciliation_note: Assigned once to C15; the close preserves evidence, classification, and exact-next-action duties
+      without extending the day.
+  - requirement_key: task:m1-w2-d07-communication
+    phase_task_ids:
+    - p1-w02-d11-interview
+    completion_owner_task_id: p1-w02-d11-interview
+    treatment: scheduled
+    reconciliation_note: Integrated into the aligned interview block while preserving the exact audience, output limit, independent
+      Attempt A, and self-review contract.
+  - requirement_key: task:m1-w2-d07-correction
+    phase_task_ids:
+    - p1-w02-d11-roadmap
+    completion_owner_task_id: p1-w02-d11-roadmap
+    treatment: scheduled
+    reconciliation_note: Optional correction claims zero planned minutes unless due; if due, it replaces the first ten minutes
+      of R75, never adds time, and creates no skill-level evidence.
+  - requirement_key: task:m1-w2-d07-pipeline
+    phase_task_ids:
+    - p1-w02-d10-pipeline
+    completion_owner_task_id: p1-w02-d10-pipeline
+    treatment: scheduled
+    reconciliation_note: Assigned to one P30 block as the exact saved legacy artifact; weekly pipeline volume is accounted
+      separately and no application outcome is assumed.
+  - requirement_key: task:m1-w2-d07-sql
+    phase_task_ids:
+    - p1-w02-d11-roadmap
+    completion_owner_task_id: p1-w02-d11-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact query, explanation, self-review, and independent-first
+      contract remain required despite the shorter new allocation.
+  - requirement_key: task:m1-w2-d07-technical
+    phase_task_ids:
+    - p1-w02-d11-roadmap
+    completion_owner_task_id: p1-w02-d11-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact recall, application, teach-back, and AI-after-commit
+      constraints remain required despite the changed timing.
+  - requirement_key: task:m1-w2-d08-case
+    phase_task_ids:
+    - p1-w03-d13-roadmap
+    completion_owner_task_id: p1-w03-d13-roadmap
+    treatment: scheduled
+    reconciliation_note: Case production is owned once by R75; presentation and defense align to I60 without a second completion
+      or duplicate legacy-minute claim. Canonical output remains unchanged.
+  - requirement_key: task:m1-w2-d08-close
+    phase_task_ids:
+    - p1-w03-d13-close
+    completion_owner_task_id: p1-w03-d13-close
+    treatment: scheduled
+    reconciliation_note: Assigned once to C15; the close preserves evidence, classification, and exact-next-action duties
+      without extending the day.
+  - requirement_key: task:m1-w2-d08-communication
+    phase_task_ids:
+    - p1-w03-d13-interview
+    completion_owner_task_id: p1-w03-d13-interview
+    treatment: scheduled
+    reconciliation_note: Integrated into the aligned interview block while preserving the exact audience, output limit, independent
+      Attempt A, and self-review contract.
+  - requirement_key: task:m1-w2-d08-correction
+    phase_task_ids:
+    - p1-w03-d13-roadmap
+    completion_owner_task_id: p1-w03-d13-roadmap
+    treatment: scheduled
+    reconciliation_note: Optional correction claims zero planned minutes unless due; if due, it replaces the first ten minutes
+      of R75, never adds time, and creates no skill-level evidence.
+  - requirement_key: task:m1-w2-d08-pipeline
+    phase_task_ids:
+    - p1-w02-d11-pipeline
+    completion_owner_task_id: p1-w02-d11-pipeline
+    treatment: scheduled
+    reconciliation_note: Assigned to one P30 block as the exact saved legacy artifact; weekly pipeline volume is accounted
+      separately and no application outcome is assumed.
+  - requirement_key: task:m1-w2-d08-sql
+    phase_task_ids:
+    - p1-w03-d13-roadmap
+    completion_owner_task_id: p1-w03-d13-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact query, explanation, self-review, and independent-first
+      contract remain required despite the shorter new allocation.
+  - requirement_key: task:m1-w2-d08-technical
+    phase_task_ids:
+    - p1-w03-d13-roadmap
+    completion_owner_task_id: p1-w03-d13-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact recall, application, teach-back, and AI-after-commit
+      constraints remain required despite the changed timing.
+  - requirement_key: task:m1-w2-d09-case
+    phase_task_ids:
+    - p1-w03-d14-roadmap
+    completion_owner_task_id: p1-w03-d14-roadmap
+    treatment: scheduled
+    reconciliation_note: Case production is owned once by R75; presentation and defense align to I60 without a second completion
+      or duplicate legacy-minute claim. Canonical output remains unchanged.
+  - requirement_key: task:m1-w2-d09-close
+    phase_task_ids:
+    - p1-w03-d14-close
+    completion_owner_task_id: p1-w03-d14-close
+    treatment: scheduled
+    reconciliation_note: Assigned once to C15; the close preserves evidence, classification, and exact-next-action duties
+      without extending the day.
+  - requirement_key: task:m1-w2-d09-communication
+    phase_task_ids:
+    - p1-w03-d14-interview
+    completion_owner_task_id: p1-w03-d14-interview
+    treatment: scheduled
+    reconciliation_note: Integrated into the aligned interview block while preserving the exact audience, output limit, independent
+      Attempt A, and self-review contract.
+  - requirement_key: task:m1-w2-d09-correction
+    phase_task_ids:
+    - p1-w03-d14-roadmap
+    completion_owner_task_id: p1-w03-d14-roadmap
+    treatment: scheduled
+    reconciliation_note: Optional correction claims zero planned minutes unless due; if due, it replaces the first ten minutes
+      of R75, never adds time, and creates no skill-level evidence.
+  - requirement_key: task:m1-w2-d09-pipeline
+    phase_task_ids:
+    - p1-w03-d14-pipeline
+    completion_owner_task_id: p1-w03-d14-pipeline
+    treatment: scheduled
+    reconciliation_note: Assigned to one P30 block as the exact saved legacy artifact; weekly pipeline volume is accounted
+      separately and no application outcome is assumed.
+  - requirement_key: task:m1-w2-d09-sql
+    phase_task_ids:
+    - p1-w03-d14-roadmap
+    completion_owner_task_id: p1-w03-d14-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact query, explanation, self-review, and independent-first
+      contract remain required despite the shorter new allocation.
+  - requirement_key: task:m1-w2-d09-technical
+    phase_task_ids:
+    - p1-w03-d14-roadmap
+    completion_owner_task_id: p1-w03-d14-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact recall, application, teach-back, and AI-after-commit
+      constraints remain required despite the changed timing.
+  - requirement_key: task:m1-w2-d10-case
+    phase_task_ids:
+    - p1-w03-d15-roadmap
+    completion_owner_task_id: p1-w03-d15-roadmap
+    treatment: scheduled
+    reconciliation_note: Case production is owned once by R75; presentation and defense align to I60 without a second completion
+      or duplicate legacy-minute claim. Canonical output remains unchanged.
+  - requirement_key: task:m1-w2-d10-close
+    phase_task_ids:
+    - p1-w03-d15-close
+    completion_owner_task_id: p1-w03-d15-close
+    treatment: scheduled
+    reconciliation_note: Assigned once to C15; the close preserves evidence, classification, and exact-next-action duties
+      without extending the day.
+  - requirement_key: task:m1-w2-d10-communication
+    phase_task_ids:
+    - p1-w03-d15-interview
+    completion_owner_task_id: p1-w03-d15-interview
+    treatment: scheduled
+    reconciliation_note: Integrated into the aligned interview block while preserving the exact audience, output limit, independent
+      Attempt A, and self-review contract.
+  - requirement_key: task:m1-w2-d10-correction
+    phase_task_ids:
+    - p1-w03-d15-roadmap
+    completion_owner_task_id: p1-w03-d15-roadmap
+    treatment: scheduled
+    reconciliation_note: Optional correction claims zero planned minutes unless due; if due, it replaces the first ten minutes
+      of R75, never adds time, and creates no skill-level evidence.
+  - requirement_key: task:m1-w2-d10-pipeline
+    phase_task_ids:
+    - p1-w03-d15-pipeline
+    completion_owner_task_id: p1-w03-d15-pipeline
+    treatment: scheduled
+    reconciliation_note: Assigned to one P30 block as the exact saved legacy artifact; weekly pipeline volume is accounted
+      separately and no application outcome is assumed.
+  - requirement_key: task:m1-w2-d10-sql
+    phase_task_ids:
+    - p1-w03-d15-roadmap
+    completion_owner_task_id: p1-w03-d15-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact query, explanation, self-review, and independent-first
+      contract remain required despite the shorter new allocation.
+  - requirement_key: task:m1-w2-d10-technical
+    phase_task_ids:
+    - p1-w03-d15-roadmap
+    completion_owner_task_id: p1-w03-d15-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact recall, application, teach-back, and AI-after-commit
+      constraints remain required despite the changed timing.
+  - requirement_key: task:m1-w2-d11-case
+    phase_task_ids:
+    - p1-w03-d16-roadmap
+    completion_owner_task_id: p1-w03-d16-roadmap
+    treatment: scheduled
+    reconciliation_note: Case production is owned once by R75; presentation and defense align to I60 without a second completion
+      or duplicate legacy-minute claim. Canonical output remains unchanged.
+  - requirement_key: task:m1-w2-d11-close
+    phase_task_ids:
+    - p1-w03-d16-close
+    completion_owner_task_id: p1-w03-d16-close
+    treatment: scheduled
+    reconciliation_note: Assigned once to C15; the close preserves evidence, classification, and exact-next-action duties
+      without extending the day.
+  - requirement_key: task:m1-w2-d11-communication
+    phase_task_ids:
+    - p1-w03-d16-interview
+    completion_owner_task_id: p1-w03-d16-interview
+    treatment: scheduled
+    reconciliation_note: Integrated into the aligned interview block while preserving the exact audience, output limit, independent
+      Attempt A, and self-review contract.
+  - requirement_key: task:m1-w2-d11-correction
+    phase_task_ids:
+    - p1-w03-d16-roadmap
+    completion_owner_task_id: p1-w03-d16-roadmap
+    treatment: scheduled
+    reconciliation_note: Optional correction claims zero planned minutes unless due; if due, it replaces the first ten minutes
+      of R75, never adds time, and creates no skill-level evidence.
+  - requirement_key: task:m1-w2-d11-pipeline
+    phase_task_ids:
+    - p1-w03-d16-pipeline
+    completion_owner_task_id: p1-w03-d16-pipeline
+    treatment: scheduled
+    reconciliation_note: Assigned to one P30 block as the exact saved legacy artifact; weekly pipeline volume is accounted
+      separately and no application outcome is assumed.
+  - requirement_key: task:m1-w2-d11-sql
+    phase_task_ids:
+    - p1-w03-d16-roadmap
+    completion_owner_task_id: p1-w03-d16-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact query, explanation, self-review, and independent-first
+      contract remain required despite the shorter new allocation.
+  - requirement_key: task:m1-w2-d11-technical
+    phase_task_ids:
+    - p1-w03-d16-roadmap
+    completion_owner_task_id: p1-w03-d16-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact recall, application, teach-back, and AI-after-commit
+      constraints remain required despite the changed timing.
+  - requirement_key: task:m1-w2-d12-case
+    phase_task_ids:
+    - p1-w03-d18-sat-no-ai-sql
+    - p1-w03-d18-sat-case
+    - p1-w03-d18-sat-portfolio
+    - p1-w03-d18-sat-writing
+    - p1-w03-d18-sat-scoring
+    completion_owner_task_id: p1-w03-d18-sat-no-ai-sql
+    treatment: scheduled
+    reconciliation_note: Canonical assessment segment retains its exact timebox and independent no-coaching or no-AI constraint;
+      no performance evidence is inferred before the attempt.
+  - requirement_key: task:m1-w2-d12-portfolio
+    phase_task_ids:
+    - p1-w03-d18-sat-no-ai-sql
+    - p1-w03-d18-sat-case
+    - p1-w03-d18-sat-portfolio
+    - p1-w03-d18-sat-writing
+    - p1-w03-d18-sat-scoring
+    completion_owner_task_id: p1-w03-d18-sat-no-ai-sql
+    treatment: scheduled
+    reconciliation_note: Canonical assessment segment retains its exact timebox and independent no-coaching or no-AI constraint;
+      no performance evidence is inferred before the attempt.
+  - requirement_key: task:m1-w2-d12-scoring
+    phase_task_ids:
+    - p1-w03-d18-sat-no-ai-sql
+    - p1-w03-d18-sat-case
+    - p1-w03-d18-sat-portfolio
+    - p1-w03-d18-sat-writing
+    - p1-w03-d18-sat-scoring
+    completion_owner_task_id: p1-w03-d18-sat-no-ai-sql
+    treatment: scheduled
+    reconciliation_note: Canonical assessment segment retains its exact timebox and independent no-coaching or no-AI constraint;
+      no performance evidence is inferred before the attempt.
+  - requirement_key: task:m1-w2-d12-sql
+    phase_task_ids:
+    - p1-w03-d18-sat-no-ai-sql
+    - p1-w03-d18-sat-case
+    - p1-w03-d18-sat-portfolio
+    - p1-w03-d18-sat-writing
+    - p1-w03-d18-sat-scoring
+    completion_owner_task_id: p1-w03-d18-sat-no-ai-sql
+    treatment: scheduled
+    reconciliation_note: Canonical assessment segment retains its exact timebox and independent no-coaching or no-AI constraint;
+      no performance evidence is inferred before the attempt.
+  - requirement_key: task:m1-w2-d12-writing
+    phase_task_ids:
+    - p1-w03-d18-sat-no-ai-sql
+    - p1-w03-d18-sat-case
+    - p1-w03-d18-sat-portfolio
+    - p1-w03-d18-sat-writing
+    - p1-w03-d18-sat-scoring
+    completion_owner_task_id: p1-w03-d18-sat-no-ai-sql
+    treatment: scheduled
+    reconciliation_note: Canonical assessment segment retains its exact timebox and independent no-coaching or no-AI constraint;
+      no performance evidence is inferred before the attempt.
+  - requirement_key: task:m1-w3-d13-case
+    phase_task_ids:
+    - p1-w04-d19-roadmap
+    completion_owner_task_id: p1-w04-d19-roadmap
+    treatment: scheduled
+    reconciliation_note: Case production is owned once by R75; presentation and defense align to I60 without a second completion
+      or duplicate legacy-minute claim. Canonical output remains unchanged.
+  - requirement_key: task:m1-w3-d13-close
+    phase_task_ids:
+    - p1-w04-d19-close
+    completion_owner_task_id: p1-w04-d19-close
+    treatment: scheduled
+    reconciliation_note: Assigned once to C15; the close preserves evidence, classification, and exact-next-action duties
+      without extending the day.
+  - requirement_key: task:m1-w3-d13-communication
+    phase_task_ids:
+    - p1-w04-d19-interview
+    completion_owner_task_id: p1-w04-d19-interview
+    treatment: scheduled
+    reconciliation_note: Integrated into the aligned interview block while preserving the exact audience, output limit, independent
+      Attempt A, and self-review contract.
+  - requirement_key: task:m1-w3-d13-correction
+    phase_task_ids:
+    - p1-w04-d19-roadmap
+    completion_owner_task_id: p1-w04-d19-roadmap
+    treatment: scheduled
+    reconciliation_note: Optional correction claims zero planned minutes unless due; if due, it replaces the first ten minutes
+      of R75, never adds time, and creates no skill-level evidence.
+  - requirement_key: task:m1-w3-d13-pipeline
+    phase_task_ids:
+    - p1-w04-d19-pipeline
+    completion_owner_task_id: p1-w04-d19-pipeline
+    treatment: scheduled
+    reconciliation_note: Assigned to one P30 block as the exact saved legacy artifact; weekly pipeline volume is accounted
+      separately and no application outcome is assumed.
+  - requirement_key: task:m1-w3-d13-sql
+    phase_task_ids:
+    - p1-w04-d19-roadmap
+    completion_owner_task_id: p1-w04-d19-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact query, explanation, self-review, and independent-first
+      contract remain required despite the shorter new allocation.
+  - requirement_key: task:m1-w3-d13-technical
+    phase_task_ids:
+    - p1-w04-d19-roadmap
+    completion_owner_task_id: p1-w04-d19-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact recall, application, teach-back, and AI-after-commit
+      constraints remain required despite the changed timing.
+  - requirement_key: task:m1-w3-d14-case
+    phase_task_ids:
+    - p1-w04-d20-roadmap
+    completion_owner_task_id: p1-w04-d20-roadmap
+    treatment: scheduled
+    reconciliation_note: Case production is owned once by R75; presentation and defense align to I60 without a second completion
+      or duplicate legacy-minute claim. Canonical output remains unchanged.
+  - requirement_key: task:m1-w3-d14-close
+    phase_task_ids:
+    - p1-w04-d20-close
+    completion_owner_task_id: p1-w04-d20-close
+    treatment: scheduled
+    reconciliation_note: Assigned once to C15; the close preserves evidence, classification, and exact-next-action duties
+      without extending the day.
+  - requirement_key: task:m1-w3-d14-communication
+    phase_task_ids:
+    - p1-w04-d20-interview
+    completion_owner_task_id: p1-w04-d20-interview
+    treatment: scheduled
+    reconciliation_note: Integrated into the aligned interview block while preserving the exact audience, output limit, independent
+      Attempt A, and self-review contract.
+  - requirement_key: task:m1-w3-d14-correction
+    phase_task_ids:
+    - p1-w04-d20-roadmap
+    completion_owner_task_id: p1-w04-d20-roadmap
+    treatment: scheduled
+    reconciliation_note: Optional correction claims zero planned minutes unless due; if due, it replaces the first ten minutes
+      of R75, never adds time, and creates no skill-level evidence.
+  - requirement_key: task:m1-w3-d14-pipeline
+    phase_task_ids:
+    - p1-w04-d20-pipeline
+    completion_owner_task_id: p1-w04-d20-pipeline
+    treatment: scheduled
+    reconciliation_note: Assigned to one P30 block as the exact saved legacy artifact; weekly pipeline volume is accounted
+      separately and no application outcome is assumed.
+  - requirement_key: task:m1-w3-d14-sql
+    phase_task_ids:
+    - p1-w04-d20-roadmap
+    completion_owner_task_id: p1-w04-d20-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact query, explanation, self-review, and independent-first
+      contract remain required despite the shorter new allocation.
+  - requirement_key: task:m1-w3-d14-technical
+    phase_task_ids:
+    - p1-w04-d20-roadmap
+    completion_owner_task_id: p1-w04-d20-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact recall, application, teach-back, and AI-after-commit
+      constraints remain required despite the changed timing.
+  - requirement_key: task:m1-w3-d15-case
+    phase_task_ids:
+    - p1-w04-d21-roadmap
+    completion_owner_task_id: p1-w04-d21-roadmap
+    treatment: scheduled
+    reconciliation_note: Case production is owned once by R75; presentation and defense align to I60 without a second completion
+      or duplicate legacy-minute claim. Canonical output remains unchanged.
+  - requirement_key: task:m1-w3-d15-close
+    phase_task_ids:
+    - p1-w04-d21-close
+    completion_owner_task_id: p1-w04-d21-close
+    treatment: scheduled
+    reconciliation_note: Assigned once to C15; the close preserves evidence, classification, and exact-next-action duties
+      without extending the day.
+  - requirement_key: task:m1-w3-d15-communication
+    phase_task_ids:
+    - p1-w04-d21-interview
+    completion_owner_task_id: p1-w04-d21-interview
+    treatment: scheduled
+    reconciliation_note: Integrated into the aligned interview block while preserving the exact audience, output limit, independent
+      Attempt A, and self-review contract.
+  - requirement_key: task:m1-w3-d15-correction
+    phase_task_ids:
+    - p1-w04-d21-roadmap
+    completion_owner_task_id: p1-w04-d21-roadmap
+    treatment: scheduled
+    reconciliation_note: Optional correction claims zero planned minutes unless due; if due, it replaces the first ten minutes
+      of R75, never adds time, and creates no skill-level evidence.
+  - requirement_key: task:m1-w3-d15-pipeline
+    phase_task_ids:
+    - p1-w04-d21-pipeline
+    completion_owner_task_id: p1-w04-d21-pipeline
+    treatment: scheduled
+    reconciliation_note: Assigned to one P30 block as the exact saved legacy artifact; weekly pipeline volume is accounted
+      separately and no application outcome is assumed.
+  - requirement_key: task:m1-w3-d15-sql
+    phase_task_ids:
+    - p1-w04-d21-roadmap
+    completion_owner_task_id: p1-w04-d21-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact query, explanation, self-review, and independent-first
+      contract remain required despite the shorter new allocation.
+  - requirement_key: task:m1-w3-d15-technical
+    phase_task_ids:
+    - p1-w04-d21-roadmap
+    completion_owner_task_id: p1-w04-d21-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact recall, application, teach-back, and AI-after-commit
+      constraints remain required despite the changed timing.
+  - requirement_key: task:m1-w3-d16-case
+    phase_task_ids:
+    - p1-w05-d25-roadmap
+    completion_owner_task_id: p1-w05-d25-roadmap
+    treatment: scheduled
+    reconciliation_note: Case production is owned once by R75; presentation and defense align to I60 without a second completion
+      or duplicate legacy-minute claim. Canonical output remains unchanged.
+  - requirement_key: task:m1-w3-d16-close
+    phase_task_ids:
+    - p1-w05-d25-close
+    completion_owner_task_id: p1-w05-d25-close
+    treatment: scheduled
+    reconciliation_note: Assigned once to C15; the close preserves evidence, classification, and exact-next-action duties
+      without extending the day.
+  - requirement_key: task:m1-w3-d16-communication
+    phase_task_ids:
+    - p1-w05-d25-interview
+    completion_owner_task_id: p1-w05-d25-interview
+    treatment: scheduled
+    reconciliation_note: Integrated into the aligned interview block while preserving the exact audience, output limit, independent
+      Attempt A, and self-review contract.
+  - requirement_key: task:m1-w3-d16-correction
+    phase_task_ids:
+    - p1-w05-d25-roadmap
+    completion_owner_task_id: p1-w05-d25-roadmap
+    treatment: scheduled
+    reconciliation_note: Optional correction claims zero planned minutes unless due; if due, it replaces the first ten minutes
+      of R75, never adds time, and creates no skill-level evidence.
+  - requirement_key: task:m1-w3-d16-pipeline
+    phase_task_ids:
+    - p1-w04-d23-pipeline
+    completion_owner_task_id: p1-w04-d23-pipeline
+    treatment: scheduled
+    reconciliation_note: Assigned to one P30 block as the exact saved legacy artifact; weekly pipeline volume is accounted
+      separately and no application outcome is assumed.
+  - requirement_key: task:m1-w3-d16-sql
+    phase_task_ids:
+    - p1-w04-d22-roadmap
+    completion_owner_task_id: p1-w04-d22-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact query, explanation, self-review, and independent-first
+      contract remain required despite the shorter new allocation.
+  - requirement_key: task:m1-w3-d16-technical
+    phase_task_ids:
+    - p1-w04-d23-roadmap
+    completion_owner_task_id: p1-w04-d23-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact recall, application, teach-back, and AI-after-commit
+      constraints remain required despite the changed timing.
+  - requirement_key: task:m1-w3-d17-case
+    phase_task_ids:
+    - p1-w05-d26-roadmap
+    completion_owner_task_id: p1-w05-d26-roadmap
+    treatment: scheduled
+    reconciliation_note: Case production is owned once by R75; presentation and defense align to I60 without a second completion
+      or duplicate legacy-minute claim. Canonical output remains unchanged.
+  - requirement_key: task:m1-w3-d17-close
+    phase_task_ids:
+    - p1-w05-d26-close
+    completion_owner_task_id: p1-w05-d26-close
+    treatment: scheduled
+    reconciliation_note: Assigned once to C15; the close preserves evidence, classification, and exact-next-action duties
+      without extending the day.
+  - requirement_key: task:m1-w3-d17-communication
+    phase_task_ids:
+    - p1-w05-d26-interview
+    completion_owner_task_id: p1-w05-d26-interview
+    treatment: scheduled
+    reconciliation_note: Integrated into the aligned interview block while preserving the exact audience, output limit, independent
+      Attempt A, and self-review contract.
+  - requirement_key: task:m1-w3-d17-correction
+    phase_task_ids:
+    - p1-w05-d26-roadmap
+    completion_owner_task_id: p1-w05-d26-roadmap
+    treatment: scheduled
+    reconciliation_note: Optional correction claims zero planned minutes unless due; if due, it replaces the first ten minutes
+      of R75, never adds time, and creates no skill-level evidence.
+  - requirement_key: task:m1-w3-d17-pipeline
+    phase_task_ids:
+    - p1-w05-d26-pipeline
+    completion_owner_task_id: p1-w05-d26-pipeline
+    treatment: scheduled
+    reconciliation_note: Assigned to one P30 block as the exact saved legacy artifact; weekly pipeline volume is accounted
+      separately and no application outcome is assumed.
+  - requirement_key: task:m1-w3-d17-sql
+    phase_task_ids:
+    - p1-w05-d26-roadmap
+    completion_owner_task_id: p1-w05-d26-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact query, explanation, self-review, and independent-first
+      contract remain required despite the shorter new allocation.
+  - requirement_key: task:m1-w3-d17-technical
+    phase_task_ids:
+    - p1-w05-d26-roadmap
+    completion_owner_task_id: p1-w05-d26-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact recall, application, teach-back, and AI-after-commit
+      constraints remain required despite the changed timing.
+  - requirement_key: task:m1-w3-d18-case
+    phase_task_ids:
+    - p1-w05-d30-sat-no-ai-sql
+    - p1-w05-d30-sat-case
+    - p1-w05-d30-sat-portfolio
+    - p1-w05-d30-sat-executive-behavioral
+    - p1-w05-d30-sat-scoring
+    completion_owner_task_id: p1-w05-d30-sat-no-ai-sql
+    treatment: scheduled
+    reconciliation_note: Canonical assessment segment retains its exact timebox and independent no-coaching or no-AI constraint;
+      no performance evidence is inferred before the attempt.
+  - requirement_key: task:m1-w3-d18-executive
+    phase_task_ids:
+    - p1-w05-d30-sat-no-ai-sql
+    - p1-w05-d30-sat-case
+    - p1-w05-d30-sat-portfolio
+    - p1-w05-d30-sat-executive-behavioral
+    - p1-w05-d30-sat-scoring
+    completion_owner_task_id: p1-w05-d30-sat-no-ai-sql
+    treatment: scheduled
+    reconciliation_note: Canonical assessment segment retains its exact timebox and independent no-coaching or no-AI constraint;
+      no performance evidence is inferred before the attempt.
+  - requirement_key: task:m1-w3-d18-portfolio
+    phase_task_ids:
+    - p1-w05-d30-sat-no-ai-sql
+    - p1-w05-d30-sat-case
+    - p1-w05-d30-sat-portfolio
+    - p1-w05-d30-sat-executive-behavioral
+    - p1-w05-d30-sat-scoring
+    completion_owner_task_id: p1-w05-d30-sat-no-ai-sql
+    treatment: scheduled
+    reconciliation_note: Canonical assessment segment retains its exact timebox and independent no-coaching or no-AI constraint;
+      no performance evidence is inferred before the attempt.
+  - requirement_key: task:m1-w3-d18-scoring
+    phase_task_ids:
+    - p1-w05-d30-sat-no-ai-sql
+    - p1-w05-d30-sat-case
+    - p1-w05-d30-sat-portfolio
+    - p1-w05-d30-sat-executive-behavioral
+    - p1-w05-d30-sat-scoring
+    completion_owner_task_id: p1-w05-d30-sat-no-ai-sql
+    treatment: scheduled
+    reconciliation_note: Canonical assessment segment retains its exact timebox and independent no-coaching or no-AI constraint;
+      no performance evidence is inferred before the attempt.
+  - requirement_key: task:m1-w3-d18-sql
+    phase_task_ids:
+    - p1-w05-d30-sat-no-ai-sql
+    - p1-w05-d30-sat-case
+    - p1-w05-d30-sat-portfolio
+    - p1-w05-d30-sat-executive-behavioral
+    - p1-w05-d30-sat-scoring
+    completion_owner_task_id: p1-w05-d30-sat-no-ai-sql
+    treatment: scheduled
+    reconciliation_note: Canonical assessment segment retains its exact timebox and independent no-coaching or no-AI constraint;
+      no performance evidence is inferred before the attempt.
+  - requirement_key: task:m1-w4-d19-case
+    phase_task_ids:
+    - p1-w05-d27-roadmap
+    completion_owner_task_id: p1-w05-d27-roadmap
+    treatment: scheduled
+    reconciliation_note: Case production is owned once by R75; presentation and defense align to I60 without a second completion
+      or duplicate legacy-minute claim. Canonical output remains unchanged.
+  - requirement_key: task:m1-w4-d19-close
+    phase_task_ids:
+    - p1-w05-d27-close
+    completion_owner_task_id: p1-w05-d27-close
+    treatment: scheduled
+    reconciliation_note: Assigned once to C15; the close preserves evidence, classification, and exact-next-action duties
+      without extending the day.
+  - requirement_key: task:m1-w4-d19-communication
+    phase_task_ids:
+    - p1-w05-d27-interview
+    completion_owner_task_id: p1-w05-d27-interview
+    treatment: scheduled
+    reconciliation_note: Integrated into the aligned interview block while preserving the exact audience, output limit, independent
+      Attempt A, and self-review contract.
+  - requirement_key: task:m1-w4-d19-correction
+    phase_task_ids:
+    - p1-w05-d27-roadmap
+    completion_owner_task_id: p1-w05-d27-roadmap
+    treatment: scheduled
+    reconciliation_note: Optional correction claims zero planned minutes unless due; if due, it replaces the first ten minutes
+      of R75, never adds time, and creates no skill-level evidence.
+  - requirement_key: task:m1-w4-d19-pipeline
+    phase_task_ids:
+    - p1-w05-d27-pipeline
+    completion_owner_task_id: p1-w05-d27-pipeline
+    treatment: scheduled
+    reconciliation_note: Assigned to one P30 block as the exact saved legacy artifact; weekly pipeline volume is accounted
+      separately and no application outcome is assumed.
+  - requirement_key: task:m1-w4-d19-sql
+    phase_task_ids:
+    - p1-w05-d27-roadmap
+    completion_owner_task_id: p1-w05-d27-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact query, explanation, self-review, and independent-first
+      contract remain required despite the shorter new allocation.
+  - requirement_key: task:m1-w4-d19-technical
+    phase_task_ids:
+    - p1-w05-d27-roadmap
+    completion_owner_task_id: p1-w05-d27-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact recall, application, teach-back, and AI-after-commit
+      constraints remain required despite the changed timing.
+  - requirement_key: task:m1-w4-d20-case
+    phase_task_ids:
+    - p1-w06-d31-roadmap
+    completion_owner_task_id: p1-w06-d31-roadmap
+    treatment: scheduled
+    reconciliation_note: Case production is owned once by R75; presentation and defense align to I60 without a second completion
+      or duplicate legacy-minute claim. Canonical output remains unchanged.
+  - requirement_key: task:m1-w4-d20-close
+    phase_task_ids:
+    - p1-w06-d31-close
+    completion_owner_task_id: p1-w06-d31-close
+    treatment: scheduled
+    reconciliation_note: Assigned once to C15; the close preserves evidence, classification, and exact-next-action duties
+      without extending the day.
+  - requirement_key: task:m1-w4-d20-communication
+    phase_task_ids:
+    - p1-w06-d31-interview
+    completion_owner_task_id: p1-w06-d31-interview
+    treatment: scheduled
+    reconciliation_note: Integrated into the aligned interview block while preserving the exact audience, output limit, independent
+      Attempt A, and self-review contract.
+  - requirement_key: task:m1-w4-d20-correction
+    phase_task_ids:
+    - p1-w05-d29-roadmap
+    completion_owner_task_id: p1-w05-d29-roadmap
+    treatment: scheduled
+    reconciliation_note: Optional correction claims zero planned minutes unless due; if due, it replaces the first ten minutes
+      of R75, never adds time, and creates no skill-level evidence.
+  - requirement_key: task:m1-w4-d20-pipeline
+    phase_task_ids:
+    - p1-w05-d28-pipeline
+    completion_owner_task_id: p1-w05-d28-pipeline
+    treatment: scheduled
+    reconciliation_note: Assigned to one P30 block as the exact saved legacy artifact; weekly pipeline volume is accounted
+      separately and no application outcome is assumed.
+  - requirement_key: task:m1-w4-d20-sql
+    phase_task_ids:
+    - p1-w05-d28-roadmap
+    completion_owner_task_id: p1-w05-d28-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact query, explanation, self-review, and independent-first
+      contract remain required despite the shorter new allocation.
+  - requirement_key: task:m1-w4-d20-technical
+    phase_task_ids:
+    - p1-w05-d29-roadmap
+    completion_owner_task_id: p1-w05-d29-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact recall, application, teach-back, and AI-after-commit
+      constraints remain required despite the changed timing.
+  - requirement_key: task:m1-w4-d21-case
+    phase_task_ids:
+    - p1-w06-d32-roadmap
+    completion_owner_task_id: p1-w06-d32-roadmap
+    treatment: scheduled
+    reconciliation_note: Case production is owned once by R75; presentation and defense align to I60 without a second completion
+      or duplicate legacy-minute claim. Canonical output remains unchanged.
+  - requirement_key: task:m1-w4-d21-close
+    phase_task_ids:
+    - p1-w06-d32-close
+    completion_owner_task_id: p1-w06-d32-close
+    treatment: scheduled
+    reconciliation_note: Assigned once to C15; the close preserves evidence, classification, and exact-next-action duties
+      without extending the day.
+  - requirement_key: task:m1-w4-d21-communication
+    phase_task_ids:
+    - p1-w06-d32-interview
+    completion_owner_task_id: p1-w06-d32-interview
+    treatment: scheduled
+    reconciliation_note: Integrated into the aligned interview block while preserving the exact audience, output limit, independent
+      Attempt A, and self-review contract.
+  - requirement_key: task:m1-w4-d21-correction
+    phase_task_ids:
+    - p1-w06-d32-roadmap
+    completion_owner_task_id: p1-w06-d32-roadmap
+    treatment: scheduled
+    reconciliation_note: Optional correction claims zero planned minutes unless due; if due, it replaces the first ten minutes
+      of R75, never adds time, and creates no skill-level evidence.
+  - requirement_key: task:m1-w4-d21-pipeline
+    phase_task_ids:
+    - p1-w06-d32-pipeline
+    completion_owner_task_id: p1-w06-d32-pipeline
+    treatment: scheduled
+    reconciliation_note: Assigned to one P30 block as the exact saved legacy artifact; weekly pipeline volume is accounted
+      separately and no application outcome is assumed.
+  - requirement_key: task:m1-w4-d21-sql
+    phase_task_ids:
+    - p1-w06-d32-roadmap
+    completion_owner_task_id: p1-w06-d32-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact query, explanation, self-review, and independent-first
+      contract remain required despite the shorter new allocation.
+  - requirement_key: task:m1-w4-d21-technical
+    phase_task_ids:
+    - p1-w06-d32-roadmap
+    completion_owner_task_id: p1-w06-d32-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact recall, application, teach-back, and AI-after-commit
+      constraints remain required despite the changed timing.
+  - requirement_key: task:m1-w4-d22-case
+    phase_task_ids:
+    - p1-w06-d33-roadmap
+    completion_owner_task_id: p1-w06-d33-roadmap
+    treatment: scheduled
+    reconciliation_note: Case production is owned once by R75; presentation and defense align to I60 without a second completion
+      or duplicate legacy-minute claim. Canonical output remains unchanged.
+  - requirement_key: task:m1-w4-d22-close
+    phase_task_ids:
+    - p1-w06-d33-close
+    completion_owner_task_id: p1-w06-d33-close
+    treatment: scheduled
+    reconciliation_note: Assigned once to C15; the close preserves evidence, classification, and exact-next-action duties
+      without extending the day.
+  - requirement_key: task:m1-w4-d22-communication
+    phase_task_ids:
+    - p1-w06-d33-interview
+    completion_owner_task_id: p1-w06-d33-interview
+    treatment: scheduled
+    reconciliation_note: Integrated into the aligned interview block while preserving the exact audience, output limit, independent
+      Attempt A, and self-review contract.
+  - requirement_key: task:m1-w4-d22-correction
+    phase_task_ids:
+    - p1-w06-d33-roadmap
+    completion_owner_task_id: p1-w06-d33-roadmap
+    treatment: scheduled
+    reconciliation_note: Optional correction claims zero planned minutes unless due; if due, it replaces the first ten minutes
+      of R75, never adds time, and creates no skill-level evidence.
+  - requirement_key: task:m1-w4-d22-pipeline
+    phase_task_ids:
+    - p1-w06-d33-pipeline
+    completion_owner_task_id: p1-w06-d33-pipeline
+    treatment: scheduled
+    reconciliation_note: Assigned to one P30 block as the exact saved legacy artifact; weekly pipeline volume is accounted
+      separately and no application outcome is assumed.
+  - requirement_key: task:m1-w4-d22-sql
+    phase_task_ids:
+    - p1-w06-d33-roadmap
+    completion_owner_task_id: p1-w06-d33-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact query, explanation, self-review, and independent-first
+      contract remain required despite the shorter new allocation.
+  - requirement_key: task:m1-w4-d22-technical
+    phase_task_ids:
+    - p1-w06-d33-roadmap
+    completion_owner_task_id: p1-w06-d33-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact recall, application, teach-back, and AI-after-commit
+      constraints remain required despite the changed timing.
+  - requirement_key: task:m1-w4-d23-case
+    phase_task_ids:
+    - p1-w06-d35-roadmap
+    completion_owner_task_id: p1-w06-d35-roadmap
+    treatment: scheduled
+    reconciliation_note: The full case artifact remains owned once by R75; the separate final behavioral mock does not duplicate
+      gauntlet completion or time.
+  - requirement_key: task:m1-w4-d23-close
+    phase_task_ids:
+    - p1-w06-d35-close
+    completion_owner_task_id: p1-w06-d35-close
+    treatment: scheduled
+    reconciliation_note: Assigned once to C15; the close preserves evidence, classification, and exact-next-action duties
+      without extending the day.
+  - requirement_key: task:m1-w4-d23-communication
+    phase_task_ids:
+    - p1-w01-d01-interview
+    completion_owner_task_id: p1-w01-d01-interview
+    treatment: scheduled
+    reconciliation_note: Integrated into the aligned interview block while preserving the exact audience, output limit, independent
+      Attempt A, and self-review contract.
+  - requirement_key: task:m1-w4-d23-correction
+    phase_task_ids:
+    - p1-w06-d35-roadmap
+    completion_owner_task_id: p1-w06-d35-roadmap
+    treatment: scheduled
+    reconciliation_note: Optional correction claims zero planned minutes unless due; if due, it replaces the first ten minutes
+      of R75, never adds time, and creates no skill-level evidence.
+  - requirement_key: task:m1-w4-d23-pipeline
+    phase_task_ids:
+    - p1-w06-d34-pipeline
+    completion_owner_task_id: p1-w06-d34-pipeline
+    treatment: scheduled
+    reconciliation_note: Assigned to one P30 block as the exact saved legacy artifact; weekly pipeline volume is accounted
+      separately and no application outcome is assumed.
+  - requirement_key: task:m1-w4-d23-sql
+    phase_task_ids:
+    - p1-w06-d34-roadmap
+    completion_owner_task_id: p1-w06-d34-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact query, explanation, self-review, and independent-first
+      contract remain required despite the shorter new allocation.
+  - requirement_key: task:m1-w4-d23-technical
+    phase_task_ids:
+    - p1-w06-d34-roadmap
+    completion_owner_task_id: p1-w06-d34-roadmap
+    treatment: scheduled
+    reconciliation_note: Recomposed into the assigned R75 checkpoint; the exact recall, application, teach-back, and AI-after-commit
+      constraints remain required despite the changed timing.
+  - requirement_key: task:m1-w4-d24-gauntlet
+    phase_task_ids:
+    - p1-w06-d36-sat-no-ai-sql
+    - p1-w06-d36-sat-portfolio-to-depth-gauntlet
+    - p1-w06-d36-sat-writing
+    - p1-w06-d36-sat-scoring
+    completion_owner_task_id: p1-w06-d36-sat-no-ai-sql
+    treatment: scheduled
+    reconciliation_note: Canonical assessment segment retains its exact timebox and independent no-coaching or no-AI constraint;
+      no performance evidence is inferred before the attempt.
+  - requirement_key: task:m1-w4-d24-scoring
+    phase_task_ids:
+    - p1-w06-d36-sat-no-ai-sql
+    - p1-w06-d36-sat-portfolio-to-depth-gauntlet
+    - p1-w06-d36-sat-writing
+    - p1-w06-d36-sat-scoring
+    completion_owner_task_id: p1-w06-d36-sat-no-ai-sql
+    treatment: scheduled
+    reconciliation_note: Canonical assessment segment retains its exact timebox and independent no-coaching or no-AI constraint;
+      no performance evidence is inferred before the attempt.
+  - requirement_key: task:m1-w4-d24-sql
+    phase_task_ids:
+    - p1-w06-d36-sat-no-ai-sql
+    - p1-w06-d36-sat-portfolio-to-depth-gauntlet
+    - p1-w06-d36-sat-writing
+    - p1-w06-d36-sat-scoring
+    completion_owner_task_id: p1-w06-d36-sat-no-ai-sql
+    treatment: scheduled
+    reconciliation_note: Canonical assessment segment retains its exact timebox and independent no-coaching or no-AI constraint;
+      no performance evidence is inferred before the attempt.
+  - requirement_key: task:m1-w4-d24-writing
+    phase_task_ids:
+    - p1-w06-d36-sat-no-ai-sql
+    - p1-w06-d36-sat-portfolio-to-depth-gauntlet
+    - p1-w06-d36-sat-writing
+    - p1-w06-d36-sat-scoring
+    completion_owner_task_id: p1-w06-d36-sat-no-ai-sql
+    treatment: scheduled
+    reconciliation_note: Canonical assessment segment retains its exact timebox and independent no-coaching or no-AI constraint;
+      no performance evidence is inferred before the attempt.
+  - requirement_key: gate:next-phase-priorities
+    phase_task_ids:
+    - p1-w06-d36-sat-no-ai-sql
+    - p1-w06-d36-sat-portfolio-to-depth-gauntlet
+    - p1-w06-d36-sat-writing
+    - p1-w06-d36-sat-scoring
+    completion_owner_task_id: p1-w06-d36-sat-scoring
+    treatment: closure_gate
+    reconciliation_note: Blocks Phase 1 closure until the evidence-backed final review publishes at least one priority.
+contracts:
+  tasks:
+    interview:
+      required_output:
+      - Independent Attempt A, coaching handoff, and separate Attempt B.
+      pass_criteria:
+      - Commit Attempt A before coaching.
+      evidence_requirements:
+      - Attempt record and handoff.
+      procedure:
+      - phase: interview_cycle
+        minutes: 60
+        requirement: Independent Attempt A, coaching handoff, and separate Attempt B.
+      constraints:
+      - Coached Attempt B cannot raise the demonstrated level.
+    sealed_interview:
+      required_output:
+      - Sealed 45-minute final mock and self-review.
+      pass_criteria:
+      - No coaching before or during the mock.
+      evidence_requirements:
+      - Sealed recording and score.
+      procedure:
+      - phase: sealed_final_mock
+        minutes: 60
+        requirement: Sealed 45-minute final mock and self-review.
+      constraints:
+      - No Attempt B in the same session.
+    pipeline:
+      required_output:
+      - One or more quality pipeline actions.
+      pass_criteria:
+      - Only complete actions with every required field count.
+      evidence_requirements:
+      - Pipeline action records.
+      procedure:
+      - phase: pipeline
+        minutes: 30
+        requirement: One or more quality pipeline actions.
+      constraints:
+      - Two actions are a default, not a daily gate.
+    roadmap:
+      required_output:
+      - Assigned roadmap artifact and exact checkpoint.
+      pass_criteria:
+      - Produce the assigned output within the block.
+      evidence_requirements:
+      - Artifact and evidence links.
+      procedure:
+      - phase: roadmap_unit
+        minutes: 75
+        requirement: Assigned roadmap artifact and exact checkpoint.
+      constraints:
+      - Stop at 75 minutes; one due correction may use at most ten minutes.
+      correction_selection:
+        source: due_corrections
+        maximum_items: 1
+        maximum_minutes: 10
+        allowed_kinds:
+        - spoken_attempt_b
+        - written_attempt_b
+        - targeted_sql_correction
+        inherits_core_prompt: true
+        inherits_original_exercise: true
+        inherits_original_mapping_version: true
+        no_attempt_c: true
+        skill_level_effect: none
+    close:
+      required_output:
+      - Daily scorecard, recall items, evidence map, and exact next action.
+      pass_criteria:
+      - Use the 5/5/3/2 close vector.
+      evidence_requirements:
+      - Daily index and scorecard.
+      procedure:
+      - phase: daily_close
+        minutes: 15
+        requirement: Daily scorecard, recall items, evidence map, and exact next action.
+      constraints:
+      - Do not extend the day.
+    saturday:
+      required_output:
+      - The named independent Saturday assessment segment.
+      pass_criteria:
+      - Respect the exact segment timebox and assistance rule.
+      evidence_requirements:
+      - Assessment artifact and score.
+      procedure:
+      - phase: saturday_assessment
+        minutes: 120
+        requirement: The named independent Saturday assessment segment.
+      constraints:
+      - Saturday never absorbs weekday backlog.
+  interview_cycle:
+    kind: ordinary_interview
+    total_minutes: 60
+    steps:
+    - step_key: frame
+      minutes: 5
+      assistance: none
+    - step_key: independent_attempt_a
+      minutes: 15
+      assistance: none
+    - step_key: self_review
+      minutes: 5
+      assistance: none
+    - step_key: codex_coaching
+      minutes: 20
+      assistance: coach_after_attempt_a
+      fresh_codex_task: true
+    - step_key: separate_attempt_b
+      minutes: 5
+      assistance: none
+      after_coach_handoff: true
+    - step_key: save_handoff_and_notes
+      minutes: 10
+      assistance: analyst
+    attempt_b:
+      separate_from_coach_task: true
+      same_question_as_attempt_a: true
+      qualifying_for_level: false
+    coach_handoff:
+      required_before_attempt_b: true
+      coach_must_not_claim_attempt_b: true
+  sealed_final_mock:
+    kind: sealed_final_mock
+    total_minutes: 60
+    queue_ordinal: 30
+    fixed_local_date: '2026-10-02'
+    coaching_allowed: false
+    attempt_b_allowed: false
+    steps:
+    - step_key: setup
+      minutes: 5
+      assistance: none
+    - step_key: sealed_mock
+      minutes: 45
+      assistance: none
+    - step_key: save_and_self_review
+      minutes: 10
+      assistance: none
+  pipeline:
+    kind: multi_action_pipeline
+    output_contract_version: 2
+    weekly_quality_target: 10
+    default_weekday_actions: 2
+    daily_pass_fail: false
+    action_types:
+    - application
+    - recruiter_reply
+    required_fields:
+    - company
+    - role
+    - context_snapshot_ref
+    - relevance
+    - known_gap
+    - resume_or_story_version
+    - completed_action
+    - completed_on
+    - current_stage
+    - next_action
+    nonqualifying_reasons:
+    - simple_acknowledgement
+    - research_without_required_artifact
+    conversion_stages:
+    - applied
+    - recruiter_contact
+    - recruiter_screen
+    - hiring_manager_interview
+    - next_round
+    - offer
+    - rejected
+    - no_response
+    - withdrawn
+reconciliations: []
+days:
+- week: 1
+  day: 1
+  source_path: Phase 1 - Week 1 - Transition, foundations, and baseline.md
+  source_heading: Day 1 — Historical transition record
+  tasks:
+  - stable_id: p1-w01-d01-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w01-d01-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w01-d01-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w01-d01-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 1
+  day: 2
+  source_path: Phase 1 - Week 1 - Transition, foundations, and baseline.md
+  source_heading: Day 2 — Historical transition record
+  tasks:
+  - stable_id: p1-w01-d02-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w01-d02-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w01-d02-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w01-d02-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 1
+  day: 3
+  source_path: Phase 1 - Week 1 - Transition, foundations, and baseline.md
+  source_heading: Day 3 — Historical transition record
+  tasks:
+  - stable_id: p1-w01-d03-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w01-d03-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w01-d03-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w01-d03-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 1
+  day: 4
+  source_path: Phase 1 - Week 1 - Transition, foundations, and baseline.md
+  source_heading: Day 4 — Historical transition record
+  tasks:
+  - stable_id: p1-w01-d04-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w01-d04-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w01-d04-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w01-d04-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 1
+  day: 5
+  source_path: Phase 1 - Week 1 - Transition, foundations, and baseline.md
+  source_heading: Day 5 — Historical transition record
+  tasks:
+  - stable_id: p1-w01-d05-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w01-d05-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w01-d05-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w01-d05-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 1
+  day: 6
+  source_path: Phase 1 - Week 1 - Transition, foundations, and baseline.md
+  source_heading: Saturday contract
+  tasks:
+  - stable_id: p1-w01-d06-sat-fresh-mock
+    block: saturday_assessment
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 35
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w01-d06-sat-technical-transfer
+    block: saturday_assessment
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 45
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w01-d06-sat-evidence-scoring
+    block: saturday_assessment
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 20
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w01-d06-sat-pipeline-review
+    block: saturday_assessment
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 10
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w01-d06-sat-next-week-planning
+    block: saturday_assessment
+    order: 5
+    exercise_type: official_reading
+    timebox_minutes: 10
+    contract: saturday
+    allowed_ai_role: none
+- week: 2
+  day: 7
+  source_path: Phase 1 - Week 2 - Webhooks, discovery, and retry control.md
+  source_heading: 2026-08-31 execution contract
+  tasks:
+  - stable_id: p1-w02-d07-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w02-d07-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w02-d07-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w02-d07-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 2
+  day: 8
+  source_path: Phase 1 - Week 2 - Webhooks, discovery, and retry control.md
+  source_heading: 2026-09-01 execution contract
+  tasks:
+  - stable_id: p1-w02-d08-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w02-d08-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w02-d08-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w02-d08-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 2
+  day: 9
+  source_path: Phase 1 - Week 2 - Webhooks, discovery, and retry control.md
+  source_heading: 2026-09-02 execution contract
+  tasks:
+  - stable_id: p1-w02-d09-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w02-d09-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w02-d09-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w02-d09-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 2
+  day: 10
+  source_path: Phase 1 - Week 2 - Webhooks, discovery, and retry control.md
+  source_heading: 2026-09-03 execution contract
+  tasks:
+  - stable_id: p1-w02-d10-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w02-d10-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w02-d10-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w02-d10-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 2
+  day: 11
+  source_path: Phase 1 - Week 2 - Webhooks, discovery, and retry control.md
+  source_heading: 2026-09-04 execution contract
+  tasks:
+  - stable_id: p1-w02-d11-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w02-d11-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w02-d11-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w02-d11-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 2
+  day: 12
+  source_path: Phase 1 - Week 2 - Webhooks, discovery, and retry control.md
+  source_heading: Saturday contract
+  tasks:
+  - stable_id: p1-w02-d12-sat-no-ai-sql
+    block: saturday_assessment
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w02-d12-sat-integrated-case
+    block: saturday_assessment
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 50
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w02-d12-sat-behavioral
+    block: saturday_assessment
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 25
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w02-d12-sat-scoring
+    block: saturday_assessment
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: saturday
+    allowed_ai_role: none
+- week: 3
+  day: 13
+  source_path: Phase 1 - Week 3 - Distributed failures, incidents, and payments.md
+  source_heading: 2026-09-07 execution contract
+  tasks:
+  - stable_id: p1-w03-d13-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w03-d13-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w03-d13-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w03-d13-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 3
+  day: 14
+  source_path: Phase 1 - Week 3 - Distributed failures, incidents, and payments.md
+  source_heading: 2026-09-08 execution contract
+  tasks:
+  - stable_id: p1-w03-d14-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w03-d14-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w03-d14-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w03-d14-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 3
+  day: 15
+  source_path: Phase 1 - Week 3 - Distributed failures, incidents, and payments.md
+  source_heading: 2026-09-09 execution contract
+  tasks:
+  - stable_id: p1-w03-d15-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w03-d15-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w03-d15-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w03-d15-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 3
+  day: 16
+  source_path: Phase 1 - Week 3 - Distributed failures, incidents, and payments.md
+  source_heading: 2026-09-10 execution contract
+  tasks:
+  - stable_id: p1-w03-d16-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w03-d16-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w03-d16-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w03-d16-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 3
+  day: 17
+  source_path: Phase 1 - Week 3 - Distributed failures, incidents, and payments.md
+  source_heading: 2026-09-11 execution contract
+  tasks:
+  - stable_id: p1-w03-d17-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w03-d17-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w03-d17-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w03-d17-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 3
+  day: 18
+  source_path: Phase 1 - Week 3 - Distributed failures, incidents, and payments.md
+  source_heading: Saturday contract
+  tasks:
+  - stable_id: p1-w03-d18-sat-no-ai-sql
+    block: saturday_assessment
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w03-d18-sat-case
+    block: saturday_assessment
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 35
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w03-d18-sat-portfolio
+    block: saturday_assessment
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 20
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w03-d18-sat-writing
+    block: saturday_assessment
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 20
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w03-d18-sat-scoring
+    block: saturday_assessment
+    order: 5
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: saturday
+    allowed_ai_role: none
+- week: 4
+  day: 19
+  source_path: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+  source_heading: 2026-09-14 execution contract
+  tasks:
+  - stable_id: p1-w04-d19-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w04-d19-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w04-d19-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w04-d19-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 4
+  day: 20
+  source_path: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+  source_heading: 2026-09-15 execution contract
+  tasks:
+  - stable_id: p1-w04-d20-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w04-d20-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w04-d20-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w04-d20-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 4
+  day: 21
+  source_path: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+  source_heading: 2026-09-16 execution contract
+  tasks:
+  - stable_id: p1-w04-d21-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w04-d21-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w04-d21-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w04-d21-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 4
+  day: 22
+  source_path: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+  source_heading: 2026-09-17 execution contract
+  tasks:
+  - stable_id: p1-w04-d22-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w04-d22-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w04-d22-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w04-d22-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 4
+  day: 23
+  source_path: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+  source_heading: 2026-09-18 execution contract
+  tasks:
+  - stable_id: p1-w04-d23-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w04-d23-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w04-d23-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w04-d23-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 4
+  day: 24
+  source_path: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+  source_heading: Saturday contract
+  tasks:
+  - stable_id: p1-w04-d24-sat-fresh-mock
+    block: saturday_assessment
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 35
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w04-d24-sat-technical-transfer
+    block: saturday_assessment
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 45
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w04-d24-sat-evidence-scoring
+    block: saturday_assessment
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 20
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w04-d24-sat-pipeline-review
+    block: saturday_assessment
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 10
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w04-d24-sat-next-week-planning
+    block: saturday_assessment
+    order: 5
+    exercise_type: official_reading
+    timebox_minutes: 10
+    contract: saturday
+    allowed_ai_role: none
+- week: 5
+  day: 25
+  source_path: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+  source_heading: 2026-09-21 execution contract
+  tasks:
+  - stable_id: p1-w05-d25-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w05-d25-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w05-d25-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w05-d25-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 5
+  day: 26
+  source_path: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+  source_heading: 2026-09-22 execution contract
+  tasks:
+  - stable_id: p1-w05-d26-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w05-d26-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w05-d26-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w05-d26-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 5
+  day: 27
+  source_path: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+  source_heading: 2026-09-23 execution contract
+  tasks:
+  - stable_id: p1-w05-d27-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w05-d27-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w05-d27-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w05-d27-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 5
+  day: 28
+  source_path: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+  source_heading: 2026-09-24 execution contract
+  tasks:
+  - stable_id: p1-w05-d28-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w05-d28-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w05-d28-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w05-d28-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 5
+  day: 29
+  source_path: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+  source_heading: 2026-09-25 execution contract
+  tasks:
+  - stable_id: p1-w05-d29-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w05-d29-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w05-d29-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w05-d29-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 5
+  day: 30
+  source_path: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+  source_heading: Saturday contract
+  tasks:
+  - stable_id: p1-w05-d30-sat-no-ai-sql
+    block: saturday_assessment
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w05-d30-sat-case
+    block: saturday_assessment
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 35
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w05-d30-sat-portfolio
+    block: saturday_assessment
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 20
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w05-d30-sat-executive-behavioral
+    block: saturday_assessment
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 20
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w05-d30-sat-scoring
+    block: saturday_assessment
+    order: 5
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: saturday
+    allowed_ai_role: none
+- week: 6
+  day: 31
+  source_path: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+  source_heading: 2026-09-28 execution contract
+  tasks:
+  - stable_id: p1-w06-d31-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w06-d31-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w06-d31-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w06-d31-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 6
+  day: 32
+  source_path: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+  source_heading: 2026-09-29 execution contract
+  tasks:
+  - stable_id: p1-w06-d32-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w06-d32-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w06-d32-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w06-d32-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 6
+  day: 33
+  source_path: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+  source_heading: 2026-09-30 execution contract
+  tasks:
+  - stable_id: p1-w06-d33-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w06-d33-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w06-d33-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w06-d33-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 6
+  day: 34
+  source_path: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+  source_heading: 2026-10-01 execution contract
+  tasks:
+  - stable_id: p1-w06-d34-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w06-d34-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w06-d34-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w06-d34-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 6
+  day: 35
+  source_path: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+  source_heading: 2026-10-02 execution contract
+  tasks:
+  - stable_id: p1-w06-d35-interview
+    block: communication_spoken
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 60
+    contract: sealed_interview
+    allowed_ai_role: interviewer
+  - stable_id: p1-w06-d35-pipeline
+    block: career_pipeline
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: pipeline
+    allowed_ai_role: planner
+  - stable_id: p1-w06-d35-roadmap
+    block: technical_learning
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 75
+    contract: roadmap
+    allowed_ai_role: tutor
+  - stable_id: p1-w06-d35-close
+    block: daily_close
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: close
+    allowed_ai_role: analyst
+- week: 6
+  day: 36
+  source_path: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+  source_heading: Saturday contract
+  tasks:
+  - stable_id: p1-w06-d36-sat-no-ai-sql
+    block: saturday_assessment
+    order: 1
+    exercise_type: official_reading
+    timebox_minutes: 30
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w06-d36-sat-portfolio-to-depth-gauntlet
+    block: saturday_assessment
+    order: 2
+    exercise_type: official_reading
+    timebox_minutes: 55
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w06-d36-sat-writing
+    block: saturday_assessment
+    order: 3
+    exercise_type: official_reading
+    timebox_minutes: 20
+    contract: saturday
+    allowed_ai_role: none
+  - stable_id: p1-w06-d36-sat-scoring
+    block: saturday_assessment
+    order: 4
+    exercise_type: official_reading
+    timebox_minutes: 15
+    contract: saturday
+    allowed_ai_role: none
