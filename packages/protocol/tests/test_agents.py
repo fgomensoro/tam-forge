@@ -318,3 +318,106 @@ def test_versioned_json_schema_snapshot(model, name):
     schema = model.model_json_schema()
     assert schema["$id"] == f"urn:tamforge:schema:{name}"
     assert schema == json.loads((Path(__file__).parent / "schemas" / f"{name}.json").read_text())
+
+
+def feedback(**overrides):
+    data = {
+        "status": "processing",
+        "activity_id": 1,
+        "attempt_id": 2,
+        "versions": None,
+        "english": None,
+        "tam": None,
+        "withheld_reason": None,
+    }
+    data.update(overrides)
+    return data
+
+
+def versions():
+    return {
+        "model_run": {"id": 1, "content_hash": "a" * 64},
+        "prompt": {"id": 2, "content_hash": "b" * 64},
+        "output_schema": {"id": 3, "content_hash": "c" * 64},
+        "rubric_binding": {"id": 4, "content_hash": "d" * 64},
+    }
+
+
+def test_ready_feedback_requires_both_analyses_and_versions():
+    from tamforge_protocol.agents import FeedbackRead
+
+    for missing in ("english", "tam", "versions"):
+        data = feedback(
+            status="ready",
+            versions=versions(),
+            english=payload(),
+            tam=payload("tam"),
+        )
+        data[missing] = None
+        with pytest.raises(ValidationError):
+            FeedbackRead.model_validate(data)
+
+
+def test_ready_feedback_accepts_the_matching_release():
+    from tamforge_protocol.agents import FeedbackRead
+
+    read = FeedbackRead.model_validate(
+        feedback(status="ready", versions=versions(), english=payload(), tam=payload("tam"))
+    )
+    assert read.withheld_reason is None
+    assert read.english is not None and read.tam is not None
+
+
+@pytest.mark.parametrize("status", ["processing", "needs_attention"])
+@pytest.mark.parametrize("carried", ["english", "tam"])
+def test_withheld_feedback_cannot_carry_analysis(status, carried):
+    from tamforge_protocol.agents import FeedbackRead
+
+    reason = "self_review_pending" if status == "needs_attention" else None
+    data = feedback(status=status, withheld_reason=reason)
+    data[carried] = payload() if carried == "english" else payload("tam")
+    with pytest.raises(ValidationError):
+        FeedbackRead.model_validate(data)
+
+
+def test_reason_presence_follows_the_status():
+    from tamforge_protocol.agents import FeedbackRead
+
+    with pytest.raises(ValidationError):
+        FeedbackRead.model_validate(feedback(status="needs_attention"))
+    with pytest.raises(ValidationError):
+        FeedbackRead.model_validate(
+            feedback(status="processing", withheld_reason="self_review_pending")
+        )
+    with pytest.raises(ValidationError):
+        FeedbackRead.model_validate(
+            feedback(
+                status="ready",
+                versions=versions(),
+                english=payload(),
+                tam=payload("tam"),
+                withheld_reason="self_review_pending",
+            )
+        )
+    ready = FeedbackRead.model_validate(
+        feedback(status="needs_attention", withheld_reason="evidence_unavailable")
+    )
+    assert ready.status == "needs_attention"
+
+
+def test_ready_feedback_rejects_analysis_from_another_attempt():
+    from tamforge_protocol.agents import FeedbackRead
+
+    other = payload("tam")
+    other["attempt_id"] = 99
+    with pytest.raises(ValidationError):
+        FeedbackRead.model_validate(
+            feedback(status="ready", versions=versions(), english=payload(), tam=other)
+        )
+
+
+def test_withheld_reason_vocabulary_is_closed():
+    from tamforge_protocol.agents import FeedbackRead
+
+    with pytest.raises(ValidationError):
+        FeedbackRead.model_validate(feedback(status="needs_attention", withheld_reason="because"))

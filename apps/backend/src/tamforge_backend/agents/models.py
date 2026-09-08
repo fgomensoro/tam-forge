@@ -229,6 +229,26 @@ class AgentToolCall(RunChild):
     )
 
 
+class AnalysisPublication(RunChild):
+    """One released analysis. Rows appear only after the release gate passes."""
+
+    __tablename__ = "analysis_publications"
+    __table_args__ = _child_checks("analysis_publications", limit=1048576) + (
+        UniqueConstraint(
+            "run_id", "analysis_kind", name="uq_analysis_publications_run_kind"
+        ),
+        CheckConstraint(
+            "analysis_kind IN ('english_analysis', 'tam_analysis')",
+            name="analysis_kind_allowed",
+        ),
+    )
+    analysis_kind: Mapped[str] = mapped_column(
+        Text,
+        Computed("canonical_json::jsonb->'analysis'->>'analysis_kind'", persisted=True),
+        nullable=False,
+    )
+
+
 RECORD_TYPES = (
     PromptVersion,
     OutputSchemaVersion,
@@ -237,6 +257,7 @@ RECORD_TYPES = (
     ModelRunContextItem,
     ModelRunEvent,
     AgentToolCall,
+    AnalysisPublication,
 )
 
 
