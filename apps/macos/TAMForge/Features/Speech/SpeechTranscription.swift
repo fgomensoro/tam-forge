@@ -41,7 +41,12 @@ struct SpeechRuntimeIdentity: Sendable, Equatable {
     let runtimeVersion: String      // whisper.cpp release, e.g. "b4938"
     let modelFilename: String
     let modelSHA256: String
-    let usedMetal: Bool
+    // whisper.cpp exposes no per-run "did the GPU actually run this" query;
+    // whisper_print_system_info() only reports whether the linked build
+    // supports Metal at all. So this can only honestly say what we asked
+    // for (use_gpu) combined with that build capability, never what the
+    // engine actually did for this specific call.
+    let metalRequested: Bool
     let usedBuiltInVAD: Bool
     let language: String            // always "en"
 }

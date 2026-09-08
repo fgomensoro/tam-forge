@@ -395,3 +395,72 @@ def test_check_bundle_rejects_ad_hoc_when_identity_is_required(
     with pytest.raises(NativeBundleError, match="ad-hoc"):
         check_bundle(app, require_ad_hoc=False, require_identity="TAM Forge Local Development")
     assert calls[0][:2] == ["codesign", "--verify"]
+
+
+def _whisper_framework(app: Path) -> Path:
+    """Lay out the bundled framework the way the real XCFramework installs it:
+    the real binary under Versions/A, plus the Versions/Current and top-level
+    symlinks Xcode's Embed Frameworks phase copies alongside it."""
+    framework = app / "Contents" / "Frameworks" / "whisper.framework"
+    versioned = framework / "Versions" / "A"
+    versioned.mkdir(parents=True)
+    binary = versioned / "whisper"
+    binary.write_bytes(b"\xcf\xfa\xed\xfe whisper dylib payload")
+    binary.chmod(0o755)
+    (framework / "Versions" / "Current").symlink_to("A")
+    (framework / "whisper").symlink_to("Versions/Current/whisper")
+    return framework
+
+
+def test_whisper_framework_binary_is_allowed(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+    _whisper_framework(app)
+
+    assert bundle_violations(app) == ()
+
+
+def test_second_unexpected_framework_binary_is_rejected(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+    _whisper_framework(app)
+    other = app / "Contents" / "Frameworks" / "openvino.framework" / "Versions" / "A" / "openvino"
+    other.parent.mkdir(parents=True)
+    other.write_bytes(b"\xcf\xfa\xed\xfe openvino dylib payload")
+    other.chmod(0o755)
+
+    violations = bundle_violations(app)
+
+    assert (
+        "unexpected executable or Mach-O payload: "
+        "Contents/Frameworks/openvino.framework/Versions/A/openvino"
+    ) in violations
+
+
+def test_whisper_framework_linked_library_reference_is_allowed(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+
+    violations = bundle_violations(
+        app, linked_libraries="@rpath/whisper.framework/Versions/A/whisper"
+    )
+
+    assert violations == ()
+
+
+def test_other_framework_linked_library_reference_is_rejected(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+
+    violations = bundle_violations(app, linked_libraries="@rpath/other.framework/other")
+
+    assert violations == ("non-standalone linked library: @rpath/other.framework/other",)
+
+
+def test_symlink_to_allowed_binary_is_not_counted_as_extra_payload(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+    # A symlink elsewhere pointing at the already-allowed executable must not
+    # itself be treated as a second, unexpected payload. Contents/Frameworks
+    # (unlike Contents/MacOS) has no "exact contents" check, so this isolates
+    # the symlink-skipping behavior from the unrelated MacOS payload check.
+    alias = app / "Contents" / "Frameworks" / "TAMForgeAlias"
+    alias.parent.mkdir(parents=True)
+    alias.symlink_to("../MacOS/TAMForge")
+
+    assert bundle_violations(app) == ()

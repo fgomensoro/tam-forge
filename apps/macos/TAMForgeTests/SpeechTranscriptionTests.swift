@@ -133,7 +133,7 @@ final class SpeechTranscriptionTests: XCTestCase {
             runtimeVersion: "fake",
             modelFilename: "fake-model.bin",
             modelSHA256: String(repeating: "0", count: 64),
-            usedMetal: false,
+            metalRequested: false,
             usedBuiltInVAD: false,
             language: "en"
         )

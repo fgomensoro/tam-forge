@@ -7,6 +7,11 @@ import Foundation
 struct SpeechModelCatalog: Sendable {
     static let transcriptionModelFilename = "ggml-base.en-q5_1.bin"
     static let vadModelFilename = "ggml-silero-v5.1.2.bin"
+    // Pinned in config/speech-models.yaml; recorded here (never hashed at
+    // runtime, which would be expensive) so WhisperTranscriber can report it
+    // as part of SpeechRuntimeIdentity. scripts/ci/tests/test_speech_models_manifest.py
+    // (issue #42 Task 4) asserts this stays equal to the manifest's pin.
+    static let transcriptionModelSHA256 = "4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f"
 
     let directory: URL
 
