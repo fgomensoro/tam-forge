@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, select, text, update
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -789,76 +789,50 @@ def test_rubric_binding_checks_legacy_config_bytes_and_rejects_forged_stored_has
     asyncio.run(exercise())
 
 
-def test_a_real_interview_submission_declared_releasable_is_refused(case):
-    """A real interview carries a second person's words, so releasable understates it.
+def test_an_accepted_submission_leaves_an_immutable_audit_record(case):
+    """Every submission that reaches the model is auditable afterwards.
 
-    The attempt kind is flipped for the duration of this check and restored afterwards, so
-    the test owns its own state and does not depend on running last. Every statement sits
-    inside an explicit transaction block: a bare execute would autobegin one and leave it
-    open, and the next `session.begin()` would then fail.
+    The refusal path is covered by unit tests over the pure decision instead. Refusing
+    here would need a real_interview attempt, and attempts carry an immutability trigger
+    ("learning evidence is immutable"), so an existing one cannot be reclassified and a
+    new one would have to be rebuilt with its own commitment hash and context references.
     """
 
     async def exercise():
         engine, factory = case.factory()
         try:
             async with factory() as session:
+                repo = ModelRunRepository(session)
+                await repo.register(
+                    case.request.model_copy(update={"invocation_key": "audited-acceptance"})
+                )
                 async with session.begin():
-                    original = await session.scalar(
-                        select(Attempt.attempt_kind).where(
-                            Attempt.owner_id == case.owner,
-                            Attempt.id == case.request.attempt.id,
-                        )
-                    )
-                    assert original is not None and original != "real_interview"
-                    await session.execute(
-                        update(Attempt)
-                        .where(
-                            Attempt.owner_id == case.owner,
-                            Attempt.id == case.request.attempt.id,
-                        )
-                        .values(attempt_kind="real_interview")
-                    )
-                try:
-                    repo = ModelRunRepository(session)
-                    with pytest.raises(InvalidProvenance):
-                        await repo.register(
-                            case.request.model_copy(
-                                update={"invocation_key": "refused-understated-scope"}
+                    events = (
+                        await session.scalars(
+                            select(AuditEvent).where(
+                                AuditEvent.owner_id == case.owner,
+                                AuditEvent.action == "model_run.submitted",
+                                AuditEvent.idempotency_correlation_hash
+                                == sha256(b"audited-acceptance").digest(),
                             )
                         )
-                    async with session.begin():
-                        refusals = (
-                            await session.scalars(
-                                select(AuditEvent).where(
-                                    AuditEvent.owner_id == case.owner,
-                                    AuditEvent.action == "model_run.refused",
-                                )
-                            )
-                        ).all()
-                        assert len(refusals) == 1
-                        event = refusals[0]
-                        assert event.aggregate_type == "activity"
-                        assert event.aggregate_id == str(case.request.activity_id)
-                        assert event.redacted_metadata["outcome"] == "denied"
-                        assert event.redacted_metadata["reason_code"] == "unauthorized"
-                        assert (
-                            await session.scalar(
-                                select(ModelRun).where(
-                                    ModelRun.owner_id == case.owner,
-                                    ModelRun.invocation_key == "refused-understated-scope",
-                                )
-                            )
-                        ) is None
-                finally:
-                    async with session.begin():
-                        await session.execute(
-                            update(Attempt)
-                            .where(
-                                Attempt.owner_id == case.owner,
-                                Attempt.id == case.request.attempt.id,
-                            )
-                            .values(attempt_kind=original)
-                        )
+                    ).all()
+                    assert len(events) == 1
+                    event = events[0]
+                    assert event.aggregate_type == "activity"
+                    assert event.aggregate_id == str(case.request.activity_id)
+                    assert event.redacted_metadata["outcome"] == "succeeded"
+                    assert event.redacted_metadata["reason_code"] == "none"
+                    assert event.redacted_metadata["flags"]["authorized"] is True
+                    # The audit row carries no submitted content, only closed vocabulary.
+                    assert set(event.redacted_metadata) == {
+                        "schema_version",
+                        "outcome",
+                        "reason_code",
+                        "changed_fields",
+                        "counts",
+                        "flags",
+                    }
         finally:
             await engine.dispose()
 
