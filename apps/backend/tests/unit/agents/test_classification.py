@@ -129,17 +129,51 @@ def test_run_request_requires_a_classification():
     assert field.annotation is SubmissionClassification
 
 
-def test_derived_scope_is_the_most_restrictive_cited_class():
+@pytest.mark.parametrize("attempt_kind", ["attempt_a", "attempt_b", "no_ai_assessment"])
+def test_a_practice_attempt_sends_the_learners_own_work(attempt_kind):
     from tamforge_backend.agents.classification import SensitivityScope, derive_submission_scope
 
-    assert derive_submission_scope([]) is SensitivityScope.RELEASABLE
-    assert derive_submission_scope(["written_output"]) is SensitivityScope.RELEASABLE
+    assert derive_submission_scope(attempt_kind=attempt_kind) is SensitivityScope.RELEASABLE
+
+
+def test_a_real_interview_needs_redaction_because_someone_else_is_in_it():
+    from tamforge_backend.agents.classification import SensitivityScope, derive_submission_scope
+
     assert (
-        derive_submission_scope(["written_output", "transcript"])
+        derive_submission_scope(attempt_kind="real_interview")
+        is SensitivityScope.REDACTION_REQUIRED
+    )
+
+
+def test_stored_audio_beside_an_attempt_does_not_make_its_text_unsendable():
+    """The regression that would have bricked every recorded session.
+
+    original_audio is restricted and a restricted scope cannot be declared at all, so
+    deriving from linked artifacts rather than from what is sent would refuse every
+    submission whose attempt has a recording, with no declaration able to escape it.
+    """
+    from tamforge_backend.agents.classification import SensitivityScope, derive_submission_scope
+
+    assert derive_submission_scope(attempt_kind="attempt_a") is SensitivityScope.RELEASABLE
+
+
+def test_a_cited_artifact_raises_the_derived_scope():
+    from tamforge_backend.agents.classification import SensitivityScope, derive_submission_scope
+
+    assert (
+        derive_submission_scope(
+            attempt_kind="attempt_a", cited_artifact_classes=["written_output"]
+        )
+        is SensitivityScope.RELEASABLE
+    )
+    assert (
+        derive_submission_scope(attempt_kind="attempt_a", cited_artifact_classes=["transcript"])
         is SensitivityScope.REDACTION_REQUIRED
     )
     assert (
-        derive_submission_scope(["written_output", "original_audio"])
+        derive_submission_scope(
+            attempt_kind="attempt_a", cited_artifact_classes=["original_audio"]
+        )
         is SensitivityScope.RESTRICTED
     )
 

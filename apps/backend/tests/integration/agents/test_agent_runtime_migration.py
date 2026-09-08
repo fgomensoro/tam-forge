@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -49,8 +49,7 @@ from tamforge_backend.database import database_url_to_sync
 from tamforge_backend.evidence.config_loader import load_config_bundle
 from tamforge_backend.evidence.models import RubricVersion
 from tamforge_backend.evidence.seed import seed_config
-from tamforge_backend.learning.artifacts import unencrypted_metadata
-from tamforge_backend.learning.models import ActivityArtifactLink, Artifact, Attempt
+from tamforge_backend.learning.models import Attempt
 from tamforge_backend.learning.service import ActivityService
 from tamforge_protocol.agents import AttemptTextReference
 
@@ -790,65 +789,73 @@ def test_rubric_binding_checks_legacy_config_bytes_and_rejects_forged_stored_has
     asyncio.run(exercise())
 
 
-def test_a_submission_that_understates_linked_artifact_sensitivity_is_refused(case):
-    """Must stay the last test in this module.
+def test_a_real_interview_submission_declared_releasable_is_refused(case):
+    """A real interview carries a second person's words, so releasable understates it.
 
-    It permanently links a restricted artifact to `case`'s shared attempt
-    (`activity_artifact_links` is append-only, so nothing here can be undone). From
-    that point on, any registration of `case.request` unmodified would itself
-    understate the derived scope, so this cannot run before the tests above without
-    breaking them.
+    The attempt kind is flipped for the duration of this check and restored afterwards, so
+    the test owns its own state and does not depend on running last.
     """
 
     async def exercise():
         engine, factory = case.factory()
         try:
             async with factory() as session:
+                original = await session.scalar(
+                    select(Attempt.attempt_kind).where(
+                        Attempt.owner_id == case.owner,
+                        Attempt.id == case.request.attempt.id,
+                    )
+                )
+                assert original is not None and original != "real_interview"
                 async with session.begin():
-                    artifact = Artifact(
-                        owner_id=case.owner,
-                        object_key="artifacts/refusal-check/original.wav",
-                        content_hash=sha256(b"refusal-check-original-audio").digest(),
-                        content_type="audio/wav",
-                        original_filename="original.wav",
-                        byte_size=12345,
-                        artifact_class="original_audio",
-                        encryption_metadata=unencrypted_metadata(),
-                        derived_from_artifact_id=None,
-                        immutable_version=1,
-                    )
-                    session.add(artifact)
-                    await session.flush()
-                    session.add(
-                        ActivityArtifactLink(
-                            owner_id=case.owner,
-                            activity_instance_id=case.request.activity_id,
-                            attempt_id=case.request.attempt.id,
-                            artifact_id=artifact.id,
-                            link_role="presentation_audio",
+                    await session.execute(
+                        update(Attempt)
+                        .where(
+                            Attempt.owner_id == case.owner,
+                            Attempt.id == case.request.attempt.id,
                         )
+                        .values(attempt_kind="real_interview")
                     )
-                repo = ModelRunRepository(session)
-                with pytest.raises(InvalidProvenance):
-                    await repo.register(
-                        case.request.model_copy(
-                            update={"invocation_key": "refused-understated-scope"}
+                try:
+                    repo = ModelRunRepository(session)
+                    with pytest.raises(InvalidProvenance):
+                        await repo.register(
+                            case.request.model_copy(
+                                update={"invocation_key": "refused-understated-scope"}
+                            )
                         )
-                    )
-                refusals = (
-                    await session.scalars(
-                        select(AuditEvent).where(
-                            AuditEvent.owner_id == case.owner,
-                            AuditEvent.action == "model_run.refused",
+                    refusals = (
+                        await session.scalars(
+                            select(AuditEvent).where(
+                                AuditEvent.owner_id == case.owner,
+                                AuditEvent.action == "model_run.refused",
+                            )
                         )
-                    )
-                ).all()
-                assert len(refusals) == 1
-                event = refusals[0]
-                assert event.aggregate_type == "activity"
-                assert event.aggregate_id == str(case.request.activity_id)
-                assert event.redacted_metadata["outcome"] == "denied"
-                assert event.redacted_metadata["reason_code"] == "unauthorized"
+                    ).all()
+                    assert len(refusals) == 1
+                    event = refusals[0]
+                    assert event.aggregate_type == "activity"
+                    assert event.aggregate_id == str(case.request.activity_id)
+                    assert event.redacted_metadata["outcome"] == "denied"
+                    assert event.redacted_metadata["reason_code"] == "unauthorized"
+                    assert (
+                        await session.scalar(
+                            select(ModelRun).where(
+                                ModelRun.owner_id == case.owner,
+                                ModelRun.invocation_key == "refused-understated-scope",
+                            )
+                        )
+                    ) is None
+                finally:
+                    async with session.begin():
+                        await session.execute(
+                            update(Attempt)
+                            .where(
+                                Attempt.owner_id == case.owner,
+                                Attempt.id == case.request.attempt.id,
+                            )
+                            .values(attempt_kind=original)
+                        )
         finally:
             await engine.dispose()
 

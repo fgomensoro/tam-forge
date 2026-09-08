@@ -40,9 +40,26 @@ def most_restrictive(scopes: Iterable[SensitivityScope]) -> SensitivityScope:
     return max(scopes, key=_ORDER.index, default=SensitivityScope.RELEASABLE)
 
 
-def derive_submission_scope(artifact_classes: Iterable[str]) -> SensitivityScope:
-    """The submission is as sensitive as the most sensitive thing it cites."""
-    return most_restrictive(scope_of(item) for item in artifact_classes)
+def derive_submission_scope(
+    *, attempt_kind: str, cited_artifact_classes: Iterable[str] = ()
+) -> SensitivityScope:
+    """The sensitivity of what the submission sends, not of everything stored beside it.
+
+    The prepared text comes from the attempt's own committed output. Linked artifacts are
+    evidence kept alongside it and are not part of that text, so deriving from everything
+    linked would make any recorded session permanently unsendable: original_audio is
+    restricted, and a restricted scope cannot be declared at all.
+
+    A real interview carries a second person's words, so its text needs an approved
+    redaction and an explicit release before it goes anywhere.
+    """
+    scopes = [scope_of(item) for item in cited_artifact_classes]
+    scopes.append(
+        SensitivityScope.REDACTION_REQUIRED
+        if attempt_kind == "real_interview"
+        else SensitivityScope.RELEASABLE
+    )
+    return most_restrictive(scopes)
 
 
 def understates(declared: SubmissionClassification, derived: SensitivityScope) -> bool:

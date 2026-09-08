@@ -22,7 +22,7 @@ from ..auth.audit import (
     AuditReasonCode,
 )
 from ..auth.models import AuditEvent
-from ..learning.models import ActivityArtifactLink, ActivityInstance, Artifact, Attempt
+from ..learning.models import ActivityInstance, Attempt
 from .classification import derive_submission_scope, understates
 from .contracts import (
     ImmutableVersionConflict,
@@ -129,23 +129,7 @@ class ModelRunRepository:
                         raise InvalidProvenance()
                     if attempt.commitment_hash.hex() != request.attempt.content_hash:
                         raise InvalidProvenance()
-                    linked = (
-                        await self.session.scalars(
-                            select(Artifact.artifact_class)
-                            .join(
-                                ActivityArtifactLink,
-                                (ActivityArtifactLink.owner_id == Artifact.owner_id)
-                                & (ActivityArtifactLink.artifact_id == Artifact.id),
-                            )
-                            .where(
-                                ActivityArtifactLink.owner_id == request.owner_id,
-                                ActivityArtifactLink.activity_instance_id
-                                == request.activity_id,
-                                ActivityArtifactLink.attempt_id == request.attempt.id,
-                            )
-                        )
-                    ).all()
-                    derived = derive_submission_scope(linked)
+                    derived = derive_submission_scope(attempt_kind=attempt.attempt_kind)
                     if understates(request.classification, derived):
                         refusal = request
                         raise InvalidProvenance()
