@@ -15,7 +15,9 @@ MANIFEST="config/speech-models.yaml"
 if python3 -c 'import yaml' >/dev/null 2>&1; then
   PY=(python3)
 else
-  PY=(uv run python)
+  # Ephemeral environment with only PyYAML: never sync the whole project
+  # just to read three pins.
+  PY=(uv run --no-project --with pyyaml python)
 fi
 
 pin() {
