@@ -26,6 +26,7 @@
 		F30000000000000000000018 /* RecordingUploadModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000108 /* RecordingUploadModels.swift */; };
 		F30000000000000000000019 /* RecordingUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000109 /* RecordingUploader.swift */; };
 		F30000000000000000000021 /* RecordingFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000121 /* RecordingFeatureTests.swift */; };
+		F60000000000000000000003 /* AudioQualityObservationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000001002 /* AudioQualityObservationsTests.swift */; };
 		F30000000000000000000022 /* RecordingUploadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000122 /* RecordingUploadTests.swift */; };
 		F40000000000000000000001 /* NativeParityFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40000000000000000000011 /* NativeParityFixtureTests.swift */; };
 		F40000000000000000000002 /* foundation-journey-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = F40000000000000000000012 /* foundation-journey-v1.json */; };
@@ -144,6 +145,7 @@
 		F30000000000000000000108 /* RecordingUploadModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingUploadModels.swift; sourceTree = "<group>"; };
 		F30000000000000000000109 /* RecordingUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingUploader.swift; sourceTree = "<group>"; };
 		F30000000000000000000121 /* RecordingFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingFeatureTests.swift; sourceTree = "<group>"; };
+		F60000000000000000001002 /* AudioQualityObservationsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioQualityObservationsTests.swift; sourceTree = "<group>"; };
 		F30000000000000000000122 /* RecordingUploadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingUploadTests.swift; sourceTree = "<group>"; };
 		F40000000000000000000011 /* NativeParityFixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeParityFixtureTests.swift; sourceTree = "<group>"; };
 		F40000000000000000000012 /* foundation-journey-v1.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../../tests/fixtures/native-parity/foundation-journey-v1.json"; sourceTree = SOURCE_ROOT; };
@@ -270,6 +272,7 @@
 			children = (
 				F30000000000000000000121 /* RecordingFeatureTests.swift */,
 				F30000000000000000000122 /* RecordingUploadTests.swift */,
+				F60000000000000000001002 /* AudioQualityObservationsTests.swift */,
 				F40000000000000000000011 /* NativeParityFixtureTests.swift */,
 				E30000000000000000000071 /* NativeEvidenceAdapterTests.swift */,
 				E30000000000000000000072 /* EvidenceLedgerTests.swift */,
@@ -662,6 +665,7 @@
 				F30000000000000000000019 /* RecordingUploader.swift in Sources */,
 				F30000000000000000000021 /* RecordingFeatureTests.swift in Sources */,
 				F30000000000000000000022 /* RecordingUploadTests.swift in Sources */,
+				F60000000000000000000003 /* AudioQualityObservationsTests.swift in Sources */,
 				F40000000000000000000001 /* NativeParityFixtureTests.swift in Sources */,
 				E30000000000000000000021 /* EvidenceModels.swift in Sources */,
 				E30000000000000000000022 /* LiveEvidenceAPI.swift in Sources */,
