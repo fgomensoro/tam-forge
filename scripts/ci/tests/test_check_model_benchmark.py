@@ -698,3 +698,15 @@ def test_cli_build_flag_aggregates_and_writes_a_report_that_then_validates(
     printed = json.loads(capsys.readouterr().out)
     assert printed["wrote"] == str(report_path)
     assert printed["chosen_model"] == written["chosen_model"]
+
+
+def test_derived_machine_profile_is_always_a_valid_token() -> None:
+    # CI hosts report architectures like x86_64, whose underscore the token
+    # pattern forbids; the derivation must stay valid on every machine.
+    import re
+
+    from scripts.ci.check_model_benchmark import MACHINE_PROFILE_PATTERN, _machine_profile
+
+    profile = _machine_profile()
+    assert re.fullmatch(MACHINE_PROFILE_PATTERN, profile), profile
+    assert "_" not in profile

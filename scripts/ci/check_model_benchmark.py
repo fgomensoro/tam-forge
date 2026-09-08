@@ -582,7 +582,12 @@ def _machine_profile() -> str:
     macos_version = platform.mac_ver()[0] or "0.0"
     version_token = "-".join(macos_version.split(".")[:2])
     memory_gib = round(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / (1024**3))
-    return f"{machine}-macos-{version_token}-{memory_gib}gib"
+    raw = f"{machine}-macos-{version_token}-{memory_gib}gib"
+    # Hosts spell architectures with characters the token forbids (x86_64),
+    # so fold everything that is not a lowercase letter or digit into the
+    # separator and keep the token well formed on any machine.
+    token = re.sub(r"[^a-z0-9]+", "-", raw).strip("-")
+    return token or "unknown"
 
 
 # --- CLI -----------------------------------------------------------------
