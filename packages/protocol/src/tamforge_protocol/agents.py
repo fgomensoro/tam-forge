@@ -232,3 +232,55 @@ class TAMAnalysisV1(_Analysis):
     def prepared_text_judgments(self) -> Self:
         self.validate_text_support(self.dimensions, english=False)
         return self
+
+
+WithheldReason = Literal[
+    "self_review_pending",
+    "evidence_unavailable",
+    "evidence_out_of_manifest",
+    "version_mismatch",
+    "forbidden_source",
+]
+
+
+class PinnedRecord(_StrictModel):
+    """One immutable provenance row identified by id and content hash."""
+
+    id: PositiveId
+    content_hash: Hash
+
+
+class AnalysisVersions(_StrictModel):
+    model_run: PinnedRecord
+    prompt: PinnedRecord
+    output_schema: PinnedRecord
+    rubric_binding: PinnedRecord
+
+
+class FeedbackRead(_StrictModel):
+    """Analysis is unconstructible outside `ready`, so withholding cannot be bypassed."""
+
+    status: Literal["processing", "needs_attention", "ready"]
+    activity_id: PositiveId
+    attempt_id: PositiveId
+    versions: AnalysisVersions | None = None
+    english: EnglishAnalysisV1 | None = None
+    tam: TAMAnalysisV1 | None = None
+    withheld_reason: WithheldReason | None = None
+
+    @model_validator(mode="after")
+    def release_gate(self) -> Self:
+        if self.status != "ready":
+            if self.english is not None or self.tam is not None or self.versions is not None:
+                raise ValueError("withheld feedback must not carry analysis or versions")
+            if (self.status == "needs_attention") != (self.withheld_reason is not None):
+                raise ValueError("only needs_attention carries a withholding reason")
+            return self
+        if self.english is None or self.tam is None or self.versions is None:
+            raise ValueError("ready feedback requires both analyses and their versions")
+        if self.withheld_reason is not None:
+            raise ValueError("ready feedback cannot carry a withholding reason")
+        for analysis in (self.english, self.tam):
+            if (analysis.activity_id, analysis.attempt_id) != (self.activity_id, self.attempt_id):
+                raise ValueError("released analysis must identify the read attempt")
+        return self
