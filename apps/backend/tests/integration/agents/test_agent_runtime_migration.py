@@ -18,14 +18,18 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 from tamforge_backend.agents.contracts import (
+    ConsentBasis,
     ContextInput,
     ImmutableVersionConflict,
     InvalidProvenance,
     Lifecycle,
     PinnedVersion,
     ProvenanceNotFound,
+    RedactionDecision,
     RunRequest,
+    SensitivityScope,
     StateConflict,
+    SubmissionClassification,
     ToolAudit,
 )
 from tamforge_backend.agents.hashing import canonical_bytes
@@ -227,6 +231,11 @@ def case(test_database_url):
                                 ),
                                 prepared_input_hash=sha256("é🙂".encode()).hexdigest(),
                             ),
+                        ),
+                        classification=SubmissionClassification(
+                            scope=SensitivityScope.RELEASABLE,
+                            redaction=RedactionDecision.NOT_REQUIRED,
+                            consent=ConsentBasis.LEARNER_SUBMISSION,
                         ),
                     )
             finally:
