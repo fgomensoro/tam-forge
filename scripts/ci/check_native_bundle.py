@@ -193,7 +193,7 @@ def _is_standalone_library_reference(library: str) -> bool:
         library.startswith("/System/Library/Frameworks/")
         or library.startswith("/usr/lib/")
         or library == "@rpath/libswiftCompatibilitySpan.dylib"
-        or library == "@rpath/whisper.framework/Versions/A/whisper"
+        or library == "@rpath/whisper.framework/Versions/Current/whisper"
     )
 
 

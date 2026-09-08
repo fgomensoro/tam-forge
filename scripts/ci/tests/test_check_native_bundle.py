@@ -439,7 +439,7 @@ def test_whisper_framework_linked_library_reference_is_allowed(tmp_path: Path) -
     app = _app(tmp_path)
 
     violations = bundle_violations(
-        app, linked_libraries="@rpath/whisper.framework/Versions/A/whisper"
+        app, linked_libraries="@rpath/whisper.framework/Versions/Current/whisper"
     )
 
     assert violations == ()
@@ -464,3 +464,16 @@ def test_symlink_to_allowed_binary_is_not_counted_as_extra_payload(tmp_path: Pat
     alias.symlink_to("../MacOS/TAMForge")
 
     assert bundle_violations(app) == ()
+
+
+def test_only_the_real_whisper_install_name_is_accepted(tmp_path: Path) -> None:
+    # The framework records @rpath/whisper.framework/Versions/Current/whisper;
+    # no other spelling of the same payload may pass.
+    app = _app(tmp_path)
+    for rejected in (
+        "@rpath/whisper.framework/Versions/A/whisper",
+        "@rpath/whisper.framework/Versions/B/whisper",
+        "@rpath/whisper.framework/whisper",
+    ):
+        violations = bundle_violations(app, linked_libraries=rejected)
+        assert any("non-standalone linked library" in item for item in violations), rejected
