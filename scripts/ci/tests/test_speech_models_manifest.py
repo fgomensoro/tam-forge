@@ -71,3 +71,18 @@ def test_installed_artifacts_match_their_pins_when_present(tmp_path: Path) -> No
         assert installed.stat().st_size == entry["bytes"]
         digest = hashlib.sha256(installed.read_bytes()).hexdigest()
         assert digest == entry["sha256"]
+
+
+def test_transcription_model_sha256_constant_matches_the_manifest() -> None:
+    # SpeechModelCatalog.transcriptionModelSHA256 (issue #42 Task 3) is recorded
+    # by hand rather than hashed at runtime; this pins it against the manifest
+    # so the two can never silently drift apart.
+    catalog_source = Path(
+        "apps/macos/TAMForge/Features/Speech/SpeechModelCatalog.swift"
+    ).read_text(encoding="utf-8")
+    match = re.search(
+        r'static let transcriptionModelSHA256 = "([0-9a-f]{64})"', catalog_source
+    )
+    assert match, "transcriptionModelSHA256 constant not found in SpeechModelCatalog.swift"
+    artifacts = manifest()["artifacts"]
+    assert match.group(1) == artifacts["transcription_model"]["sha256"]

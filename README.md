@@ -91,7 +91,9 @@ XCFramework into `apps/macos/Vendor` (gitignored), and `make whisper-models`
 installs `ggml-base.en-q5_1.bin` and `ggml-silero-v5.1.2.bin` into
 `~/Library/Application Support/TAM Forge/Models`. Every pin (URL, byte size,
 SHA-256, license) lives in `config/speech-models.yaml`; nothing downloads at app
-runtime.
+runtime. `WhisperRuntimeSmokeTests` (apps/macos/TAMForgeTests) exercises the real
+model end-to-end but skips itself with `XCTSkip` when the model is not installed,
+so CI stays green without ever fetching it.
 
 ## Production object-storage gates
 
