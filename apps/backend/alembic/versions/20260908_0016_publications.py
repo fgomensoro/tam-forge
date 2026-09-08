@@ -2,7 +2,7 @@
 
 from alembic import op
 
-revision = "20260908_0016_analysis_publications"
+revision = "20260908_0016_publications"
 down_revision = "20260905_0015_model_provenance"
 branch_labels = None
 depends_on = None

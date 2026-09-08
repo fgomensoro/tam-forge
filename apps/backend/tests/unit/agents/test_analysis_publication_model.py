@@ -37,7 +37,7 @@ def test_migration_creates_the_table_and_its_immutability_trigger():
 
     root = Path(__file__).resolve().parents[5]
     source = (
-        root / "apps/backend/alembic/versions/20260908_0016_analysis_publications.py"
+        root / "apps/backend/alembic/versions/20260908_0016_publications.py"
     ).read_text()
     assert "CREATE TABLE analysis_publications" in source
     assert "trg_analysis_publications_immutable" in source
