@@ -37,6 +37,11 @@ task-specific cache, pass
 `MACOS_BUILD_ARGUMENTS='-jobs 2 -derivedDataPath /tmp/tamforge-native-batch-01'`
 to `make macos-check` or `make check`; do not run native builds concurrently.
 
+To build the installable Release app and DMG signed with that identity, run
+`make macos-release-dmg`; it refuses to run without the identity in the login
+keychain and verifies the bundle with `scripts/ci/check_native_bundle.py
+--require-identity`. CI keeps the ad-hoc path and never sees the identity.
+
 When Xcode is available, `make check` includes the same non-Docker native check.
 The GitHub Actions macOS job tests the unsigned CI build path separately.
 
