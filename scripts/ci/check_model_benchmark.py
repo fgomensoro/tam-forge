@@ -11,17 +11,26 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import platform
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Annotated, Literal
 
+import yaml
 from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr
 from pydantic import ValidationError as PydanticValidationError
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 READING_SCRIPT_PATH = REPOSITORY_ROOT / "docs/project/voice-benchmark-script-v1.md"
 READING_SCRIPT_VERSION = "voice-benchmark-script-v1"
+SPEECH_MODELS_MANIFEST_PATH = REPOSITORY_ROOT / "config/speech-models.yaml"
+# Where scripts/dev/benchmark_whisper_models.sh writes each model's per-passage
+# JSON (scripts/dev/benchmark_whisper_models.swift), one subdirectory per
+# MODEL_KEYS entry. Gitignored, holds transcript text; --build aggregates it
+# into the committed, aggregate-only report.
+BENCHMARK_RESULTS_DIR = REPOSITORY_ROOT / "apps/macos/PrivateAudio/benchmark"
 
 MODEL_KEYS = ("base", "candidate")
 
@@ -419,6 +428,163 @@ def validate_report(payload: object) -> ModelBenchmarkSummary:
     )
 
 
+# --- build_report_from_runs: aggregate the runner's per-file JSON --------
+
+# Matches "## Passage 1 - steady technical explanation" and captures the
+# number so a result file "passage-1.json" (scripts/dev/prepare_benchmark_audio.sh
+# names canonical audio after the source recording, e.g. "passage-1.m4a")
+# finds the text it was actually read from.
+_PASSAGE_HEADING = re.compile(r"^## Passage (\d+)\b.*$", re.MULTILINE)
+# Stage directions such as "[Pause for three seconds.]" tell the reader what
+# to do; they are never spoken, so they must not count as reference words.
+_STAGE_DIRECTION = re.compile(r"\[[^\]]*\]")
+
+_PER_FILE_RESULT_KEYS = (
+    "transcript",
+    "audio_seconds",
+    "transcription_seconds",
+    "peak_resident_bytes",
+    "model_filename",
+    "model_sha256",
+)
+
+
+def _reference_passages() -> dict[str, str]:
+    """Split the reading script into its numbered passages, keyed like the
+    canonical audio files it is recorded as ("passage-1", ...), with
+    bracketed stage directions removed."""
+    text = READING_SCRIPT_PATH.read_text(encoding="utf-8")
+    headings = list(_PASSAGE_HEADING.finditer(text))
+    passages: dict[str, str] = {}
+    for index, match in enumerate(headings):
+        start = match.end()
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        body = _STAGE_DIRECTION.sub(" ", text[start:end])
+        passages[f"passage-{match.group(1)}"] = body.strip()
+    return passages
+
+
+def _load_passage_result(path: Path) -> dict[str, object]:
+    payload = _load_json(path)
+    if not isinstance(payload, dict):
+        raise ModelBenchmarkError(f"{path}: benchmark result must be a JSON object")
+    missing = [key for key in _PER_FILE_RESULT_KEYS if key not in payload]
+    if missing:
+        raise ModelBenchmarkError(f"{path}: missing {missing}")
+    return payload
+
+
+def _aggregate_model_results(
+    directory: Path, model_key: str
+) -> tuple[dict[str, object], frozenset[str]]:
+    """Score and sum every passage result in `directory` into one model
+    entry for build_report, and return which passages it covered."""
+    paths = sorted(directory.glob("*.json"))
+    if not paths:
+        raise ModelBenchmarkError(f"no benchmark results found in {directory}")
+
+    reference_passages = _reference_passages()
+    expected_pin = _EXPECTED_MODEL_PINS[model_key]
+
+    total_reference_words = 0
+    substitutions = deletions = insertions = 0
+    critical_terms_expected = critical_terms_found = 0
+    audio_seconds = transcription_seconds = 0.0
+    peak_resident_bytes = 0
+    passages: set[str] = set()
+
+    for path in paths:
+        passage = path.stem
+        reference_text = reference_passages.get(passage)
+        if reference_text is None:
+            raise ModelBenchmarkError(f"{path}: no reference text for passage '{passage}'")
+
+        result = _load_passage_result(path)
+        pin = (result["model_filename"], result["model_sha256"])
+        if pin != (expected_pin["filename"], expected_pin["sha256"]):
+            raise ModelBenchmarkError(f"{path}: model pin does not match the {model_key} artifact")
+
+        scored = score_run(reference_text, str(result["transcript"]))
+        total_reference_words += len(normalise(reference_text))
+        substitutions += int(scored["substitutions"])
+        deletions += int(scored["deletions"])
+        insertions += int(scored["insertions"])
+        critical_terms_expected += int(scored["critical_terms_expected"])
+        critical_terms_found += int(scored["critical_terms_found"])
+        audio_seconds += float(result["audio_seconds"])
+        transcription_seconds += float(result["transcription_seconds"])
+        peak_resident_bytes = max(peak_resident_bytes, int(result["peak_resident_bytes"]))
+        passages.add(passage)
+
+    if total_reference_words == 0:
+        raise ModelBenchmarkError(f"{directory}: reference text is empty")
+
+    model_result = {
+        "filename": expected_pin["filename"],
+        "sha256": expected_pin["sha256"],
+        "bytes": expected_pin["bytes"],
+        "word_error_rate": (substitutions + deletions + insertions) / total_reference_words,
+        "substitutions": substitutions,
+        "deletions": deletions,
+        "insertions": insertions,
+        "critical_term_recall": (
+            1.0 if critical_terms_expected == 0 else critical_terms_found / critical_terms_expected
+        ),
+        "critical_terms_expected": critical_terms_expected,
+        "critical_terms_found": critical_terms_found,
+        "audio_seconds": audio_seconds,
+        "transcription_seconds": transcription_seconds,
+        "peak_resident_bytes": peak_resident_bytes,
+    }
+    return model_result, frozenset(passages)
+
+
+def build_report_from_runs(
+    results_dir: Path, *, script_version: str, runtime_version: str, machine_profile: str
+) -> dict[str, object]:
+    """Aggregate scripts/dev/benchmark_whisper_models.sh's per-passage JSON
+    (results_dir/base/*.json, results_dir/candidate/*.json) into the
+    committed report shape via build_report: sum audio seconds,
+    transcription seconds, edit counts, and critical-term counts across
+    passages; take the maximum peak resident bytes.
+    """
+    models: dict[str, dict[str, object]] = {}
+    passage_sets: dict[str, frozenset[str]] = {}
+    for key in MODEL_KEYS:
+        model_dir = results_dir / key
+        if not model_dir.is_dir():
+            raise ModelBenchmarkError(f"missing benchmark results directory: {model_dir}")
+        models[key], passage_sets[key] = _aggregate_model_results(model_dir, key)
+
+    if passage_sets["base"] != passage_sets["candidate"]:
+        raise ModelBenchmarkError("base and candidate results do not cover the same passages")
+
+    return build_report(
+        script_version=script_version,
+        runtime_version=runtime_version,
+        machine_profile=machine_profile,
+        passages=len(passage_sets["base"]),
+        models=models,
+    )
+
+
+def _runtime_version() -> str:
+    """The whisper.cpp release pin, read from the manifest so it is never
+    duplicated (config/speech-models.yaml is the single source of truth)."""
+    manifest = yaml.safe_load(SPEECH_MODELS_MANIFEST_PATH.read_text(encoding="utf-8"))
+    return str(manifest["artifacts"]["whisper_framework"]["version"])
+
+
+def _machine_profile() -> str:
+    """A machine_profile token derived only from hardware/OS facts (never a
+    hostname, which could carry the owner's name into a committed report)."""
+    machine = platform.machine().lower() or "unknown"
+    macos_version = platform.mac_ver()[0] or "0.0"
+    version_token = "-".join(macos_version.split(".")[:2])
+    memory_gib = round(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / (1024**3))
+    return f"{machine}-macos-{version_token}-{memory_gib}gib"
+
+
 # --- CLI -----------------------------------------------------------------
 
 
@@ -432,8 +598,31 @@ def _load_json(path: Path) -> object:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("report", type=Path)
+    parser.add_argument(
+        "--build",
+        action="store_true",
+        help=(
+            "aggregate apps/macos/PrivateAudio/benchmark/{base,candidate}/*.json "
+            "into REPORT instead of validating an existing REPORT"
+        ),
+    )
     args = parser.parse_args()
     try:
+        if args.build:
+            report = build_report_from_runs(
+                BENCHMARK_RESULTS_DIR,
+                script_version=READING_SCRIPT_VERSION,
+                runtime_version=_runtime_version(),
+                machine_profile=_machine_profile(),
+            )
+            validate_report(report)  # never write a report that would fail its own gate
+            args.report.parent.mkdir(parents=True, exist_ok=True)
+            args.report.write_text(
+                json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+            summary = {"wrote": str(args.report), "chosen_model": report["chosen_model"]}
+            print(json.dumps(summary, sort_keys=True))
+            return
         summary = validate_report(_load_json(args.report))
     except ModelBenchmarkError as exc:
         parser.error(str(exc))

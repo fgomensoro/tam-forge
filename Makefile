@@ -1,4 +1,4 @@
-.PHONY: install test check check-openapi check-policy integration e2e macos-check macos-release-dmg whisper-framework whisper-models
+.PHONY: install test check check-openapi check-policy integration e2e macos-check macos-release-dmg whisper-framework whisper-models whisper-benchmark
 
 # Keep local verification comfortable on the 8 GB development Mac. Callers can
 # also supply -derivedDataPath here to reuse an existing task-specific cache.
@@ -52,3 +52,9 @@ whisper-framework:
 
 whisper-models:
 	scripts/dev/fetch_whisper_models.sh
+
+# Benchmarks base.en against small.en on audio prepared by
+# scripts/dev/prepare_benchmark_audio.sh; see
+# docs/project/voice-benchmark-script-v1.md.
+whisper-benchmark:
+	scripts/dev/benchmark_whisper_models.sh

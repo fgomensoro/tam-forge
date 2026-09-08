@@ -9,11 +9,13 @@ from pathlib import Path
 
 import pytest
 
+from scripts.ci import check_model_benchmark
 from scripts.ci.check_model_benchmark import (
     CRITICAL_TERMS,
     WORD_ERROR_RATE_MARGIN,
     ModelBenchmarkError,
     build_report,
+    build_report_from_runs,
     critical_term_recall,
     decide,
     normalise,
@@ -21,6 +23,7 @@ from scripts.ci.check_model_benchmark import (
     validate_report,
     word_error_rate,
 )
+from scripts.ci.check_model_benchmark import _reference_passages as _read_reference_passages
 
 BASE_FILENAME = "ggml-base.en-q5_1.bin"
 BASE_SHA256 = "4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f"
@@ -28,6 +31,13 @@ BASE_BYTES = 59721011
 CANDIDATE_FILENAME = "ggml-small.en-q5_1.bin"
 CANDIDATE_SHA256 = "bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30"
 CANDIDATE_BYTES = 190098681
+
+# Read straight from the reading script (via the module's own parser) rather
+# than retyped here, so a fixture can never silently drift from the real
+# text the runner would actually score against.
+_REFERENCE_PASSAGES = _read_reference_passages()
+PASSAGE_1_TEXT = _REFERENCE_PASSAGES["passage-1"]
+PASSAGE_2_TEXT = _REFERENCE_PASSAGES["passage-2"]
 
 
 # --- normalise ---------------------------------------------------------------
@@ -459,3 +469,232 @@ def test_cli_rejects_an_invalid_report_without_a_traceback(tmp_path: Path) -> No
 
     assert completed.returncode == 2
     assert "Traceback" not in completed.stderr
+
+
+# --- build_report_from_runs: aggregating the runner's per-file JSON --------
+#
+# Never real audio: every fixture here is a hand-built JSON file the Swift
+# runner's output shape describes, written under tmp_path.
+
+
+def _passage_payload(**overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "transcript": PASSAGE_1_TEXT,
+        "audio_seconds": 30.0,
+        "transcription_seconds": 2.0,
+        "peak_resident_bytes": 200_000_000,
+        "model_filename": BASE_FILENAME,
+        "model_sha256": BASE_SHA256,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _write_passage(directory: Path, stem: str, **overrides: object) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{stem}.json").write_text(
+        json.dumps(_passage_payload(**overrides)), encoding="utf-8"
+    )
+
+
+def _write_base_passage(results_dir: Path, stem: str, **overrides: object) -> None:
+    overrides.setdefault("model_filename", BASE_FILENAME)
+    overrides.setdefault("model_sha256", BASE_SHA256)
+    _write_passage(results_dir / "base", stem, **overrides)
+
+
+def _write_candidate_passage(results_dir: Path, stem: str, **overrides: object) -> None:
+    overrides.setdefault("model_filename", CANDIDATE_FILENAME)
+    overrides.setdefault("model_sha256", CANDIDATE_SHA256)
+    _write_passage(results_dir / "candidate", stem, **overrides)
+
+
+def test_build_report_from_runs_sums_and_takes_the_maximum_across_passages(
+    tmp_path: Path,
+) -> None:
+    # base's passage-2 drops exactly one word ("fourteen" from "under
+    # fourteen months") - a single deletion, no critical term touched -
+    # while its passage-1 and candidate's both passages match verbatim.
+    base_passage_2 = PASSAGE_2_TEXT.replace("under fourteen months", "under months")
+    assert base_passage_2 != PASSAGE_2_TEXT  # the substitution actually landed
+
+    _write_base_passage(
+        tmp_path, "passage-1",
+        transcript=PASSAGE_1_TEXT, audio_seconds=30.0,
+        transcription_seconds=2.0, peak_resident_bytes=200_000_000,
+    )
+    _write_base_passage(
+        tmp_path, "passage-2",
+        transcript=base_passage_2, audio_seconds=25.0,
+        transcription_seconds=1.5, peak_resident_bytes=210_000_000,
+    )
+    _write_candidate_passage(
+        tmp_path, "passage-1",
+        transcript=PASSAGE_1_TEXT, audio_seconds=30.0,
+        transcription_seconds=3.0, peak_resident_bytes=500_000_000,
+    )
+    _write_candidate_passage(
+        tmp_path, "passage-2",
+        transcript=PASSAGE_2_TEXT, audio_seconds=25.0,
+        transcription_seconds=2.8, peak_resident_bytes=480_000_000,
+    )
+
+    report = build_report_from_runs(
+        tmp_path,
+        script_version="voice-benchmark-script-v1",
+        runtime_version="b4938",
+        machine_profile="macbook-air-apple-m5-24gb",
+    )
+
+    assert report["passages"] == 2
+    base = report["models"]["base"]
+    candidate = report["models"]["candidate"]
+
+    total_reference_words = len(normalise(PASSAGE_1_TEXT)) + len(normalise(PASSAGE_2_TEXT))
+    assert base["substitutions"] == 0
+    assert base["deletions"] == 1
+    assert base["insertions"] == 0
+    assert base["word_error_rate"] == pytest.approx(1 / total_reference_words)
+    assert base["audio_seconds"] == pytest.approx(55.0)
+    assert base["transcription_seconds"] == pytest.approx(3.5)
+    assert base["peak_resident_bytes"] == 210_000_000  # max(200_000_000, 210_000_000)
+    assert base["critical_term_recall"] == 1.0  # the dropped word is not a critical term
+
+    assert candidate["substitutions"] == 0
+    assert candidate["deletions"] == 0
+    assert candidate["insertions"] == 0
+    assert candidate["word_error_rate"] == 0.0
+    assert candidate["audio_seconds"] == pytest.approx(55.0)
+    assert candidate["transcription_seconds"] == pytest.approx(5.8)
+    assert candidate["peak_resident_bytes"] == 500_000_000  # max(500_000_000, 480_000_000)
+    assert candidate["critical_term_recall"] == 1.0
+
+    # A single dropped filler word is well inside measurement noise, so the
+    # existing decision rule keeps base - proves the aggregate wires cleanly
+    # into build_report/decide, not just into raw sums.
+    assert report["chosen_model"] == "base"
+    summary = validate_report(report)
+    assert summary.passages == 2
+
+
+def test_build_report_from_runs_rejects_a_result_missing_a_required_key(
+    tmp_path: Path,
+) -> None:
+    _write_candidate_passage(tmp_path, "passage-1")
+    directory = tmp_path / "base"
+    directory.mkdir(parents=True)
+    incomplete = _passage_payload()
+    del incomplete["peak_resident_bytes"]
+    (directory / "passage-1.json").write_text(json.dumps(incomplete), encoding="utf-8")
+
+    with pytest.raises(ModelBenchmarkError, match="peak_resident_bytes"):
+        build_report_from_runs(
+            tmp_path,
+            script_version="voice-benchmark-script-v1",
+            runtime_version="b4938",
+            machine_profile="macbook-air-apple-m5-24gb",
+        )
+
+
+def test_build_report_from_runs_rejects_a_model_pin_that_does_not_match_its_directory(
+    tmp_path: Path,
+) -> None:
+    _write_candidate_passage(tmp_path, "passage-1")
+    # A passage lands in "base/" but actually carries the candidate's pin -
+    # the kind of mistake a mixed-up output directory would produce.
+    _write_passage(
+        tmp_path / "base", "passage-1",
+        model_filename=CANDIDATE_FILENAME, model_sha256=CANDIDATE_SHA256,
+    )
+
+    with pytest.raises(ModelBenchmarkError, match="pin"):
+        build_report_from_runs(
+            tmp_path,
+            script_version="voice-benchmark-script-v1",
+            runtime_version="b4938",
+            machine_profile="macbook-air-apple-m5-24gb",
+        )
+
+
+def test_build_report_from_runs_rejects_a_passage_with_no_reference_text(
+    tmp_path: Path,
+) -> None:
+    _write_candidate_passage(tmp_path, "passage-99")
+    _write_base_passage(tmp_path, "passage-99")
+
+    with pytest.raises(ModelBenchmarkError, match="passage-99"):
+        build_report_from_runs(
+            tmp_path,
+            script_version="voice-benchmark-script-v1",
+            runtime_version="b4938",
+            machine_profile="macbook-air-apple-m5-24gb",
+        )
+
+
+def test_build_report_from_runs_rejects_passages_that_differ_between_models(
+    tmp_path: Path,
+) -> None:
+    _write_base_passage(tmp_path, "passage-1")
+    _write_base_passage(tmp_path, "passage-2")
+    _write_candidate_passage(tmp_path, "passage-1")
+
+    with pytest.raises(ModelBenchmarkError, match="same passages"):
+        build_report_from_runs(
+            tmp_path,
+            script_version="voice-benchmark-script-v1",
+            runtime_version="b4938",
+            machine_profile="macbook-air-apple-m5-24gb",
+        )
+
+
+def test_build_report_from_runs_rejects_a_missing_model_directory(tmp_path: Path) -> None:
+    _write_base_passage(tmp_path, "passage-1")
+    # No "candidate" directory at all.
+
+    with pytest.raises(ModelBenchmarkError, match="candidate"):
+        build_report_from_runs(
+            tmp_path,
+            script_version="voice-benchmark-script-v1",
+            runtime_version="b4938",
+            machine_profile="macbook-air-apple-m5-24gb",
+        )
+
+
+def test_build_report_from_runs_rejects_an_empty_model_directory(tmp_path: Path) -> None:
+    _write_base_passage(tmp_path, "passage-1")
+    (tmp_path / "candidate").mkdir(parents=True)  # present but empty
+
+    with pytest.raises(ModelBenchmarkError, match="no benchmark results"):
+        build_report_from_runs(
+            tmp_path,
+            script_version="voice-benchmark-script-v1",
+            runtime_version="b4938",
+            machine_profile="macbook-air-apple-m5-24gb",
+        )
+
+
+# --- CLI: --build ------------------------------------------------------------
+
+
+def test_cli_build_flag_aggregates_and_writes_a_report_that_then_validates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    results_dir = tmp_path / "results"
+    _write_base_passage(results_dir, "passage-1", transcript=PASSAGE_1_TEXT)
+    _write_candidate_passage(
+        results_dir, "passage-1", transcript=PASSAGE_1_TEXT, peak_resident_bytes=400_000_000
+    )
+    report_path = tmp_path / "out" / "model-benchmark-v1.json"  # parent must be created for us
+
+    monkeypatch.setattr(check_model_benchmark, "BENCHMARK_RESULTS_DIR", results_dir)
+    monkeypatch.setattr(sys, "argv", ["check_model_benchmark.py", "--build", str(report_path)])
+
+    check_model_benchmark.main()
+
+    written = json.loads(report_path.read_text(encoding="utf-8"))
+    summary = validate_report(written)
+    assert summary.passages == 1
+
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["wrote"] == str(report_path)
+    assert printed["chosen_model"] == written["chosen_model"]
