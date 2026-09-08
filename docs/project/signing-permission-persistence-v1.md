@@ -19,9 +19,9 @@ The privacy grant is keyed to the designated requirement, so any build signed wi
 |---|---|---|
 | First signed build, first Start (04:09Z) | `50d5ed7455fc30371da570b6cbf9c13e963ac03a` | Microphone already authorized; Screen Recording blocked until the owner granted it once in System Settings for the signed app |
 | Same build after the grant (04:20Z) | `50d5ed7455fc30371da570b6cbf9c13e963ac03a` | Recording started, both tracks, sealed |
-| Rebuilt with a different build number (04:21Z) | `9d15ed3720c4d47379f3fe29cedb8ffb08a5cc9f` | Recording started and sealed with **no new prompt and no System Settings change** |
+| Rebuilt with a different build number (04:21Z) | `9d15ed3720c4d47379f3fe29cedb8ffb08a5cc9f` | Recording started and sealed with no System Settings change. macOS showed its screen-recording re-consent dialog for the new binary and the owner confirmed it; no microphone prompt |
 
-Observation: a stale Screen Recording entry left by the earlier ad-hoc copy had to be removed (`−`) and the signed app added (`+`) once; ad-hoc builds cannot share a grant because their designated requirement changes on every build.
+Observation: macOS 15 and later show a screen-recording re-consent dialog for a new binary of an already-permitted app (and periodically); the underlying grant persists and the recording proceeds once the owner confirms. A stale Screen Recording entry left by the earlier ad-hoc copy had to be removed (`−`) and the signed app added (`+`) once; ad-hoc builds cannot share a grant because their designated requirement changes on every build.
 
 ## Not covered here
 
