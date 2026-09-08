@@ -37,6 +37,7 @@ Chunks out of order, overlapping, or in a non-canonical format throw `ASRDerivat
 - Block boundaries do not change output versus one-shot processing.
 - A fixed synthetic input produces a fixed SHA-256 (byte stability).
 - Quality thresholds flip availability flags; source chunks are never mutated.
+- The v1 derivative hash of the 300 Hz fixture is pinned in `ASRAudioDerivationTests.pinnedHash300Hz`; any filter or rounding change must bump `ASRDerivationVersion.current` and re-pin.
 
 ## Verification
 
