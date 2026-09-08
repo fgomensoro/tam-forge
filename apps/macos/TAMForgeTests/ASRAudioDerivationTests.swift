@@ -77,7 +77,7 @@ final class ASRAudioDerivationTests: XCTestCase {
         let whole = try derive([chunk(track: .microphone, samples: tone, sampleStart: 0)], track: .microphone)
         var split: [RecordingPCMChunk] = []
         var start = 0
-        for size in [7, 4_800, 1, 12_345, 31_847] {
+        for size in [7, 4_800, 1, 12_345, 30_847] {
             split.append(chunk(track: .microphone, samples: Array(tone[start..<start + size]), sampleStart: Int64(start)))
             start += size
         }
@@ -101,7 +101,7 @@ final class ASRAudioDerivationTests: XCTestCase {
         XCTAssertEqual(lineage.derivedPCMSHA256, ASRAudioDerivationTests.pinnedHash300Hz, "update pinnedHash300Hz only together with ASRDerivationVersion")
     }
 
-    static let pinnedHash300Hz = "REPLACE-WITH-HASH-FROM-FIRST-GREEN-CI-RUN"
+    static let pinnedHash300Hz = "dfb1fe21c0d5db2720937a3196171d73a5d7f3f81c648ed074d8e575c08b53ac"
 
     func testOutOfOrderOrMismatchedChunksFailClosed() {
         let deriver = ASRAudioDeriver(recordingID: recordingID, track: .microphone)
