@@ -3,6 +3,9 @@
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 
+from .analysis.repository import FeedbackError
+from .analysis.routes import feedback_exception_handler
+from .analysis.routes import router as analysis_router
 from .auth.crypto import InvalidOAuthState
 from .auth.routes import auth_exception_handler, request_validation_exception_handler
 from .auth.routes import router as auth_router
@@ -37,6 +40,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(auth_router)
     app.include_router(activity_router)
     app.include_router(evidence_router)
+    app.include_router(analysis_router)
     app.include_router(notification_router)
     app.include_router(roadmap_router)
     app.include_router(recording_router)
@@ -47,6 +51,7 @@ def register_routes(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, request_validation_exception_handler)
     app.add_exception_handler(ActivityCommandError, activity_exception_handler)
     app.add_exception_handler(EvidenceError, evidence_exception_handler)
+    app.add_exception_handler(FeedbackError, feedback_exception_handler)
     app.add_exception_handler(NotificationError, notification_exception_handler)
     app.add_exception_handler(RoadmapWorkflowError, roadmap_exception_handler)
     app.add_exception_handler(RecordingError, recording_exception_handler)
