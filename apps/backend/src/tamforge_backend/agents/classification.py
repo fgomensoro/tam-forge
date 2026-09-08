@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from .contracts import SensitivityScope
+from .contracts import ConsentBasis as ConsentBasis
+from .contracts import RedactionDecision as RedactionDecision
+from .contracts import SensitivityScope, SubmissionClassification
 
 # Ordered least to most restrictive. Position is the comparison.
 _ORDER = (
@@ -36,3 +38,12 @@ def scope_of(artifact_class: str) -> SensitivityScope:
 
 def most_restrictive(scopes: Iterable[SensitivityScope]) -> SensitivityScope:
     return max(scopes, key=_ORDER.index, default=SensitivityScope.RELEASABLE)
+
+
+def derive_submission_scope(artifact_classes: Iterable[str]) -> SensitivityScope:
+    """The submission is as sensitive as the most sensitive thing it cites."""
+    return most_restrictive(scope_of(item) for item in artifact_classes)
+
+
+def understates(declared: SubmissionClassification, derived: SensitivityScope) -> bool:
+    return _ORDER.index(declared.scope) < _ORDER.index(derived)

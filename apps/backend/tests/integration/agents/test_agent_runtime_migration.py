@@ -44,11 +44,13 @@ from tamforge_backend.agents.models import (
     RubricVersionHash,
 )
 from tamforge_backend.agents.prompt_registry import PromptRegistry
+from tamforge_backend.auth.models import AuditEvent
 from tamforge_backend.database import database_url_to_sync
 from tamforge_backend.evidence.config_loader import load_config_bundle
 from tamforge_backend.evidence.models import RubricVersion
 from tamforge_backend.evidence.seed import seed_config
-from tamforge_backend.learning.models import Attempt
+from tamforge_backend.learning.artifacts import unencrypted_metadata
+from tamforge_backend.learning.models import ActivityArtifactLink, Artifact, Attempt
 from tamforge_backend.learning.service import ActivityService
 from tamforge_protocol.agents import AttemptTextReference
 
@@ -782,6 +784,71 @@ def test_rubric_binding_checks_legacy_config_bytes_and_rejects_forged_stored_has
                                 {"value": value},
                             )
                     assert caught.value.orig.sqlstate == "P0001"
+        finally:
+            await engine.dispose()
+
+    asyncio.run(exercise())
+
+
+def test_a_submission_that_understates_linked_artifact_sensitivity_is_refused(case):
+    """Must stay the last test in this module.
+
+    It permanently links a restricted artifact to `case`'s shared attempt
+    (`activity_artifact_links` is append-only, so nothing here can be undone). From
+    that point on, any registration of `case.request` unmodified would itself
+    understate the derived scope, so this cannot run before the tests above without
+    breaking them.
+    """
+
+    async def exercise():
+        engine, factory = case.factory()
+        try:
+            async with factory() as session:
+                async with session.begin():
+                    artifact = Artifact(
+                        owner_id=case.owner,
+                        object_key="artifacts/refusal-check/original.wav",
+                        content_hash=sha256(b"refusal-check-original-audio").digest(),
+                        content_type="audio/wav",
+                        original_filename="original.wav",
+                        byte_size=12345,
+                        artifact_class="original_audio",
+                        encryption_metadata=unencrypted_metadata(),
+                        derived_from_artifact_id=None,
+                        immutable_version=1,
+                    )
+                    session.add(artifact)
+                    await session.flush()
+                    session.add(
+                        ActivityArtifactLink(
+                            owner_id=case.owner,
+                            activity_instance_id=case.request.activity_id,
+                            attempt_id=case.request.attempt.id,
+                            artifact_id=artifact.id,
+                            link_role="presentation_audio",
+                        )
+                    )
+                repo = ModelRunRepository(session)
+                with pytest.raises(InvalidProvenance):
+                    await repo.register(
+                        case.request.model_copy(
+                            update={"invocation_key": "refused-understated-scope"}
+                        )
+                    )
+                refusals = (
+                    await session.scalars(
+                        select(AuditEvent).where(
+                            AuditEvent.owner_id == case.owner,
+                            AuditEvent.action == "model_run.refused",
+                        )
+                    )
+                ).all()
+                assert len(refusals) == 1
+                event = refusals[0]
+                assert event.aggregate_type == "activity"
+                assert event.aggregate_id == str(case.request.activity_id)
+                assert event.redacted_metadata["outcome"] == "denied"
+                assert event.redacted_metadata["reason_code"] == "unauthorized"
         finally:
             await engine.dispose()
 

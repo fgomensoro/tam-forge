@@ -127,3 +127,37 @@ def test_run_request_requires_a_classification():
     field = RunRequest.model_fields["classification"]
     assert field.is_required()
     assert field.annotation is SubmissionClassification
+
+
+def test_derived_scope_is_the_most_restrictive_cited_class():
+    from tamforge_backend.agents.classification import SensitivityScope, derive_submission_scope
+
+    assert derive_submission_scope([]) is SensitivityScope.RELEASABLE
+    assert derive_submission_scope(["written_output"]) is SensitivityScope.RELEASABLE
+    assert (
+        derive_submission_scope(["written_output", "transcript"])
+        is SensitivityScope.REDACTION_REQUIRED
+    )
+    assert (
+        derive_submission_scope(["written_output", "original_audio"])
+        is SensitivityScope.RESTRICTED
+    )
+
+
+def test_a_declared_scope_may_not_understate_the_derived_one():
+    from tamforge_backend.agents.classification import (
+        ConsentBasis,
+        RedactionDecision,
+        SensitivityScope,
+        SubmissionClassification,
+        understates,
+    )
+
+    declared = SubmissionClassification(
+        scope=SensitivityScope.RELEASABLE,
+        redaction=RedactionDecision.NOT_REQUIRED,
+        consent=ConsentBasis.LEARNER_SUBMISSION,
+    )
+    assert understates(declared, SensitivityScope.RELEASABLE) is False
+    assert understates(declared, SensitivityScope.REDACTION_REQUIRED) is True
+    assert understates(declared, SensitivityScope.RESTRICTED) is True

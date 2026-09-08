@@ -14,7 +14,16 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from tamforge_protocol.agents import AttemptTextReference
 
-from ..learning.models import ActivityInstance, Attempt
+from ..auth.audit import (
+    AuditCountKey,
+    AuditFlagKey,
+    AuditMetadataV1,
+    AuditOutcome,
+    AuditReasonCode,
+)
+from ..auth.models import AuditEvent
+from ..learning.models import ActivityArtifactLink, ActivityInstance, Artifact, Attempt
+from .classification import derive_submission_scope, understates
 from .contracts import (
     ImmutableVersionConflict,
     InvalidProvenance,
@@ -89,82 +98,141 @@ class ModelRunRepository:
         self.session = session
 
     async def register(self, request: RunRequest) -> ModelRun:
+        # Set only when the classification gate below refuses the submission. A refusal
+        # must still leave an audit trail, but `raise InvalidProvenance()` inside the
+        # `session.begin()` block rolls back everything flushed there, the audit row
+        # included -- so that write happens afterward, in the `finally`, in a transaction
+        # of its own that the refusal can no longer touch.
+        refusal: RunRequest | None = None
         try:
             # Revalidate to catch model_construct/model_copy bypasses at this boundary.
             request = RunRequest.model_validate(request.model_dump())
-            async with self.session.begin():
-                await lock_owner(self.session, request.owner_id)
-                activity = await self.session.scalar(
-                    select(ActivityInstance.id)
-                    .where(
-                        ActivityInstance.owner_id == request.owner_id,
-                        ActivityInstance.id == request.activity_id,
+            try:
+                async with self.session.begin():
+                    await lock_owner(self.session, request.owner_id)
+                    activity = await self.session.scalar(
+                        select(ActivityInstance.id)
+                        .where(
+                            ActivityInstance.owner_id == request.owner_id,
+                            ActivityInstance.id == request.activity_id,
+                        )
+                        .with_for_update()
                     )
-                    .with_for_update()
-                )
-                attempt = await self.session.scalar(
-                    select(Attempt).where(
-                        Attempt.owner_id == request.owner_id,
-                        Attempt.id == request.attempt.id,
-                        Attempt.activity_instance_id == request.activity_id,
-                    )
-                )
-                if activity is None or attempt is None or attempt.original_text is None:
-                    raise InvalidProvenance()
-                if attempt.commitment_hash.hex() != request.attempt.content_hash:
-                    raise InvalidProvenance()
-                source_hash = sha256(attempt.original_text.encode()).hexdigest()
-                items = []
-                for item in request.context:
-                    if resolve_attempt_text(attempt.original_text, item.reference) != (
-                        item.prepared_input_hash
-                    ):
-                        raise InvalidProvenance()
-                    items.append(
-                        {
-                            "format": 1,
-                            "kind": "context",
-                            "profile": "committed-attempt-text-v1",
-                            "owner_id": request.owner_id,
-                            "activity_id": request.activity_id,
-                            "source_version": 1,
-                            "source_hash": source_hash,
-                            **item.model_dump(mode="json"),
-                        }
-                    )
-                header = {
-                    "format": 1,
-                    "kind": "run",
-                    **request.model_dump(mode="json", exclude={"context"}),
-                    "manifest": [digest(item) for item in items],
-                }
-                header["manifest_hash"] = digest(header["manifest"])
-                record_data = _record_data(header)
-                existing = await self.session.scalar(
-                    select(ModelRun).where(
-                        ModelRun.owner_id == request.owner_id,
-                        ModelRun.invocation_key == request.invocation_key,
-                    )
-                )
-                if existing is not None:
-                    if verified(existing).canonical_json != record_data["canonical_json"]:
-                        raise ImmutableVersionConflict()
-                    return snapshot_record(existing)
-                run = ModelRun(owner_id=request.owner_id, **record_data)
-                self.session.add(run)
-                await self.session.flush()
-                for context_payload in items:
-                    self.session.add(
-                        ModelRunContextItem(
-                            owner_id=request.owner_id,
-                            run_id=run.id,
-                            **_record_data(context_payload),
+                    attempt = await self.session.scalar(
+                        select(Attempt).where(
+                            Attempt.owner_id == request.owner_id,
+                            Attempt.id == request.attempt.id,
+                            Attempt.activity_instance_id == request.activity_id,
                         )
                     )
-                await self.session.flush()
-                return snapshot_record(run)
+                    if activity is None or attempt is None or attempt.original_text is None:
+                        raise InvalidProvenance()
+                    if attempt.commitment_hash.hex() != request.attempt.content_hash:
+                        raise InvalidProvenance()
+                    linked = (
+                        await self.session.scalars(
+                            select(Artifact.artifact_class)
+                            .join(
+                                ActivityArtifactLink,
+                                (ActivityArtifactLink.owner_id == Artifact.owner_id)
+                                & (ActivityArtifactLink.artifact_id == Artifact.id),
+                            )
+                            .where(
+                                ActivityArtifactLink.owner_id == request.owner_id,
+                                ActivityArtifactLink.activity_instance_id
+                                == request.activity_id,
+                                ActivityArtifactLink.attempt_id == request.attempt.id,
+                            )
+                        )
+                    ).all()
+                    derived = derive_submission_scope(linked)
+                    if understates(request.classification, derived):
+                        refusal = request
+                        raise InvalidProvenance()
+                    source_hash = sha256(attempt.original_text.encode()).hexdigest()
+                    items = []
+                    for item in request.context:
+                        if resolve_attempt_text(attempt.original_text, item.reference) != (
+                            item.prepared_input_hash
+                        ):
+                            raise InvalidProvenance()
+                        items.append(
+                            {
+                                "format": 1,
+                                "kind": "context",
+                                "profile": "committed-attempt-text-v1",
+                                "owner_id": request.owner_id,
+                                "activity_id": request.activity_id,
+                                "source_version": 1,
+                                "source_hash": source_hash,
+                                **item.model_dump(mode="json"),
+                            }
+                        )
+                    header = {
+                        "format": 1,
+                        "kind": "run",
+                        **request.model_dump(mode="json", exclude={"context", "classification"}),
+                        "manifest": [digest(item) for item in items],
+                    }
+                    header["manifest_hash"] = digest(header["manifest"])
+                    record_data = _record_data(header)
+                    existing = await self.session.scalar(
+                        select(ModelRun).where(
+                            ModelRun.owner_id == request.owner_id,
+                            ModelRun.invocation_key == request.invocation_key,
+                        )
+                    )
+                    if existing is not None:
+                        if verified(existing).canonical_json != record_data["canonical_json"]:
+                            raise ImmutableVersionConflict()
+                        return snapshot_record(existing)
+                    run = ModelRun(owner_id=request.owner_id, **record_data)
+                    self.session.add(run)
+                    self._audit(request, accepted=True)
+                    await self.session.flush()
+                    for context_payload in items:
+                        self.session.add(
+                            ModelRunContextItem(
+                                owner_id=request.owner_id,
+                                run_id=run.id,
+                                **_record_data(context_payload),
+                            )
+                        )
+                    await self.session.flush()
+                    return snapshot_record(run)
+            finally:
+                if refusal is not None:
+                    async with self.session.begin():
+                        self._audit(refusal, accepted=False)
         except (SQLAlchemyError, ValidationError):
             raise InvalidProvenance() from None
+
+    def _audit(self, request: RunRequest, *, accepted: bool) -> None:
+        self.session.add(
+            AuditEvent(
+                owner_id=request.owner_id,
+                actor_kind="system",
+                actor_subject_hash=sha256(
+                    f"model-submission:{request.owner_id}".encode()
+                ).digest(),
+                action="model_run.submitted" if accepted else "model_run.refused",
+                aggregate_type="activity",
+                aggregate_id=str(request.activity_id),
+                request_correlation_hash=None,
+                idempotency_correlation_hash=sha256(request.invocation_key.encode()).digest(),
+                redacted_metadata=AuditMetadataV1(
+                    outcome=AuditOutcome.SUCCEEDED if accepted else AuditOutcome.DENIED,
+                    reason_code=(
+                        AuditReasonCode.NONE if accepted else AuditReasonCode.UNAUTHORIZED
+                    ),
+                    counts={AuditCountKey.ATTEMPTED: 1},
+                    flags={
+                        AuditFlagKey.AUTHORIZED: accepted,
+                        AuditFlagKey.REDACTED: True,
+                    },
+                ).to_payload(),
+            )
+        )
 
     async def _locked_run(self, owner_id: int, run_hash: bytes) -> ModelRun:
         if (
