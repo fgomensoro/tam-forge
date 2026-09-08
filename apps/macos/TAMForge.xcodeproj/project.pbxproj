@@ -136,6 +136,7 @@
 		F70000000000000000000002 /* WhisperTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000001001 /* WhisperTranscriber.swift */; };
 		F70000000000000000000003 /* whisper.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = F70000000000000000001002 /* whisper.xcframework */; };
 		F70000000000000000000004 /* whisper.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F70000000000000000001002 /* whisper.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		F70000000000000000000005 /* whisper.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = F70000000000000000001002 /* whisper.xcframework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -267,6 +268,7 @@
 			files = (
 				A100000000000000000000E3 /* OpenAPIRuntime in Frameworks */,
 				A100000000000000000000E4 /* OpenAPIURLSession in Frameworks */,
+				F70000000000000000000005 /* whisper.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
