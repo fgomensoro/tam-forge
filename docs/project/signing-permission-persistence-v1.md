@@ -23,7 +23,9 @@ The privacy grant is keyed to the designated requirement, so any build signed wi
 
 Observation: macOS 15 and later show a screen-recording re-consent dialog for a new binary of an already-permitted app (and periodically); the underlying grant persists and the recording proceeds once the owner confirms. A stale Screen Recording entry left by the earlier ad-hoc copy had to be removed (`−`) and the signed app added (`+`) once; ad-hoc builds cannot share a grant because their designated requirement changes on every build.
 
-## Not covered here
+## Scope decisions (owner, 2026-09-08)
 
-- Clean-user smoke (a fresh macOS user account) was not run; it needs a second local account on this Mac.
+- Clean-user smoke (a fresh macOS user account) is out of scope: TAM Forge is a single-user app on this one Mac, and the owner declined to create a second account. This amends the issue #38 acceptance criterion and spec line "clean-user smoke evidence"; the spec file is intentionally left unedited.
+- The installed Release copy was verified by signature only. Its Recording screen needs a production sign-in against a live backend that does not exist yet, so the functional smoke used Debug builds signed with the same identity; the privacy grant is keyed to that identity, not to the build configuration.
 - Notarization and Developer ID distribution are deferred by design (D3 in the redesign spec) until distribution beyond this Mac is needed.
+- The certificate expires on 2027-09-08; renewing it changes the leaf hash, so permissions must be granted once more after renewal.
