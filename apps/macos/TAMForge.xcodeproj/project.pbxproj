@@ -18,6 +18,8 @@
 		F30000000000000000000009 /* RecordingUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000109 /* RecordingUploader.swift */; };
 		F60000000000000000000001 /* AudioQualityObservations.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000001001 /* AudioQualityObservations.swift */; };
 		F60000000000000000000005 /* ASRAudioDerivation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000001003 /* ASRAudioDerivation.swift */; };
+		F60000000000000000000007 /* SpeechTranscription.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000001005 /* SpeechTranscription.swift */; };
+		F60000000000000000000009 /* SpeechModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000001006 /* SpeechModelCatalog.swift */; };
 		F30000000000000000000011 /* RecordingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000101 /* RecordingModels.swift */; };
 		F30000000000000000000012 /* RecordingTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000102 /* RecordingTimeline.swift */; };
 		F30000000000000000000013 /* RecordingPreflight.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000103 /* RecordingPreflight.swift */; };
@@ -29,6 +31,8 @@
 		F30000000000000000000019 /* RecordingUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000109 /* RecordingUploader.swift */; };
 		F60000000000000000000002 /* AudioQualityObservations.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000001001 /* AudioQualityObservations.swift */; };
 		F60000000000000000000006 /* ASRAudioDerivation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000001003 /* ASRAudioDerivation.swift */; };
+		F60000000000000000000008 /* SpeechTranscription.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000001005 /* SpeechTranscription.swift */; };
+		F6000000000000000000000A /* SpeechModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000001006 /* SpeechModelCatalog.swift */; };
 		F30000000000000000000021 /* RecordingFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000121 /* RecordingFeatureTests.swift */; };
 		F60000000000000000000003 /* AudioQualityObservationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000001002 /* AudioQualityObservationsTests.swift */; };
 		F30000000000000000000022 /* RecordingUploadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000122 /* RecordingUploadTests.swift */; };
@@ -152,6 +156,8 @@
 		F30000000000000000000109 /* RecordingUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingUploader.swift; sourceTree = "<group>"; };
 		F60000000000000000001001 /* AudioQualityObservations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioQualityObservations.swift; sourceTree = "<group>"; };
 		F60000000000000000001003 /* ASRAudioDerivation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASRAudioDerivation.swift; sourceTree = "<group>"; };
+		F60000000000000000001005 /* SpeechTranscription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechTranscription.swift; sourceTree = "<group>"; };
+		F60000000000000000001006 /* SpeechModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechModelCatalog.swift; sourceTree = "<group>"; };
 		F30000000000000000000121 /* RecordingFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingFeatureTests.swift; sourceTree = "<group>"; };
 		F60000000000000000001002 /* AudioQualityObservationsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioQualityObservationsTests.swift; sourceTree = "<group>"; };
 		F60000000000000000001004 /* ASRAudioDerivationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASRAudioDerivationTests.swift; sourceTree = "<group>"; };
@@ -413,6 +419,8 @@
 			children = (
 				F60000000000000000001001 /* AudioQualityObservations.swift */,
 				F60000000000000000001003 /* ASRAudioDerivation.swift */,
+				F60000000000000000001005 /* SpeechTranscription.swift */,
+				F60000000000000000001006 /* SpeechModelCatalog.swift */,
 			);
 			path = Speech;
 			sourceTree = "<group>";
@@ -636,6 +644,8 @@
 				F30000000000000000000009 /* RecordingUploader.swift in Sources */,
 				F60000000000000000000001 /* AudioQualityObservations.swift in Sources */,
 				F60000000000000000000005 /* ASRAudioDerivation.swift in Sources */,
+				F60000000000000000000007 /* SpeechTranscription.swift in Sources */,
+				F60000000000000000000009 /* SpeechModelCatalog.swift in Sources */,
 				E30000000000000000000001 /* EvidenceModels.swift in Sources */,
 				F40000000000000000000005 /* NativeParityUIFixture.swift in Sources */,
 				E30000000000000000000002 /* LiveEvidenceAPI.swift in Sources */,
@@ -689,6 +699,8 @@
 				F30000000000000000000019 /* RecordingUploader.swift in Sources */,
 				F60000000000000000000002 /* AudioQualityObservations.swift in Sources */,
 				F60000000000000000000006 /* ASRAudioDerivation.swift in Sources */,
+				F60000000000000000000008 /* SpeechTranscription.swift in Sources */,
+				F6000000000000000000000A /* SpeechModelCatalog.swift in Sources */,
 				F30000000000000000000021 /* RecordingFeatureTests.swift in Sources */,
 				F30000000000000000000022 /* RecordingUploadTests.swift in Sources */,
 				F60000000000000000000003 /* AudioQualityObservationsTests.swift in Sources */,
