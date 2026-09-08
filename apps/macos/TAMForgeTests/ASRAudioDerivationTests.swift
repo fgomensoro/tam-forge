@@ -1,6 +1,5 @@
 import CryptoKit
 import XCTest
-@testable import TAMForge
 
 final class ASRAudioDerivationTests: XCTestCase {
     private let recordingID = UUID(uuidString: "11111111-1111-4111-8111-111111111111")!

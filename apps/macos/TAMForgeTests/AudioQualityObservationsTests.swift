@@ -1,5 +1,4 @@
 import XCTest
-@testable import TAMForge
 
 final class AudioQualityObservationsTests: XCTestCase {
     private func chunk(track: RecordingTrackKind, samples: [Int16], sampleStart: Int64 = 0) -> RecordingPCMChunk {
