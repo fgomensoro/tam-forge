@@ -258,7 +258,12 @@ class AnalysisVersions(_StrictModel):
 
 
 class FeedbackRead(_StrictModel):
-    """Analysis is unconstructible outside `ready`, so withholding cannot be bypassed."""
+    """Validated construction cannot produce analysis outside `ready`; frozen fields keep it so.
+
+    Like every model here, `model_construct` and `model_copy` skip validators. Assemble a
+    response through `__init__` or `model_validate`, and revalidate at any boundary that
+    accepts one from elsewhere, the way `agents/model_runs.py` revalidates its run requests.
+    """
 
     status: Literal["processing", "needs_attention", "ready"]
     activity_id: PositiveId
