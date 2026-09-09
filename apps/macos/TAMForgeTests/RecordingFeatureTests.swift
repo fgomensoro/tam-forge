@@ -1168,6 +1168,234 @@ final class RecordingFeatureTests: XCTestCase {
         XCTAssertEqual(pendingIDs, createdIDs)
     }
 
+    func testTranscriptionReachesReadyAfterSealAndLeavesPendingRecordingsUnchanged() async throws {
+        let micChunk = RecordingPCMChunk.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 16_000
+        )
+        let reader = FakeRecordingAudioReader(microphoneChunks: [micChunk])
+        let transcriber = FakeSealTranscriber(text: "fake transcript text")
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: OrderedFakeRecordingSpool())
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: spoolFactory,
+                audioReader: reader,
+                transcriber: transcriber
+            )
+        }
+
+        await coordinator.start()
+        await coordinator.stop()
+        let state = await waitUntilTranscriptSettles(coordinator)
+
+        guard case let .ready(recordingID, result) = state else {
+            return XCTFail("expected .ready, got \(state)")
+        }
+        XCTAssertEqual(result.text, "fake transcript text")
+        let phase = await MainActor.run { coordinator.phase }
+        XCTAssertEqual(phase, .sealed(recordingID))
+        let pendingIDs = await MainActor.run { coordinator.pendingRecordingIDs }
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        XCTAssertEqual(pendingIDs, createdIDs)
+    }
+
+    func testTranscriberFailureLeavesTranscriptFailedWhileRecordingStaysSealedAndPending() async throws {
+        let micChunk = RecordingPCMChunk.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 16_000
+        )
+        let reader = FakeRecordingAudioReader(microphoneChunks: [micChunk])
+        let transcriber = FakeSealTranscriber(shouldFail: true)
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: OrderedFakeRecordingSpool())
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: spoolFactory,
+                audioReader: reader,
+                transcriber: transcriber
+            )
+        }
+
+        await coordinator.start()
+        await coordinator.stop()
+        let state = await waitUntilTranscriptSettles(coordinator)
+
+        guard case let .failed(recordingID, reason) = state else {
+            return XCTFail("expected .failed, got \(state)")
+        }
+        XCTAssertFalse(reason.isEmpty)
+        let phase = await MainActor.run { coordinator.phase }
+        XCTAssertEqual(phase, .sealed(recordingID))
+        let pendingIDs = await MainActor.run { coordinator.pendingRecordingIDs }
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        XCTAssertEqual(pendingIDs, createdIDs)
+    }
+
+    func testReaderFailureLeavesTranscriptFailedWhileRecordingStaysSealedAndPending() async throws {
+        let reader = FakeRecordingAudioReader(failure: FakeRecordingAudioReader.Failure.readFailed)
+        let transcriber = FakeSealTranscriber()
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: OrderedFakeRecordingSpool())
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: spoolFactory,
+                audioReader: reader,
+                transcriber: transcriber
+            )
+        }
+
+        await coordinator.start()
+        await coordinator.stop()
+        let state = await waitUntilTranscriptSettles(coordinator)
+
+        guard case let .failed(recordingID, reason) = state else {
+            return XCTFail("expected .failed, got \(state)")
+        }
+        XCTAssertFalse(reason.isEmpty)
+        let phase = await MainActor.run { coordinator.phase }
+        XCTAssertEqual(phase, .sealed(recordingID))
+        let pendingIDs = await MainActor.run { coordinator.pendingRecordingIDs }
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        XCTAssertEqual(pendingIDs, createdIDs)
+        let receivedRequests = await transcriber.receivedRequests
+        XCTAssertTrue(receivedRequests.isEmpty)
+    }
+
+    func testNoTranscriberInjectedKeepsTranscriptIdleAndNeverCallsReader() async throws {
+        let reader = FakeRecordingAudioReader(microphoneChunks: [])
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: FakeRecordingSpoolFactory(),
+                audioReader: reader,
+                transcriber: nil
+            )
+        }
+
+        await coordinator.start()
+        await coordinator.stop()
+
+        let state = await MainActor.run { coordinator.transcriptState }
+        XCTAssertEqual(state, .idle)
+        let requestedTracks = await reader.requestedTracks
+        XCTAssertTrue(requestedTracks.isEmpty)
+    }
+
+    func testRecordingThatNeedsAttentionNeverStartsTranscription() async throws {
+        let source = FakeRecordingCaptureSource(stopFailure: .streamStopped)
+        let reader = FakeRecordingAudioReader(microphoneChunks: [])
+        let transcriber = FakeSealTranscriber()
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: FakeRecordingSpoolFactory(),
+                audioReader: reader,
+                transcriber: transcriber
+            )
+        }
+
+        await coordinator.start()
+        await coordinator.stop()
+
+        let phase = await MainActor.run { coordinator.phase }
+        guard case .needsAttention = phase else {
+            return XCTFail("expected .needsAttention, got \(phase)")
+        }
+        let state = await MainActor.run { coordinator.transcriptState }
+        XCTAssertEqual(state, .idle)
+        let requestedTracks = await reader.requestedTracks
+        XCTAssertTrue(requestedTracks.isEmpty)
+    }
+
+    func testStartingNewRecordingResetsTranscriptStateToIdle() async throws {
+        let micChunk = RecordingPCMChunk.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 16_000
+        )
+        let reader = FakeRecordingAudioReader(microphoneChunks: [micChunk])
+        let transcriber = FakeSealTranscriber(text: "first pass")
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: FakeRecordingSpoolFactory(),
+                audioReader: reader,
+                transcriber: transcriber
+            )
+        }
+
+        await coordinator.start()
+        await coordinator.stop()
+        let firstState = await waitUntilTranscriptSettles(coordinator)
+        guard case .ready = firstState else {
+            return XCTFail("expected .ready before restarting, got \(firstState)")
+        }
+
+        await coordinator.start()
+
+        let state = await MainActor.run { coordinator.transcriptState }
+        XCTAssertEqual(state, .idle)
+    }
+
+    func testTranscriberReceivesSixteenKilohertzAudioProvingItWentThroughASRAudioDeriver() async throws {
+        let micChunk = RecordingPCMChunk.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 48_000
+        )
+        let reader = FakeRecordingAudioReader(microphoneChunks: [micChunk])
+        let transcriber = FakeSealTranscriber()
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: FakeRecordingSpoolFactory(),
+                audioReader: reader,
+                transcriber: transcriber
+            )
+        }
+
+        await coordinator.start()
+        await coordinator.stop()
+        let state = await waitUntilTranscriptSettles(coordinator)
+        guard case .ready = state else {
+            return XCTFail("expected .ready, got \(state)")
+        }
+
+        let requests = await transcriber.receivedRequests
+        guard let request = requests.first else {
+            return XCTFail("transcriber was never called")
+        }
+        XCTAssertEqual(request.lineage.outputSampleRate, 16_000)
+        XCTAssertEqual(request.lineage.derivationVersion, ASRDerivationVersion.current)
+    }
+
+    func testEmptyDerivedAudioBecomesFailedWithoutCallingTranscriber() async throws {
+        let reader = FakeRecordingAudioReader(microphoneChunks: [])
+        let transcriber = FakeSealTranscriber()
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: FakeRecordingSpoolFactory(),
+                audioReader: reader,
+                transcriber: transcriber
+            )
+        }
+
+        await coordinator.start()
+        await coordinator.stop()
+        let state = await waitUntilTranscriptSettles(coordinator)
+
+        guard case let .failed(_, reason) = state else {
+            return XCTFail("expected .failed, got \(state)")
+        }
+        XCTAssertFalse(reason.isEmpty)
+        let receivedRequests = await transcriber.receivedRequests
+        XCTAssertTrue(receivedRequests.isEmpty)
+    }
+
     private func waitUntilCoordinatorSettles(
         _ coordinator: RecordingCoordinator,
         file: StaticString = #filePath,
@@ -1179,6 +1407,23 @@ final class RecordingFeatureTests: XCTestCase {
             try? await Task.sleep(for: .milliseconds(10))
         }
         XCTFail("coordinator never left the active phase", file: file, line: line)
+    }
+
+    private func waitUntilTranscriptSettles(
+        _ coordinator: RecordingCoordinator,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async -> RecordingTranscriptState {
+        for _ in 0..<500 {
+            let state = await MainActor.run { coordinator.transcriptState }
+            if case .running = state {
+                try? await Task.sleep(for: .milliseconds(10))
+                continue
+            }
+            return state
+        }
+        XCTFail("transcription never left the running state", file: file, line: line)
+        return await MainActor.run { coordinator.transcriptState }
     }
 
     private func temporaryDirectory() throws -> URL {
@@ -1478,4 +1723,54 @@ private actor WriteFailingRecordingSpool: RecordingSpoolWriting {
     }
 
     func seal(gaps: [RecordingGap], startedAt: Date, endedAt: Date) async throws { sealAttempts += 1 }
+}
+
+private actor FakeRecordingAudioReader: RecordingAudioReading {
+    enum Failure: Error { case readFailed }
+
+    private let chunks: [RecordingPCMChunk]
+    private let failure: Error?
+    private(set) var requestedTracks: [RecordingTrackKind] = []
+
+    init(microphoneChunks: [RecordingPCMChunk] = [], failure: Error? = nil) {
+        chunks = microphoneChunks
+        self.failure = failure
+    }
+
+    func sealedChunks(recordingID: UUID, track: RecordingTrackKind) async throws -> [RecordingPCMChunk] {
+        requestedTracks.append(track)
+        if let failure { throw failure }
+        return chunks
+    }
+}
+
+private actor FakeSealTranscriber: SpeechTranscribing {
+    enum Failure: Error { case transcriptionFailed }
+
+    private let text: String
+    private let shouldFail: Bool
+    private(set) var receivedRequests: [SpeechTranscriptionRequest] = []
+
+    init(text: String = "fake transcript", shouldFail: Bool = false) {
+        self.text = text
+        self.shouldFail = shouldFail
+    }
+
+    func transcribe(_ request: SpeechTranscriptionRequest) async throws -> SpeechTranscriptionResult {
+        receivedRequests.append(request)
+        if shouldFail { throw Failure.transcriptionFailed }
+        try request.validate()
+        return SpeechTranscriptionResult(
+            segments: [.init(text: text, startMilliseconds: 0, endMilliseconds: 0, words: [])],
+            identity: .init(
+                runtimeVersion: "fake",
+                modelFilename: "fake-model.bin",
+                modelSHA256: String(repeating: "0", count: 64),
+                metalRequested: false,
+                usedBuiltInVAD: false,
+                language: "en"
+            ),
+            lineage: request.lineage
+        )
+    }
 }
