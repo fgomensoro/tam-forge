@@ -517,12 +517,18 @@ def test_concurrent_differing_submissions_the_loser_gets_transcript_conflict() -
     asyncio.run(exercise())
 
 
-def test_append_correction_never_leaks_a_raw_sqlalchemy_error() -> None:
-    """`append_correction` has no identity to race on, but an unexpected
-    `SQLAlchemyError` mid-flush (a dropped connection, a statement timeout --
-    modeled here with `OperationalError`, deliberately not the `IntegrityError`
-    the two tests above cover, to prove the `except` isn't narrowed to just
-    that one subtype) must still come out as `TranscriptConflict`, never raw.
+def test_append_correction_surfaces_a_transient_failure_as_unavailable_not_conflict() -> None:
+    """`append_correction` has no identity to race on, and -- unlike `store`
+    -- no reachable uniqueness collision either:
+    `SpeechTranscriptCorrection`'s only constraints are the provenance
+    base's trivial `(owner_id, id)` uniqueness on a sequence-assigned `id`,
+    and a foreign key to a transcript row that is immutable and never
+    deleted. So an unexpected `SQLAlchemyError` mid-flush (a dropped
+    connection, a statement timeout -- modeled here with `OperationalError`,
+    deliberately not `IntegrityError`, to prove the `except` isn't narrowed
+    to just that one subtype) must come out as `TranscriptUnavailable`, with
+    a clean exception chain -- never `TranscriptConflict`, which this method
+    can no longer raise at all.
     """
 
     async def exercise() -> None:
@@ -537,12 +543,57 @@ def test_append_correction_never_leaks_a_raw_sqlalchemy_error() -> None:
             "INSERT INTO speech_transcript_corrections ...", {}, Exception("connection lost")
         )
 
-        with pytest.raises(TranscriptConflict):
+        with pytest.raises(TranscriptUnavailable) as excinfo:
             await repository.append_correction(
                 owner_id=1, transcript=transcript, body=correction_body()
             )
         # The failed attempt left no partial row behind.
         assert sum(isinstance(row, SpeechTranscriptCorrection) for row in session.rows) == 0
+        # Content-free in the chain too, same guarantee as everywhere else
+        # in this file that raises `from None`.
+        assert excinfo.value.__suppress_context__ is True
+
+    asyncio.run(exercise())
+
+
+def test_append_correction_integrity_error_also_surfaces_as_unavailable() -> None:
+    """Even `IntegrityError` specifically -- the one subtype `store` routes
+    into a replay-vs-conflict reconciliation -- gets no such treatment here,
+    because there is nothing it could legitimately mean:
+    `SpeechTranscriptCorrection` carries no constraint a second, concurrent
+    insert could ever violate (its `(owner_id, id)` uniqueness is on a
+    sequence-assigned `id` that is never reused, and its only other
+    constraint is a foreign key to a transcript row that is immutable and
+    never deleted, so it cannot vanish out from under a concurrent insert
+    either). A real `IntegrityError` here would only be reachable as a
+    caller bug, never a race to recover from, so it must surface exactly
+    like every other database failure does: as `TranscriptUnavailable`,
+    never `TranscriptConflict`. This guards against a future change
+    "symmetrizing" this method with `store` by special-casing
+    `IntegrityError` back into a conflict outcome that nothing here can
+    legitimately produce.
+    """
+
+    async def exercise() -> None:
+        session = FakeSession()
+        repository = SqlAlchemyTranscriptRepository(session)
+        recording = SimpleNamespace(id=42)
+        transcript = await repository.store(
+            owner_id=1, recording=recording, track="microphone", body=transcript_body()
+        )
+
+        session.fail_next_flush = IntegrityError(
+            "INSERT INTO speech_transcript_corrections ...",
+            {},
+            Exception("simulated constraint violation"),
+        )
+
+        with pytest.raises(TranscriptUnavailable) as excinfo:
+            await repository.append_correction(
+                owner_id=1, transcript=transcript, body=correction_body()
+            )
+        assert sum(isinstance(row, SpeechTranscriptCorrection) for row in session.rows) == 0
+        assert excinfo.value.__suppress_context__ is True
 
     asyncio.run(exercise())
 

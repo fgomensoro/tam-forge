@@ -232,9 +232,18 @@ class SqlAlchemyTranscriptRepository:
 
         Unlike `store`, there is no identity to race on here -- corrections
         are always inserted, never deduplicated -- so there is nothing to
-        retry. The `except` below exists only so an unexpected
-        `SQLAlchemyError` (a dropped connection, a statement timeout) still
-        reaches the caller as `TranscriptConflict` rather than raw.
+        retry, and no conflict outcome is reachable at all:
+        `SpeechTranscriptCorrection`'s only constraints are the provenance
+        base's own `(owner_id, id)` uniqueness -- trivially satisfied, since
+        `id` is sequence-assigned and never reused -- and a foreign key to
+        `transcript`, which is immutable and never deleted (the ORM rejects
+        `UPDATE`/`DELETE` on it directly, and nothing in this repository
+        issues either), so the referenced row cannot vanish between the
+        owner check above and this insert. With no genuine integrity
+        violation possible, every `SQLAlchemyError` below is the same kind
+        of unrelated infrastructure failure `store` guards against, and
+        surfaces the same way: as `TranscriptUnavailable`, not
+        `TranscriptConflict`.
         """
         if transcript.owner_id != owner_id:
             raise TranscriptNotFound()
@@ -253,7 +262,7 @@ class SqlAlchemyTranscriptRepository:
                 await self.session.flush()
                 return _snapshot(row)
         except SQLAlchemyError:
-            raise TranscriptConflict() from None
+            raise TranscriptUnavailable() from None
 
     async def corrections(
         self, *, owner_id: int, transcript_id: int
