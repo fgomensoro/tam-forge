@@ -121,6 +121,13 @@ final class PendingGapWrites: @unchecked Sendable {
     }
 }
 
+enum RecordingTranscriptState: Equatable, Sendable {
+    case idle
+    case running(UUID)
+    case ready(UUID, SpeechTranscriptionResult)
+    case failed(UUID, String)      // human-readable, no paths
+}
+
 @MainActor
 final class RecordingCoordinator: ObservableObject {
     @Published private(set) var phase: RecordingPhase = .idle
@@ -129,11 +136,14 @@ final class RecordingCoordinator: ObservableObject {
     @Published private(set) var startedAt: Date?
     @Published private(set) var pendingRecordingIDs: [UUID] = []
     @Published private(set) var uploadStates: [UUID: RecordingUploadState] = [:]
+    @Published private(set) var transcriptState: RecordingTranscriptState = .idle
 
     private let preflight: any RecordingPreflighting
     private let source: any RecordingCaptureSource
     private let spoolFactory: any RecordingSpoolCreating
     private let uploader: (any RecordingUploading)?
+    private let audioReader: (any RecordingAudioReading)?
+    private let transcriber: (any SpeechTranscribing)?
     private var uploadQueue: [UUID] = []
     private var uploadWorkerTask: Task<Void, Never>?
     private var spool: (any RecordingSpoolWriting)?
@@ -142,6 +152,7 @@ final class RecordingCoordinator: ObservableObject {
     private var pendingGapWrites: PendingGapWrites?
     private var lifecycleTask: Task<Void, Never>?
     private var durationLimitTask: Task<Void, Never>?
+    private var transcriptionTask: Task<Void, Never>?
     private var accumulatedGaps: [RecordingGap] = []
     private var activeStorageFailure: Error?
     // Terminal coverage loss (a required track never anchored). The unsealed
@@ -152,12 +163,16 @@ final class RecordingCoordinator: ObservableObject {
         preflight: any RecordingPreflighting = LiveRecordingPreflight(),
         source: any RecordingCaptureSource = ScreenCaptureAudioSource(),
         spoolFactory: any RecordingSpoolCreating = EncryptedRecordingSpoolFactory(),
-        uploader: (any RecordingUploading)? = nil
+        uploader: (any RecordingUploading)? = nil,
+        audioReader: (any RecordingAudioReading)? = nil,
+        transcriber: (any SpeechTranscribing)? = nil
     ) {
         self.preflight = preflight
         self.source = source
         self.spoolFactory = spoolFactory
         self.uploader = uploader
+        self.audioReader = audioReader
+        self.transcriber = transcriber
         lifecycleTask = Task { [weak self] in
             for await _ in NotificationCenter.default.notifications(
                 named: NSWorkspace.willSleepNotification
@@ -177,6 +192,7 @@ final class RecordingCoordinator: ObservableObject {
         durationLimitTask?.cancel()
         writerTask?.cancel()
         uploadWorkerTask?.cancel()
+        transcriptionTask?.cancel()
         eventContinuation?.finish()
     }
 
@@ -193,6 +209,9 @@ final class RecordingCoordinator: ObservableObject {
         accumulatedGaps.removeAll(keepingCapacity: true)
         activeStorageFailure = nil
         fatalCaptureFailure = nil
+        transcriptionTask?.cancel()
+        transcriptionTask = nil
+        transcriptState = .idle
         let result = await preflight.run()
         guard case let .ready(snapshot) = result else {
             if case let .blocked(failure) = result { phase = .blocked(failure) }
@@ -303,10 +322,62 @@ final class RecordingCoordinator: ObservableObject {
                 phase = .needsAttention(recordingID, "Stopped safely: \(reason)")
             } else {
                 phase = .sealed(recordingID)
+                beginTranscription(recordingID: recordingID)
             }
             enqueueAllPendingUploads()
         } catch {
             await abandonActiveSpool(recordingID: recordingID)
+        }
+    }
+
+    // Runs only when both an audio reader and a transcriber are configured;
+    // otherwise the recording flow is byte-identical to today. Never touches
+    // spool, pendingRecordingIDs, uploadStates, or phase.
+    private func beginTranscription(recordingID: UUID) {
+        guard let audioReader, let transcriber else { return }
+        transcriptState = .running(recordingID)
+        transcriptionTask = Task { [weak self] in
+            guard let self else { return }
+            let samples: [Int16]
+            let lineage: ASRDerivationLineage
+            do {
+                let chunks = try await audioReader.sealedChunks(
+                    recordingID: recordingID, track: .microphone
+                )
+                let deriver = ASRAudioDeriver(recordingID: recordingID, track: .microphone)
+                var derived: [Int16] = []
+                for chunk in chunks {
+                    if let block = try deriver.append(chunk) {
+                        derived.append(contentsOf: block.samples)
+                    }
+                }
+                let (finalBlock, finalLineage) = deriver.finish()
+                if let finalBlock { derived.append(contentsOf: finalBlock.samples) }
+                samples = derived
+                lineage = finalLineage
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.transcriptState = .failed(
+                    recordingID, "Recorded audio could not be read for transcription"
+                )
+                return
+            }
+            guard !samples.isEmpty else {
+                guard !Task.isCancelled else { return }
+                self.transcriptState = .failed(recordingID, "No speech audio was captured")
+                return
+            }
+            guard !Task.isCancelled else { return }
+            do {
+                let result = try await transcriber.transcribe(
+                    .init(samples: samples, lineage: lineage)
+                )
+                guard !Task.isCancelled else { return }
+                self.transcriptState = .ready(recordingID, result)
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.transcriptState = .failed(recordingID, "Transcription failed")
+            }
         }
     }
 
