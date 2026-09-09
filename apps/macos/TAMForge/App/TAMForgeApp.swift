@@ -263,6 +263,7 @@ private final class NativeShellComposition: ObservableObject {
                 spoolFactory: recordingSpool,
                 server: recordingServer
             ),
+            environmentMonitor: LiveRecordingEnvironmentMonitor(),
             audioReader: recordingSpool,
             transcriber: transcriber
         )
