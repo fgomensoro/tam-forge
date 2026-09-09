@@ -31,6 +31,7 @@ class SpeechTranscript(Record):
             ["owner_id", "recording_id"],
             ["recordings.owner_id", "recordings.id"],
             name="fk_speech_transcripts_recording",
+            ondelete="RESTRICT",
         ),
         CheckConstraint(
             "track IN ('microphone', 'system_audio')", name="track_allowed"
@@ -55,6 +56,7 @@ class SpeechTranscriptCorrection(Record):
             ["owner_id", "transcript_id"],
             ["speech_transcripts.owner_id", "speech_transcripts.id"],
             name="fk_speech_transcript_corrections_transcript",
+            ondelete="RESTRICT",
         ),
     )
     transcript_id: Mapped[int] = mapped_column(

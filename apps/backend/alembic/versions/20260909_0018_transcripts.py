@@ -31,7 +31,7 @@ CREATE TABLE speech_transcripts (
         public.tamforge_provenance_canonical(canonical_json::jsonb)),
     CONSTRAINT uq_speech_transcripts_recording_track UNIQUE (owner_id, recording_id, track),
     CONSTRAINT fk_speech_transcripts_recording FOREIGN KEY(owner_id, recording_id) REFERENCES
-        recordings (owner_id, id),
+        recordings (owner_id, id) ON DELETE RESTRICT,
     CONSTRAINT ck_speech_transcripts_track_allowed CHECK (track IN
         ('microphone', 'system_audio')),
     CONSTRAINT fk_speech_transcripts_owner_id_owners FOREIGN KEY(owner_id) REFERENCES owners (id)
@@ -60,7 +60,7 @@ CREATE TABLE speech_transcript_corrections (
     CONSTRAINT ck_speech_transcript_corrections_canonical_bytes CHECK (canonical_json =
         public.tamforge_provenance_canonical(canonical_json::jsonb)),
     CONSTRAINT fk_speech_transcript_corrections_transcript FOREIGN KEY(owner_id, transcript_id)
-        REFERENCES speech_transcripts (owner_id, id),
+        REFERENCES speech_transcripts (owner_id, id) ON DELETE RESTRICT,
     CONSTRAINT fk_speech_transcript_corrections_owner_id_owners FOREIGN KEY(owner_id) REFERENCES
         owners (id)
 )
