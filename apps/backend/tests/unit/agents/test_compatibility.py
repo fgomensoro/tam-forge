@@ -162,3 +162,97 @@ def test_an_invalid_owner_is_rejected_before_any_query():
     for owner in (0, -1, True, "1"):
         with pytest.raises(InvalidProvenance):
             asyncio.run(AttestationRepository(FakeSession(None)).current(owner_id=owner))
+
+
+class RecordingSession(FakeSession):
+    def __init__(self, row=None):
+        super().__init__(row)
+        self.added = []
+
+    def add(self, instance):
+        self.added.append(instance)
+
+
+def current_record():
+    from tamforge_backend.agents.settings import EXPECTED_POLICY_VERSION, AttestationRecord
+
+    return AttestationRecord.model_validate(
+        {
+            "policy_version": EXPECTED_POLICY_VERSION,
+            "model_improvement_disabled": True,
+            "subscription_policy_acknowledged": True,
+        }
+    )
+
+
+def test_recording_writes_the_exact_canonical_bytes_the_table_demands():
+    from tamforge_backend.agents.compatibility import AttestationRepository
+    from tamforge_backend.agents.hashing import canonical_bytes
+
+    session = RecordingSession()
+    asyncio.run(AttestationRepository(session).record(owner_id=1, record=current_record()))
+    assert len(session.added) == 1
+    row = session.added[0]
+    expected = canonical_bytes(current_record().model_dump(mode="json"))
+    assert row.canonical_json.encode() == expected
+    assert row.content_hash == sha256(expected).digest()
+    assert row.owner_id == 1
+
+
+def test_re_attesting_to_the_same_policy_writes_nothing_new():
+    from tamforge_backend.agents.compatibility import AttestationRepository
+    from tamforge_backend.agents.hashing import canonical_bytes
+
+    payload = canonical_bytes(current_record().model_dump(mode="json")).decode()
+    session = RecordingSession(FakeRow(payload))
+    asyncio.run(AttestationRepository(session).record(owner_id=1, record=current_record()))
+    assert session.added == []
+
+
+def test_a_stored_row_that_disagrees_with_the_same_policy_version_conflicts():
+    from tamforge_backend.agents.compatibility import AttestationRepository
+    from tamforge_backend.agents.contracts import ImmutableVersionConflict
+    from tamforge_backend.agents.settings import EXPECTED_POLICY_VERSION
+
+    tampered = FakeRow(
+        json.dumps(
+            {
+                "model_improvement_disabled": True,
+                "policy_version": EXPECTED_POLICY_VERSION,
+                "subscription_policy_acknowledged": True,
+                "extra": "not what we would write",
+            }
+        )
+    )
+    with pytest.raises(ImmutableVersionConflict):
+        asyncio.run(
+            AttestationRepository(RecordingSession(tampered)).record(
+                owner_id=1, record=current_record()
+            )
+        )
+
+
+def test_recording_rejects_an_invalid_owner():
+    from tamforge_backend.agents.compatibility import AttestationRepository
+    from tamforge_backend.agents.contracts import InvalidProvenance
+
+    for owner in (0, -1, True, "1"):
+        with pytest.raises(InvalidProvenance):
+            asyncio.run(
+                AttestationRepository(RecordingSession()).record(
+                    owner_id=owner, record=current_record()
+                )
+            )
+
+
+def test_the_recorded_bytes_read_back_as_the_same_attestation():
+    """Writer and reader agree, so an attestation recorded here opens the gate."""
+    from tamforge_backend.agents.compatibility import AttestationRepository
+    from tamforge_backend.agents.settings import attestation_is_current
+
+    session = RecordingSession()
+    asyncio.run(AttestationRepository(session).record(owner_id=1, record=current_record()))
+    written = session.added[0]
+    read_back = read(FakeRow(written.canonical_json))
+    assert read_back is not None
+    assert attestation_is_current(read_back) is True

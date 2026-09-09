@@ -74,7 +74,14 @@ Only once the constant names the policy just confirmed does recording the attest
 mean anything: a `PrivacyAttestation` row whose `policy_version` matches
 `EXPECTED_POLICY_VERSION`, and whose `model_improvement_disabled` and
 `subscription_policy_acknowledged` are both true, exactly as `AttestationRecord`
-requires. `PrivacyAttestation` is append-only, like every other row on the `Record`
+requires.
+
+Record it through `AttestationRepository.record`
+(`apps/backend/src/tamforge_backend/agents/compatibility.py`), never by hand. The table
+checks that `canonical_json` is in exact canonical form and that `content_hash` is the
+SHA-256 of those precise bytes, so a hand-written INSERT is not a procedure anyone can
+follow correctly. Recording the same policy version twice is a no-op rather than a
+duplicate, so re-running the procedure after re-reading the pages above is safe. `PrivacyAttestation` is append-only, like every other row on the `Record`
 base: a fresh attestation is a new row, never an edit to an old one, so the history of
 what was attested and when is never lost.
 
