@@ -65,6 +65,7 @@ class Case:
     owner: int
     other_owner: int
     request: RunRequest
+    understated: RunRequest
 
     def factory(self):
         engine = create_async_engine(
@@ -140,7 +141,17 @@ def case(test_database_url):
                 local_date=date(2026, 9, 4),
                 stable_id="fixture.sql.provenance",
             )
-        result = Case(test_database_url, owner, other, None)
+            # An attempt's kind must equal its activity's, so a real interview needs its
+            # own activity; a second attempt under `activity` could only repeat its kind.
+            interview = _seed_activity(
+                connection,
+                owner_id=owner,
+                suffix="interview",
+                local_date=date(2026, 9, 5),
+                stable_id="fixture.sql.interview",
+                attempt_kind="real_interview",
+            )
+        result = Case(test_database_url, owner, other, None, None)
 
         async def seed():
             engine, factory = result.factory()
@@ -178,6 +189,37 @@ def case(test_database_url):
                             "assistance_used": "none",
                         },
                     )
+                    now += timedelta(seconds=2)
+                    await service.start(
+                        owner_id=owner,
+                        activity_id=interview,
+                        expected_version=1,
+                        idempotency_key="interview-start",
+                    )
+                    now += timedelta(seconds=2)
+                    await service.commit_output(
+                        owner_id=owner,
+                        activity_id=interview,
+                        expected_version=2,
+                        client_sequence=1,
+                        artifact_refs=(),
+                        parent_attempt_id=None,
+                        idempotency_key="interview-commit",
+                        output={
+                            "contract_version": 1,
+                            "kind": "sql",
+                            "prompt": "Count the records",
+                            "audience": "TAM",
+                            "time_limit_minutes": 45,
+                            "query": "SELECT 1",
+                            "result": "interviewer é",
+                            "validation": "one row",
+                            "explanation": "Count once",
+                            "business_meaning": "One account",
+                            "solving_seconds": 2,
+                            "assistance_used": "none",
+                        },
+                    )
                     async with session.begin():
                         await seed_config(
                             load_config_bundle(ROOT / "config"),
@@ -188,6 +230,12 @@ def case(test_database_url):
                         attempt = await session.scalar(
                             select(Attempt).where(
                                 Attempt.owner_id == owner, Attempt.activity_instance_id == activity
+                            )
+                        )
+                        interview_attempt = await session.scalar(
+                            select(Attempt).where(
+                                Attempt.owner_id == owner,
+                                Attempt.activity_instance_id == interview,
                             )
                         )
                         rubric = await session.scalar(
@@ -202,7 +250,7 @@ def case(test_database_url):
                     )
                     schemas = await registry.publish_analysis_schemas(owner_id=owner)
                     binding = await registry.bind_rubric(owner_id=owner, rubric_id=rubric.id)
-                    return RunRequest(
+                    accepted = RunRequest(
                         owner_id=owner,
                         invocation_key="original",
                         activity_id=activity,
@@ -239,10 +287,45 @@ def case(test_database_url):
                             consent=ConsentBasis.LEARNER_SUBMISSION,
                         ),
                     )
+                    # A real interview derives `redaction_required`; declaring the same
+                    # releasable scope as the practice attempt above therefore understates.
+                    # Revalidated, not just copied: `ordered_manifest` cross-checks the
+                    # attempt pin against every context reference, and a mismatch here
+                    # would be refused for the wrong reason.
+                    understated = RunRequest.model_validate(
+                        accepted.model_copy(
+                            update={
+                                "invocation_key": "understated-classification",
+                                "activity_id": interview,
+                                "attempt": PinnedVersion(
+                                    id=interview_attempt.id,
+                                    content_hash=interview_attempt.commitment_hash.hex(),
+                                ),
+                                "context": (
+                                    ContextInput(
+                                        ordinal=0,
+                                        reason="primary_evidence",
+                                        reference=AttemptTextReference(
+                                            kind="attempt_text",
+                                            attempt_id=interview_attempt.id,
+                                            commitment_sha256=(
+                                                interview_attempt.commitment_hash.hex()
+                                            ),
+                                            json_pointer="/output/result",
+                                            start_codepoint=0,
+                                            end_codepoint=11,
+                                        ),
+                                        prepared_input_hash=sha256(b"interviewer").hexdigest(),
+                                    ),
+                                ),
+                            }
+                        ).model_dump()
+                    )
+                    return accepted, understated
             finally:
                 await engine.dispose()
 
-        result.request = asyncio.run(seed())
+        result.request, result.understated = asyncio.run(seed())
         yield result
     finally:
         sync.dispose()
@@ -909,6 +992,63 @@ def test_a_replayed_submission_leaves_its_own_audit_record(case):
                     assert all(
                         event.aggregate_id == str(case.request.activity_id) for event in events
                     )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(exercise())
+
+
+def test_an_understated_classification_is_refused_and_still_audited(case):
+    """A refusal writes no run and still leaves its audit row behind.
+
+    The refusal aborts the registering transaction, so the audit row cannot be written
+    inside it; surviving here is what proves the repository writes that row separately.
+    Only the classification gate produces `model_run.refused`, so asserting on that
+    action distinguishes this refusal from every other reason a request can be rejected.
+    """
+
+    async def exercise():
+        engine, factory = case.factory()
+        try:
+            async with factory() as session:
+                repo = ModelRunRepository(session)
+                with pytest.raises(InvalidProvenance):
+                    await repo.register(case.understated)
+                async with session.begin():
+                    assert (
+                        await session.scalar(
+                            select(ModelRun).where(
+                                ModelRun.owner_id == case.owner,
+                                ModelRun.invocation_key == "understated-classification",
+                            )
+                        )
+                    ) is None
+                    events = (
+                        await session.scalars(
+                            select(AuditEvent).where(
+                                AuditEvent.owner_id == case.owner,
+                                AuditEvent.action == "model_run.refused",
+                                AuditEvent.idempotency_correlation_hash
+                                == sha256(b"understated-classification").digest(),
+                            )
+                        )
+                    ).all()
+                    assert len(events) == 1
+                    event = events[0]
+                    assert event.aggregate_type == "activity"
+                    assert event.aggregate_id == str(case.understated.activity_id)
+                    assert event.redacted_metadata["outcome"] == "denied"
+                    assert event.redacted_metadata["reason_code"] == "unauthorized"
+                    assert event.redacted_metadata["flags"]["authorized"] is False
+                    # The refusal reveals no more than the acceptance does.
+                    assert set(event.redacted_metadata) == {
+                        "schema_version",
+                        "outcome",
+                        "reason_code",
+                        "changed_fields",
+                        "counts",
+                        "flags",
+                    }
         finally:
             await engine.dispose()
 

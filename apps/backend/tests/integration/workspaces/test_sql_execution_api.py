@@ -18,6 +18,7 @@ def _seed_activity(
     local_date: date,
     stable_id: str,
     block: str = "sql",
+    attempt_kind: str = "none",
 ) -> int:
     from sqlalchemy import text
 
@@ -101,7 +102,7 @@ def _seed_activity(
             "optimistic_version, replacement_version"
             ") VALUES ("
             ":owner_id, :day_id, :version_id, :task_id, :stable_id, 'fixture-v1', "
-            "'Execute the assigned query.', 45, :version_key, 'ready', 'none', 'none', "
+            "'Execute the assigned query.', 45, :version_key, 'ready', :attempt_kind, 'none', "
             "'required', 45, false, 1, 1"
             ") RETURNING id"
         ),
@@ -112,6 +113,7 @@ def _seed_activity(
             "task_id": task_id,
             "stable_id": stable_id,
             "version_key": f"sql-api-{suffix}-v1",
+            "attempt_kind": attempt_kind,
         },
     ).scalar_one()
     return int(activity_id)
