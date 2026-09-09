@@ -17,6 +17,12 @@ from ..models.provenance import Record, provenance_checks
 
 TRANSCRIPT_BODY_LIMIT = 4194304
 CORRECTION_BODY_LIMIT = 8192
+# Corrections are append-only rows, so nothing but this cap bounds how many one
+# transcript can accumulate. `repository.append_correction` enforces it at write
+# time and `schemas.TranscriptResponse` declares the same number as the maximum
+# length of its `corrections` tuple. It lives here rather than in `schemas`
+# because both of those layers need it, exactly like the body limits above.
+MAX_CORRECTIONS_PER_TRANSCRIPT = 1_000
 
 
 class SpeechTranscript(Record):

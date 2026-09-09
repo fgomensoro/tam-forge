@@ -34,7 +34,10 @@ infrastructure failure is never mislabeled as the 409-shaped `TranscriptConflict
 a well-behaved client would not retry. No `SQLAlchemyError`, from either the
 first attempt or the recovery read, ever reaches the caller untranslated.
 `append_correction` recovers its own race the same way, minus the conflict
-branch, which content-hash identity makes unreachable there -- see its docstring.
+branch, which content-hash identity makes unreachable there. It has a conflict
+of a different kind -- a transcript already holding
+`MAX_CORRECTIONS_PER_TRANSCRIPT` corrections has no room for another -- which is
+decided before the insert rather than recovered from after it. See its docstring.
 
 `store`'s `recording.id` is read exactly once, into a local, before either
 transaction attempt begins. `recording` is the caller's already-loaded ORM
@@ -53,7 +56,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from hashlib import sha256
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import make_transient_to_detached
@@ -70,6 +73,7 @@ from .contracts import (
 )
 from .models import (
     CORRECTION_BODY_LIMIT,
+    MAX_CORRECTIONS_PER_TRANSCRIPT,
     TRANSCRIPT_BODY_LIMIT,
     SpeechTranscript,
     SpeechTranscriptCorrection,
@@ -248,12 +252,29 @@ class SqlAlchemyTranscriptRepository:
         loser's `IntegrityError` is recovered the same way -- by re-reading the
         identity in a fresh transaction -- and, because content equality *is*
         the identity here, that re-read can only find the row it collided with.
-        No conflict outcome is reachable at all: a correction whose body differs
-        is a different identity, not a collision, which is why the corrections
-        route declares no 409. An `IntegrityError` whose re-read finds nothing
-        was some other violation entirely, and surfaces like every other
-        `SQLAlchemyError` below: as `TranscriptUnavailable`, never
-        `TranscriptConflict`.
+        The collision itself is therefore never a conflict: a correction whose
+        body differs is a different identity, not a collision. An
+        `IntegrityError` whose re-read finds nothing was some other violation
+        entirely, and surfaces like every other `SQLAlchemyError` below: as
+        `TranscriptUnavailable`, never `TranscriptConflict`.
+
+        The one conflict this method does raise is capacity.
+        `TranscriptResponse` declares room for `MAX_CORRECTIONS_PER_TRANSCRIPT`
+        corrections, and nothing else bounds an append-only table, so the
+        correction past that cap is refused here -- as `TranscriptConflict`,
+        the 409 the corrections route declares, because the request is well
+        formed and within every size limit and it is the transcript's durable
+        state that has no room left. The check sits *after* the content-hash
+        lookup on purpose: a client retries a correction POST on a timer, so the
+        retry of the correction that filled the transcript has to replay the row
+        already written rather than be told its stored write failed.
+
+        Counting and inserting is not a lock, so two appends racing at the
+        boundary can both read the same under-cap count and both insert. That is
+        deliberate, matching this repository's approach to every other race here:
+        the overshoot is a handful of rows, it costs no correctness on the write
+        side, and `TranscriptService._to_response` bounds what it renders so the
+        response model cannot overflow either way.
         """
         if transcript.owner_id != owner_id:
             raise TranscriptNotFound()
@@ -269,6 +290,11 @@ class SqlAlchemyTranscriptRepository:
                 )
                 if existing is not None:
                     return _snapshot(existing)
+                on_file = await self._correction_count(
+                    owner_id=owner_id, transcript_id=transcript_id
+                )
+                if on_file >= MAX_CORRECTIONS_PER_TRANSCRIPT:
+                    raise TranscriptConflict()
                 row = SpeechTranscriptCorrection(
                     owner_id=owner_id,
                     canonical_json=canonical.decode("utf-8"),
@@ -283,6 +309,15 @@ class SqlAlchemyTranscriptRepository:
             )
         except SQLAlchemyError:
             raise TranscriptUnavailable() from None
+
+    async def _correction_count(self, *, owner_id: int, transcript_id: int) -> int:
+        total: int | None = await self.session.scalar(
+            select(func.count(SpeechTranscriptCorrection.id)).where(
+                SpeechTranscriptCorrection.owner_id == owner_id,
+                SpeechTranscriptCorrection.transcript_id == transcript_id,
+            )
+        )
+        return total or 0
 
     async def _correction_by_content(
         self, *, owner_id: int, transcript_id: int, content_hash: bytes

@@ -9,7 +9,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..agents.hashing import canonical_bytes
-from .models import CORRECTION_BODY_LIMIT, TRANSCRIPT_BODY_LIMIT
+from .models import (
+    CORRECTION_BODY_LIMIT,
+    MAX_CORRECTIONS_PER_TRANSCRIPT,
+    TRANSCRIPT_BODY_LIMIT,
+)
 
 SPEECH_SCHEMA_VERSION: Final[Literal[1]] = 1
 
@@ -35,7 +39,6 @@ MAX_QUALITY_DIMENSIONS = 16
 # too. Quartering it leaves comfortable headroom for those other fields instead;
 # validate_body_size below (not this bound) is what actually guarantees the limit.
 MAX_CORRECTION_TEXT_LENGTH: Final[int] = CORRECTION_BODY_LIMIT // 4
-MAX_CORRECTIONS_PER_TRANSCRIPT = 1_000
 
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 Track = Literal["microphone", "system_audio"]

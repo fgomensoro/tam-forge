@@ -49,7 +49,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import transaction_scope
 from ..recordings.models import Recording
 from .contracts import TranscriptConflict, TranscriptNotFound, TranscriptUnavailable
-from .models import SpeechTranscript, SpeechTranscriptCorrection
+from .models import (
+    MAX_CORRECTIONS_PER_TRANSCRIPT,
+    SpeechTranscript,
+    SpeechTranscriptCorrection,
+)
 from .repository import SqlAlchemyTranscriptRepository
 from .schemas import (
     Track,
@@ -172,6 +176,15 @@ class TranscriptService:
         corrections = await self._repository.corrections(
             owner_id=owner_id, transcript_id=transcript.id
         )
+        # Bounded here, not only at write time. `repository.append_correction`
+        # refuses the correction past the cap, but its count-then-insert guard
+        # is not a lock: two appends racing at the boundary can both read the
+        # same under-cap count and both insert. That overshoot must not cost
+        # the owner the transcript -- every read *and* every resubmission of it
+        # builds a `TranscriptResponse` here, and the model's declared
+        # `max_length` would turn a handful of extra rows into a permanent
+        # `ValidationError` on all of them. The rows themselves are still on
+        # file; this only bounds how many of them one response renders.
         return TranscriptResponse(
             transcript_id=transcript.id,
             recording_id=recording_id,
@@ -180,7 +193,8 @@ class TranscriptService:
             created_at=transcript.created_at,
             replayed=replayed,
             corrections=tuple(
-                _correction_response(correction, replayed=False) for correction in corrections
+                _correction_response(correction, replayed=False)
+                for correction in corrections[:MAX_CORRECTIONS_PER_TRANSCRIPT]
             ),
         )
 

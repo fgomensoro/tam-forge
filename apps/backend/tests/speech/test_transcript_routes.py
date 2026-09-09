@@ -198,6 +198,7 @@ class CorrectionTranscriptService(StubTranscriptService):
         super().__init__()
         self.seen_tracks: list[str] = []
         self.missing_track: str | None = None
+        self.at_capacity = False
 
     async def add_correction(
         self,
@@ -211,6 +212,8 @@ class CorrectionTranscriptService(StubTranscriptService):
         self.seen_tracks.append(track)
         if track == self.missing_track:
             raise TranscriptNotFound()
+        if self.at_capacity:
+            raise TranscriptConflict()
         return TranscriptCorrectionResponse(
             correction_id=1,
             transcript_id=1,
@@ -455,3 +458,38 @@ def test_transcript_text_never_reaches_a_response_body() -> None:
     assert conflict.status_code == 409
     for response in (success, invalid, conflict):
         assert marker not in response.text
+
+
+def test_submit_correction_for_a_transcript_at_the_correction_cap_returns_409() -> None:
+    """A transcript with no room left for another correction is a conflict with
+    durable state, not a malformed request and not an oversized body: the
+    correction itself passed every schema bound to get here. It has to reach the
+    client as the same problem+json every other transcript conflict does.
+    """
+    service = CorrectionTranscriptService()
+    service.at_capacity = True
+    client = client_for(service)
+    with client:
+        response = client.post(
+            f"/api/v1/recordings/{RECORDING_ID}/transcripts/microphone/corrections",
+            json=correction_payload(),
+            headers={"Authorization": "Bearer test-token", "Idempotency-Key": "correction-1"},
+        )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "transcript_conflict"
+
+
+def test_the_corrections_route_declares_its_conflict_response() -> None:
+    """The native client is generated from this document, so a status the route
+    can actually return has to be declared here or the generated client has no
+    case for it. Corrections had no 409 to declare until the cap gave them one.
+    """
+    app = create_app(
+        Settings(environment="test", github_user_id=102269369, secure_cookies=False, _env_file=None)
+    )
+    path = "/api/v1/recordings/{recording_id}/transcripts/{track}/corrections"
+
+    responses = app.openapi()["paths"][path]["post"]["responses"]
+
+    assert "409" in responses

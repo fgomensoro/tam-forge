@@ -27,6 +27,7 @@ from uuid import UUID, uuid4
 import pytest
 from tamforge_backend.recordings.models import Recording
 from tamforge_backend.speech.contracts import TranscriptConflict, TranscriptNotFound
+from tamforge_backend.speech.models import MAX_CORRECTIONS_PER_TRANSCRIPT
 from tamforge_backend.speech.schemas import TranscriptCorrectionCommand, TranscriptSubmitCommand
 from tamforge_backend.speech.service import TranscriptService
 
@@ -202,6 +203,40 @@ class FakeTranscriptRepository:
     ) -> tuple[SimpleNamespace, ...]:
         del owner_id
         return tuple(self._corrections.get(transcript_id, []))
+
+    def seed_corrections(self, *, transcript_id: int, count: int) -> None:
+        """Put `count` corrections on file behind the service's back.
+
+        `add_correction` can no longer reach this state on its own: the real
+        repository refuses the write once a transcript is at the cap. Two
+        concurrent appends that both clear its check-then-insert guard still
+        can overshoot it, though, which is the state the read path has to
+        survive -- so this writes the rows directly rather than through
+        `append_correction`.
+        """
+        stored = self._corrections.setdefault(transcript_id, [])
+        stored.clear()
+        for index in range(count):
+            stored.append(
+                SimpleNamespace(
+                    id=index + 1,
+                    owner_id=1,
+                    transcript_id=transcript_id,
+                    canonical_json=json.dumps(
+                        {
+                            "transcript_id": transcript_id,
+                            "segment_index": 0,
+                            "word_start_index": 0,
+                            "word_end_index": 1,
+                            "original_text": "helo",
+                            "corrected_text": "hello",
+                            "reason": "misheard_term",
+                        }
+                    ),
+                    content_hash=b"\x22" * 32,
+                    created_at=CREATED_AT,
+                )
+            )
 
     async def append_correction(
         self, *, owner_id: int, transcript: object, body: dict[str, object]
@@ -423,5 +458,64 @@ def test_add_correction_for_a_missing_track_raises_not_found() -> None:
                     }
                 ),
             )
+
+    asyncio.run(exercise())
+
+
+def test_listing_a_transcript_past_the_correction_cap_still_returns_a_page() -> None:
+    """A transcript holding more corrections than `TranscriptResponse` declares
+    room for used to make `_to_response` raise a pydantic `ValidationError`,
+    which reached the client as an unhandled 500 rather than a problem+json
+    body -- and did so on every subsequent read, so one write permanently cost
+    the owner the ability to see the transcript at all. `_to_response` now
+    renders no more corrections than the response model accepts.
+    """
+    recording_id = uuid4()
+    session = FakeSession([fake_recording(client_recording_id=recording_id)])
+    repository = FakeTranscriptRepository()
+    service = TranscriptService(session, repository)  # type: ignore[arg-type]
+
+    async def exercise() -> None:
+        transcript = await service.submit(
+            owner_id=1, recording_id=recording_id, command=submit_command()
+        )
+        repository.seed_corrections(
+            transcript_id=transcript.transcript_id,
+            count=MAX_CORRECTIONS_PER_TRANSCRIPT + 1,
+        )
+
+        page = await service.list_for_recording(owner_id=1, recording_id=recording_id)
+
+        assert len(page.items[0].corrections) == MAX_CORRECTIONS_PER_TRANSCRIPT
+
+    asyncio.run(exercise())
+
+
+def test_resubmitting_a_transcript_past_the_correction_cap_still_returns_a_response() -> None:
+    """The same overflow broke the write path too: `submit` renders its result
+    through `_to_response` as well, so a transcript past the cap could not even
+    be resubmitted -- the retry a client makes to recover a lost response was
+    itself answered with a 500.
+    """
+    recording_id = uuid4()
+    session = FakeSession([fake_recording(client_recording_id=recording_id)])
+    repository = FakeTranscriptRepository()
+    service = TranscriptService(session, repository)  # type: ignore[arg-type]
+
+    async def exercise() -> None:
+        transcript = await service.submit(
+            owner_id=1, recording_id=recording_id, command=submit_command()
+        )
+        repository.seed_corrections(
+            transcript_id=transcript.transcript_id,
+            count=MAX_CORRECTIONS_PER_TRANSCRIPT + 1,
+        )
+
+        replayed = await service.submit(
+            owner_id=1, recording_id=recording_id, command=submit_command()
+        )
+
+        assert replayed.replayed is True
+        assert len(replayed.corrections) == MAX_CORRECTIONS_PER_TRANSCRIPT
 
     asyncio.run(exercise())

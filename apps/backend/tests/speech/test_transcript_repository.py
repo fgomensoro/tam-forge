@@ -19,6 +19,7 @@ from types import SimpleNamespace
 
 import pytest
 from sqlalchemy.exc import IntegrityError, MissingGreenlet, OperationalError
+from sqlalchemy.sql.functions import count as sql_count
 from tamforge_backend.agents.hashing import canonical_bytes
 from tamforge_backend.speech.contracts import (
     TranscriptConflict,
@@ -28,6 +29,7 @@ from tamforge_backend.speech.contracts import (
 )
 from tamforge_backend.speech.models import (
     CORRECTION_BODY_LIMIT,
+    MAX_CORRECTIONS_PER_TRANSCRIPT,
     TRANSCRIPT_BODY_LIMIT,
     SpeechTranscript,
     SpeechTranscriptCorrection,
@@ -227,6 +229,10 @@ class FakeSession:
         matches = self._matches(statement)
         if self.race is not None:
             await self.race.wait()
+        if isinstance(statement.column_descriptions[0]["expr"], sql_count):
+            # `select(func.count(Model.id))` aggregates exactly the rows
+            # `_matches` already filtered, so the match count is the answer.
+            return len(matches)
         return matches[0] if matches else None
 
     async def scalars(self, statement: object) -> _ScalarResult:
@@ -234,7 +240,9 @@ class FakeSession:
         return _ScalarResult(self._matches(statement))
 
     def _matches(self, statement: object) -> list[object]:
-        model = statement.column_descriptions[0]["type"]
+        # "entity" rather than "type": both name the model for `select(Model)`,
+        # but an aggregate's "type" is its own result type, not a mapped class.
+        model = statement.column_descriptions[0]["entity"]
         params = statement.compile().params
         return [
             row
@@ -644,9 +652,10 @@ def test_append_correction_unexplained_integrity_error_surfaces_as_unavailable()
     finds no matching row, so the violation was not the content-hash
     collision it recovers from -- has to surface like every other database
     failure: as `TranscriptUnavailable`, with a clean exception chain, and
-    never as `TranscriptConflict`. Corrections have no conflict outcome at
-    all (a differing body is a different identity, not a collision), which
-    is why the corrections route declares no 409. This guards against a
+    never as `TranscriptConflict`. A content-hash collision has no conflict
+    outcome (a differing body is a different identity, not a collision), so
+    the only `TranscriptConflict` this method can raise is the capacity one
+    covered above -- never a rebadged database failure. This guards against a
     future change "symmetrizing" this method with `store` by borrowing its
     replay-vs-conflict branch, whose conflict half nothing here can produce.
     """
@@ -737,5 +746,127 @@ def test_reconcile_lost_race_surfaces_a_read_failure_as_unavailable_not_conflict
             )
 
         assert excinfo.value.__suppress_context__ is True
+
+    asyncio.run(exercise())
+
+
+def seed_corrections(
+    session: FakeSession, *, owner_id: int, transcript_id: int, count: int
+) -> None:
+    """Put `count` already-committed corrections on file directly.
+
+    Reaching the cap through `append_correction` itself would canonicalize,
+    hash, and flush a thousand bodies, and `FakeSession.flush` rescans every
+    row it holds on each insert -- quadratic, and slow enough to matter in a
+    unit suite. These rows only ever have to be counted, so they are written
+    straight into the fake's list with ids well clear of the ones `flush`
+    hands out, which is also what keeps `flush` from trying to assign them one.
+    """
+    for index in range(count):
+        row = SpeechTranscriptCorrection(
+            owner_id=owner_id,
+            canonical_json=json.dumps({"transcript_id": transcript_id, "seed": index}),
+            content_hash=sha256(f"seed-{transcript_id}-{index}".encode()).digest(),
+        )
+        row.id = 1_000_000 + index
+        row.transcript_id = transcript_id
+        session.rows.append(row)
+
+
+def test_append_correction_refuses_a_transcript_already_at_the_correction_cap() -> None:
+    """`TranscriptResponse.corrections` declares `MAX_CORRECTIONS_PER_TRANSCRIPT`
+    as its maximum length, and nothing used to hold the write path to it. The
+    correction past the cap therefore stored fine and then made the transcript
+    unrenderable: every later read *and* write went through
+    `TranscriptService._to_response`, which built a response model the stored
+    rows no longer fit. Refusing the write is what keeps that from happening,
+    and `TranscriptConflict` is the shape for it -- the request is well formed
+    and its body is within every size limit, it is the transcript's durable
+    state that has no room left.
+    """
+
+    async def exercise() -> None:
+        session = FakeSession()
+        repository = SqlAlchemyTranscriptRepository(session)
+        recording = SimpleNamespace(id=42)
+        transcript = await repository.store(
+            owner_id=1, recording=recording, track="microphone", body=transcript_body()
+        )
+        seed_corrections(
+            session,
+            owner_id=1,
+            transcript_id=transcript.id,
+            count=MAX_CORRECTIONS_PER_TRANSCRIPT,
+        )
+
+        with pytest.raises(TranscriptConflict):
+            await repository.append_correction(
+                owner_id=1, transcript=transcript, body=correction_body()
+            )
+
+        stored = sum(isinstance(row, SpeechTranscriptCorrection) for row in session.rows)
+        assert stored == MAX_CORRECTIONS_PER_TRANSCRIPT
+
+    asyncio.run(exercise())
+
+
+def test_a_correction_already_on_file_still_replays_at_the_cap() -> None:
+    """The cap must not break idempotency. A correction POST is retried on a
+    timer, so the retry of the correction that *filled* the transcript has to
+    replay the row already written, exactly as it would below the cap -- not
+    come back as a conflict telling a client its stored write failed. That is
+    why the cap is checked after the content-hash lookup, never before it.
+    """
+
+    async def exercise() -> None:
+        session = FakeSession()
+        repository = SqlAlchemyTranscriptRepository(session)
+        recording = SimpleNamespace(id=42)
+        transcript = await repository.store(
+            owner_id=1, recording=recording, track="microphone", body=transcript_body()
+        )
+        body = correction_body()
+        stored = await repository.append_correction(owner_id=1, transcript=transcript, body=body)
+        seed_corrections(
+            session,
+            owner_id=1,
+            transcript_id=transcript.id,
+            count=MAX_CORRECTIONS_PER_TRANSCRIPT - 1,
+        )
+
+        replayed = await repository.append_correction(owner_id=1, transcript=transcript, body=body)
+
+        assert replayed.id == stored.id
+        on_file = sum(isinstance(row, SpeechTranscriptCorrection) for row in session.rows)
+        assert on_file == MAX_CORRECTIONS_PER_TRANSCRIPT
+
+    asyncio.run(exercise())
+
+
+def test_the_correction_cap_is_counted_per_transcript() -> None:
+    """A transcript that filled its own cap must not close corrections on a
+    different transcript. The count is scoped the same way every other query
+    in this repository is: by owner and by transcript, never table-wide.
+    """
+
+    async def exercise() -> None:
+        session = FakeSession()
+        repository = SqlAlchemyTranscriptRepository(session)
+        recording = SimpleNamespace(id=42)
+        transcript = await repository.store(
+            owner_id=1, recording=recording, track="microphone", body=transcript_body()
+        )
+        seed_corrections(
+            session,
+            owner_id=1,
+            transcript_id=transcript.id + 1,
+            count=MAX_CORRECTIONS_PER_TRANSCRIPT,
+        )
+
+        correction = await repository.append_correction(
+            owner_id=1, transcript=transcript, body=correction_body()
+        )
+
+        assert correction.transcript_id == transcript.id
 
     asyncio.run(exercise())

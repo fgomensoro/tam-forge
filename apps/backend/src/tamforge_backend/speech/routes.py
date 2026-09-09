@@ -71,6 +71,9 @@ TRANSCRIPT_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
 TRANSCRIPT_CORRECTION_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: _transcript_problem_response_schema("Native bearer authentication is required."),
     404: _transcript_problem_response_schema("Recording or transcript track was not found."),
+    409: _transcript_problem_response_schema(
+        "Transcript already holds the maximum number of corrections."
+    ),
     413: _transcript_problem_response_schema("Correction body exceeds the size limit."),
     422: _transcript_problem_response_schema("Correction request validation failed."),
     503: _transcript_problem_response_schema("Transcript storage is temporarily unavailable."),
