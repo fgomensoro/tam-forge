@@ -4,6 +4,11 @@ import Foundation
 // tests can tell "no model" from "transcription failed". Fetching models
 // into this directory is scripts/dev/fetch_whisper_models.sh's job (issue
 // #42 Task 1); this type never downloads anything.
+//
+// The app is sandboxed, so .applicationSupportDirectory below resolves to
+// the container-redirected path, not the real home directory. That is the
+// path config/speech-models.yaml installs to; keep the two in step or the
+// app finds no model and transcription silently stays off.
 struct SpeechModelCatalog: Sendable {
     static let transcriptionModelFilename = "ggml-small.en-q5_1.bin"
     static let vadModelFilename = "ggml-silero-v5.1.2.bin"

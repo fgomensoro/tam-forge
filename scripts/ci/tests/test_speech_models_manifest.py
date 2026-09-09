@@ -16,6 +16,11 @@ def manifest() -> dict[str, object]:
     return yaml.safe_load(MANIFEST.read_text(encoding="utf-8"))
 
 
+def install_dir(artifact: str) -> Path:
+    raw = manifest()["artifacts"][artifact]["installs_to"]
+    return Path(raw.replace("~", str(Path.home()), 1)) if raw.startswith("~") else Path(raw)
+
+
 def test_every_artifact_is_pinned_by_size_and_hash() -> None:
     document = manifest()
     assert document["schema_version"] == 1
@@ -64,7 +69,7 @@ def test_installed_artifacts_match_their_pins_when_present(tmp_path: Path) -> No
     if vendor.is_dir():
         macos = vendor / "macos-arm64_x86_64" / "whisper.framework"
         assert macos.is_dir(), "installed XCFramework is missing its macOS slice"
-    models = Path.home() / "Library" / "Application Support" / "TAM Forge" / "Models"
+    models = install_dir("transcription_model")
     for name in ("transcription_model", "vad_model"):
         entry = artifacts[name]
         installed = models / entry["filename"]
@@ -102,3 +107,21 @@ def test_benchmark_model_is_pinned_with_the_same_quantization() -> None:
     # Same quantization as the shipped model, so the comparison isolates size.
     assert benchmark["version"] == artifacts["transcription_model"]["version"]
     assert benchmark["installs_to"] == artifacts["transcription_model"]["installs_to"]
+
+
+def test_models_install_inside_the_app_sandbox_container() -> None:
+    # TAMForge.app is sandboxed, so SpeechModelCatalog.defaultDirectory resolves
+    # .applicationSupportDirectory to the container-redirected path. A model
+    # installed anywhere else is unreadable by the app, WhisperTranscriber is
+    # never constructed, and transcription silently stays off with no error.
+    container = (
+        Path.home()
+        / "Library"
+        / "Containers"
+        / "com.fgomensoro.tamforge"
+        / "Data"
+        / "Library"
+        / "Application Support"
+    )
+    for name in ("transcription_model", "vad_model", "benchmark_model"):
+        assert container in install_dir(name).parents, name
