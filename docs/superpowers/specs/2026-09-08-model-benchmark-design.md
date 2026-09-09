@@ -49,3 +49,26 @@ The decision rule is recorded with the evidence: `small.en` wins only if it redu
 ## Testing
 
 `scripts/ci/tests/test_check_model_benchmark.py` runs in CI with no models and no audio: it covers the normaliser, the word-error-rate distance on hand-computed cases, critical-term recall, the tie-breaking decision rule, and rejection of a report that carries transcripts, paths, or a model pin that does not match the manifest.
+
+## Result (2026-09-08)
+
+Measured on the owner's own voice: six passages of the versioned reading script, 216 seconds of audio, recorded in one session in a quiet room on the MacBook Air.
+
+| Measure | base.en q5_1 | small.en q5_1 |
+|---|---|---|
+| Word error rate | 11.7% | 9.1% |
+| Substitutions | 31 | 14 |
+| Deletions | 17 | 29 |
+| Insertions | 10 | 2 |
+| Critical terms found | 20 of 22 | 21 of 22 |
+| Transcription seconds | 2.4 | 4.5 |
+| Peak resident bytes | 278 MB | 604 MB |
+
+**Chosen model: `small.en`.** It clears the stated two-point word-error-rate margin, and the margin understates the case: it makes fewer than half the substitutions base makes. A substitution silently changes what the speaker said, which is the error class this product can least afford, while base's advantage is only in deletions, which a reader notices. Base missed the terms `quota`, `discovery call`, and `expansion revenue`; small missed `churn` and `discovery call`. Neither model recognised `discovery call` in any passage, which is worth revisiting when the gold set exists.
+
+Both models are far faster than real time and both sit well inside the 1.5 GiB transcription gate, so speed and memory did not decide this.
+
+**Limits of this evidence.** One speaker, one session, one room, 3.6 minutes, scored against the script the speaker read. This is real measured evidence, not the blinded adjudicated gold set that issue #47 defines, and it cannot support a claim about other speakers, noisier rooms, or spontaneous speech. A later gold set may overturn it.
+
+**Not changed here.** The shipped pin stays `base.en` in this commit. Switching the model changes what every future transcript is produced by, so it belongs in its own reviewed change together with the memory and latency figures for the machines the app targets.
+
