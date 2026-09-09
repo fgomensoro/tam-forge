@@ -1,6 +1,8 @@
 #!/bin/zsh
-# Fetch, verify, and install the pinned whisper.cpp models (transcription +
-# VAD) into Application Support.
+# Fetch, verify, and install every pinned whisper.cpp model artifact (any
+# manifest entry that installs to the same directory as transcription_model:
+# currently transcription, VAD, and the benchmark model) into Application
+# Support.
 #
 # Idempotent: an artifact already installed with the right size and sha256
 # is left alone and nothing is downloaded. Downloads go to a temporary
@@ -89,5 +91,21 @@ fetch_one() {
   echo "Installed $filename to $dest"
 }
 
-fetch_one transcription_model
-fetch_one vad_model
+model_artifact_keys() {
+  "${PY[@]}" -c '
+import sys
+import yaml
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    document = yaml.safe_load(handle)
+artifacts = document["artifacts"]
+target = artifacts["transcription_model"]["installs_to"]
+for name, entry in artifacts.items():
+    if entry["installs_to"] == target:
+        print(name)
+' "$MANIFEST"
+}
+
+for key in $(model_artifact_keys); do
+  fetch_one "$key"
+done

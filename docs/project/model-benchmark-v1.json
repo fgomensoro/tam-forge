@@ -1,0 +1,41 @@
+{
+  "chosen_model": "candidate",
+  "decision_reason": "candidate wins on word error rate: 0.091 beats base's 0.117 by at least the 0.02 margin.",
+  "machine_profile": "arm64-macos-26-5-24gib",
+  "models": {
+    "base": {
+      "audio_seconds": 216.376,
+      "bytes": 59721011,
+      "critical_term_recall": 0.9090909090909091,
+      "critical_terms_expected": 22,
+      "critical_terms_found": 20,
+      "deletions": 17,
+      "filename": "ggml-base.en-q5_1.bin",
+      "insertions": 10,
+      "peak_resident_bytes": 291373056,
+      "sha256": "4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f",
+      "substitutions": 31,
+      "transcription_seconds": 2.4048550128936768,
+      "word_error_rate": 0.11740890688259109
+    },
+    "candidate": {
+      "audio_seconds": 216.376,
+      "bytes": 190098681,
+      "critical_term_recall": 0.9545454545454546,
+      "critical_terms_expected": 22,
+      "critical_terms_found": 21,
+      "deletions": 29,
+      "filename": "ggml-small.en-q5_1.bin",
+      "insertions": 2,
+      "peak_resident_bytes": 633815040,
+      "sha256": "bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30",
+      "substitutions": 14,
+      "transcription_seconds": 4.531385064125061,
+      "word_error_rate": 0.09109311740890688
+    }
+  },
+  "passages": 6,
+  "runtime_version": "b4938",
+  "schema_version": 1,
+  "script_version": "voice-benchmark-script-v1"
+}
