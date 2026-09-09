@@ -3,11 +3,13 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -750,6 +752,7 @@ def test_example_is_safe_structurally_valid_and_deliberately_incomplete() -> Non
 
 RUNTIME_REPORT = Path("docs/project/recording-verification-v1.json")
 CI_WORKFLOW = Path(".github/workflows/ci.yml")
+CLI = Path("scripts/ci/check_recording_verification.py")
 
 
 def test_runtime_report_is_the_blocked_template_or_exact_ancestor_evidence() -> None:
@@ -787,51 +790,94 @@ def _is_verified_ancestor_of_head(commit_sha: str) -> bool:
     )
 
 
-def _ancestor(*, verified_code_unchanged: bool) -> str:
-    """Pick a real ancestor of HEAD (never HEAD) with or without verified-code changes."""
-    history = _git("rev-list", "--max-count=200", "HEAD").stdout.split()[1:]
-    for commit_sha in history:
-        unchanged = _git("diff", "--quiet", commit_sha, "HEAD", "--", *VERIFIED_PATHS)
-        if (unchanged.returncode == 0) == verified_code_unchanged:
-            return commit_sha
-    pytest.skip("history has no suitable ancestor commit")
+class _AncestorRepository(NamedTuple):
+    root: Path
+    unchanged_ancestor: str
+    changed_ancestor: str
 
 
-def test_cli_structural_mode_accepts_evidence_recorded_on_an_ancestor_commit(
-    tmp_path: Path,
-) -> None:
-    # Committing the evidence moves HEAD past the verified head, and pull
-    # request CI checks out a merge commit; ancestry keeps the binding honest.
+@pytest.fixture
+def ancestor_repository(tmp_path: Path) -> _AncestorRepository:
+    """Build a repository whose history always exercises the ancestor allowance.
+
+    Reading ancestors out of the real history made this coverage depend on
+    which commits happened to land last, so the security-relevant branch went
+    untested whenever recent work touched the verified paths.
+    """
+
+    root = tmp_path / "repository"
+    (root / CLI.parent).mkdir(parents=True)
+    shutil.copy(CLI, root / CLI)
+    (root / "apps" / "macos").mkdir(parents=True)
+    (root / "docs").mkdir()
+
+    def git(*arguments: str) -> str:
+        completed = subprocess.run(
+            ["git", "-C", str(root), *arguments],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return completed.stdout.strip()
+
+    def commit(relative_path: str, text: str) -> str:
+        (root / relative_path).write_text(text, encoding="utf-8")
+        git("add", "--all")
+        git(
+            "-c",
+            "user.name=recording verification tests",
+            "-c",
+            "user.email=tests@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--message",
+            f"touch {relative_path}",
+        )
+        return git("rev-parse", "HEAD")
+
+    git("init", "--quiet")
+    changed_ancestor = commit("apps/macos/App.swift", "first")
+    unchanged_ancestor = commit("apps/macos/App.swift", "second")
+    commit("docs/notes.md", "a change outside the verified paths")
+    return _AncestorRepository(
+        root=root,
+        unchanged_ancestor=unchanged_ancestor,
+        changed_ancestor=changed_ancestor,
+    )
+
+
+def _run_cli(
+    repository: _AncestorRepository, commit_sha: str, *arguments: str
+) -> subprocess.CompletedProcess[str]:
     payload = _payload()
-    payload["commit_sha"] = _ancestor(verified_code_unchanged=True)
-    report = tmp_path / "report.json"
+    payload["commit_sha"] = commit_sha
+    report = repository.root / "report.json"
     report.write_text(json.dumps(payload), encoding="utf-8")
 
-    completed = subprocess.run(
-        [sys.executable, "scripts/ci/check_recording_verification.py", str(report)],
+    return subprocess.run(
+        [sys.executable, str(repository.root / CLI), str(report), *arguments],
         check=False,
         capture_output=True,
         text=True,
     )
+
+
+def test_cli_structural_mode_accepts_evidence_recorded_on_an_ancestor_commit(
+    ancestor_repository: _AncestorRepository,
+) -> None:
+    # Committing the evidence moves HEAD past the verified head, and pull
+    # request CI checks out a merge commit; ancestry keeps the binding honest.
+    completed = _run_cli(ancestor_repository, ancestor_repository.unchanged_ancestor)
 
     assert completed.returncode == 0, completed.stderr
     assert json.loads(completed.stdout)["complete"] is True
 
 
 def test_cli_structural_mode_rejects_ancestor_evidence_once_verified_code_changed(
-    tmp_path: Path,
+    ancestor_repository: _AncestorRepository,
 ) -> None:
-    payload = _payload()
-    payload["commit_sha"] = _ancestor(verified_code_unchanged=False)
-    report = tmp_path / "report.json"
-    report.write_text(json.dumps(payload), encoding="utf-8")
-
-    completed = subprocess.run(
-        [sys.executable, "scripts/ci/check_recording_verification.py", str(report)],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    completed = _run_cli(ancestor_repository, ancestor_repository.changed_ancestor)
 
     assert completed.returncode == 2
     assert "commit_sha does not match repository_head" in completed.stderr
@@ -839,23 +885,10 @@ def test_cli_structural_mode_rejects_ancestor_evidence_once_verified_code_change
 
 
 def test_cli_require_complete_still_requires_the_exact_repository_head(
-    tmp_path: Path,
+    ancestor_repository: _AncestorRepository,
 ) -> None:
-    payload = _payload()
-    payload["commit_sha"] = _ancestor(verified_code_unchanged=True)
-    report = tmp_path / "report.json"
-    report.write_text(json.dumps(payload), encoding="utf-8")
-
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "scripts/ci/check_recording_verification.py",
-            str(report),
-            "--require-complete",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
+    completed = _run_cli(
+        ancestor_repository, ancestor_repository.unchanged_ancestor, "--require-complete"
     )
 
     assert completed.returncode == 2
