@@ -138,6 +138,9 @@
 		F70000000000000000000004 /* whisper.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F70000000000000000001002 /* whisper.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		F70000000000000000000005 /* whisper.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = F70000000000000000001002 /* whisper.xcframework */; };
 		F70000000000000000000006 /* WhisperRuntimeSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000001003 /* WhisperRuntimeSmokeTests.swift */; };
+		F6000000000000000000000C /* RecordingAudioReading.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000001008 /* RecordingAudioReading.swift */; };
+		F6000000000000000000000D /* RecordingAudioReading.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000001008 /* RecordingAudioReading.swift */; };
+		F6000000000000000000000E /* RecordingAudioReadingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000001009 /* RecordingAudioReadingTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -251,6 +254,8 @@
 		F70000000000000000001001 /* WhisperTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperTranscriber.swift; sourceTree = "<group>"; };
 		F70000000000000000001002 /* whisper.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = whisper.xcframework; path = Vendor/whisper.xcframework; sourceTree = "<group>"; };
 		F70000000000000000001003 /* WhisperRuntimeSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperRuntimeSmokeTests.swift; sourceTree = "<group>"; };
+		F60000000000000000001008 /* RecordingAudioReading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingAudioReading.swift; sourceTree = "<group>"; };
+		F60000000000000000001009 /* RecordingAudioReadingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingAudioReadingTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -318,6 +323,7 @@
 				F60000000000000000001004 /* ASRAudioDerivationTests.swift */,
 				F60000000000000000001007 /* SpeechTranscriptionTests.swift */,
 				F70000000000000000001003 /* WhisperRuntimeSmokeTests.swift */,
+				F60000000000000000001009 /* RecordingAudioReadingTests.swift */,
 				F40000000000000000000011 /* NativeParityFixtureTests.swift */,
 				E30000000000000000000071 /* NativeEvidenceAdapterTests.swift */,
 				E30000000000000000000072 /* EvidenceLedgerTests.swift */,
@@ -449,6 +455,7 @@
 				F60000000000000000001005 /* SpeechTranscription.swift */,
 				F60000000000000000001006 /* SpeechModelCatalog.swift */,
 				F70000000000000000001001 /* WhisperTranscriber.swift */,
+				F60000000000000000001008 /* RecordingAudioReading.swift */,
 			);
 			path = Speech;
 			sourceTree = "<group>";
@@ -676,6 +683,7 @@
 				F60000000000000000000007 /* SpeechTranscription.swift in Sources */,
 				F60000000000000000000009 /* SpeechModelCatalog.swift in Sources */,
 				F70000000000000000000001 /* WhisperTranscriber.swift in Sources */,
+				F6000000000000000000000C /* RecordingAudioReading.swift in Sources */,
 				E30000000000000000000001 /* EvidenceModels.swift in Sources */,
 				F40000000000000000000005 /* NativeParityUIFixture.swift in Sources */,
 				E30000000000000000000002 /* LiveEvidenceAPI.swift in Sources */,
@@ -732,12 +740,14 @@
 				F60000000000000000000008 /* SpeechTranscription.swift in Sources */,
 				F6000000000000000000000A /* SpeechModelCatalog.swift in Sources */,
 				F70000000000000000000002 /* WhisperTranscriber.swift in Sources */,
+				F6000000000000000000000D /* RecordingAudioReading.swift in Sources */,
 				F30000000000000000000021 /* RecordingFeatureTests.swift in Sources */,
 				F30000000000000000000022 /* RecordingUploadTests.swift in Sources */,
 				F60000000000000000000003 /* AudioQualityObservationsTests.swift in Sources */,
 				F60000000000000000000004 /* ASRAudioDerivationTests.swift in Sources */,
 				F6000000000000000000000B /* SpeechTranscriptionTests.swift in Sources */,
 				F70000000000000000000006 /* WhisperRuntimeSmokeTests.swift in Sources */,
+				F6000000000000000000000E /* RecordingAudioReadingTests.swift in Sources */,
 				F40000000000000000000001 /* NativeParityFixtureTests.swift in Sources */,
 				E30000000000000000000021 /* EvidenceModels.swift in Sources */,
 				E30000000000000000000022 /* LiveEvidenceAPI.swift in Sources */,

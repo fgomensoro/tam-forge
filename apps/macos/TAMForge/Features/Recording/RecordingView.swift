@@ -17,6 +17,7 @@ struct RecordingView: View {
                 header
                 phaseNotice
                 recordingControls
+                transcriptSection
                 consentSummary
                 if let snapshot = coordinator.preflightSnapshot,
                     coordinator.phase.hasCurrentPreflightSnapshot
@@ -124,6 +125,43 @@ struct RecordingView: View {
             }
         }
         .accessibilityIdentifier("recordingControls")
+    }
+
+    // Local only: nothing here is written to disk or sent anywhere until
+    // issue #44. Absent whenever transcriptState is .idle, which is every
+    // launch that has no transcriber configured.
+    @ViewBuilder
+    private var transcriptSection: some View {
+        if coordinator.transcriptState != .idle {
+            GroupBox("Local transcript") {
+                switch coordinator.transcriptState {
+                case .idle:
+                    EmptyView()
+                case .running:
+                    ProgressView("Transcribing this recording on this Mac.")
+                        .accessibilityIdentifier("recordingTranscriptStatus")
+                case .ready(_, let result):
+                    VStack(alignment: .leading, spacing: 8) {
+                        ScrollView {
+                            Text(result.text)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxHeight: 280)
+                        .accessibilityIdentifier("recordingTranscript")
+                        Text("Transcribed locally with \(result.identity.modelFilename).")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("recordingTranscriptModel")
+                    }
+                case .failed(_, let reason):
+                    Label(reason, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                        .accessibilityIdentifier("recordingTranscriptStatus")
+                }
+            }
+            .accessibilityIdentifier("recordingTranscriptSection")
+        }
     }
 
     private var consentSummary: some View {

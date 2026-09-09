@@ -918,6 +918,18 @@ final class TAMForgeUITests: XCTestCase {
         roadmaps.click()
         XCTAssertTrue(app.staticTexts["Roadmaps"].waitForExistence(timeout: 5))
 
+        let recording = app.buttons["recordingNavigation"]
+        XCTAssertTrue(recording.isHittable)
+        recording.click()
+        XCTAssertTrue(app.staticTexts["Recording"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["recordingStartButton"].waitForExistence(timeout: 5))
+        // Fixture mode ships no transcription model, so transcriptState never
+        // leaves .idle: the transcript section must not render at all.
+        XCTAssertFalse(app.descendants(matching: .any)["recordingTranscriptSection"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["recordingTranscriptStatus"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["recordingTranscript"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["recordingTranscriptModel"].exists)
+
         let signOut = app.buttons["signOutButton"]
         XCTAssertTrue(signOut.isHittable)
         signOut.click()

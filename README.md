@@ -88,15 +88,18 @@ Local transcription runs on a pinned `whisper.cpp` runtime (XCFramework `b4938`,
 Metal-accelerated, English word timestamps, whisper's built-in VAD). The framework
 and its models are one-time fetches: `make whisper-framework` installs the
 XCFramework into `apps/macos/Vendor` (gitignored), and `make whisper-models`
-installs every pinned model, including the shipped `ggml-base.en-q5_1.bin`, into
-`~/Library/Application Support/TAM Forge/Models`. Every pin (URL, byte size,
+installs every pinned model, including the shipped `ggml-small.en-q5_1.bin`, into
+the app's sandbox container under
+`~/Library/Containers/com.fgomensoro.tamforge/Data/Library/Application Support/TAM Forge/Models`.
+The app is sandboxed, so that container path is where it looks; a model placed in
+the real `~/Library/Application Support` is invisible to it. Every pin (URL, byte size,
 SHA-256, license) lives in `config/speech-models.yaml`; nothing downloads at app
 runtime. `WhisperRuntimeSmokeTests` (apps/macos/TAMForgeTests) exercises the real
 model end-to-end but skips itself with `XCTSkip` when the model is not installed,
 so CI stays green without ever fetching it.
 
-`make whisper-benchmark` compares the shipped `base.en` against the pinned
-`small.en` candidate on recordings of `docs/project/voice-benchmark-script-v1.md`
+`make whisper-benchmark` compares the shipped `small.en` against the smaller
+`base.en` on recordings of `docs/project/voice-benchmark-script-v1.md`
 (record them first with `scripts/dev/prepare_benchmark_audio.sh`); results and
 transcripts stay local under the gitignored `apps/macos/PrivateAudio/`, and only
 the aggregate-only report in `docs/project/model-benchmark-v1.json` is committed.
