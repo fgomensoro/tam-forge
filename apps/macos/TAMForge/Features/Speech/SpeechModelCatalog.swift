@@ -5,13 +5,13 @@ import Foundation
 // into this directory is scripts/dev/fetch_whisper_models.sh's job (issue
 // #42 Task 1); this type never downloads anything.
 struct SpeechModelCatalog: Sendable {
-    static let transcriptionModelFilename = "ggml-base.en-q5_1.bin"
+    static let transcriptionModelFilename = "ggml-small.en-q5_1.bin"
     static let vadModelFilename = "ggml-silero-v5.1.2.bin"
     // Pinned in config/speech-models.yaml; recorded here (never hashed at
     // runtime, which would be expensive) so WhisperTranscriber can report it
     // as part of SpeechRuntimeIdentity. scripts/ci/tests/test_speech_models_manifest.py
     // (issue #42 Task 4) asserts this stays equal to the manifest's pin.
-    static let transcriptionModelSHA256 = "4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f"
+    static let transcriptionModelSHA256 = "bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30"
 
     let directory: URL
 
