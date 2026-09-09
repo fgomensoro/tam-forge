@@ -249,6 +249,26 @@ class AnalysisPublication(RunChild):
     )
 
 
+class PrivacyAttestation(Record):
+    """The learner's own record that model improvement is off for a policy version."""
+
+    __tablename__ = "privacy_attestations"
+    __table_args__ = _checks("privacy_attestations", limit=16384) + (
+        UniqueConstraint(
+            "owner_id", "policy_version", name="uq_privacy_attestations_owner_policy"
+        ),
+        CheckConstraint(
+            "policy_version ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$'",
+            name="policy_version_safe",
+        ),
+    )
+    policy_version: Mapped[str] = mapped_column(
+        Text,
+        Computed("canonical_json::jsonb->>'policy_version'", persisted=True),
+        nullable=False,
+    )
+
+
 RECORD_TYPES = (
     PromptVersion,
     OutputSchemaVersion,
@@ -258,6 +278,7 @@ RECORD_TYPES = (
     ModelRunEvent,
     AgentToolCall,
     AnalysisPublication,
+    PrivacyAttestation,
 )
 
 
