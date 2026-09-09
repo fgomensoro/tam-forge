@@ -100,10 +100,7 @@ class TranscriptService:
         recording_pk = recording.id
         if recording.state not in {"stored", "stored_with_gaps"}:
             raise TranscriptConflict()
-        prior = await self._repository.by_recording(owner_id=owner_id, recording_id=recording_pk)
-        prior_id = next((row.id for row in prior if row.track == command.track), None)
-
-        transcript = await self._repository.store(
+        stored = await self._repository.store(
             owner_id=owner_id,
             recording=recording,
             track=command.track,
@@ -113,8 +110,8 @@ class TranscriptService:
         return await self._to_response(
             owner_id=owner_id,
             recording_id=recording_id,
-            transcript=transcript,
-            replayed=prior_id == transcript.id,
+            transcript=stored.row,
+            replayed=stored.replayed,
         )
 
     async def list_for_recording(self, *, owner_id: int, recording_id: UUID) -> TranscriptPage:
@@ -146,11 +143,16 @@ class TranscriptService:
     ) -> TranscriptCorrectionResponse:
         """Append a correction, reporting whether the repository replayed one.
 
-        `replayed` is decided the same way `submit` decides its own: read the
-        ids already on file first, then check whether the row the repository
-        handed back is one of them. A retry of a correction the server already
-        stored comes back with `replayed` true and the original correction's
-        id, never a second row -- see `repository.append_correction`.
+        `replayed` comes straight from `repository.append_correction`, which
+        knows it without being asked: the branch it takes is the answer. A
+        retry of a correction the server already stored comes back with
+        `replayed` true and the original correction's id, never a second row.
+
+        Deriving it here instead -- by reading the correction ids on file and
+        checking whether the appended row is among them -- is what this used
+        to do, and it cost a full read of every correction body on the
+        transcript, up to `MAX_CORRECTIONS_PER_TRANSCRIPT` of them, on every
+        single append.
         """
         recording = await self._resolve_recording(owner_id=owner_id, recording_id=recording_id)
         transcripts = await self._repository.by_recording(
@@ -159,16 +161,10 @@ class TranscriptService:
         transcript = next((row for row in transcripts if row.track == track), None)
         if transcript is None:
             raise TranscriptNotFound()
-        prior_ids = {
-            row.id
-            for row in await self._repository.corrections(
-                owner_id=owner_id, transcript_id=transcript.id
-            )
-        }
-        correction = await self._repository.append_correction(
+        appended = await self._repository.append_correction(
             owner_id=owner_id, transcript=transcript, body=command.model_dump(mode="json")
         )
-        return _correction_response(correction, replayed=correction.id in prior_ids)
+        return _correction_response(appended.row, replayed=appended.replayed)
 
     async def _to_response(
         self, *, owner_id: int, recording_id: UUID, transcript: SpeechTranscript, replayed: bool

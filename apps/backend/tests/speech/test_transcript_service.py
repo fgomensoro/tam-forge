@@ -28,6 +28,7 @@ import pytest
 from tamforge_backend.recordings.models import Recording
 from tamforge_backend.speech.contracts import TranscriptConflict, TranscriptNotFound
 from tamforge_backend.speech.models import MAX_CORRECTIONS_PER_TRANSCRIPT
+from tamforge_backend.speech.repository import Written
 from tamforge_backend.speech.schemas import TranscriptCorrectionCommand, TranscriptSubmitCommand
 from tamforge_backend.speech.service import TranscriptService
 
@@ -166,10 +167,12 @@ class FakeTranscriptRepository:
         self._next_transcript_id = 1
         self._next_correction_id = 1
         self.store_calls: list[tuple[int, int, str]] = []
+        self.by_recording_calls = 0
+        self.corrections_calls = 0
 
     async def store(
         self, *, owner_id: int, recording: object, track: str, body: dict[str, object]
-    ) -> SimpleNamespace:
+    ) -> Written[Any]:
         recording_pk = recording.id  # type: ignore[attr-defined]
         self.store_calls.append((owner_id, recording_pk, track))
         key = (recording_pk, track)
@@ -178,7 +181,7 @@ class FakeTranscriptRepository:
         if existing is not None:
             if json.loads(existing.canonical_json) != merged:
                 raise TranscriptConflict()
-            return existing
+            return Written(existing, replayed=True)
         row = SimpleNamespace(
             id=self._next_transcript_id,
             owner_id=owner_id,
@@ -190,18 +193,20 @@ class FakeTranscriptRepository:
         )
         self._next_transcript_id += 1
         self._rows[key] = row
-        return row
+        return Written(row, replayed=False)
 
     async def by_recording(
         self, *, owner_id: int, recording_id: int
     ) -> tuple[SimpleNamespace, ...]:
         del owner_id
+        self.by_recording_calls += 1
         return tuple(row for (pk, _track), row in self._rows.items() if pk == recording_id)
 
     async def corrections(
         self, *, owner_id: int, transcript_id: int
     ) -> tuple[SimpleNamespace, ...]:
         del owner_id
+        self.corrections_calls += 1
         return tuple(self._corrections.get(transcript_id, []))
 
     def seed_corrections(self, *, transcript_id: int, count: int) -> None:
@@ -240,13 +245,13 @@ class FakeTranscriptRepository:
 
     async def append_correction(
         self, *, owner_id: int, transcript: object, body: dict[str, object]
-    ) -> SimpleNamespace:
+    ) -> Written[Any]:
         transcript_id = transcript.id  # type: ignore[attr-defined]
         canonical_json = json.dumps({**body, "transcript_id": transcript_id})
         stored = self._corrections.setdefault(transcript_id, [])
         existing = next((row for row in stored if row.canonical_json == canonical_json), None)
         if existing is not None:
-            return existing
+            return Written(existing, replayed=True)
         row = SimpleNamespace(
             id=self._next_correction_id,
             owner_id=owner_id,
@@ -257,7 +262,7 @@ class FakeTranscriptRepository:
         )
         self._next_correction_id += 1
         stored.append(row)
-        return row
+        return Written(row, replayed=False)
 
 
 def test_submit_rejects_a_recording_that_is_not_yet_durable_on_the_server() -> None:
@@ -403,8 +408,8 @@ def test_retried_correction_replays_the_stored_row_and_reports_it() -> None:
     """A correction POST retried after a timeout has to come back as the
     correction already on file, flagged `replayed`, not as a second
     annotation. The service decides that flag exactly as `submit` decides its
-    own: read the ids on file first, then check whether the row the repository
-    returned is one of them.
+    own: it reports whichever branch the repository took, without reading the
+    rows on file to work it out.
     """
     recording_id = uuid4()
     session = FakeSession([fake_recording(client_recording_id=recording_id)])
@@ -517,5 +522,69 @@ def test_resubmitting_a_transcript_past_the_correction_cap_still_returns_a_respo
 
         assert replayed.replayed is True
         assert len(replayed.corrections) == MAX_CORRECTIONS_PER_TRANSCRIPT
+
+    asyncio.run(exercise())
+
+
+def test_add_correction_decides_replay_without_reading_the_corrections_on_file() -> None:
+    """`replayed` used to be derived by reading every correction id already on
+    file and checking whether the appended row was one of them. A transcript
+    holds up to `MAX_CORRECTIONS_PER_TRANSCRIPT` corrections of up to
+    `CORRECTION_BODY_LIMIT` bytes each, so that prefetch pulled megabytes out
+    of the database to answer a single boolean. `append_correction` already
+    knows which branch it took -- a content-hash hit or a lost-race recovery
+    is a replay, a fresh insert is not -- so it reports the answer and the
+    service reads nothing extra.
+    """
+    recording_id = uuid4()
+    session = FakeSession([fake_recording(client_recording_id=recording_id)])
+    repository = FakeTranscriptRepository()
+    service = TranscriptService(session, repository)  # type: ignore[arg-type]
+
+    async def exercise() -> None:
+        await service.submit(owner_id=1, recording_id=recording_id, command=submit_command())
+        # `submit` renders its own response, which reads the corrections it has
+        # to render. Only reads beyond that one are the prefetch under test.
+        reads_before = repository.corrections_calls
+
+        first = await service.add_correction(
+            owner_id=1,
+            recording_id=recording_id,
+            track="microphone",
+            command=correction_command(),
+        )
+        second = await service.add_correction(
+            owner_id=1,
+            recording_id=recording_id,
+            track="microphone",
+            command=correction_command(),
+        )
+
+        assert first.replayed is False
+        assert second.replayed is True
+        assert repository.corrections_calls == reads_before
+
+    asyncio.run(exercise())
+
+
+def test_submit_decides_replay_without_rereading_the_recordings_transcripts() -> None:
+    """The same prefetch on the transcript side: `submit` used to read every
+    transcript already on file for the recording purely to learn whether the
+    row `store` handed back was one of them. `store` knows -- an existing-row
+    hit or a lost-race recovery is a replay, a fresh insert is not.
+    """
+    recording_id = uuid4()
+    session = FakeSession([fake_recording(client_recording_id=recording_id)])
+    repository = FakeTranscriptRepository()
+    service = TranscriptService(session, repository)  # type: ignore[arg-type]
+    command = submit_command()
+
+    async def exercise() -> None:
+        first = await service.submit(owner_id=1, recording_id=recording_id, command=command)
+        second = await service.submit(owner_id=1, recording_id=recording_id, command=command)
+
+        assert first.replayed is False
+        assert second.replayed is True
+        assert repository.by_recording_calls == 0
 
     asyncio.run(exercise())

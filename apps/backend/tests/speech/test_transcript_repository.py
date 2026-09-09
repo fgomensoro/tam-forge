@@ -34,7 +34,7 @@ from tamforge_backend.speech.models import (
     SpeechTranscript,
     SpeechTranscriptCorrection,
 )
-from tamforge_backend.speech.repository import SqlAlchemyTranscriptRepository
+from tamforge_backend.speech.repository import SqlAlchemyTranscriptRepository, Written
 
 
 class _ScalarResult:
@@ -295,7 +295,7 @@ def test_stored_content_hash_matches_canonical_bytes_sha256() -> None:
                 limit=TRANSCRIPT_BODY_LIMIT,
             )
         ).digest()
-        assert stored.content_hash == expected
+        assert stored.row.content_hash == expected
 
     asyncio.run(exercise())
 
@@ -314,8 +314,8 @@ def test_identical_resubmission_replays_the_stored_row_instead_of_inserting_twic
             owner_id=1, recording=recording, track="microphone", body=body
         )
 
-        assert first.id == second.id
-        assert first.content_hash == second.content_hash
+        assert first.row.id == second.row.id
+        assert first.row.content_hash == second.row.content_hash
         assert sum(isinstance(row, SpeechTranscript) for row in session.rows) == 1
 
     asyncio.run(exercise())
@@ -388,7 +388,7 @@ def test_append_correction_rejects_a_transcript_owned_by_someone_else() -> None:
 
         with pytest.raises(TranscriptNotFound):
             await repository.append_correction(
-                owner_id=2, transcript=transcript, body=correction_body()
+                owner_id=2, transcript=transcript.row, body=correction_body()
             )
 
     asyncio.run(exercise())
@@ -407,7 +407,7 @@ def test_oversized_correction_is_refused_before_the_session_is_touched() -> None
         body = correction_body(original_text="x" * CORRECTION_BODY_LIMIT)
 
         with pytest.raises(TranscriptTooLarge):
-            await repository.append_correction(owner_id=1, transcript=transcript, body=body)
+            await repository.append_correction(owner_id=1, transcript=transcript.row, body=body)
 
         assert session.calls == calls_before
         assert sum(isinstance(row, SpeechTranscriptCorrection) for row in session.rows) == 0
@@ -425,17 +425,17 @@ def test_corrections_are_returned_in_insertion_order() -> None:
             owner_id=1, recording=recording, track="microphone", body=transcript_body()
         )
         first = await repository.append_correction(
-            owner_id=1, transcript=transcript, body=correction_body(reason="misheard_term")
+            owner_id=1, transcript=transcript.row, body=correction_body(reason="misheard_term")
         )
         second = await repository.append_correction(
             owner_id=1,
-            transcript=transcript,
+            transcript=transcript.row,
             body=correction_body(reason="mistranscribed_number"),
         )
 
-        corrections = await repository.corrections(owner_id=1, transcript_id=transcript.id)
+        corrections = await repository.corrections(owner_id=1, transcript_id=transcript.row.id)
 
-        assert [correction.id for correction in corrections] == [first.id, second.id]
+        assert [correction.id for correction in corrections] == [first.row.id, second.row.id]
 
     asyncio.run(exercise())
 
@@ -457,11 +457,15 @@ def test_identical_correction_resubmission_replays_instead_of_appending_a_duplic
         )
         body = correction_body()
 
-        first = await repository.append_correction(owner_id=1, transcript=transcript, body=body)
-        second = await repository.append_correction(owner_id=1, transcript=transcript, body=body)
+        first = await repository.append_correction(
+            owner_id=1, transcript=transcript.row, body=body
+        )
+        second = await repository.append_correction(
+            owner_id=1, transcript=transcript.row, body=body
+        )
 
-        assert first.id == second.id
-        assert first.content_hash == second.content_hash
+        assert first.row.id == second.row.id
+        assert first.row.content_hash == second.row.content_hash
         assert sum(isinstance(row, SpeechTranscriptCorrection) for row in session.rows) == 1
 
     asyncio.run(exercise())
@@ -490,13 +494,16 @@ def test_concurrent_identical_corrections_replay_the_same_row_instead_of_duplica
         session.race = _Rendezvous(2)
 
         first, second = await asyncio.gather(
-            repository.append_correction(owner_id=1, transcript=transcript, body=body),
-            repository.append_correction(owner_id=1, transcript=transcript, body=body),
+            repository.append_correction(owner_id=1, transcript=transcript.row, body=body),
+            repository.append_correction(owner_id=1, transcript=transcript.row, body=body),
         )
 
-        assert first.id == second.id
-        assert first.content_hash == second.content_hash
+        assert first.row.id == second.row.id
+        assert first.row.content_hash == second.row.content_hash
         assert sum(isinstance(row, SpeechTranscriptCorrection) for row in session.rows) == 1
+        # One side inserted and one recovered the winner's row through
+        # `_replay_lost_correction`, so exactly one of them is a replay.
+        assert {first.replayed, second.replayed} == {False, True}
         # Both calls reached flush. Without the forced interleaving the second
         # would have seen the first row in its own dedup SELECT and returned
         # without inserting, so this pins down that the race was genuinely
@@ -533,9 +540,12 @@ def test_concurrent_identical_submissions_replay_the_same_row_instead_of_conflic
             repository.store(owner_id=1, recording=recording, track="microphone", body=body),
         )
 
-        assert first.id == second.id
-        assert first.content_hash == second.content_hash
+        assert first.row.id == second.row.id
+        assert first.row.content_hash == second.row.content_hash
         assert sum(isinstance(row, SpeechTranscript) for row in session.rows) == 1
+        # One side inserted and one recovered the winner's row through
+        # `_reconcile_lost_race`, so exactly one of them is a replay.
+        assert {first.replayed, second.replayed} == {False, True}
         # Two flush attempts happened -- the winner's, which succeeded, and
         # the loser's, which hit the simulated IntegrityError. If `race` had
         # failed to force the interleaving, the second store() would have
@@ -584,7 +594,7 @@ def test_concurrent_differing_submissions_the_loser_gets_transcript_conflict() -
             return_exceptions=True,
         )
 
-        winners = [item for item in results if isinstance(item, SpeechTranscript)]
+        winners = [item for item in results if isinstance(item, Written)]
         conflicts = [item for item in results if isinstance(item, TranscriptConflict)]
         # Every result is accounted for as exactly one of these two outcomes --
         # nothing else, and in particular no raw IntegrityError, came out.
@@ -636,7 +646,7 @@ def test_append_correction_surfaces_a_transient_failure_as_unavailable_not_confl
 
         with pytest.raises(TranscriptUnavailable) as excinfo:
             await repository.append_correction(
-                owner_id=1, transcript=transcript, body=correction_body()
+                owner_id=1, transcript=transcript.row, body=correction_body()
             )
         # The failed attempt left no partial row behind.
         assert sum(isinstance(row, SpeechTranscriptCorrection) for row in session.rows) == 0
@@ -676,7 +686,7 @@ def test_append_correction_unexplained_integrity_error_surfaces_as_unavailable()
 
         with pytest.raises(TranscriptUnavailable) as excinfo:
             await repository.append_correction(
-                owner_id=1, transcript=transcript, body=correction_body()
+                owner_id=1, transcript=transcript.row, body=correction_body()
             )
         assert sum(isinstance(row, SpeechTranscriptCorrection) for row in session.rows) == 0
         assert excinfo.value.__suppress_context__ is True
@@ -795,13 +805,13 @@ def test_append_correction_refuses_a_transcript_already_at_the_correction_cap() 
         seed_corrections(
             session,
             owner_id=1,
-            transcript_id=transcript.id,
+            transcript_id=transcript.row.id,
             count=MAX_CORRECTIONS_PER_TRANSCRIPT,
         )
 
         with pytest.raises(TranscriptConflict):
             await repository.append_correction(
-                owner_id=1, transcript=transcript, body=correction_body()
+                owner_id=1, transcript=transcript.row, body=correction_body()
             )
 
         stored = sum(isinstance(row, SpeechTranscriptCorrection) for row in session.rows)
@@ -826,17 +836,21 @@ def test_a_correction_already_on_file_still_replays_at_the_cap() -> None:
             owner_id=1, recording=recording, track="microphone", body=transcript_body()
         )
         body = correction_body()
-        stored = await repository.append_correction(owner_id=1, transcript=transcript, body=body)
+        stored = await repository.append_correction(
+            owner_id=1, transcript=transcript.row, body=body
+        )
         seed_corrections(
             session,
             owner_id=1,
-            transcript_id=transcript.id,
+            transcript_id=transcript.row.id,
             count=MAX_CORRECTIONS_PER_TRANSCRIPT - 1,
         )
 
-        replayed = await repository.append_correction(owner_id=1, transcript=transcript, body=body)
+        replayed = await repository.append_correction(
+            owner_id=1, transcript=transcript.row, body=body
+        )
 
-        assert replayed.id == stored.id
+        assert replayed.row.id == stored.row.id
         on_file = sum(isinstance(row, SpeechTranscriptCorrection) for row in session.rows)
         assert on_file == MAX_CORRECTIONS_PER_TRANSCRIPT
 
@@ -859,14 +873,69 @@ def test_the_correction_cap_is_counted_per_transcript() -> None:
         seed_corrections(
             session,
             owner_id=1,
-            transcript_id=transcript.id + 1,
+            transcript_id=transcript.row.id + 1,
             count=MAX_CORRECTIONS_PER_TRANSCRIPT,
         )
 
         correction = await repository.append_correction(
-            owner_id=1, transcript=transcript, body=correction_body()
+            owner_id=1, transcript=transcript.row, body=correction_body()
         )
 
-        assert correction.transcript_id == transcript.id
+        assert correction.row.transcript_id == transcript.row.id
+
+    asyncio.run(exercise())
+
+
+def test_store_reports_whether_it_inserted_or_replayed() -> None:
+    """`store` takes one of two branches and already knows which: an
+    existing-row hit with a matching content hash is a replay, a fresh insert
+    is not. It reports that alongside the row so its caller does not have to
+    re-derive the answer by reading the rows on file before every write.
+    """
+
+    async def exercise() -> None:
+        session = FakeSession()
+        repository = SqlAlchemyTranscriptRepository(session)
+        recording = SimpleNamespace(id=42)
+        body = transcript_body()
+
+        first = await repository.store(
+            owner_id=1, recording=recording, track="microphone", body=body
+        )
+        second = await repository.store(
+            owner_id=1, recording=recording, track="microphone", body=body
+        )
+
+        assert first.replayed is False
+        assert second.replayed is True
+
+    asyncio.run(exercise())
+
+
+def test_append_correction_reports_whether_it_inserted_or_replayed() -> None:
+    """The same report on the correction side, and the one that matters most:
+    the caller's alternative was reading every correction already on file --
+    up to `MAX_CORRECTIONS_PER_TRANSCRIPT` rows of `CORRECTION_BODY_LIMIT`
+    bytes each -- to answer this single boolean.
+    """
+
+    async def exercise() -> None:
+        session = FakeSession()
+        repository = SqlAlchemyTranscriptRepository(session)
+        recording = SimpleNamespace(id=42)
+        transcript = await repository.store(
+            owner_id=1, recording=recording, track="microphone", body=transcript_body()
+        )
+        body = correction_body()
+
+        first = await repository.append_correction(
+            owner_id=1, transcript=transcript.row, body=body
+        )
+        second = await repository.append_correction(
+            owner_id=1, transcript=transcript.row, body=body
+        )
+
+        assert first.replayed is False
+        assert second.replayed is True
 
     asyncio.run(exercise())

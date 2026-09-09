@@ -54,6 +54,7 @@ touching the expired attribute at all.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from hashlib import sha256
 
 from sqlalchemy import func, select
@@ -94,6 +95,24 @@ def _snapshot[R: Record](row: R) -> R:
     return snapshot
 
 
+@dataclass(frozen=True, slots=True)
+class Written[R: Record]:
+    """A written row, plus whether this call replayed it rather than inserting it.
+
+    `store` and `append_correction` each answer two questions at once: which
+    row is on file now, and whether this call is the one that put it there.
+    Both already know -- an existing-row hit, or either lost-race recovery,
+    replays a row an earlier call wrote; a fresh insert does not -- so both
+    report it here rather than leaving the caller to re-derive it by reading
+    the rows on file before every write. On the correction side that prefetch
+    meant pulling up to `MAX_CORRECTIONS_PER_TRANSCRIPT` bodies of
+    `CORRECTION_BODY_LIMIT` bytes each out of the database for one boolean.
+    """
+
+    row: R
+    replayed: bool
+
+
 def _canonicalize(body: Mapping[str, object], *, limit: int) -> tuple[bytes, bytes]:
     """Canonicalize an already-identity-merged body and hash it.
 
@@ -120,7 +139,7 @@ class SqlAlchemyTranscriptRepository:
         recording: Recording,
         track: str,
         body: Mapping[str, object],
-    ) -> SpeechTranscript:
+    ) -> Written[SpeechTranscript]:
         """Insert once per (owner, recording, track); replay by content hash.
 
         `body` is the client's submitted command already dumped to a plain
@@ -130,6 +149,10 @@ class SqlAlchemyTranscriptRepository:
         repository's) and `track` are merged in first, so the byte-size guard
         below runs against the body that will actually be written, which is
         slightly larger than what the submission schema validated.
+
+        The returned `Written` carries which of the two branches ran, so the
+        caller never has to read the transcripts already on file to work out
+        whether this submission was a replay.
 
         See the module docstring for how a race on this identity (two callers
         both seeing no existing row) is resolved without ever surfacing a raw
@@ -153,7 +176,7 @@ class SqlAlchemyTranscriptRepository:
                 if existing is not None:
                     if existing.content_hash != content_hash:
                         raise TranscriptConflict()
-                    return _snapshot(existing)
+                    return Written(_snapshot(existing), replayed=True)
                 row = SpeechTranscript(
                     owner_id=owner_id,
                     canonical_json=canonical.decode("utf-8"),
@@ -161,13 +184,16 @@ class SqlAlchemyTranscriptRepository:
                 )
                 self.session.add(row)
                 await self.session.flush()
-                return _snapshot(row)
+                return Written(_snapshot(row), replayed=False)
         except IntegrityError:
-            return await self._reconcile_lost_race(
-                owner_id=owner_id,
-                recording_id=recording_id,
-                track=track,
-                content_hash=content_hash,
+            return Written(
+                await self._reconcile_lost_race(
+                    owner_id=owner_id,
+                    recording_id=recording_id,
+                    track=track,
+                    content_hash=content_hash,
+                ),
+                replayed=True,
             )
         except SQLAlchemyError:
             raise TranscriptUnavailable() from None
@@ -188,13 +214,14 @@ class SqlAlchemyTranscriptRepository:
         the failed attempt by the time this runs, so it reads fresh, in a
         transaction of its own, and answers the same replay-vs-conflict
         question the original SELECT would have answered had it run a moment
-        later: identical content replays the winner's row, anything else
-        (different content, or the identity still missing for some other
-        reason) is `TranscriptConflict` -- never a raw database error. A
-        failure of this re-read itself is not that collision either -- it is
-        the same kind of unrelated infrastructure failure `store` guards
-        against -- so it also surfaces as `TranscriptUnavailable`, not
-        `TranscriptConflict`.
+        later: identical content replays the winner's row -- which is why a
+        row returned from here is always a replay, and why `store` labels it
+        as one -- and anything else (different content, or the identity still
+        missing for some other reason) is `TranscriptConflict`, never a raw
+        database error. A failure of this re-read itself is not that collision
+        either -- it is the same kind of unrelated infrastructure failure
+        `store` guards against -- so it also surfaces as
+        `TranscriptUnavailable`, not `TranscriptConflict`.
         """
         try:
             async with transaction_scope(self.session):
@@ -230,7 +257,7 @@ class SqlAlchemyTranscriptRepository:
         owner_id: int,
         transcript: SpeechTranscript,
         body: Mapping[str, object],
-    ) -> SpeechTranscriptCorrection:
+    ) -> Written[SpeechTranscriptCorrection]:
         """Insert once per correction body; replay an identical one by content hash.
 
         `transcript` must already belong to `owner_id` -- the caller is expected
@@ -275,6 +302,11 @@ class SqlAlchemyTranscriptRepository:
         the overshoot is a handful of rows, it costs no correctness on the write
         side, and `TranscriptService._to_response` bounds what it renders so the
         response model cannot overflow either way.
+
+        The returned `Written` carries whether the row was replayed or freshly
+        inserted. That is the whole reason it exists: the caller's only other
+        way to learn it is to read every correction already on file before
+        each append, which at the cap is megabytes of bodies for one boolean.
         """
         if transcript.owner_id != owner_id:
             raise TranscriptNotFound()
@@ -289,7 +321,7 @@ class SqlAlchemyTranscriptRepository:
                     owner_id=owner_id, transcript_id=transcript_id, content_hash=content_hash
                 )
                 if existing is not None:
-                    return _snapshot(existing)
+                    return Written(_snapshot(existing), replayed=True)
                 on_file = await self._correction_count(
                     owner_id=owner_id, transcript_id=transcript_id
                 )
@@ -302,10 +334,13 @@ class SqlAlchemyTranscriptRepository:
                 )
                 self.session.add(row)
                 await self.session.flush()
-                return _snapshot(row)
+                return Written(_snapshot(row), replayed=False)
         except IntegrityError:
-            return await self._replay_lost_correction(
-                owner_id=owner_id, transcript_id=transcript_id, content_hash=content_hash
+            return Written(
+                await self._replay_lost_correction(
+                    owner_id=owner_id, transcript_id=transcript_id, content_hash=content_hash
+                ),
+                replayed=True,
             )
         except SQLAlchemyError:
             raise TranscriptUnavailable() from None
@@ -339,11 +374,13 @@ class SqlAlchemyTranscriptRepository:
         `store`'s `_reconcile_lost_race` in miniature, and reached the same
         way: only on a genuine `IntegrityError`. `transaction_scope` has
         already rolled the failed attempt back, so this reads fresh, in a
-        transaction of its own, and replays whichever row won. A re-read that
-        finds nothing means the `IntegrityError` was not the uniqueness
-        collision this recovers from, and a re-read that fails is the same
-        kind of unrelated infrastructure failure `store` guards against; both
-        surface as `TranscriptUnavailable`, never a raw database error.
+        transaction of its own, and replays whichever row won -- so a row
+        returned from here is always a replay, and `append_correction` labels
+        it as one. A re-read that finds nothing means the `IntegrityError` was
+        not the uniqueness collision this recovers from, and a re-read that
+        fails is the same kind of unrelated infrastructure failure `store`
+        guards against; both surface as `TranscriptUnavailable`, never a raw
+        database error.
         """
         try:
             async with transaction_scope(self.session):
@@ -370,4 +407,4 @@ class SqlAlchemyTranscriptRepository:
         return tuple(_snapshot(row) for row in rows.all())
 
 
-__all__ = ["SqlAlchemyTranscriptRepository"]
+__all__ = ["SqlAlchemyTranscriptRepository", "Written"]
