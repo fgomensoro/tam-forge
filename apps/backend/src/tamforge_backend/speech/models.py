@@ -1,0 +1,74 @@
+"""Immutable local-transcript provenance and its append-only corrections."""
+
+from __future__ import annotations
+
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    Computed,
+    ForeignKeyConstraint,
+    Text,
+    UniqueConstraint,
+    event,
+)
+from sqlalchemy.orm import Mapped, mapped_column
+
+from ..models.provenance import Record, provenance_checks
+
+TRANSCRIPT_BODY_LIMIT = 4194304
+CORRECTION_BODY_LIMIT = 8192
+
+
+class SpeechTranscript(Record):
+    __tablename__ = "speech_transcripts"
+    __table_args__ = provenance_checks(
+        "speech_transcripts", limit=TRANSCRIPT_BODY_LIMIT
+    ) + (
+        UniqueConstraint(
+            "owner_id", "recording_id", "track", name="uq_speech_transcripts_recording_track"
+        ),
+        ForeignKeyConstraint(
+            ["owner_id", "recording_id"],
+            ["recordings.owner_id", "recordings.id"],
+            name="fk_speech_transcripts_recording",
+        ),
+        CheckConstraint(
+            "track IN ('microphone', 'system_audio')", name="track_allowed"
+        ),
+    )
+    recording_id: Mapped[int] = mapped_column(
+        BigInteger,
+        Computed("(canonical_json::jsonb->>'recording_id')::bigint", persisted=True),
+        nullable=False,
+    )
+    track: Mapped[str] = mapped_column(
+        Text, Computed("canonical_json::jsonb->>'track'", persisted=True), nullable=False
+    )
+
+
+class SpeechTranscriptCorrection(Record):
+    __tablename__ = "speech_transcript_corrections"
+    __table_args__ = provenance_checks(
+        "speech_transcript_corrections", limit=CORRECTION_BODY_LIMIT
+    ) + (
+        ForeignKeyConstraint(
+            ["owner_id", "transcript_id"],
+            ["speech_transcripts.owner_id", "speech_transcripts.id"],
+            name="fk_speech_transcript_corrections_transcript",
+        ),
+    )
+    transcript_id: Mapped[int] = mapped_column(
+        BigInteger,
+        Computed("(canonical_json::jsonb->>'transcript_id')::bigint", persisted=True),
+        nullable=False,
+    )
+
+
+def reject_mutation(*args: object, **kwargs: object) -> None:
+    del args, kwargs
+    raise RuntimeError("speech provenance rows are append-only")
+
+
+for _model in (SpeechTranscript, SpeechTranscriptCorrection):
+    event.listen(_model, "before_update", reject_mutation)
+    event.listen(_model, "before_delete", reject_mutation)
