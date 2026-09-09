@@ -837,3 +837,52 @@ def test_an_accepted_submission_leaves_an_immutable_audit_record(case):
             await engine.dispose()
 
     asyncio.run(exercise())
+
+
+def test_a_replayed_submission_leaves_its_own_audit_record(case):
+    """A replay is a submission from the caller's side, so it is audited like one.
+
+    Both rows carry the same idempotency correlation hash, because the caller sent the
+    same invocation key. The closed metadata vocabulary is what separates them: the
+    replay is a `noop` flagged `replayed`, the original a `succeeded` that is not.
+    """
+
+    async def exercise():
+        engine, factory = case.factory()
+        try:
+            async with factory() as session:
+                repo = ModelRunRepository(session)
+                request = case.request.model_copy(update={"invocation_key": "audited-replay"})
+                run = await repo.register(request)
+                assert (await repo.register(request)).id == run.id
+                async with session.begin():
+                    events = (
+                        await session.scalars(
+                            select(AuditEvent)
+                            .where(
+                                AuditEvent.owner_id == case.owner,
+                                AuditEvent.action == "model_run.submitted",
+                                AuditEvent.idempotency_correlation_hash
+                                == sha256(b"audited-replay").digest(),
+                            )
+                            .order_by(AuditEvent.id)
+                        )
+                    ).all()
+                    assert [event.redacted_metadata["outcome"] for event in events] == [
+                        "succeeded",
+                        "noop",
+                    ]
+                    assert [event.redacted_metadata["flags"]["replayed"] for event in events] == [
+                        False,
+                        True,
+                    ]
+                    assert all(
+                        event.redacted_metadata["flags"]["authorized"] is True for event in events
+                    )
+                    assert all(
+                        event.aggregate_id == str(case.request.activity_id) for event in events
+                    )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(exercise())
