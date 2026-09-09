@@ -8,7 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .models import CORRECTION_BODY_LIMIT
+from ..agents.hashing import canonical_bytes
+from .models import CORRECTION_BODY_LIMIT, TRANSCRIPT_BODY_LIMIT
 
 SPEECH_SCHEMA_VERSION: Final[Literal[1]] = 1
 
@@ -28,10 +29,12 @@ MAX_OUTPUT_SAMPLE_COUNT = 16_000 * 7_200  # two hours at the fixed 16 kHz ASR ou
 MAX_DERIVATION_GAPS = 7_200  # at most one zero-filled gap per second of a two-hour recording
 MAX_QUALITY_DIMENSIONS = 16
 
-# Correction bodies are bounded to CORRECTION_BODY_LIMIT bytes; split it between
-# the two free-text fields so a maxed-out correction still fits with headroom
-# for its other fields and JSON overhead.
-MAX_CORRECTION_TEXT_LENGTH: Final[int] = CORRECTION_BODY_LIMIT // 2
+# Correction bodies are bounded to CORRECTION_BODY_LIMIT bytes. Splitting it evenly
+# in two (// 2) was wrong: a maxed-out correction canonicalizes to 8,396 bytes, 204
+# over an 8,192-byte limit, once indices, reason, and JSON punctuation are counted
+# too. Quartering it leaves comfortable headroom for those other fields instead;
+# validate_body_size below (not this bound) is what actually guarantees the limit.
+MAX_CORRECTION_TEXT_LENGTH: Final[int] = CORRECTION_BODY_LIMIT // 4
 MAX_CORRECTIONS_PER_TRANSCRIPT = 1_000
 
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -78,6 +81,12 @@ class TranscriptSegment(StrictModel):
     start_ms: Milliseconds
     end_ms: Milliseconds
     words: Annotated[tuple[TranscriptWord, ...], Field(max_length=MAX_WORDS_PER_TRANSCRIPT)]
+
+    @model_validator(mode="after")
+    def validate_span(self) -> Self:
+        if self.end_ms < self.start_ms:
+            raise ValueError("segment end_ms cannot precede start_ms")
+        return self
 
     @model_validator(mode="after")
     def validate_words(self) -> Self:
@@ -157,6 +166,14 @@ class TranscriptSubmitCommand(StrictModel):
             raise ValueError("transcript exceeds the maximum word count")
         return self
 
+    @model_validator(mode="after")
+    def validate_body_size(self) -> Self:
+        # The per-field bounds above are cheap early defence; this is the actual
+        # guarantee. 4,000 segments of 4,096 characters each and zero words pass
+        # every bound above but canonicalize to ~3.95x TRANSCRIPT_BODY_LIMIT.
+        canonical_bytes(self.model_dump(mode="json"), limit=TRANSCRIPT_BODY_LIMIT)
+        return self
+
 
 class TranscriptCorrectionCommand(StrictModel):
     schema_version: Literal[1] = SPEECH_SCHEMA_VERSION
@@ -170,6 +187,13 @@ class TranscriptCorrectionCommand(StrictModel):
     @model_validator(mode="after")
     def validate_word_range(self) -> Self:
         _validate_word_index_range(self.word_start_index, self.word_end_index)
+        return self
+
+    @model_validator(mode="after")
+    def validate_body_size(self) -> Self:
+        # The per-field bounds above are cheap early defence; this is the actual
+        # guarantee against a maxed-out correction that would otherwise overshoot.
+        canonical_bytes(self.model_dump(mode="json"), limit=CORRECTION_BODY_LIMIT)
         return self
 
 
