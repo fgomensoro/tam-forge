@@ -1,0 +1,51 @@
+# Pinned build artifacts for the local whisper.cpp transcription runtime.
+#
+# Model artifacts install inside the app's sandbox container, not into
+# ~/Library/Application Support. TAMForge.app carries
+# com.apple.security.app-sandbox, so SpeechModelCatalog.defaultDirectory
+# resolves .applicationSupportDirectory to the container-redirected path;
+# a model dropped in the real home directory is invisible to the app and
+# transcription silently stays off.
+#
+# Every pin below (url, bytes, sha256) was reviewed by hand. Changing any pin
+# requires re-running both scripts/dev/fetch_whisper_framework.sh and
+# scripts/dev/fetch_whisper_models.sh, and re-reviewing the new artifact
+# (provenance, license, hash) before committing the change.
+schema_version: 1
+artifacts:
+  whisper_framework:
+    version: b4938
+    url: https://github.com/ggml-org/whisper.cpp/releases/download/b4938/whisper-b4938-xcframework.zip
+    filename: whisper-b4938-xcframework.zip
+    bytes: 53621479
+    sha256: dcc6cdc6d6902d11893434ceda70c23a2a64450f65a1b570035c9908988dfedd
+    license: MIT
+    installs_to: apps/macos/Vendor/whisper.xcframework
+    consumed_by: WhisperTranscriber
+  transcription_model:
+    version: q5_1
+    url: https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en-q5_1.bin
+    filename: ggml-small.en-q5_1.bin
+    bytes: 190098681
+    sha256: bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30
+    license: MIT
+    installs_to: ~/Library/Containers/com.fgomensoro.tamforge/Data/Library/Application Support/TAM Forge/Models
+    consumed_by: whisper_full
+  benchmark_model:
+    version: q5_1
+    url: https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en-q5_1.bin
+    filename: ggml-base.en-q5_1.bin
+    bytes: 59721011
+    sha256: 4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f
+    license: MIT
+    installs_to: ~/Library/Containers/com.fgomensoro.tamforge/Data/Library/Application Support/TAM Forge/Models
+    consumed_by: model benchmark (#43)
+  vad_model:
+    version: v5.1.2
+    url: https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin
+    filename: ggml-silero-v5.1.2.bin
+    bytes: 885098
+    sha256: 29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf
+    license: MIT
+    installs_to: ~/Library/Containers/com.fgomensoro.tamforge/Data/Library/Application Support/TAM Forge/Models
+    consumed_by: whisper built-in VAD

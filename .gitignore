@@ -29,6 +29,7 @@ apps/macos/build/
 apps/macos/PrivateAudio/
 apps/macos/PrivateModels/
 apps/macos/Signing/
+apps/macos/Vendor/
 xcuserdata/
 *.xcuserstate
 *.xcscmblueprint

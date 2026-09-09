@@ -1,4 +1,4 @@
-.PHONY: install test check check-openapi check-policy integration e2e macos-check macos-release-dmg
+.PHONY: install test check check-openapi check-policy integration e2e macos-check macos-release-dmg whisper-framework whisper-models whisper-benchmark
 
 # Keep local verification comfortable on the 8 GB development Mac. Callers can
 # also supply -derivedDataPath here to reuse an existing task-specific cache.
@@ -44,3 +44,17 @@ macos-check:
 # Signed Release app plus DMG with the stable local identity (never in CI).
 macos-release-dmg:
 	scripts/dev/build_release_dmg.sh
+
+# One-time fetches of the pinned whisper.cpp runtime artifacts. Pins live in
+# config/speech-models.yaml; both scripts are idempotent.
+whisper-framework:
+	scripts/dev/fetch_whisper_framework.sh
+
+whisper-models:
+	scripts/dev/fetch_whisper_models.sh
+
+# Benchmarks base.en against small.en on audio prepared by
+# scripts/dev/prepare_benchmark_audio.sh; see
+# docs/project/voice-benchmark-script-v1.md.
+whisper-benchmark:
+	scripts/dev/benchmark_whisper_models.sh

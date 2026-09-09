@@ -1,6 +1,20 @@
 """Shared protocol package for TAM Forge services."""
 
-from .agents import EnglishAnalysisV1, TAMAnalysisV1
+from .agents import (
+    AnalysisVersions,
+    EnglishAnalysisV1,
+    FeedbackRead,
+    PinnedRecord,
+    TAMAnalysisV1,
+    WithheldReason,
+)
 
-__all__ = ["EnglishAnalysisV1", "TAMAnalysisV1"]
+__all__ = [
+    "AnalysisVersions",
+    "EnglishAnalysisV1",
+    "FeedbackRead",
+    "PinnedRecord",
+    "TAMAnalysisV1",
+    "WithheldReason",
+]
 __version__ = "0.1.0"

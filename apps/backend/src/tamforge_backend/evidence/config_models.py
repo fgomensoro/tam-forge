@@ -406,6 +406,7 @@ class TaskContractStepConfig(StrictModel):
 class CorrectionSelectionConfig(StrictModel):
     source: Literal["due_corrections"]
     maximum_items: Literal[1]
+    maximum_minutes: Literal[10] = 10
     allowed_kinds: frozenset[
         Literal["spoken_attempt_b", "written_attempt_b", "targeted_sql_correction"]
     ]

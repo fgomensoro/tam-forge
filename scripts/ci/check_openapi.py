@@ -119,6 +119,13 @@ def _native_openapi_value(value: object) -> object:
                 return _normalize_openapi_30_bounds(
                     {**alternative, **wrapper, "nullable": True}
                 )
+    if transformed.get("type") == "null":
+        # 3.0 has no null type. A field that is always null becomes an untyped nullable
+        # schema, which the native generator accepts where "type": "null" makes it fail.
+        return _normalize_openapi_30_bounds(
+            {key: item for key, item in transformed.items() if key != "type"}
+            | {"nullable": True}
+        )
     return _normalize_openapi_30_bounds(transformed)
 
 

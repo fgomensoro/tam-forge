@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import zipfile
 from dataclasses import replace
 from pathlib import Path
 
@@ -21,6 +22,21 @@ def _fixture_files(name: str) -> dict[str, bytes]:
     with inspect_zip_stream((payload,)) as package:
         assert package.accepted
         return {item.manifest.path: item.staged_path.read_bytes() for item in package.files}
+
+
+def test_phase1_package_is_deterministic_markdown_and_sql_only() -> None:
+    fixture = FIXTURES / "phase-1-six-week-v1.zip"
+    with zipfile.ZipFile(fixture) as archive:
+        names = archive.namelist()
+        assert names == sorted(names)
+        assert all(Path(name).suffix.lower() in {".md", ".sql"} for name in names)
+        assert not any(name.endswith(".json") for name in names)
+        assert not any("Roadmap.archive" in name or "Roadmap.backup" in name for name in names)
+        assert archive.testzip() is None
+
+    files = _fixture_files("phase-1-six-week-v1.zip")
+    assert "README.md" in files
+    assert len(files) == 34
 
 
 def _bundle_with_task(

@@ -11,6 +11,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,7 @@ FORBIDDEN_LINK_MARKERS = ("chromium", "electron", "node", "postgres", "python")
 ALLOWED_BINARY_PATHS = (
     Path("Contents/MacOS/TAMForge"),
     Path("Contents/Frameworks/libswiftCompatibilitySpan.dylib"),
+    Path("Contents/Frameworks/whisper.framework/Versions/A/whisper"),
 )
 SWIFT_COMPATIBILITY_PATH = ALLOWED_BINARY_PATHS[1]
 SWIFT_COMPATIBILITY_IDENTIFIER = "com.apple.dt.runtime.swiftCompatibilitySpan"
@@ -49,6 +51,33 @@ APPLE_DEVELOPER_TEAM_IDENTIFIER = "59GAB85EFG"
 APPLE_SWIFT_COMPATIBILITY_REQUIREMENT = (
     'anchor apple generic and identifier "com.apple.dt.runtime.swiftCompatibilitySpan"'
 )
+# The app's complete entitlement set. disable-library-validation is a
+# deliberate weakening: the local signing identity has no Team ID, so the
+# hardened runtime refuses to load the embedded whisper framework without
+# it. Pinning the whole set keeps any further entitlement deliberate.
+EXPECTED_ENTITLEMENTS = frozenset(
+    {
+        "com.apple.security.app-sandbox",
+        "com.apple.security.cs.disable-library-validation",
+        "com.apple.security.device.audio-input",
+        "com.apple.security.files.user-selected.read-only",
+        "com.apple.security.network.client",
+    }
+)
+
+
+def entitlement_violation(entitlements: Iterable[str]) -> str | None:
+    """Report any drift from the reviewed entitlement set."""
+    present = frozenset(entitlements)
+    unexpected = sorted(present - EXPECTED_ENTITLEMENTS)
+    absent = sorted(EXPECTED_ENTITLEMENTS - present)
+    if unexpected:
+        return f"unreviewed entitlement: {', '.join(unexpected)}"
+    if absent:
+        return f"missing required entitlement: {', '.join(absent)}"
+    return None
+
+
 ALLOWED_RUNPATHS = frozenset(
     {"/usr/lib/swift", "@executable_path/../Frameworks"}
 )
@@ -93,7 +122,9 @@ def _is_executable_or_macho(path: Path) -> bool:
 def _binary_payloads(app: Path) -> tuple[Path, ...]:
     return tuple(
         path
-        for path in sorted(item for item in app.rglob("*") if item.is_file())
+        for path in sorted(
+            item for item in app.rglob("*") if item.is_file() and not item.is_symlink()
+        )
         if _is_executable_or_macho(path)
     )
 
@@ -108,10 +139,16 @@ def bundle_violations(
     *,
     linked_libraries: str = "",
     load_commands: str = "",
+    entitlements: str = "",
 ) -> tuple[str, ...]:
     violations: list[str] = []
     if not app.is_dir() or app.suffix != ".app":
         return ("Release app bundle does not exist",)
+
+    if entitlements:
+        violation = entitlement_violation(re.findall(r"<key>([^<]+)</key>", entitlements))
+        if violation is not None:
+            violations.append(violation)
 
     info = _plist(app / "Contents" / "Info.plist")
     expected_info = {
@@ -190,6 +227,7 @@ def _is_standalone_library_reference(library: str) -> bool:
         library.startswith("/System/Library/Frameworks/")
         or library.startswith("/usr/lib/")
         or library == "@rpath/libswiftCompatibilitySpan.dylib"
+        or library == "@rpath/whisper.framework/Versions/Current/whisper"
     )
 
 
@@ -323,7 +361,10 @@ def check_bundle(
         violation = signature_identity_violation(signature_details, require_identity)
         if violation is not None:
             raise NativeBundleError(violation)
-    violations = bundle_violations(app)
+    entitlements = _run(["codesign", "-d", "--entitlements", ":-", str(app)])
+    if "<key>" not in entitlements:
+        raise NativeBundleError("Release app declares no entitlements")
+    violations = bundle_violations(app, entitlements=entitlements)
     if violations:
         raise NativeBundleError("; ".join(violations))
 

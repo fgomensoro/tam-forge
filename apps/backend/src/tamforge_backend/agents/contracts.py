@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
@@ -67,6 +68,48 @@ class ContextInput(Contract):
     prepared_input_hash: Hash
 
 
+class SensitivityScope(StrEnum):
+    RELEASABLE = "releasable"
+    REDACTION_REQUIRED = "redaction_required"
+    RESTRICTED = "restricted"
+
+
+class ConsentBasis(StrEnum):
+    LEARNER_SUBMISSION = "learner_submission"
+    EXPLICIT_RELEASE = "explicit_release"
+    NOT_GRANTED = "not_granted"
+
+
+class RedactionDecision(StrEnum):
+    NOT_REQUIRED = "not_required"
+    PENDING = "pending"
+    APPROVED = "approved"
+
+
+class SubmissionClassification(Contract):
+    """The combinations that must never reach an external model cannot be constructed."""
+
+    scope: SensitivityScope
+    redaction: RedactionDecision
+    consent: ConsentBasis
+
+    @model_validator(mode="after")
+    def permitted(self) -> Self:
+        if self.scope is SensitivityScope.RESTRICTED:
+            raise InvalidProvenance()
+        if self.consent is ConsentBasis.NOT_GRANTED:
+            raise InvalidProvenance()
+        if self.scope is SensitivityScope.REDACTION_REQUIRED:
+            if (
+                self.redaction is not RedactionDecision.APPROVED
+                or self.consent is not ConsentBasis.EXPLICIT_RELEASE
+            ):
+                raise InvalidProvenance()
+        elif self.redaction is not RedactionDecision.NOT_REQUIRED:
+            raise InvalidProvenance()
+        return self
+
+
 class RunRequest(Contract):
     owner_id: PositiveId
     invocation_key: Key
@@ -81,6 +124,7 @@ class RunRequest(Contract):
     job_id: PositiveId | None = None
     predecessor: PinnedVersion | None = None
     context: Annotated[tuple[ContextInput, ...], Field(min_length=1, max_length=64)]
+    classification: SubmissionClassification
 
     @model_validator(mode="after")
     def ordered_manifest(self) -> Self:

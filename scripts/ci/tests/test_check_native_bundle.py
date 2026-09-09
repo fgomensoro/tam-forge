@@ -4,8 +4,23 @@ import os
 import plistlib
 from pathlib import Path
 
+import pytest
+
 from scripts.ci import check_native_bundle
 from scripts.ci.check_native_bundle import NativeBundleError, bundle_violations, check_bundle
+
+_ENTITLEMENTS_XML = "".join(
+    f"<key>{name}</key><true/>"
+    for name in sorted(
+        {
+            "com.apple.security.app-sandbox",
+            "com.apple.security.cs.disable-library-validation",
+            "com.apple.security.device.audio-input",
+            "com.apple.security.files.user-selected.read-only",
+            "com.apple.security.network.client",
+        }
+    )
+)
 
 
 def _app(tmp_path: Path) -> Path:
@@ -128,6 +143,8 @@ def test_checker_rejects_compatibility_library_trusted_only_by_filename(
     compatibility.write_bytes(b"\xcf\xfa\xed\xfe attacker payload")
 
     def fake_run(command: list[str]) -> str:
+        if "--entitlements" in command:
+            return _ENTITLEMENTS_XML
         if command[:3] == ["codesign", "-dv", "--verbose=4"]:
             if command[-1] == str(app):
                 return "Signature=adhoc"
@@ -176,6 +193,8 @@ def test_checker_accepts_compatibility_library_matching_signed_xcode_copy(
     uuid_details = "UUID: 35FDD7FE-B26C-3F04-AA72-2DB973F905B1 (arm64) payload"
 
     def fake_run(command: list[str]) -> str:
+        if "--entitlements" in command:
+            return _ENTITLEMENTS_XML
         if command[:3] == ["codesign", "-dv", "--verbose=4"]:
             if command[-1] == str(app):
                 return "Signature=adhoc"
@@ -230,6 +249,8 @@ def test_checker_rejects_modified_compatibility_content_with_trusted_metadata(
     uuid_details = "UUID: 35FDD7FE-B26C-3F04-AA72-2DB973F905B1 (arm64) payload"
 
     def fake_run(command: list[str]) -> str:
+        if "--entitlements" in command:
+            return _ENTITLEMENTS_XML
         if command[:3] == ["codesign", "-dv", "--verbose=4"]:
             if command[-1] == str(app):
                 return "Signature=adhoc"
@@ -268,6 +289,8 @@ def test_checker_requires_linked_compatibility_payload(
     app = _app(tmp_path)
 
     def fake_run(command: list[str]) -> str:
+        if "--entitlements" in command:
+            return _ENTITLEMENTS_XML
         if command[:3] == ["codesign", "-dv", "--verbose=4"]:
             return "Signature=adhoc"
         if command[:2] == ["otool", "-L"]:
@@ -293,6 +316,8 @@ def test_checker_requires_frameworks_runpath_for_linked_compatibility_payload(
     compatibility.write_bytes(b"\xcf\xfa\xed\xfe Apple Swift compatibility")
 
     def fake_run(command: list[str]) -> str:
+        if "--entitlements" in command:
+            return _ENTITLEMENTS_XML
         if command[:3] == ["codesign", "-dv", "--verbose=4"]:
             return "Signature=adhoc"
         if command[:2] == ["otool", "-L"] and command[-1].endswith("/TAMForge"):
@@ -323,6 +348,8 @@ def test_checker_inspects_only_allowed_binary_dependencies(
     calls: list[list[str]] = []
 
     def fake_run(command: list[str]) -> str:
+        if "--entitlements" in command:
+            return _ENTITLEMENTS_XML
         calls.append(command)
         if command[0] == "codesign" and "-dv" in command:
             return "Signature=adhoc"
@@ -345,6 +372,8 @@ def test_checker_does_not_inspect_rejected_binary(tmp_path: Path, monkeypatch: o
     calls: list[list[str]] = []
 
     def fake_run(command: list[str]) -> str:
+        if "--entitlements" in command:
+            return _ENTITLEMENTS_XML
         calls.append(command)
         return "Signature=adhoc"
 
@@ -387,6 +416,8 @@ def test_check_bundle_rejects_ad_hoc_when_identity_is_required(
     calls: list[list[str]] = []
 
     def fake_run(command: list[str]) -> str:
+        if "--entitlements" in command:
+            return _ENTITLEMENTS_XML
         calls.append(command)
         return "Identifier=com.fgomensoro.tamforge\nSignature=adhoc\n"
 
@@ -395,3 +426,129 @@ def test_check_bundle_rejects_ad_hoc_when_identity_is_required(
     with pytest.raises(NativeBundleError, match="ad-hoc"):
         check_bundle(app, require_ad_hoc=False, require_identity="TAM Forge Local Development")
     assert calls[0][:2] == ["codesign", "--verify"]
+
+
+def _whisper_framework(app: Path) -> Path:
+    """Lay out the bundled framework the way the real XCFramework installs it:
+    the real binary under Versions/A, plus the Versions/Current and top-level
+    symlinks Xcode's Embed Frameworks phase copies alongside it."""
+    framework = app / "Contents" / "Frameworks" / "whisper.framework"
+    versioned = framework / "Versions" / "A"
+    versioned.mkdir(parents=True)
+    binary = versioned / "whisper"
+    binary.write_bytes(b"\xcf\xfa\xed\xfe whisper dylib payload")
+    binary.chmod(0o755)
+    (framework / "Versions" / "Current").symlink_to("A")
+    (framework / "whisper").symlink_to("Versions/Current/whisper")
+    return framework
+
+
+def test_whisper_framework_binary_is_allowed(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+    _whisper_framework(app)
+
+    assert bundle_violations(app) == ()
+
+
+def test_second_unexpected_framework_binary_is_rejected(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+    _whisper_framework(app)
+    other = app / "Contents" / "Frameworks" / "openvino.framework" / "Versions" / "A" / "openvino"
+    other.parent.mkdir(parents=True)
+    other.write_bytes(b"\xcf\xfa\xed\xfe openvino dylib payload")
+    other.chmod(0o755)
+
+    violations = bundle_violations(app)
+
+    assert (
+        "unexpected executable or Mach-O payload: "
+        "Contents/Frameworks/openvino.framework/Versions/A/openvino"
+    ) in violations
+
+
+def test_whisper_framework_linked_library_reference_is_allowed(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+
+    violations = bundle_violations(
+        app, linked_libraries="@rpath/whisper.framework/Versions/Current/whisper"
+    )
+
+    assert violations == ()
+
+
+def test_other_framework_linked_library_reference_is_rejected(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+
+    violations = bundle_violations(app, linked_libraries="@rpath/other.framework/other")
+
+    assert violations == ("non-standalone linked library: @rpath/other.framework/other",)
+
+
+def test_symlink_to_allowed_binary_is_not_counted_as_extra_payload(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+    # A symlink elsewhere pointing at the already-allowed executable must not
+    # itself be treated as a second, unexpected payload. Contents/Frameworks
+    # (unlike Contents/MacOS) has no "exact contents" check, so this isolates
+    # the symlink-skipping behavior from the unrelated MacOS payload check.
+    alias = app / "Contents" / "Frameworks" / "TAMForgeAlias"
+    alias.parent.mkdir(parents=True)
+    alias.symlink_to("../MacOS/TAMForge")
+
+    assert bundle_violations(app) == ()
+
+
+def test_only_the_real_whisper_install_name_is_accepted(tmp_path: Path) -> None:
+    # The framework records @rpath/whisper.framework/Versions/Current/whisper;
+    # no other spelling of the same payload may pass.
+    app = _app(tmp_path)
+    for rejected in (
+        "@rpath/whisper.framework/Versions/A/whisper",
+        "@rpath/whisper.framework/Versions/B/whisper",
+        "@rpath/whisper.framework/whisper",
+    ):
+        violations = bundle_violations(app, linked_libraries=rejected)
+        assert any("non-standalone linked library" in item for item in violations), rejected
+
+
+def test_entitlement_set_is_pinned_exactly() -> None:
+    # disable-library-validation is a deliberate weakening: a self-signed
+    # identity has no Team ID, so the hardened runtime refuses to load the
+    # embedded whisper framework without it. Pinning the whole set means a
+    # future entitlement cannot be added without this test failing.
+    from scripts.ci.check_native_bundle import EXPECTED_ENTITLEMENTS, entitlement_violation
+
+    assert EXPECTED_ENTITLEMENTS == frozenset(
+        {
+            "com.apple.security.app-sandbox",
+            "com.apple.security.cs.disable-library-validation",
+            "com.apple.security.device.audio-input",
+            "com.apple.security.files.user-selected.read-only",
+            "com.apple.security.network.client",
+        }
+    )
+    assert entitlement_violation(sorted(EXPECTED_ENTITLEMENTS)) is None
+    extra = sorted(EXPECTED_ENTITLEMENTS | {"com.apple.security.cs.allow-jit"})
+    assert "allow-jit" in (entitlement_violation(extra) or "")
+    missing = sorted(EXPECTED_ENTITLEMENTS - {"com.apple.security.app-sandbox"})
+    assert "app-sandbox" in (entitlement_violation(missing) or "")
+
+
+def test_bundle_without_any_entitlements_is_rejected(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    # codesign prints nothing for a bundle that declares no entitlements. Without
+    # this guard the pinned-set check would be handed an empty string and skip
+    # itself, passing a sandbox-less app.
+    app = _app(tmp_path)
+
+    def fake_run(command: list[str]) -> str:
+        if "--entitlements" in command:
+            return ""
+        if command[:3] == ["codesign", "-dv", "--verbose=4"]:
+            return "Signature=adhoc"
+        return ""
+
+    monkeypatch.setattr(check_native_bundle, "_run", fake_run)  # type: ignore[attr-defined]
+
+    with pytest.raises(NativeBundleError, match="declares no entitlements"):
+        check_bundle(app, require_ad_hoc=True)
