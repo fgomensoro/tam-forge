@@ -185,3 +185,61 @@ def test_lifecycle_closed_contract_rejects_incoherent_observations(event):
 
     with pytest.raises(ValidationError):
         Lifecycle(**event)
+
+
+@pytest.mark.parametrize("replayed,outcome", [(False, "succeeded"), (True, "noop")])
+def test_accepted_submission_audit_records_whether_it_was_a_replay(replayed, outcome):
+    from tamforge_backend.agents.contracts import (
+        ConsentBasis,
+        ContextInput,
+        PinnedVersion,
+        RedactionDecision,
+        RunRequest,
+        SensitivityScope,
+        SubmissionClassification,
+    )
+    from tamforge_backend.agents.model_runs import ModelRunRepository
+
+    class Session:
+        def __init__(self):
+            self.added = []
+
+        def add(self, row):
+            self.added.append(row)
+
+    pin = PinnedVersion(id=1, content_hash="a" * 64)
+    request = RunRequest(
+        owner_id=1,
+        invocation_key="invocation-1",
+        activity_id=9,
+        attempt=pin,
+        prompt=pin,
+        schema_version=pin,
+        rubric_binding=pin,
+        requested_model="model",
+        context=(
+            ContextInput(
+                ordinal=0,
+                reason="primary_evidence",
+                reference=reference(),
+                prepared_input_hash="b" * 64,
+            ),
+        ),
+        classification=SubmissionClassification(
+            scope=SensitivityScope.RELEASABLE,
+            redaction=RedactionDecision.NOT_REQUIRED,
+            consent=ConsentBasis.LEARNER_SUBMISSION,
+        ),
+    )
+    session = Session()
+
+    ModelRunRepository(session)._audit(request, accepted=True, replayed=replayed)
+
+    event = session.added[0]
+    assert event.action == "model_run.submitted"
+    assert event.aggregate_id == "9"
+    # A replay carries the original's correlation hash, so only the metadata tells them apart.
+    assert event.idempotency_correlation_hash == sha256(b"invocation-1").digest()
+    assert event.redacted_metadata["outcome"] == outcome
+    assert event.redacted_metadata["flags"]["replayed"] is replayed
+    assert event.redacted_metadata["flags"]["authorized"] is True

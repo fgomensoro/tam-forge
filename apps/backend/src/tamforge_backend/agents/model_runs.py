@@ -169,6 +169,7 @@ class ModelRunRepository:
                     if existing is not None:
                         if verified(existing).canonical_json != record_data["canonical_json"]:
                             raise ImmutableVersionConflict()
+                        self._audit(request, accepted=True, replayed=True)
                         return snapshot_record(existing)
                     run = ModelRun(owner_id=request.owner_id, **record_data)
                     self.session.add(run)
@@ -191,7 +192,7 @@ class ModelRunRepository:
         except (SQLAlchemyError, ValidationError):
             raise InvalidProvenance() from None
 
-    def _audit(self, request: RunRequest, *, accepted: bool) -> None:
+    def _audit(self, request: RunRequest, *, accepted: bool, replayed: bool = False) -> None:
         self.session.add(
             AuditEvent(
                 owner_id=request.owner_id,
@@ -205,13 +206,18 @@ class ModelRunRepository:
                 request_correlation_hash=None,
                 idempotency_correlation_hash=sha256(request.invocation_key.encode()).digest(),
                 redacted_metadata=AuditMetadataV1(
-                    outcome=AuditOutcome.SUCCEEDED if accepted else AuditOutcome.DENIED,
+                    outcome=(
+                        (AuditOutcome.NOOP if replayed else AuditOutcome.SUCCEEDED)
+                        if accepted
+                        else AuditOutcome.DENIED
+                    ),
                     reason_code=(
                         AuditReasonCode.NONE if accepted else AuditReasonCode.UNAUTHORIZED
                     ),
                     counts={AuditCountKey.ATTEMPTED: 1},
                     flags={
                         AuditFlagKey.AUTHORIZED: accepted,
+                        AuditFlagKey.REPLAYED: replayed,
                         AuditFlagKey.REDACTED: True,
                     },
                 ).to_payload(),
