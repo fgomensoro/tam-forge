@@ -27,6 +27,7 @@ tamforge = "tamforge_backend.cli:main"
 [project.optional-dependencies]
 dev = [
   "boto3-stubs[s3]>=1.43,<2",
+  "httpx2>=2,<3",
   "hypothesis>=6.120,<7",
   "mypy>=1.15,<2",
   "moto[s3]>=5.2,<6",
