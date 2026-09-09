@@ -18,14 +18,18 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 from tamforge_backend.agents.contracts import (
+    ConsentBasis,
     ContextInput,
     ImmutableVersionConflict,
     InvalidProvenance,
     Lifecycle,
     PinnedVersion,
     ProvenanceNotFound,
+    RedactionDecision,
     RunRequest,
+    SensitivityScope,
     StateConflict,
+    SubmissionClassification,
     ToolAudit,
 )
 from tamforge_backend.agents.hashing import canonical_bytes
@@ -40,6 +44,7 @@ from tamforge_backend.agents.models import (
     RubricVersionHash,
 )
 from tamforge_backend.agents.prompt_registry import PromptRegistry
+from tamforge_backend.auth.models import AuditEvent
 from tamforge_backend.database import database_url_to_sync
 from tamforge_backend.evidence.config_loader import load_config_bundle
 from tamforge_backend.evidence.models import RubricVersion
@@ -227,6 +232,11 @@ def case(test_database_url):
                                 ),
                                 prepared_input_hash=sha256("é🙂".encode()).hexdigest(),
                             ),
+                        ),
+                        classification=SubmissionClassification(
+                            scope=SensitivityScope.RELEASABLE,
+                            redaction=RedactionDecision.NOT_REQUIRED,
+                            consent=ConsentBasis.LEARNER_SUBMISSION,
                         ),
                     )
             finally:
@@ -773,6 +783,56 @@ def test_rubric_binding_checks_legacy_config_bytes_and_rejects_forged_stored_has
                                 {"value": value},
                             )
                     assert caught.value.orig.sqlstate == "P0001"
+        finally:
+            await engine.dispose()
+
+    asyncio.run(exercise())
+
+
+def test_an_accepted_submission_leaves_an_immutable_audit_record(case):
+    """Every submission that reaches the model is auditable afterwards.
+
+    The refusal path is covered by unit tests over the pure decision instead. Refusing
+    here would need a real_interview attempt, and attempts carry an immutability trigger
+    ("learning evidence is immutable"), so an existing one cannot be reclassified and a
+    new one would have to be rebuilt with its own commitment hash and context references.
+    """
+
+    async def exercise():
+        engine, factory = case.factory()
+        try:
+            async with factory() as session:
+                repo = ModelRunRepository(session)
+                await repo.register(
+                    case.request.model_copy(update={"invocation_key": "audited-acceptance"})
+                )
+                async with session.begin():
+                    events = (
+                        await session.scalars(
+                            select(AuditEvent).where(
+                                AuditEvent.owner_id == case.owner,
+                                AuditEvent.action == "model_run.submitted",
+                                AuditEvent.idempotency_correlation_hash
+                                == sha256(b"audited-acceptance").digest(),
+                            )
+                        )
+                    ).all()
+                    assert len(events) == 1
+                    event = events[0]
+                    assert event.aggregate_type == "activity"
+                    assert event.aggregate_id == str(case.request.activity_id)
+                    assert event.redacted_metadata["outcome"] == "succeeded"
+                    assert event.redacted_metadata["reason_code"] == "none"
+                    assert event.redacted_metadata["flags"]["authorized"] is True
+                    # The audit row carries no submitted content, only closed vocabulary.
+                    assert set(event.redacted_metadata) == {
+                        "schema_version",
+                        "outcome",
+                        "reason_code",
+                        "changed_fields",
+                        "counts",
+                        "flags",
+                    }
         finally:
             await engine.dispose()
 

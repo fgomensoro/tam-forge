@@ -127,7 +127,15 @@ def test_exact_learner_field_profiles(kind, field, content, pointer):
 
 
 def test_run_contract_rejects_manifest_gaps_duplicates_and_different_attempt():
-    from tamforge_backend.agents.contracts import ContextInput, PinnedVersion, RunRequest
+    from tamforge_backend.agents.contracts import (
+        ConsentBasis,
+        ContextInput,
+        PinnedVersion,
+        RedactionDecision,
+        RunRequest,
+        SensitivityScope,
+        SubmissionClassification,
+    )
 
     item = ContextInput(
         ordinal=0, reason="primary_evidence", reference=reference(), prepared_input_hash="b" * 64
@@ -142,6 +150,11 @@ def test_run_contract_rejects_manifest_gaps_duplicates_and_different_attempt():
         schema_version=pin,
         rubric_binding=pin,
         requested_model="model",
+        classification=SubmissionClassification(
+            scope=SensitivityScope.RELEASABLE,
+            redaction=RedactionDecision.NOT_REQUIRED,
+            consent=ConsentBasis.LEARNER_SUBMISSION,
+        ),
     )
     for context in [
         (),
