@@ -126,6 +126,13 @@ enum RecordingTranscriptState: Equatable, Sendable {
     case running(UUID)
     case ready(UUID, SpeechTranscriptionResult)
     case failed(UUID, String)      // human-readable, no paths
+
+    var recordingID: UUID? {
+        switch self {
+        case .idle: nil
+        case let .running(id), let .ready(id, _), let .failed(id, _): id
+        }
+    }
 }
 
 @MainActor
@@ -209,9 +216,7 @@ final class RecordingCoordinator: ObservableObject {
         accumulatedGaps.removeAll(keepingCapacity: true)
         activeStorageFailure = nil
         fatalCaptureFailure = nil
-        transcriptionTask?.cancel()
-        transcriptionTask = nil
-        transcriptState = .idle
+        clearTranscript()
         let result = await preflight.run()
         guard case let .ready(snapshot) = result else {
             if case let .blocked(failure) = result { phase = .blocked(failure) }
@@ -381,11 +386,24 @@ final class RecordingCoordinator: ObservableObject {
         }
     }
 
+    // A transcript is derived audio, so it cannot outlive the recording it came
+    // from. Discarding crypto-shreds the encrypted spool and the confirmation
+    // says so; a transcript of that same audio still on screen afterwards would
+    // contradict it. Passing a recordingID clears only that recording's
+    // transcript, so discarding one pending recording never wipes another's.
+    private func clearTranscript(forRecording recordingID: UUID? = nil) {
+        if let recordingID, transcriptState.recordingID != recordingID { return }
+        transcriptionTask?.cancel()
+        transcriptionTask = nil
+        transcriptState = .idle
+    }
+
     func resetSealedState() {
         guard case .sealed = phase else { return }
         phase = .idle
         startedAt = nil
         preflightSnapshot = nil
+        clearTranscript()
     }
 
     func discardPending(recordingID: UUID, confirmed: Bool) async {
@@ -394,6 +412,7 @@ final class RecordingCoordinator: ObservableObject {
             try await spoolFactory.discard(recordingID: recordingID)
             uploadQueue.removeAll { $0 == recordingID }
             uploadStates.removeValue(forKey: recordingID)
+            clearTranscript(forRecording: recordingID)
             await refreshPendingRecordings()
         } catch {
             phase = .needsAttention(recordingID, "Encrypted spool could not be discarded")

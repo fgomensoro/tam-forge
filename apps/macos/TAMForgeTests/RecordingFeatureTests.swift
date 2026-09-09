@@ -1340,6 +1340,95 @@ final class RecordingFeatureTests: XCTestCase {
         XCTAssertEqual(state, .idle)
     }
 
+    func testPreparingAnotherRecordingClearsTheTranscriptOfTheSealedOne() async throws {
+        let micChunk = RecordingPCMChunk.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 16_000
+        )
+        let reader = FakeRecordingAudioReader(microphoneChunks: [micChunk])
+        let transcriber = FakeSealTranscriber(text: "text from the dismissed recording")
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: FakeRecordingSpoolFactory(),
+                audioReader: reader,
+                transcriber: transcriber
+            )
+        }
+
+        await coordinator.start()
+        await coordinator.stop()
+        let sealedState = await waitUntilTranscriptSettles(coordinator)
+        guard case .ready = sealedState else {
+            return XCTFail("expected .ready before resetting, got \(sealedState)")
+        }
+
+        await MainActor.run { coordinator.resetSealedState() }
+
+        let state = await MainActor.run { coordinator.transcriptState }
+        XCTAssertEqual(state, .idle)
+    }
+
+    func testDiscardingARecordingClearsTheTranscriptDerivedFromIt() async throws {
+        // Discarding crypto-shreds the encrypted spool and the confirmation says
+        // so. A transcript of that same audio must not survive on screen.
+        let micChunk = RecordingPCMChunk.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 16_000
+        )
+        let reader = FakeRecordingAudioReader(microphoneChunks: [micChunk])
+        let transcriber = FakeSealTranscriber(text: "text from the discarded recording")
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: FakeRecordingSpoolFactory(),
+                audioReader: reader,
+                transcriber: transcriber
+            )
+        }
+
+        await coordinator.start()
+        await coordinator.stop()
+        let sealedState = await waitUntilTranscriptSettles(coordinator)
+        guard case let .ready(recordingID, _) = sealedState else {
+            return XCTFail("expected .ready before discarding, got \(sealedState)")
+        }
+
+        await coordinator.discardPending(recordingID: recordingID, confirmed: true)
+
+        let state = await MainActor.run { coordinator.transcriptState }
+        XCTAssertEqual(state, .idle)
+    }
+
+    func testDiscardingOneRecordingLeavesAnotherRecordingsTranscriptAlone() async throws {
+        let micChunk = RecordingPCMChunk.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 16_000
+        )
+        let reader = FakeRecordingAudioReader(microphoneChunks: [micChunk])
+        let transcriber = FakeSealTranscriber(text: "text that must survive")
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: FakeRecordingSpoolFactory(),
+                audioReader: reader,
+                transcriber: transcriber
+            )
+        }
+
+        await coordinator.start()
+        await coordinator.stop()
+        let sealedState = await waitUntilTranscriptSettles(coordinator)
+        guard case .ready = sealedState else {
+            return XCTFail("expected .ready before discarding, got \(sealedState)")
+        }
+
+        await coordinator.discardPending(recordingID: UUID(), confirmed: true)
+
+        let state = await MainActor.run { coordinator.transcriptState }
+        XCTAssertEqual(state, sealedState)
+    }
+
     func testTranscriberReceivesSixteenKilohertzAudioProvingItWentThroughASRAudioDeriver() async throws {
         let micChunk = RecordingPCMChunk.fixture(
             track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 48_000
