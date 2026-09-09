@@ -228,6 +228,55 @@ def test_submit_for_an_unknown_recording_raises_not_found() -> None:
     asyncio.run(exercise())
 
 
+def test_submit_for_another_owners_recording_is_indistinguishable_from_missing() -> None:
+    """Owner isolation on `_resolve_recording`, this task's own named risk:
+    submitting against a UUID that resolves to a recording owned by someone
+    else must raise the exact same `TranscriptNotFound` a caller gets for a
+    UUID that resolves to nothing at all. If `_resolve_recording` ever lost
+    its `Recording.owner_id` filter, this submission would go through
+    instead of raising -- a caller could then tell another owner's recording
+    exists just by comparing responses.
+    """
+    someone_elses_recording = uuid4()
+    session = FakeSession(
+        [fake_recording(owner_id=2, client_recording_id=someone_elses_recording)]
+    )
+    service = TranscriptService(session, FakeTranscriptRepository())  # type: ignore[arg-type]
+
+    async def exercise() -> None:
+        with pytest.raises(TranscriptNotFound):
+            await service.submit(
+                owner_id=1, recording_id=someone_elses_recording, command=submit_command()
+            )
+        # Same exception as a UUID nobody has ever used -- see
+        # test_submit_for_an_unknown_recording_raises_not_found above.
+        with pytest.raises(TranscriptNotFound):
+            await service.submit(owner_id=1, recording_id=uuid4(), command=submit_command())
+
+    asyncio.run(exercise())
+
+
+def test_list_for_recording_owned_by_another_is_indistinguishable_from_missing() -> None:
+    """Owner isolation on the read path: listing transcripts against
+    another owner's recording UUID must raise the same `TranscriptNotFound`
+    as a UUID that was never used, never leaking whether the recording
+    exists.
+    """
+    someone_elses_recording = uuid4()
+    session = FakeSession(
+        [fake_recording(owner_id=2, client_recording_id=someone_elses_recording)]
+    )
+    service = TranscriptService(session, FakeTranscriptRepository())  # type: ignore[arg-type]
+
+    async def exercise() -> None:
+        with pytest.raises(TranscriptNotFound):
+            await service.list_for_recording(owner_id=1, recording_id=someone_elses_recording)
+        with pytest.raises(TranscriptNotFound):
+            await service.list_for_recording(owner_id=1, recording_id=uuid4())
+
+    asyncio.run(exercise())
+
+
 def test_fresh_submission_accepts_lineage_and_reports_no_replay() -> None:
     recording_id = uuid4()
     recording = fake_recording(client_recording_id=recording_id, transcript_lineage_accepted=False)
