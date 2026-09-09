@@ -246,13 +246,25 @@ private final class NativeShellComposition: ObservableObject {
             refreshBearer: refreshBearer,
             session: httpSession
         )
+        // `try?` means a missing or unreadable model just switches transcription
+        // off instead of failing app launch. CI and UI-test runners never have
+        // the model installed (only scripts/dev/fetch_whisper_framework.sh runs
+        // there, which fetches the runtime, not model weights), so this stays
+        // nil and RecordingCoordinator.beginTranscription never starts there.
+        let speechModelCatalog = SpeechModelCatalog()
+        let transcriber: (any SpeechTranscribing)? =
+            speechModelCatalog.transcriptionModelURL != nil
+            ? try? WhisperTranscriber(catalog: speechModelCatalog)
+            : nil
         recording = RecordingCoordinator(
             preflight: LiveRecordingPreflight(spoolRootURL: recordingSpool.rootURL),
             spoolFactory: recordingSpool,
             uploader: RecordingUploadPipeline(
                 spoolFactory: recordingSpool,
                 server: recordingServer
-            )
+            ),
+            audioReader: recordingSpool,
+            transcriber: transcriber
         )
     }
 
