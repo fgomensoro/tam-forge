@@ -59,6 +59,8 @@ CREATE TABLE speech_transcript_corrections (
         public.digest(convert_to(canonical_json, 'UTF8'), 'sha256')),
     CONSTRAINT ck_speech_transcript_corrections_canonical_bytes CHECK (canonical_json =
         public.tamforge_provenance_canonical(canonical_json::jsonb)),
+    CONSTRAINT uq_speech_transcript_corrections_content UNIQUE (owner_id, transcript_id,
+        content_hash),
     CONSTRAINT fk_speech_transcript_corrections_transcript FOREIGN KEY(owner_id, transcript_id)
         REFERENCES speech_transcripts (owner_id, id) ON DELETE RESTRICT,
     CONSTRAINT fk_speech_transcript_corrections_owner_id_owners FOREIGN KEY(owner_id) REFERENCES

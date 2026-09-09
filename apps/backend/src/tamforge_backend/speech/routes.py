@@ -106,10 +106,12 @@ async def submit_transcript(
     recording_id: UUID,
     command: TranscriptSubmitCommand,
     response: Response,
-    # Required for wire parity with every other recording write endpoint. This
-    # domain's idempotency is content-hash based (store() dedupes on
-    # (owner, recording, track) content equality), so the key itself is
-    # validated for shape and otherwise unused here.
+    # Required for wire parity with every other recording write endpoint. Both
+    # writes in this domain get their idempotency from a content hash inside the
+    # repository instead of from this key: store() dedupes on
+    # (owner, recording, track) content equality, so a retried submission
+    # replays the stored transcript. The key itself is validated for shape and
+    # otherwise unused here.
     idempotency_key: Annotated[IdempotencyKey, Header(alias="Idempotency-Key")],
     owner: Annotated[AuthenticatedOwner, Depends(get_bearer_authenticated_owner)],
     service: Annotated[TranscriptService, Depends(get_transcript_service)],
@@ -149,6 +151,10 @@ async def submit_correction(
     track: Track,
     command: TranscriptCorrectionCommand,
     response: Response,
+    # Content-hash idempotency as above, on a different identity:
+    # append_correction() dedupes on the correction body's own hash, so a
+    # retried POST replays the stored correction (`replayed` true, same
+    # correction_id) instead of appending a duplicate annotation.
     idempotency_key: Annotated[IdempotencyKey, Header(alias="Idempotency-Key")],
     owner: Annotated[AuthenticatedOwner, Depends(get_bearer_authenticated_owner)],
     service: Annotated[TranscriptService, Depends(get_transcript_service)],

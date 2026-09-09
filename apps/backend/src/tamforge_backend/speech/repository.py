@@ -15,10 +15,12 @@ commits, not one. Both operations are individually idempotent (a replayed store
 returns the same row; setting an already-true flag is a no-op), so that ordering
 is safe to retry, just not atomic in the single-transaction sense.
 
-`store` additionally has an identity two callers can race on: the client's own
-retry-on-timeout, not just theoretical concurrency, per the design doc. Both may
-run their existing-row SELECT before either commits and both see nothing, so both
-attempt to insert; the database's `uq_speech_transcripts_recording_track`
+Both writes additionally have an identity two callers can race on: the client's
+own retry-on-timeout, not just theoretical concurrency, per the design doc.
+`store`'s identity is `(owner, recording, track)`; `append_correction`'s is the
+correction body's own content hash. Taking `store` as the example, both callers
+may run their existing-row SELECT before either commits and both see nothing, so
+both attempt to insert; the database's `uq_speech_transcripts_recording_track`
 constraint lets only one through. Rather than prevent that race with a lock,
 `store` lets it happen and recovers from it: the loser's `IntegrityError` --
 specifically that type, not `SQLAlchemyError` in general -- is caught and
@@ -31,6 +33,8 @@ as `TranscriptUnavailable`, a distinct, retryable error, so a transient
 infrastructure failure is never mislabeled as the 409-shaped `TranscriptConflict`
 a well-behaved client would not retry. No `SQLAlchemyError`, from either the
 first attempt or the recovery read, ever reaches the caller untranslated.
+`append_correction` recovers its own race the same way, minus the conflict
+branch, which content-hash identity makes unreachable there -- see its docstring.
 
 `store`'s `recording.id` is read exactly once, into a local, before either
 transaction attempt begins. `recording` is the caller's already-loaded ORM
@@ -223,36 +227,48 @@ class SqlAlchemyTranscriptRepository:
         transcript: SpeechTranscript,
         body: Mapping[str, object],
     ) -> SpeechTranscriptCorrection:
-        """Append a correction to `transcript`; corrections are never deduplicated.
+        """Insert once per correction body; replay an identical one by content hash.
 
         `transcript` must already belong to `owner_id` -- the caller is expected
         to have obtained it from `store` or `by_recording` under that same owner.
         A mismatch reads as not-found rather than forbidden, so a correction
         request cannot be used to confirm another owner's transcript exists.
 
-        Unlike `store`, there is no identity to race on here -- corrections
-        are always inserted, never deduplicated -- so there is nothing to
-        retry, and no conflict outcome is reachable at all:
-        `SpeechTranscriptCorrection`'s only constraints are the provenance
-        base's own `(owner_id, id)` uniqueness -- trivially satisfied, since
-        `id` is sequence-assigned and never reused -- and a foreign key to
-        `transcript`, which is immutable and never deleted (the ORM rejects
-        `UPDATE`/`DELETE` on it directly, and nothing in this repository
-        issues either), so the referenced row cannot vanish between the
-        owner check above and this insert. With no genuine integrity
-        violation possible, every `SQLAlchemyError` below is the same kind
-        of unrelated infrastructure failure `store` guards against, and
-        surfaces the same way: as `TranscriptUnavailable`, not
+        Deduplication is the same content-hash mechanism `store` uses, for the
+        same reason: the client retries a write on a timer, so a response lost
+        to a timeout must replay the row already written rather than append a
+        second, identical annotation to an append-only provenance table. The
+        canonical body already carries `transcript_id`, so a correction's
+        content hash is its whole identity, and
+        `uq_speech_transcript_corrections_content` enforces it.
+
+        That makes this an identity two callers race on exactly as `store`'s is:
+        a retry whose predecessor is still in flight runs its SELECT before the
+        other commits, both attempt to insert, and only one gets through. The
+        loser's `IntegrityError` is recovered the same way -- by re-reading the
+        identity in a fresh transaction -- and, because content equality *is*
+        the identity here, that re-read can only find the row it collided with.
+        No conflict outcome is reachable at all: a correction whose body differs
+        is a different identity, not a collision, which is why the corrections
+        route declares no 409. An `IntegrityError` whose re-read finds nothing
+        was some other violation entirely, and surfaces like every other
+        `SQLAlchemyError` below: as `TranscriptUnavailable`, never
         `TranscriptConflict`.
         """
         if transcript.owner_id != owner_id:
             raise TranscriptNotFound()
+        transcript_id = transcript.id
         canonical, content_hash = _canonicalize(
-            {**body, "transcript_id": transcript.id}, limit=CORRECTION_BODY_LIMIT
+            {**body, "transcript_id": transcript_id}, limit=CORRECTION_BODY_LIMIT
         )
 
         try:
             async with transaction_scope(self.session):
+                existing = await self._correction_by_content(
+                    owner_id=owner_id, transcript_id=transcript_id, content_hash=content_hash
+                )
+                if existing is not None:
+                    return _snapshot(existing)
                 row = SpeechTranscriptCorrection(
                     owner_id=owner_id,
                     canonical_json=canonical.decode("utf-8"),
@@ -261,8 +277,49 @@ class SqlAlchemyTranscriptRepository:
                 self.session.add(row)
                 await self.session.flush()
                 return _snapshot(row)
+        except IntegrityError:
+            return await self._replay_lost_correction(
+                owner_id=owner_id, transcript_id=transcript_id, content_hash=content_hash
+            )
         except SQLAlchemyError:
             raise TranscriptUnavailable() from None
+
+    async def _correction_by_content(
+        self, *, owner_id: int, transcript_id: int, content_hash: bytes
+    ) -> SpeechTranscriptCorrection | None:
+        existing: SpeechTranscriptCorrection | None = await self.session.scalar(
+            select(SpeechTranscriptCorrection).where(
+                SpeechTranscriptCorrection.owner_id == owner_id,
+                SpeechTranscriptCorrection.transcript_id == transcript_id,
+                SpeechTranscriptCorrection.content_hash == content_hash,
+            )
+        )
+        return existing
+
+    async def _replay_lost_correction(
+        self, *, owner_id: int, transcript_id: int, content_hash: bytes
+    ) -> SpeechTranscriptCorrection:
+        """Resolve an `append_correction` insert lost to a concurrent retry.
+
+        `store`'s `_reconcile_lost_race` in miniature, and reached the same
+        way: only on a genuine `IntegrityError`. `transaction_scope` has
+        already rolled the failed attempt back, so this reads fresh, in a
+        transaction of its own, and replays whichever row won. A re-read that
+        finds nothing means the `IntegrityError` was not the uniqueness
+        collision this recovers from, and a re-read that fails is the same
+        kind of unrelated infrastructure failure `store` guards against; both
+        surface as `TranscriptUnavailable`, never a raw database error.
+        """
+        try:
+            async with transaction_scope(self.session):
+                existing = await self._correction_by_content(
+                    owner_id=owner_id, transcript_id=transcript_id, content_hash=content_hash
+                )
+        except SQLAlchemyError:
+            raise TranscriptUnavailable() from None
+        if existing is None:
+            raise TranscriptUnavailable() from None
+        return _snapshot(existing)
 
     async def corrections(
         self, *, owner_id: int, transcript_id: int

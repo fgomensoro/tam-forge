@@ -107,10 +107,11 @@ class FakeSession:
     backfills what PostgreSQL would assign on insert: the identity `id`, the
     `hash_format`/`created_at` defaults, and -- by parsing the row's own
     `canonical_json`, exactly as the real generated-column expression reads it --
-    every `Computed` column. It also enforces the one real constraint the
-    repository's own `store` logic has to cope with,
-    `uq_speech_transcripts_recording_track`, raising the same `IntegrityError`
-    PostgreSQL would on a colliding insert -- everything else (the hash
+    every `Computed` column. It also enforces the two real constraints the
+    repository's own race recovery has to cope with,
+    `uq_speech_transcripts_recording_track` and
+    `uq_speech_transcript_corrections_content`, raising the same
+    `IntegrityError` PostgreSQL would on a colliding insert -- everything else (the hash
     constraint, the immutability triggers) stays out of scope, per this file's
     module docstring. `begin` models commit/rollback by removing exactly the
     rows added during a transaction that raises (not by truncating on list
@@ -127,7 +128,10 @@ class FakeSession:
     back, mirroring a real `AsyncSession` expiring its whole identity map on
     rollback, not only the rows the failed transaction touched.
     `fail_next_scalar` is `fail_next_flush`'s sibling for the read side, used
-    to simulate a transient failure on a SELECT rather than a flush.
+    to simulate a transient failure on a SELECT rather than a flush. `race` is
+    public, not private, so a test whose setup has to write fixtures first --
+    a correction needs a transcript on file -- can arm the rendezvous
+    afterwards instead of letting those setup reads consume its slots.
     """
 
     def __init__(
@@ -139,7 +143,7 @@ class FakeSession:
         self.rows: list[object] = []
         self.calls: list[str] = []
         self._next_id = 1
-        self._race = race
+        self.race = race
         self._expires = expires
         self._pending: list[list[object]] = []
         self.fail_next_flush: Exception | None = None
@@ -175,6 +179,22 @@ class FakeSession:
                         '"uq_speech_transcripts_recording_track"'
                     ),
                 )
+            if isinstance(row, SpeechTranscriptCorrection) and any(
+                isinstance(other, SpeechTranscriptCorrection)
+                and other.id is not None
+                and other.owner_id == row.owner_id
+                and other.transcript_id == parsed.get("transcript_id")
+                and other.content_hash == row.content_hash
+                for other in self.rows
+            ):
+                raise IntegrityError(
+                    "INSERT INTO speech_transcript_corrections ...",
+                    {},
+                    Exception(
+                        "duplicate key value violates unique constraint "
+                        '"uq_speech_transcript_corrections_content"'
+                    ),
+                )
             row.id = self._next_id
             self._next_id += 1
             row.hash_format = 1
@@ -205,8 +225,8 @@ class FakeSession:
             error, self.fail_next_scalar = self.fail_next_scalar, None
             raise error
         matches = self._matches(statement)
-        if self._race is not None:
-            await self._race.wait()
+        if self.race is not None:
+            await self.race.wait()
         return matches[0] if matches else None
 
     async def scalars(self, statement: object) -> _ScalarResult:
@@ -412,6 +432,72 @@ def test_corrections_are_returned_in_insertion_order() -> None:
     asyncio.run(exercise())
 
 
+def test_identical_correction_resubmission_replays_instead_of_appending_a_duplicate() -> None:
+    """A correction POST that times out is retried on a timer, and the retry
+    must not leave a second, identical annotation behind on an append-only
+    table. `append_correction` dedupes on the correction body's own content
+    hash -- the body already carries `transcript_id`, so that hash is the
+    whole identity -- exactly as `store` dedupes a resubmitted transcript.
+    """
+
+    async def exercise() -> None:
+        session = FakeSession()
+        repository = SqlAlchemyTranscriptRepository(session)
+        recording = SimpleNamespace(id=42)
+        transcript = await repository.store(
+            owner_id=1, recording=recording, track="microphone", body=transcript_body()
+        )
+        body = correction_body()
+
+        first = await repository.append_correction(owner_id=1, transcript=transcript, body=body)
+        second = await repository.append_correction(owner_id=1, transcript=transcript, body=body)
+
+        assert first.id == second.id
+        assert first.content_hash == second.content_hash
+        assert sum(isinstance(row, SpeechTranscriptCorrection) for row in session.rows) == 1
+
+    asyncio.run(exercise())
+
+
+def test_concurrent_identical_corrections_replay_the_same_row_instead_of_duplicating() -> None:
+    """The same retry, with the timed-out first request still in flight --
+    which is the shape a retry-on-timeout actually has, and the shape a
+    dedup SELECT alone cannot survive. Both calls run that SELECT before
+    either commits (forced by `race`), both attempt to insert, and
+    `uq_speech_transcript_corrections_content` (simulated by
+    `FakeSession.flush`) lets only one through. The loser has to recover the
+    winner's row as a replay -- not a duplicate, and not the
+    `TranscriptUnavailable` every other `IntegrityError` here becomes.
+    """
+
+    async def exercise() -> None:
+        session = FakeSession()
+        repository = SqlAlchemyTranscriptRepository(session)
+        recording = SimpleNamespace(id=42)
+        transcript = await repository.store(
+            owner_id=1, recording=recording, track="microphone", body=transcript_body()
+        )
+        body = correction_body()
+        flushes_before = session.calls.count("flush")
+        session.race = _Rendezvous(2)
+
+        first, second = await asyncio.gather(
+            repository.append_correction(owner_id=1, transcript=transcript, body=body),
+            repository.append_correction(owner_id=1, transcript=transcript, body=body),
+        )
+
+        assert first.id == second.id
+        assert first.content_hash == second.content_hash
+        assert sum(isinstance(row, SpeechTranscriptCorrection) for row in session.rows) == 1
+        # Both calls reached flush. Without the forced interleaving the second
+        # would have seen the first row in its own dedup SELECT and returned
+        # without inserting, so this pins down that the race was genuinely
+        # exercised rather than sidestepped.
+        assert session.calls.count("flush") == flushes_before + 2
+
+    asyncio.run(exercise())
+
+
 def test_concurrent_identical_submissions_replay_the_same_row_instead_of_conflicting() -> None:
     """Two `store()` calls racing on the same identity -- both see no
     existing row (forced by `race`), both attempt to insert, and PostgreSQL's
@@ -518,17 +604,14 @@ def test_concurrent_differing_submissions_the_loser_gets_transcript_conflict() -
 
 
 def test_append_correction_surfaces_a_transient_failure_as_unavailable_not_conflict() -> None:
-    """`append_correction` has no identity to race on, and -- unlike `store`
-    -- no reachable uniqueness collision either:
-    `SpeechTranscriptCorrection`'s only constraints are the provenance
-    base's trivial `(owner_id, id)` uniqueness on a sequence-assigned `id`,
-    and a foreign key to a transcript row that is immutable and never
-    deleted. So an unexpected `SQLAlchemyError` mid-flush (a dropped
-    connection, a statement timeout -- modeled here with `OperationalError`,
-    deliberately not `IntegrityError`, to prove the `except` isn't narrowed
-    to just that one subtype) must come out as `TranscriptUnavailable`, with
-    a clean exception chain -- never `TranscriptConflict`, which this method
-    can no longer raise at all.
+    """`append_correction` does have an identity to race on -- the correction
+    body's content hash -- but only `IntegrityError` means that race was
+    lost. An unexpected `SQLAlchemyError` mid-flush (a dropped connection, a
+    statement timeout -- modeled here with `OperationalError`, deliberately
+    not `IntegrityError`, to prove the replay recovery isn't reached by
+    every database failure) must come out as `TranscriptUnavailable`, with a
+    clean exception chain -- never `TranscriptConflict`, which this method
+    cannot raise at all, and never a replay of a row that was never written.
     """
 
     async def exercise() -> None:
@@ -556,22 +639,16 @@ def test_append_correction_surfaces_a_transient_failure_as_unavailable_not_confl
     asyncio.run(exercise())
 
 
-def test_append_correction_integrity_error_also_surfaces_as_unavailable() -> None:
-    """Even `IntegrityError` specifically -- the one subtype `store` routes
-    into a replay-vs-conflict reconciliation -- gets no such treatment here,
-    because there is nothing it could legitimately mean:
-    `SpeechTranscriptCorrection` carries no constraint a second, concurrent
-    insert could ever violate (its `(owner_id, id)` uniqueness is on a
-    sequence-assigned `id` that is never reused, and its only other
-    constraint is a foreign key to a transcript row that is immutable and
-    never deleted, so it cannot vanish out from under a concurrent insert
-    either). A real `IntegrityError` here would only be reachable as a
-    caller bug, never a race to recover from, so it must surface exactly
-    like every other database failure does: as `TranscriptUnavailable`,
-    never `TranscriptConflict`. This guards against a future change
-    "symmetrizing" this method with `store` by special-casing
-    `IntegrityError` back into a conflict outcome that nothing here can
-    legitimately produce.
+def test_append_correction_unexplained_integrity_error_surfaces_as_unavailable() -> None:
+    """An `IntegrityError` the replay recovery cannot explain -- its re-read
+    finds no matching row, so the violation was not the content-hash
+    collision it recovers from -- has to surface like every other database
+    failure: as `TranscriptUnavailable`, with a clean exception chain, and
+    never as `TranscriptConflict`. Corrections have no conflict outcome at
+    all (a differing body is a different identity, not a collision), which
+    is why the corrections route declares no 409. This guards against a
+    future change "symmetrizing" this method with `store` by borrowing its
+    replay-vs-conflict branch, whose conflict half nothing here can produce.
     """
 
     async def exercise() -> None:

@@ -34,3 +34,11 @@ def test_correction_points_at_a_transcript() -> None:
     table = SpeechTranscriptCorrection.__table__
     assert table.name == "speech_transcript_corrections"
     assert "transcript_id" in table.columns
+
+
+def test_correction_identity_is_its_own_content_hash() -> None:
+    # The constraint a retried correction POST collides with instead of
+    # appending a duplicate annotation. Dropping it would leave
+    # `append_correction`'s dedup SELECT racing the retry it exists to absorb.
+    names = {constraint.name for constraint in SpeechTranscriptCorrection.__table__.constraints}
+    assert "uq_speech_transcript_corrections_content" in names

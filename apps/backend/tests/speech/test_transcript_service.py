@@ -83,6 +83,20 @@ def submit_command(**overrides: object) -> TranscriptSubmitCommand:
     return TranscriptSubmitCommand.model_validate(body)
 
 
+def correction_command(**overrides: object) -> TranscriptCorrectionCommand:
+    body: dict[str, Any] = {
+        "schema_version": 1,
+        "segment_index": 0,
+        "word_start_index": 0,
+        "word_end_index": 1,
+        "original_text": "helo",
+        "corrected_text": "hello",
+        "reason": "misheard_term",
+    }
+    body.update(overrides)
+    return TranscriptCorrectionCommand.model_validate(body)
+
+
 def fake_recording(
     *, pk: int = 42, owner_id: int = 1, client_recording_id: UUID, state: str = "stored",
     transcript_lineage_accepted: bool = False,
@@ -137,9 +151,12 @@ class FakeTranscriptRepository:
     """A `SqlAlchemyTranscriptRepository` stand-in with real replay semantics
     for exactly what `TranscriptService` needs: the second submission for the
     same (recording, track) returns the row already on file, a differing one
-    raises `TranscriptConflict` -- matching Task 3's contract without its
+    raises `TranscriptConflict`, and an identical correction body replays the
+    correction already appended -- matching Task 3's contract without its
     concurrency machinery, which is out of scope here (see the module
-    docstring).
+    docstring). The real repository decides a correction's identity by content
+    hash; the fake compares canonical bodies directly, since every row it
+    hands back carries the same placeholder hash.
     """
 
     def __init__(self) -> None:
@@ -190,16 +207,21 @@ class FakeTranscriptRepository:
         self, *, owner_id: int, transcript: object, body: dict[str, object]
     ) -> SimpleNamespace:
         transcript_id = transcript.id  # type: ignore[attr-defined]
+        canonical_json = json.dumps({**body, "transcript_id": transcript_id})
+        stored = self._corrections.setdefault(transcript_id, [])
+        existing = next((row for row in stored if row.canonical_json == canonical_json), None)
+        if existing is not None:
+            return existing
         row = SimpleNamespace(
             id=self._next_correction_id,
             owner_id=owner_id,
             transcript_id=transcript_id,
-            canonical_json=json.dumps({**body, "transcript_id": transcript_id}),
+            canonical_json=canonical_json,
             content_hash=b"\x22" * 32,
             created_at=CREATED_AT,
         )
         self._next_correction_id += 1
-        self._corrections.setdefault(transcript_id, []).append(row)
+        stored.append(row)
         return row
 
 
@@ -338,6 +360,42 @@ def test_list_for_recording_includes_corrections() -> None:
         assert page.items[0].transcript_id == submitted.transcript_id
         assert len(page.items[0].corrections) == 1
         assert page.items[0].corrections[0].corrected_text == "hello"
+
+    asyncio.run(exercise())
+
+
+def test_retried_correction_replays_the_stored_row_and_reports_it() -> None:
+    """A correction POST retried after a timeout has to come back as the
+    correction already on file, flagged `replayed`, not as a second
+    annotation. The service decides that flag exactly as `submit` decides its
+    own: read the ids on file first, then check whether the row the repository
+    returned is one of them.
+    """
+    recording_id = uuid4()
+    session = FakeSession([fake_recording(client_recording_id=recording_id)])
+    service = TranscriptService(session, FakeTranscriptRepository())  # type: ignore[arg-type]
+
+    async def exercise() -> None:
+        await service.submit(owner_id=1, recording_id=recording_id, command=submit_command())
+
+        first = await service.add_correction(
+            owner_id=1,
+            recording_id=recording_id,
+            track="microphone",
+            command=correction_command(),
+        )
+        second = await service.add_correction(
+            owner_id=1,
+            recording_id=recording_id,
+            track="microphone",
+            command=correction_command(),
+        )
+
+        assert first.replayed is False
+        assert second.replayed is True
+        assert second.correction_id == first.correction_id
+        page = await service.list_for_recording(owner_id=1, recording_id=recording_id)
+        assert len(page.items[0].corrections) == 1
 
     asyncio.run(exercise())
 

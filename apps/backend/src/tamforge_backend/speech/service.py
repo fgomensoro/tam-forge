@@ -140,6 +140,14 @@ class TranscriptService:
         track: str,
         command: TranscriptCorrectionCommand,
     ) -> TranscriptCorrectionResponse:
+        """Append a correction, reporting whether the repository replayed one.
+
+        `replayed` is decided the same way `submit` decides its own: read the
+        ids already on file first, then check whether the row the repository
+        handed back is one of them. A retry of a correction the server already
+        stored comes back with `replayed` true and the original correction's
+        id, never a second row -- see `repository.append_correction`.
+        """
         recording = await self._resolve_recording(owner_id=owner_id, recording_id=recording_id)
         transcripts = await self._repository.by_recording(
             owner_id=owner_id, recording_id=recording.id
@@ -147,10 +155,16 @@ class TranscriptService:
         transcript = next((row for row in transcripts if row.track == track), None)
         if transcript is None:
             raise TranscriptNotFound()
+        prior_ids = {
+            row.id
+            for row in await self._repository.corrections(
+                owner_id=owner_id, transcript_id=transcript.id
+            )
+        }
         correction = await self._repository.append_correction(
             owner_id=owner_id, transcript=transcript, body=command.model_dump(mode="json")
         )
-        return _correction_response(correction, replayed=False)
+        return _correction_response(correction, replayed=correction.id in prior_ids)
 
     async def _to_response(
         self, *, owner_id: int, recording_id: UUID, transcript: SpeechTranscript, replayed: bool

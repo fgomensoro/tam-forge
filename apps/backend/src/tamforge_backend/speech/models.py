@@ -52,6 +52,17 @@ class SpeechTranscriptCorrection(Record):
     __table_args__ = provenance_checks(
         "speech_transcript_corrections", limit=CORRECTION_BODY_LIMIT
     ) + (
+        # A correction's identity is its own content: the canonical body already
+        # carries `transcript_id`, so two rows with the same content hash under
+        # the same transcript are the same annotation submitted twice. This is
+        # what makes a client's retry-on-timeout replay instead of appending a
+        # duplicate -- see `repository.append_correction`.
+        UniqueConstraint(
+            "owner_id",
+            "transcript_id",
+            "content_hash",
+            name="uq_speech_transcript_corrections_content",
+        ),
         ForeignKeyConstraint(
             ["owner_id", "transcript_id"],
             ["speech_transcripts.owner_id", "speech_transcripts.id"],
