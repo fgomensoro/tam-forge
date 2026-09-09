@@ -9,7 +9,7 @@ This is the authoritative continuation point for GitHub issue [#36](https://gith
 - Repository: `/Users/frank/Documents/mias/tam-forge`
 - Worktree: `/Users/frank/Documents/mias/tam-forge-issue-36`
 - Branch: `codex/issue-36-recording-verification`
-- Draft PR: [#151](https://github.com/fgomensoro/tam-forge/pull/151)
+- Pull request: [#151](https://github.com/fgomensoro/tam-forge/pull/151), merged into `main` on 2026-09-09 with the evidence report on the sentinel template (owner decision, Task 9).
 - Base: `origin/main` at `88f3f2b3c0cfee6ce6983ed5690590c114a83d03` (PR #164, local transcript after sealing), integrated by merge commit. Earlier bases were `022fcdb`, `dd9552dd` and `c344c18`. The branch has not been rebased since the evidence was recorded and never may be again.
 - Verified code head for all committed evidence: `166061868f543b57a55b7cd201f387f0f7d54d35`; every later commit is docs, scripts/ci, or the evidence itself. The handoff commit is `HEAD`; resolve it with `git rev-parse HEAD`.
 
@@ -112,12 +112,18 @@ Main landed local transcription and attestation work in PRs #161, #163 and #164,
 
 The merge resolved four conflicts, each of them two independent additions to the same place: `RecordingCoordinator` (environment monitor next to the new audio reader and transcriber, with main's `willSleep` notification listener dropped because `RecordingEnvironmentMonitor` already reports sleep through the one ordered path), `TAMForgeApp`, `TAMForge.xcodeproj`, and `RecordingFeatureTests` (every test method from both sides). Local checks were limited to `swiftc -parse`, `git diff --check`, `uv run ruff check .`, and `uv run pytest scripts/ci/tests/test_check_recording_verification.py`; the Swift build and test suites ran only in required CI.
 
+## Task 9: PR #151 merged with every key unevidenced (owner decision, 2026-09-09)
+
+Owner decision, taken after the Task 8 reset: land the reviewed, CI-green code now rather than hold the branch open across further changes to `main`. PR #151 merged with a merge commit, not a squash, so `1660618` stays reachable from `main`. All seven required checks were green on `1b1628b` before the merge.
+
+This is not verification. Zero of the 35 required keys carry runtime evidence, and the completion gate Task 5 built no longer blocks anything, because the committed report is the blocked template that gate is designed to accept. Issue #36 stays open until a 60-minute window runs on a `main` head and the report it produces lands in a follow-up pull request. `--require-complete` still enforces the exact-head rule on that report; nothing about the contract changed, only what currently sits in the repository.
+
 ## Remaining order
 
 1. Run a Teams window when the owner is ready to test Teams (`app.teams` is kept pending by owner decision). Grant Screen Recording and Microphone to the `~/Applications/TAMForge.app` copy before starting any further window.
 2. `app.tam-forge-tts-interviewer` needs the interviewer voice feature to exist; evidence it in a short window once built.
 3. Repeat the full 60-minute window on the current head. Task 8 reset the report to the sentinel template, so every required key is unevidenced again and the window is a prerequisite for any completion claim. This is the same rule as before: any commit that touches `apps/macos`, `apps/backend/src/tamforge_backend/recordings`, or `apps/backend/src/tamforge_backend/storage` invalidates committed evidence in CI, and the answer is either the sentinel template or a fresh window. Never rebase this branch: rewriting history removes `1660618` from the ancestry and the evidence gate fails; integrate `main` with merge commits only.
-4. Keep PR #151 draft and unmerged until every required scenario passes on an exact head with fresh review and green CI; the completion gate is intentionally unmet.
+4. Land the runtime evidence in a follow-up pull request off `main`, reviewed at its exact SHA with all seven checks green. PR #151 already merged without it (Task 9), so no automated gate holds this any more; the discipline is now the owner's to keep.
 5. Before a repeat window: grant Screen Recording and Microphone to the `~/Applications/TAMForge.app` copy first, then start the 60-minute clock. Issue #38 removes the ad-hoc-signature cause.
 
-Do not begin issue #37 until #36 is merged.
+Issue #37 was gated on #36 reaching `main`, which PR #151 now satisfies. Issue #36 itself stays open for the runtime window described above.
