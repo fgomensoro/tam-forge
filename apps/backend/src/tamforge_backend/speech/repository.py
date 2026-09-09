@@ -20,11 +20,28 @@ retry-on-timeout, not just theoretical concurrency, per the design doc. Both may
 run their existing-row SELECT before either commits and both see nothing, so both
 attempt to insert; the database's `uq_speech_transcripts_recording_track`
 constraint lets only one through. Rather than prevent that race with a lock,
-`store` lets it happen and recovers from it: the loser's `IntegrityError` is
-caught and resolved by re-reading the identity in a fresh transaction and
-answering the replay-vs-conflict question its own SELECT would have answered had
-it run a moment later. No `SQLAlchemyError`, from either the first attempt or the
-recovery read, ever reaches the caller untranslated.
+`store` lets it happen and recovers from it: the loser's `IntegrityError` --
+specifically that type, not `SQLAlchemyError` in general -- is caught and
+resolved by re-reading the identity in a fresh transaction and answering the
+replay-vs-conflict question its own SELECT would have answered had it run a
+moment later. Any other `SQLAlchemyError` (a dropped connection, a statement
+timeout hitting the first SELECT, the flush, or the recovery read) is not a
+uniqueness collision and is not routed into that recovery at all -- it surfaces
+as `TranscriptUnavailable`, a distinct, retryable error, so a transient
+infrastructure failure is never mislabeled as the 409-shaped `TranscriptConflict`
+a well-behaved client would not retry. No `SQLAlchemyError`, from either the
+first attempt or the recovery read, ever reaches the caller untranslated.
+
+`store`'s `recording.id` is read exactly once, into a local, before either
+transaction attempt begins. `recording` is the caller's already-loaded ORM
+object from this same request-scoped `AsyncSession`; when the first attempt's
+`transaction_scope` rolls back on the race above, SQLAlchemy expires every
+object in the session's identity map, `recording` included, not only rows the
+failed transaction touched. Re-reading `recording.id` after that would need a
+lazy refresh an `AsyncSession` cannot perform implicitly outside an awaited ORM
+call, and raises `MissingGreenlet` -- itself a `SQLAlchemyError` -- before the
+recovery path ever runs. Passing the captured local everywhere instead avoids
+touching the expired attribute at all.
 """
 
 from __future__ import annotations
@@ -33,7 +50,7 @@ from collections.abc import Mapping
 from hashlib import sha256
 
 from sqlalchemy import select
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import make_transient_to_detached
 
@@ -41,7 +58,12 @@ from ..agents.hashing import canonical_bytes
 from ..database import transaction_scope
 from ..models.provenance import Record
 from ..recordings.models import Recording
-from .contracts import TranscriptConflict, TranscriptNotFound, TranscriptTooLarge
+from .contracts import (
+    TranscriptConflict,
+    TranscriptNotFound,
+    TranscriptTooLarge,
+    TranscriptUnavailable,
+)
 from .models import (
     CORRECTION_BODY_LIMIT,
     TRANSCRIPT_BODY_LIMIT,
@@ -103,10 +125,12 @@ class SqlAlchemyTranscriptRepository:
 
         See the module docstring for how a race on this identity (two callers
         both seeing no existing row) is resolved without ever surfacing a raw
-        database error.
+        database error, and for why `recording.id` is captured once up front
+        rather than read again after a possible rollback.
         """
+        recording_id = recording.id
         canonical, content_hash = _canonicalize(
-            {**body, "recording_id": recording.id, "track": track}, limit=TRANSCRIPT_BODY_LIMIT
+            {**body, "recording_id": recording_id, "track": track}, limit=TRANSCRIPT_BODY_LIMIT
         )
 
         try:
@@ -114,7 +138,7 @@ class SqlAlchemyTranscriptRepository:
                 existing = await self.session.scalar(
                     select(SpeechTranscript).where(
                         SpeechTranscript.owner_id == owner_id,
-                        SpeechTranscript.recording_id == recording.id,
+                        SpeechTranscript.recording_id == recording_id,
                         SpeechTranscript.track == track,
                     )
                 )
@@ -130,15 +154,27 @@ class SqlAlchemyTranscriptRepository:
                 self.session.add(row)
                 await self.session.flush()
                 return _snapshot(row)
-        except SQLAlchemyError:
+        except IntegrityError:
             return await self._reconcile_lost_race(
-                owner_id=owner_id, recording_id=recording.id, track=track, content_hash=content_hash
+                owner_id=owner_id,
+                recording_id=recording_id,
+                track=track,
+                content_hash=content_hash,
             )
+        except SQLAlchemyError:
+            raise TranscriptUnavailable() from None
 
     async def _reconcile_lost_race(
         self, *, owner_id: int, recording_id: int, track: str, content_hash: bytes
     ) -> SpeechTranscript:
         """Resolve a `store` race lost to another writer's insert.
+
+        Only reached from `store` on a genuine `IntegrityError` -- the
+        uniqueness collision the race was built to recover from. This method
+        takes `recording_id` as a plain `int`, already resolved by the
+        caller; it never touches the `recording` ORM object itself, so it
+        cannot re-trigger the expired-attribute failure described in the
+        module docstring.
 
         `transaction_scope`'s own `session.begin()` has already rolled back
         the failed attempt by the time this runs, so it reads fresh, in a
@@ -146,7 +182,11 @@ class SqlAlchemyTranscriptRepository:
         question the original SELECT would have answered had it run a moment
         later: identical content replays the winner's row, anything else
         (different content, or the identity still missing for some other
-        reason) is `TranscriptConflict` -- never a raw database error.
+        reason) is `TranscriptConflict` -- never a raw database error. A
+        failure of this re-read itself is not that collision either -- it is
+        the same kind of unrelated infrastructure failure `store` guards
+        against -- so it also surfaces as `TranscriptUnavailable`, not
+        `TranscriptConflict`.
         """
         try:
             async with transaction_scope(self.session):
@@ -158,9 +198,9 @@ class SqlAlchemyTranscriptRepository:
                     )
                 )
         except SQLAlchemyError:
-            raise TranscriptConflict() from None
+            raise TranscriptUnavailable() from None
         if existing is None or existing.content_hash != content_hash:
-            raise TranscriptConflict()
+            raise TranscriptConflict() from None
         return _snapshot(existing)
 
     async def by_recording(

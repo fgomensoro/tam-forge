@@ -22,9 +22,15 @@ class TranscriptTooLarge(TranscriptError):
         super().__init__("transcript body exceeds the size limit")
 
 
+class TranscriptUnavailable(TranscriptError):
+    def __init__(self) -> None:
+        super().__init__("transcript storage is temporarily unavailable")
+
+
 __all__ = [
     "TranscriptConflict",
     "TranscriptError",
     "TranscriptNotFound",
     "TranscriptTooLarge",
+    "TranscriptUnavailable",
 ]
