@@ -35,9 +35,11 @@ def test_pins_match_the_reviewed_artifacts() -> None:
     assert artifacts["whisper_framework"]["sha256"] == (
         "dcc6cdc6d6902d11893434ceda70c23a2a64450f65a1b570035c9908988dfedd"
     )
-    assert artifacts["transcription_model"]["filename"] == "ggml-base.en-q5_1.bin"
+    # The #43 benchmark on the owner's voice chose small.en, so it is the
+    # shipped model; base.en stays pinned as the comparison it beat.
+    assert artifacts["transcription_model"]["filename"] == "ggml-small.en-q5_1.bin"
     assert artifacts["transcription_model"]["sha256"] == (
-        "4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f"
+        "bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30"
     )
     assert artifacts["vad_model"]["sha256"] == (
         "29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf"
@@ -92,10 +94,10 @@ def test_benchmark_model_is_pinned_with_the_same_quantization() -> None:
     artifacts = manifest()["artifacts"]
     assert "benchmark_model" in artifacts
     benchmark = artifacts["benchmark_model"]
-    assert benchmark["filename"] == "ggml-small.en-q5_1.bin"
-    assert benchmark["bytes"] == 190098681
+    assert benchmark["filename"] == "ggml-base.en-q5_1.bin"
+    assert benchmark["bytes"] == 59721011
     assert benchmark["sha256"] == (
-        "bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30"
+        "4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f"
     )
     # Same quantization as the shipped model, so the comparison isolates size.
     assert benchmark["version"] == artifacts["transcription_model"]["version"]
