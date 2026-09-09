@@ -346,10 +346,8 @@ def test_native_bearer_routes_scope_records_to_the_authenticated_owner(
                 f"/api/v1/recordings/{recording_id}",
                 headers={"Authorization": f"Bearer {owner_b_token}"},
             )
-            cookie_only = client.get(
-                f"/api/v1/recordings/{recording_id}",
-                cookies={"tamforge_session": "c" * 43},
-            )
+            client.cookies.set("tamforge_session", "c" * 43)
+            cookie_only = client.get(f"/api/v1/recordings/{recording_id}")
 
         assert created.status_code == 201
         assert forbidden.status_code == 404
