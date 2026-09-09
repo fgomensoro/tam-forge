@@ -62,6 +62,7 @@ class Settings(BaseSettings):
         "native_access_ttl_seconds": "TAMFORGE_NATIVE_ACCESS_TTL_SECONDS",
         "native_refresh_ttl_seconds": "TAMFORGE_NATIVE_REFRESH_TTL_SECONDS",
         "native_exchange_ttl_seconds": "TAMFORGE_NATIVE_EXCHANGE_TTL_SECONDS",
+        "claude_enabled": "TAMFORGE_CLAUDE_ENABLED",
     }
 
     model_config = SettingsConfigDict(
@@ -213,6 +214,10 @@ class Settings(BaseSettings):
         ge=60,
         le=300,
         validation_alias="TAMFORGE_NATIVE_EXCHANGE_TTL_SECONDS",
+    )
+    claude_enabled: bool = Field(
+        default=False,
+        validation_alias="TAMFORGE_CLAUDE_ENABLED",
     )
 
     def __init__(self, **values: Any) -> None:

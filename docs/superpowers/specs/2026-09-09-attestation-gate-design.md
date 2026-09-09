@@ -54,11 +54,15 @@ makes that an explicit step and pins where to check.
 Every independent study path works without Claude, so a missing attestation degrades
 one feature rather than breaking the product.
 
-Enabling Claude without a current attestation is a hard configuration error, not a
-warning. The gate fails closed: the absence of evidence is never read as permission.
+Enabling Claude without a current attestation reports `disabled` rather than raising.
+The application must not refuse to start over a missing attestation: that would take
+the whole product down to protect one feature. The gate still fails closed, because
+`disabled` is the default and the absence of evidence is never read as permission.
 
-Status is reported as `disabled` with a machine-readable, non-secret reason. No
-endpoint accepts or returns a Claude token.
+Status carries a machine-readable, non-secret reason. No endpoint accepts or returns
+a Claude token. The worker that refuses to claim jobs on a disabled status is #67's
+work; this slice deliberately ships no exception type for a caller that does not
+exist yet.
 
 ## Testing
 
