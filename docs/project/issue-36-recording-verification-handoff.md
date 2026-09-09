@@ -1,6 +1,6 @@
 # Issue #36 Recording Verification Handoff
 
-**Updated:** 2026-09-07 (America/Los_Angeles)
+**Updated:** 2026-09-09 (America/Los_Angeles)
 
 This is the authoritative continuation point for GitHub issue [#36](https://github.com/fgomensoro/tam-forge/issues/36), E3-I10. The native-recording batch for issues #27–#35 is already merged (PRs #132–#136); do not redo it, and do not resume the unrelated local Phase 1 work described in another checkout.
 
@@ -10,7 +10,7 @@ This is the authoritative continuation point for GitHub issue [#36](https://gith
 - Worktree: `/Users/frank/Documents/mias/tam-forge-issue-36`
 - Branch: `codex/issue-36-recording-verification`
 - Draft PR: [#151](https://github.com/fgomensoro/tam-forge/pull/151)
-- Base: `origin/main` at `dd9552dd5d438e9951ce56a6bace85abc6734e98` (PR #150, model provenance, merged after the earlier base `022fcdb`; the branch was rebased cleanly onto it).
+- Base: `origin/main` at `88f3f2b3c0cfee6ce6983ed5690590c114a83d03` (PR #164, local transcript after sealing), integrated by merge commit. Earlier bases were `022fcdb`, `dd9552dd` and `c344c18`. The branch has not been rebased since the evidence was recorded and never may be again.
 - Verified code head for all committed evidence: `166061868f543b57a55b7cd201f387f0f7d54d35`; every later commit is docs, scripts/ci, or the evidence itself. The handoff commit is `HEAD`; resolve it with `git rev-parse HEAD`.
 
 Do not use the primary checkout's local `main` as a base; it is intentionally divergent. Do not touch `/Users/frank/Documents/mias/tam-forge-issue-109`.
@@ -67,7 +67,7 @@ Seven new coordinator tests (preflight reserve refusal, append failure while rec
 
 ### Task 5: exact-head evidence gate — green
 
-- `docs/project/recording-verification-v1.json` started as the blocked template (sentinel commit, every key blocked) and now carries the populated evidence described under Task 7; the example file keeps the blocked template shape (35 keys).
+- `docs/project/recording-verification-v1.json` started as the blocked template (sentinel commit, every key blocked), carried the populated Task 7 evidence, and is back on the blocked template after the Task 8 reset; the example file keeps the same blocked template shape (35 keys).
 - `backend-unit` validates it structurally on every PR and never passes `--require-complete`.
 - `--require-complete` fails unless every scenario passes on the exact repository head.
 - Structural runs accept non-blocked evidence whose `commit_sha` is an ancestor of the checked-out head with no change under `apps/macos`, `apps/backend/src/tamforge_backend/recordings`, or `apps/backend/src/tamforge_backend/storage` between the two (resolved by the CLI through `git merge-base --is-ancestor` and `git diff --quiet`; `backend-unit` checks out full history). This is required because the evidence commit can never name itself and pull-request CI checks out a merge commit. Completion still requires the exact head. Any later change under those paths invalidates the committed evidence in CI until the window is repeated.
@@ -80,7 +80,7 @@ The review of the pre-rebase head found one Critical (the evidence gate above) a
 
 ## Task 7: runtime window executed (2026-09-05, one window, incomplete by contract)
 
-The single window ran on the exact verified code of `1660618` (verified paths byte-identical to the reviewed `e0dca81`), on the MacBook Air profile, in the Debug build launched with `-ui-test-signed-in -ui-test-native-features` because no live backend exists for a production sign-in. Evidence lives in `docs/project/recording-verification-v1.json` and validates structurally; `--require-complete` fails by design.
+The single window ran on the exact verified code of `1660618` (verified paths byte-identical to the reviewed `e0dca81`), on the MacBook Air profile, in the Debug build launched with `-ui-test-signed-in -ui-test-native-features` because no live backend exists for a production sign-in. That evidence is no longer the committed report (see Task 8); read it with `git show af355fc:docs/project/recording-verification-v1.json`. It described `1660618` and validated structurally; `--require-complete` failed by design.
 
 | Result | Count | Keys |
 |---|---|---|
@@ -104,11 +104,19 @@ Live observations worth keeping:
 
 Owner decision (2026-09-07): `microphone.absent` and `permission.restricted` are out of scope for a single-user app on a Mac with a built-in microphone and no MDM profile, so the contract now has 35 required keys (this amends Task 1 Step 3 and Task 5 Step 3 of the locked plan, which still list them; the plan file is intentionally left unedited, as with the earlier silence, microphone-in-use, and accumulated-window decisions); `app.teams` stays pending until the owner tests Teams, and `app.tam-forge-tts-interviewer` stays unsupported until the interviewer voice exists. Issue #36 therefore cannot close on this head until those two keys are evidenced.
 
+## Task 8: evidence reset after integrating main (2026-09-09)
+
+Main landed local transcription and attestation work in PRs #161, #163 and #164, which changed 21 files under `apps/macos` (+1811/-657) between `1660618` and `88f3f2b`. Under the Task 5 rule the committed evidence stopped describing the code under verification, so `backend-unit` would have failed with `commit_sha does not match repository_head`.
+
+`origin/main` was integrated with a merge commit, never a rebase, and the report was reset to the blocked sentinel template. `1660618` is still an ancestor of the branch head, so a future window on this history can still bind to it if the verified paths ever match again; in practice the window must now be repeated on the new head.
+
+The merge resolved four conflicts, each of them two independent additions to the same place: `RecordingCoordinator` (environment monitor next to the new audio reader and transcriber, with main's `willSleep` notification listener dropped because `RecordingEnvironmentMonitor` already reports sleep through the one ordered path), `TAMForgeApp`, `TAMForge.xcodeproj`, and `RecordingFeatureTests` (every test method from both sides). Local checks were limited to `swiftc -parse`, `git diff --check`, `uv run ruff check .`, and `uv run pytest scripts/ci/tests/test_check_recording_verification.py`; the Swift build and test suites ran only in required CI.
+
 ## Remaining order
 
 1. Run a Teams window when the owner is ready to test Teams (`app.teams` is kept pending by owner decision). Grant Screen Recording and Microphone to the `~/Applications/TAMForge.app` copy before starting any further window.
 2. `app.tam-forge-tts-interviewer` needs the interviewer voice feature to exist; evidence it in a short window once built.
-3. Any commit that touches `apps/macos`, `apps/backend/src/tamforge_backend/recordings`, or `apps/backend/src/tamforge_backend/storage` invalidates the committed evidence in CI: either revert the report to the sentinel template or repeat the window on the new head. Never rebase this branch: rewriting history removes `1660618` from the ancestry and the evidence gate fails; integrate `main` with merge commits only.
+3. Repeat the full 60-minute window on the current head. Task 8 reset the report to the sentinel template, so every required key is unevidenced again and the window is a prerequisite for any completion claim. This is the same rule as before: any commit that touches `apps/macos`, `apps/backend/src/tamforge_backend/recordings`, or `apps/backend/src/tamforge_backend/storage` invalidates committed evidence in CI, and the answer is either the sentinel template or a fresh window. Never rebase this branch: rewriting history removes `1660618` from the ancestry and the evidence gate fails; integrate `main` with merge commits only.
 4. Keep PR #151 draft and unmerged until every required scenario passes on an exact head with fresh review and green CI; the completion gate is intentionally unmet.
 5. Before a repeat window: grant Screen Recording and Microphone to the `~/Applications/TAMForge.app` copy first, then start the 60-minute clock. Issue #38 removes the ad-hoc-signature cause.
 
