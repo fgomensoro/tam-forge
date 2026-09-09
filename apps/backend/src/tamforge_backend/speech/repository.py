@@ -14,6 +14,17 @@ and `Recording.transcript_lineage_accepted` being set can only be two separate
 commits, not one. Both operations are individually idempotent (a replayed store
 returns the same row; setting an already-true flag is a no-op), so that ordering
 is safe to retry, just not atomic in the single-transaction sense.
+
+`store` additionally has an identity two callers can race on: the client's own
+retry-on-timeout, not just theoretical concurrency, per the design doc. Both may
+run their existing-row SELECT before either commits and both see nothing, so both
+attempt to insert; the database's `uq_speech_transcripts_recording_track`
+constraint lets only one through. Rather than prevent that race with a lock,
+`store` lets it happen and recovers from it: the loser's `IntegrityError` is
+caught and resolved by re-reading the identity in a fresh transaction and
+answering the replay-vs-conflict question its own SELECT would have answered had
+it run a moment later. No `SQLAlchemyError`, from either the first attempt or the
+recovery read, ever reaches the caller untranslated.
 """
 
 from __future__ import annotations
@@ -22,6 +33,7 @@ from collections.abc import Mapping
 from hashlib import sha256
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import make_transient_to_detached
 
@@ -52,6 +64,21 @@ def _snapshot[R: Record](row: R) -> R:
     return snapshot
 
 
+def _canonicalize(body: Mapping[str, object], *, limit: int) -> tuple[bytes, bytes]:
+    """Canonicalize an already-identity-merged body and hash it.
+
+    Shared by `store` and `append_correction`, which differ only in which
+    identity field(s) they merge into `body` before calling this and which
+    size limit applies -- kept identical so their size-guard and hashing
+    behavior can't drift apart from each other.
+    """
+    try:
+        canonical = canonical_bytes(body, limit=limit)
+    except ValueError:
+        raise TranscriptTooLarge() from None
+    return canonical, sha256(canonical).digest()
+
+
 class SqlAlchemyTranscriptRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -73,36 +100,68 @@ class SqlAlchemyTranscriptRepository:
         repository's) and `track` are merged in first, so the byte-size guard
         below runs against the body that will actually be written, which is
         slightly larger than what the submission schema validated.
+
+        See the module docstring for how a race on this identity (two callers
+        both seeing no existing row) is resolved without ever surfacing a raw
+        database error.
+        """
+        canonical, content_hash = _canonicalize(
+            {**body, "recording_id": recording.id, "track": track}, limit=TRANSCRIPT_BODY_LIMIT
+        )
+
+        try:
+            async with transaction_scope(self.session):
+                existing = await self.session.scalar(
+                    select(SpeechTranscript).where(
+                        SpeechTranscript.owner_id == owner_id,
+                        SpeechTranscript.recording_id == recording.id,
+                        SpeechTranscript.track == track,
+                    )
+                )
+                if existing is not None:
+                    if existing.content_hash != content_hash:
+                        raise TranscriptConflict()
+                    return _snapshot(existing)
+                row = SpeechTranscript(
+                    owner_id=owner_id,
+                    canonical_json=canonical.decode("utf-8"),
+                    content_hash=content_hash,
+                )
+                self.session.add(row)
+                await self.session.flush()
+                return _snapshot(row)
+        except SQLAlchemyError:
+            return await self._reconcile_lost_race(
+                owner_id=owner_id, recording_id=recording.id, track=track, content_hash=content_hash
+            )
+
+    async def _reconcile_lost_race(
+        self, *, owner_id: int, recording_id: int, track: str, content_hash: bytes
+    ) -> SpeechTranscript:
+        """Resolve a `store` race lost to another writer's insert.
+
+        `transaction_scope`'s own `session.begin()` has already rolled back
+        the failed attempt by the time this runs, so it reads fresh, in a
+        transaction of its own, and answers the same replay-vs-conflict
+        question the original SELECT would have answered had it run a moment
+        later: identical content replays the winner's row, anything else
+        (different content, or the identity still missing for some other
+        reason) is `TranscriptConflict` -- never a raw database error.
         """
         try:
-            canonical = canonical_bytes(
-                {**body, "recording_id": recording.id, "track": track},
-                limit=TRANSCRIPT_BODY_LIMIT,
-            )
-        except ValueError:
-            raise TranscriptTooLarge() from None
-        content_hash = sha256(canonical).digest()
-
-        async with transaction_scope(self.session):
-            existing = await self.session.scalar(
-                select(SpeechTranscript).where(
-                    SpeechTranscript.owner_id == owner_id,
-                    SpeechTranscript.recording_id == recording.id,
-                    SpeechTranscript.track == track,
+            async with transaction_scope(self.session):
+                existing = await self.session.scalar(
+                    select(SpeechTranscript).where(
+                        SpeechTranscript.owner_id == owner_id,
+                        SpeechTranscript.recording_id == recording_id,
+                        SpeechTranscript.track == track,
+                    )
                 )
-            )
-            if existing is not None:
-                if existing.content_hash != content_hash:
-                    raise TranscriptConflict()
-                return _snapshot(existing)
-            row = SpeechTranscript(
-                owner_id=owner_id,
-                canonical_json=canonical.decode("utf-8"),
-                content_hash=content_hash,
-            )
-            self.session.add(row)
-            await self.session.flush()
-            return _snapshot(row)
+        except SQLAlchemyError:
+            raise TranscriptConflict() from None
+        if existing is None or existing.content_hash != content_hash:
+            raise TranscriptConflict()
+        return _snapshot(existing)
 
     async def by_recording(
         self, *, owner_id: int, recording_id: int
@@ -130,26 +189,31 @@ class SqlAlchemyTranscriptRepository:
         to have obtained it from `store` or `by_recording` under that same owner.
         A mismatch reads as not-found rather than forbidden, so a correction
         request cannot be used to confirm another owner's transcript exists.
+
+        Unlike `store`, there is no identity to race on here -- corrections
+        are always inserted, never deduplicated -- so there is nothing to
+        retry. The `except` below exists only so an unexpected
+        `SQLAlchemyError` (a dropped connection, a statement timeout) still
+        reaches the caller as `TranscriptConflict` rather than raw.
         """
         if transcript.owner_id != owner_id:
             raise TranscriptNotFound()
-        try:
-            canonical = canonical_bytes(
-                {**body, "transcript_id": transcript.id}, limit=CORRECTION_BODY_LIMIT
-            )
-        except ValueError:
-            raise TranscriptTooLarge() from None
-        content_hash = sha256(canonical).digest()
+        canonical, content_hash = _canonicalize(
+            {**body, "transcript_id": transcript.id}, limit=CORRECTION_BODY_LIMIT
+        )
 
-        async with transaction_scope(self.session):
-            row = SpeechTranscriptCorrection(
-                owner_id=owner_id,
-                canonical_json=canonical.decode("utf-8"),
-                content_hash=content_hash,
-            )
-            self.session.add(row)
-            await self.session.flush()
-            return _snapshot(row)
+        try:
+            async with transaction_scope(self.session):
+                row = SpeechTranscriptCorrection(
+                    owner_id=owner_id,
+                    canonical_json=canonical.decode("utf-8"),
+                    content_hash=content_hash,
+                )
+                self.session.add(row)
+                await self.session.flush()
+                return _snapshot(row)
+        except SQLAlchemyError:
+            raise TranscriptConflict() from None
 
     async def corrections(
         self, *, owner_id: int, transcript_id: int
