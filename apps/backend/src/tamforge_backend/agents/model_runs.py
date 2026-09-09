@@ -98,12 +98,14 @@ class ModelRunRepository:
         self.session = session
 
     async def register(self, request: RunRequest) -> ModelRun:
-        # Set only when the classification gate below refuses the submission. A refusal
-        # must still leave an audit trail, but `raise InvalidProvenance()` inside the
-        # `session.begin()` block rolls back everything flushed there, the audit row
-        # included -- so that write happens afterward, in the `finally`, in a transaction
-        # of its own that the refusal can no longer touch.
-        refusal: RunRequest | None = None
+        # Set only when a gate below refuses the submission: an understated
+        # classification, or an invocation key reused with different content. A refusal
+        # must still leave an audit trail, but raising inside the `session.begin()` block
+        # rolls back everything flushed there, the audit row included -- so that write
+        # happens afterward, in the `finally`, in a transaction of its own that the
+        # refusal can no longer touch. The refusal keeps propagating past that write, so
+        # a conflict still reaches the caller as ImmutableVersionConflict.
+        refusal: AuditReasonCode | None = None
         try:
             # Revalidate to catch model_construct/model_copy bypasses at this boundary.
             request = RunRequest.model_validate(request.model_dump())
@@ -131,7 +133,7 @@ class ModelRunRepository:
                         raise InvalidProvenance()
                     derived = derive_submission_scope(attempt_kind=attempt.attempt_kind)
                     if understates(request.classification, derived):
-                        refusal = request
+                        refusal = AuditReasonCode.UNAUTHORIZED
                         raise InvalidProvenance()
                     source_hash = sha256(attempt.original_text.encode()).hexdigest()
                     items = []
@@ -168,12 +170,13 @@ class ModelRunRepository:
                     )
                     if existing is not None:
                         if verified(existing).canonical_json != record_data["canonical_json"]:
+                            refusal = AuditReasonCode.CONFLICT
                             raise ImmutableVersionConflict()
-                        self._audit(request, accepted=True, replayed=True)
+                        self._audit(request, reason=AuditReasonCode.NONE, replayed=True)
                         return snapshot_record(existing)
                     run = ModelRun(owner_id=request.owner_id, **record_data)
                     self.session.add(run)
-                    self._audit(request, accepted=True)
+                    self._audit(request, reason=AuditReasonCode.NONE)
                     await self.session.flush()
                     for context_payload in items:
                         self.session.add(
@@ -188,11 +191,15 @@ class ModelRunRepository:
             finally:
                 if refusal is not None:
                     async with self.session.begin():
-                        self._audit(refusal, accepted=False)
+                        self._audit(request, reason=refusal)
         except (SQLAlchemyError, ValidationError):
             raise InvalidProvenance() from None
 
-    def _audit(self, request: RunRequest, *, accepted: bool, replayed: bool = False) -> None:
+    def _audit(
+        self, request: RunRequest, *, reason: AuditReasonCode, replayed: bool = False
+    ) -> None:
+        # A submission with no reason to refuse it is an accepted one.
+        accepted = reason is AuditReasonCode.NONE
         self.session.add(
             AuditEvent(
                 owner_id=request.owner_id,
@@ -211,11 +218,13 @@ class ModelRunRepository:
                         if accepted
                         else AuditOutcome.DENIED
                     ),
-                    reason_code=(
-                        AuditReasonCode.NONE if accepted else AuditReasonCode.UNAUTHORIZED
-                    ),
+                    reason_code=reason,
                     counts={AuditCountKey.ATTEMPTED: 1},
                     flags={
+                        # Tracks the verdict, not a standing property of the caller, the
+                        # way auth/repository.py sets `authenticated` False on its own
+                        # CONFLICT denial. `reason_code` is what separates the refusals;
+                        # a reason added later reads as not authorized until decided.
                         AuditFlagKey.AUTHORIZED: accepted,
                         AuditFlagKey.REPLAYED: replayed,
                         AuditFlagKey.REDACTED: True,

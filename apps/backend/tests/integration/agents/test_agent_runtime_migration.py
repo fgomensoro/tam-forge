@@ -789,13 +789,11 @@ def test_rubric_binding_checks_legacy_config_bytes_and_rejects_forged_stored_has
     asyncio.run(exercise())
 
 
-def test_an_accepted_submission_leaves_an_immutable_audit_record(case):
-    """Every submission that reaches the model is auditable afterwards.
+def test_accepted_and_conflicting_submissions_leave_immutable_audit_records(case):
+    """An accepted submission and a refused conflicting one are both auditable.
 
-    The refusal path is covered by unit tests over the pure decision instead. Refusing
-    here would need a real_interview attempt, and attempts carry an immutability trigger
-    ("learning evidence is immutable"), so an existing one cannot be reclassified and a
-    new one would have to be rebuilt with its own commitment hash and context references.
+    A conflicting resubmission needs no special seeding. The same request with one
+    changed field under the same invocation key is enough to reach the refusal.
     """
 
     async def exercise():
@@ -833,6 +831,35 @@ def test_an_accepted_submission_leaves_an_immutable_audit_record(case):
                         "counts",
                         "flags",
                     }
+                # Reusing the key with different content is what replay tampering looks
+                # like. The refusal outlives the rollback of the transaction that
+                # detected it, and still reaches the caller as a conflict.
+                with pytest.raises(ImmutableVersionConflict):
+                    await repo.register(
+                        case.request.model_copy(
+                            update={
+                                "invocation_key": "audited-acceptance",
+                                "requested_model": "changed",
+                            }
+                        )
+                    )
+                async with session.begin():
+                    refusals = (
+                        await session.scalars(
+                            select(AuditEvent).where(
+                                AuditEvent.owner_id == case.owner,
+                                AuditEvent.action == "model_run.refused",
+                                AuditEvent.idempotency_correlation_hash
+                                == sha256(b"audited-acceptance").digest(),
+                            )
+                        )
+                    ).all()
+                    assert len(refusals) == 1
+                    assert refusals[0].aggregate_id == str(case.request.activity_id)
+                    assert refusals[0].redacted_metadata["outcome"] == "denied"
+                    assert refusals[0].redacted_metadata["reason_code"] == "conflict"
+                    assert refusals[0].redacted_metadata["flags"]["authorized"] is False
+                    assert refusals[0].redacted_metadata["flags"]["replayed"] is False
         finally:
             await engine.dispose()
 
