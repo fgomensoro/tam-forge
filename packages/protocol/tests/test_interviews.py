@@ -11,8 +11,14 @@ from tamforge_protocol.interviews import (
     Interview,
     InterviewError,
     RecordingPermission,
+    artifact_key,
+    in_scope,
     recording_lock,
+    require_same_scope,
     require_unlocked,
+    retrieve,
+    scope_of,
+    storage_prefix,
 )
 
 NOW = datetime(2026, 9, 12, 15, tzinfo=UTC)
@@ -165,3 +171,82 @@ def test_naive_timestamps_are_refused_on_every_side() -> None:
         recording_lock(
             interview(), permission(), scope="record_audio", now=datetime(2026, 9, 12, 16)
         )
+
+
+# Issue #81: practice and real-interview artifacts use separate sensitivity scopes,
+# storage prefixes and retrieval filters, so neither enters the other's context.
+
+
+def test_the_kind_of_interview_decides_the_scope_and_nothing_else() -> None:
+    assert scope_of(interview()) == "real_interview"
+    for kind in ("practice", "mock"):
+        exercise = interview(kind=kind, opportunity_id=None, stage_label=None)
+        assert scope_of(exercise) == "practice"
+
+
+def test_the_two_scopes_have_prefixes_that_cannot_nest() -> None:
+    practice = storage_prefix("practice")
+    real = storage_prefix("real_interview")
+
+    assert practice != real
+    # Neither is a prefix of the other, so a prefix match cannot walk from one into the
+    # other however the keys are built.
+    assert not practice.startswith(real)
+    assert not real.startswith(practice)
+
+
+def test_an_artifact_key_carries_the_scope_it_belongs_to() -> None:
+    real_key = artifact_key(interview(), artifact_id="transcript")
+    practice_key = artifact_key(
+        interview(kind="practice", opportunity_id=None, stage_label=None), artifact_id="transcript"
+    )
+
+    assert real_key.startswith(storage_prefix("real_interview"))
+    assert practice_key.startswith(storage_prefix("practice"))
+    assert real_key != practice_key
+
+
+def test_a_retrieval_returns_only_the_scope_it_asked_for() -> None:
+    keys = [
+        artifact_key(interview(), artifact_id="transcript"),
+        artifact_key(
+            interview(interview_id=12, kind="practice", opportunity_id=None, stage_label=None),
+            artifact_id="transcript",
+        ),
+    ]
+
+    assert retrieve(keys, scope="real_interview") == (keys[0],)
+    assert retrieve(keys, scope="practice") == (keys[1],)
+
+
+def test_a_retrieval_has_to_say_which_world_it_wants() -> None:
+    # The one that does not say is the one that eventually reads from both.
+    with pytest.raises(TypeError):
+        retrieve([])  # type: ignore[call-arg]
+
+
+def test_in_scope_answers_for_one_key_the_same_way_retrieval_does() -> None:
+    real_key = artifact_key(interview(), artifact_id="transcript")
+
+    assert in_scope(real_key, scope="real_interview") is True
+    assert in_scope(real_key, scope="practice") is False
+
+
+def test_material_from_the_two_worlds_never_shares_a_context() -> None:
+    real = interview()
+    practice = interview(interview_id=12, kind="practice", opportunity_id=None, stage_label=None)
+
+    assert require_same_scope(real, interview(interview_id=13)) is None
+    with pytest.raises(InterviewError, match="do not mix"):
+        require_same_scope(real, practice)
+
+
+def test_an_artifact_id_cannot_climb_out_of_its_prefix() -> None:
+    for bad in ("", "   ", "../real/11/transcript", "nested/id"):
+        with pytest.raises(InterviewError, match="single non-empty segment"):
+            artifact_key(interview(), artifact_id=bad)
+
+
+def test_an_unknown_scope_is_refused_rather_than_guessed() -> None:
+    with pytest.raises(InterviewError, match="unknown sensitivity scope"):
+        storage_prefix("everything")  # type: ignore[arg-type]

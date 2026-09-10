@@ -13,6 +13,12 @@ withdrawing consent changes nothing that has already happened.
 Practice and mock interviews record only the learner, so the lock does not apply to them
 and says so rather than pretending to be satisfied.
 
+Their material is also kept apart from real-interview material, and not by convention.
+An exercise and a real conversation get different sensitivity scopes and different
+storage prefixes, and a retrieval states which scope it is asking for. Nothing crosses
+implicitly, because the way a real interview leaks into a practice prompt is never a
+decision anybody makes; it is a filter somebody forgot.
+
 Three kinds, and the difference is not cosmetic. A real interview happened with a real
 company and must name the opportunity it belongs to, or the evidence it produces cannot
 be traced to anything. Practice and mock interviews are exercises: they must not name
@@ -22,7 +28,9 @@ read as if it were the real conversation.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from datetime import datetime
+from types import MappingProxyType
 from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
@@ -45,6 +53,15 @@ LockReason = Literal[
     "scope_not_granted",
 ]
 LockState = Literal["locked", "unlocked"]
+
+
+SensitivityScope = Literal["practice", "real_interview"]
+
+# Storage prefixes are per scope and never nest, so a prefix match cannot walk from one
+# into the other.
+SCOPE_PREFIXES: Mapping[SensitivityScope, str] = MappingProxyType(
+    {"practice": "practice/", "real_interview": "real/"}
+)
 
 
 class InterviewError(ValueError):
@@ -143,8 +160,56 @@ def require_unlocked(
         raise InterviewError(f"recording is locked: {reason}")
 
 
+def scope_of(interview: Interview) -> SensitivityScope:
+    """Which world this interview's material belongs to. Kind decides, nothing else."""
+    return "real_interview" if interview.is_real else "practice"
+
+
+def storage_prefix(scope: SensitivityScope) -> str:
+    prefix = SCOPE_PREFIXES.get(scope)
+    if prefix is None:
+        raise InterviewError("unknown sensitivity scope")
+    return prefix
+
+
+def artifact_key(interview: Interview, *, artifact_id: str) -> str:
+    """Build the one key this interview's artifact may live under."""
+    if not artifact_id.strip() or "/" in artifact_id:
+        raise InterviewError("an artifact id is a single non-empty segment")
+    return f"{storage_prefix(scope_of(interview))}{interview.interview_id}/{artifact_id}"
+
+
+def in_scope(key: str, *, scope: SensitivityScope) -> bool:
+    """Whether a stored key belongs to the scope being asked for."""
+    return key.startswith(storage_prefix(scope))
+
+
+def retrieve(keys: Iterable[str], *, scope: SensitivityScope) -> tuple[str, ...]:
+    """Every key in the requested scope, and never one from the other.
+
+    The scope is required rather than defaulted. A retrieval that does not say which
+    world it wants is the one that eventually reads from both.
+    """
+    prefix = storage_prefix(scope)
+    return tuple(key for key in keys if key.startswith(prefix))
+
+
+def require_same_scope(left: Interview, right: Interview) -> None:
+    """Raise unless two interviews may appear in one another's context."""
+    if scope_of(left) != scope_of(right):
+        raise InterviewError("practice and real-interview material do not mix")
+
+
 __all__ = [
     "OPPORTUNITY_LINKED_KINDS",
+    "SCOPE_PREFIXES",
+    "SensitivityScope",
+    "artifact_key",
+    "in_scope",
+    "require_same_scope",
+    "retrieve",
+    "scope_of",
+    "storage_prefix",
     "LockReason",
     "LockState",
     "PermissionScope",
