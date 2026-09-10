@@ -315,6 +315,46 @@ class AttemptBInstruction(_StrictModel):
     core_prompt_sha256: Hash
 
 
+ComparisonOutcome = Literal["improved", "partially_improved", "not_improved"]
+
+# What happens to the correction once the two attempts have been compared. Neither
+# outcome schedules another attempt: an unresolved correction comes back later in a
+# different scenario, which is the only thing that distinguishes learning from
+# rehearsing one prompt.
+CorrectionDisposition = Literal["resolved", "retrieval_queued"]
+
+
+class AttemptComparison(_StrictModel):
+    """The judgment on one correction, from Attempt A and Attempt B and nothing else."""
+
+    attempt_a_id: PositiveId
+    attempt_b_id: PositiveId
+    comparator_version: VersionKey
+    core_prompt_sha256: Hash
+    outcome: ComparisonOutcome
+    observations: Annotated[
+        tuple[AnalysisObservation, ...], Field(min_length=1, max_length=8)
+    ]
+
+    @model_validator(mode="after")
+    def two_distinct_attempts(self) -> Self:
+        if self.attempt_a_id == self.attempt_b_id:
+            raise ValueError("a comparison needs two distinct attempts")
+        return self
+
+    @model_validator(mode="after")
+    def supported_outcome(self) -> Self:
+        require_attributed_evidence(self.observations, what="comparisons")
+        return self
+
+
+def close_correction(comparison: AttemptComparison) -> CorrectionDisposition:
+    """Return what happens to the correction. Never a third attempt at the same prompt."""
+    if comparison.outcome == "improved":
+        return "resolved"
+    return "retrieval_queued"
+
+
 class PinnedRecord(_StrictModel):
     """One immutable provenance row identified by id and content hash."""
 
