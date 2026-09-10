@@ -195,3 +195,104 @@ def test_open_and_closed_opportunities_are_told_apart_by_their_last_event() -> N
     )
 
     assert oc.still_open([open_one, closed]) == (open_one,)
+
+
+# Issue #87: a live opportunity varies prompts, audiences and pressure, and never the
+# roadmap time, coverage, assessments or exit criteria.
+
+from tamforge_backend.opportunities import variation as vr  # noqa: E402
+
+
+def roadmap_slice(**overrides: object) -> vr.RoadmapSlice:
+    data: dict[str, object] = {
+        "slice_key": "month-1-week-3",
+        "minutes": 90,
+        "required_families": ("technical_troubleshooting", "executive_communication"),
+        "assessment_days": ("saturday",),
+        "exit_criteria_sha256": "e" * 64,
+    }
+    data.update(overrides)
+    return vr.RoadmapSlice(**data)  # type: ignore[arg-type]
+
+
+def varied(**overrides: object) -> vr.VariedPractice:
+    data: dict[str, object] = {
+        "slice_": roadmap_slice(),
+        "opportunity": opportunity(),
+        "family": "technical_troubleshooting",
+        "audience": "hiring_manager",
+        "pressure": "time_pressured",
+        "owner_id": 1,
+    }
+    data.update(overrides)
+    return vr.vary_for_opportunity(
+        data.pop("slice_"),  # type: ignore[arg-type]
+        data.pop("opportunity"),  # type: ignore[arg-type]
+        **data,  # type: ignore[arg-type]
+    )
+
+
+def test_a_live_opportunity_shapes_the_surface_of_the_session() -> None:
+    session = varied()
+
+    assert session.audience == "hiring_manager"
+    assert session.pressure == "time_pressured"
+    assert "northwind" in session.scenario_key
+
+
+def test_the_roadmap_spine_is_not_copied_and_so_cannot_be_edited() -> None:
+    from dataclasses import fields
+
+    # The slice is held by reference. There is no minutes, coverage, assessment or exit
+    # criteria field on the variation for anything to change.
+    names = {field.name for field in fields(vr.VariedPractice)}
+    assert names == {"slice", "family", "scenario_key", "audience", "pressure"}
+    for spine in ("minutes", "required_families", "assessment_days", "exit_criteria_sha256"):
+        assert spine not in names
+
+
+def test_the_spine_reads_back_exactly_as_the_slice_left_it() -> None:
+    plan = roadmap_slice()
+    session = varied(slice_=plan)
+
+    assert session.minutes == plan.minutes == 90
+    assert session.exit_criteria_sha256 == plan.exit_criteria_sha256
+    assert session.slice.required_families == plan.required_families
+    assert session.slice.assessment_days == plan.assessment_days
+
+
+def test_a_variation_stays_inside_the_coverage_the_slice_requires() -> None:
+    # Practising something the slice does not require is not variation, it is a
+    # different plan wearing this one's name.
+    with pytest.raises(vr.VariationError, match="coverage the slice requires"):
+        varied(family="sql_reconciliation")
+
+
+def test_a_closed_opportunity_no_longer_steers_anything() -> None:
+    # A search that ended should stop deciding what someone works on.
+    closed = opportunity(
+        opportunity_id=7,
+        stage_history=(stage("applied", 0), stage("closed_lost", 20)),
+        next_action=None,
+    )
+
+    with pytest.raises(vr.VariationError, match="closed opportunity"):
+        varied(opportunity=closed)
+
+
+def test_another_owners_opportunity_varies_nothing() -> None:
+    with pytest.raises(vr.VariationError, match="another owner"):
+        varied(owner_id=2)
+
+
+@pytest.mark.parametrize(
+    "changes,message",
+    [
+        ({"minutes": 0}, "allocates time"),
+        ({"required_families": ()}, "requires coverage"),
+        ({"exit_criteria_sha256": "short"}, "pins its exit criteria"),
+    ],
+)
+def test_a_slice_without_time_coverage_or_exit_criteria_is_not_a_slice(changes, message) -> None:
+    with pytest.raises(vr.VariationError, match=message):
+        roadmap_slice(**changes)
