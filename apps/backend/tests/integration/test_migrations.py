@@ -21,5 +21,34 @@ def test_migrations_round_trip_and_keep_version_table(test_database_url: str) ->
     finally:
         engine.dispose()
 
-    command.downgrade(config, "base")
-    command.upgrade(config, "head")
+    try:
+        command.downgrade(config, "base")
+    finally:
+        command.upgrade(config, "head")
+
+
+def test_dropping_the_schema_does_not_leak_into_the_next_test(test_database_url: str) -> None:
+    """First half of a pair: drop the schema the way most integration files do at teardown."""
+    from sqlalchemy import create_engine, text
+    from tamforge_backend.database import database_url_to_sync
+
+    engine = create_engine(database_url_to_sync(test_database_url))
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("DROP SCHEMA public CASCADE"))
+            connection.execute(text("CREATE SCHEMA public"))
+    finally:
+        engine.dispose()
+
+
+def test_next_test_still_sees_the_migrated_schema(test_database_url: str) -> None:
+    """Second half: without the autouse restore this fails on an undefined table."""
+    from sqlalchemy import create_engine, text
+    from tamforge_backend.database import database_url_to_sync
+
+    engine = create_engine(database_url_to_sync(test_database_url))
+    try:
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT to_regclass('public.owners')")) is not None
+    finally:
+        engine.dispose()
