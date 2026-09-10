@@ -9,6 +9,12 @@ unreachable until an attempt has been saved. The committed record then carries b
 the rung the learner reached and the canonical category of the mistake, so later
 scoring can tell unassisted work from assisted work instead of guessing.
 
+The case workspace is the long one: sixty minutes across six stages, ending in a
+defense. Its budgets exist because a case that runs long stops being a rehearsal of the
+real thing, and its commitment carries the whole trail from the questions asked at
+discovery to the decisions defended at the end. Follow-ups after the defense are capped
+at two, since an unbounded question queue turns the defense into a second solve.
+
 The technical-reading workspace answers a different question. Its five timeboxes exist
 so that recall is recall: the source is visible while previewing and reading and gone
 from the moment recall starts, and no clock lets the tutor in early. The note the
@@ -108,6 +114,34 @@ READING_NOTE_FIELDS: frozenset[str] = frozenset(
     {"key_ideas", "boundary_or_failure", "tam_customer_example", "unresolved_question"}
 )
 REQUIRED_KEY_IDEAS = 3
+
+
+CasePhase = Literal[
+    "understand", "discovery", "structure", "solve", "present", "self_review"
+]
+
+CASE_PHASE_ORDER: tuple[CasePhase, ...] = (
+    "understand",
+    "discovery",
+    "structure",
+    "solve",
+    "present",
+    "self_review",
+)
+CASE_PHASE_SECONDS: Mapping[CasePhase, int] = MappingProxyType(
+    {
+        "understand": 300,
+        "discovery": 600,
+        "structure": 300,
+        "solve": 1_500,
+        "present": 600,
+        "self_review": 300,
+    }
+)
+CASE_SESSION_SECONDS = sum(CASE_PHASE_SECONDS.values())
+
+# A defense answers questions; it does not become a second solve. Two is the cap.
+MAX_ROUTINE_FOLLOW_UPS = 2
 
 
 class WorkspaceRuleError(ValueError):
@@ -264,8 +298,71 @@ class ReadingRecallNote(_StrictModel):
         return self
 
 
+def case_phase_at(elapsed_seconds: int) -> CasePhase | None:
+    """Return the case stage the session is in, or None once the hour is spent."""
+    if elapsed_seconds < 0:
+        raise WorkspaceRuleError("elapsed time cannot be negative")
+    boundary = 0
+    for phase in CASE_PHASE_ORDER:
+        boundary += CASE_PHASE_SECONDS[phase]
+        if elapsed_seconds < boundary:
+            return phase
+    return None
+
+
+def accept_follow_up(*, answered: int) -> int:
+    """Return the count after accepting one more routine follow-up, or refuse."""
+    if answered < 0:
+        raise WorkspaceRuleError("answered follow-ups cannot be negative")
+    if answered >= MAX_ROUTINE_FOLLOW_UPS:
+        raise WorkspaceRuleError("a defense answers at most two routine follow-ups")
+    return answered + 1
+
+
+class CaseFollowUp(_StrictModel):
+    """One routine question asked after the defense, and what was said back."""
+
+    question: LearnerText
+    answer: LearnerText
+
+
+class CaseCommitment(_StrictModel):
+    """The whole trail of one case, from discovery questions to defended decisions."""
+
+    discovery_questions: Annotated[tuple[LearnerText, ...], Field(min_length=1, max_length=32)]
+    assumptions: Annotated[tuple[LearnerText, ...], Field(min_length=1, max_length=32)]
+    working_notes: LearnerText
+    final_artifact: LearnerText
+    decisions: Annotated[tuple[LearnerText, ...], Field(min_length=1, max_length=32)]
+    risks: Annotated[tuple[LearnerText, ...], Field(min_length=1, max_length=32)]
+    unresolved_questions: Annotated[tuple[LearnerText, ...], Field(max_length=32)] = ()
+    follow_ups: Annotated[
+        tuple[CaseFollowUp, ...], Field(max_length=MAX_ROUTINE_FOLLOW_UPS)
+    ] = ()
+    # Self-review is mandatory and deliberately outside the redaction allowlist: it is
+    # the learner's own reflection, handed to a reviewer as its own input rather than
+    # copied out of the committed artifact.
+    self_review: LearnerText
+    elapsed_seconds: Annotated[int, Field(strict=True, ge=0, le=CASE_SESSION_SECONDS)]
+
+    @model_validator(mode="after")
+    def distinct_decisions(self) -> Self:
+        for label, values in (
+            ("discovery questions", self.discovery_questions),
+            ("decisions", self.decisions),
+            ("risks", self.risks),
+        ):
+            if len({value.strip().casefold() for value in values}) != len(values):
+                raise ValueError(f"the {label} must be distinct")
+        return self
+
+
 __all__ = [
+    "CASE_PHASE_ORDER",
+    "CASE_PHASE_SECONDS",
+    "CASE_SESSION_SECONDS",
     "HINT_LADDER",
+    "MAX_ROUTINE_FOLLOW_UPS",
     "NO_HINT_LEVEL",
     "PHASE_ORDER",
     "PHASE_SECONDS",
@@ -280,6 +377,9 @@ __all__ = [
     "SOLUTION_HINT_LEVEL",
     "AiLockReason",
     "AssistanceCode",
+    "CaseCommitment",
+    "CaseFollowUp",
+    "CasePhase",
     "MistakeCategory",
     "ReadingPhase",
     "ReadingRecallNote",
@@ -287,8 +387,10 @@ __all__ = [
     "SqlAttemptCommitment",
     "SqlPhase",
     "WorkspaceRuleError",
+    "accept_follow_up",
     "ai_lock_reason",
     "assistance_code",
+    "case_phase_at",
     "phase_at",
     "qualifies_as_evidence",
     "reading_ai_lock_reason",

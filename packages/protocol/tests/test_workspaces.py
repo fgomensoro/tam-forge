@@ -5,7 +5,11 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 from tamforge_protocol.workspaces import (
+    CASE_PHASE_ORDER,
+    CASE_PHASE_SECONDS,
+    CASE_SESSION_SECONDS,
     HINT_LADDER,
+    MAX_ROUTINE_FOLLOW_UPS,
     NO_HINT_LEVEL,
     PHASE_ORDER,
     PHASE_SECONDS,
@@ -17,11 +21,14 @@ from tamforge_protocol.workspaces import (
     READING_SESSION_SECONDS,
     SESSION_SECONDS,
     SOLUTION_HINT_LEVEL,
+    CaseCommitment,
     ReadingRecallNote,
     SqlAttemptCommitment,
     WorkspaceRuleError,
+    accept_follow_up,
     ai_lock_reason,
     assistance_code,
+    case_phase_at,
     phase_at,
     qualifies_as_evidence,
     reading_ai_lock_reason,
@@ -334,3 +341,131 @@ def test_the_same_idea_three_times_is_one_idea() -> None:
     idea = "Backpressure protects the slowest consumer."
     with pytest.raises(ValidationError):
         note(key_ideas=(idea, idea, "Retries need a budget."))
+
+
+# Case workspace: the sixty-minute stage budgets, the evidence trail, the defense.
+
+
+def case(**overrides: object) -> CaseCommitment:
+    data: dict[str, object] = {
+        "discovery_questions": (
+            "Which accounts are affected and since when?",
+            "Is the failure in ingest or in the export?",
+        ),
+        "assumptions": ("The customer's own retry logic is unchanged.",),
+        "working_notes": "Ruled out the export path by checking the queue depth first.",
+        "final_artifact": "Recommend pausing ingest for the affected tenant, then backfilling.",
+        "decisions": ("Pause ingest before backfilling.", "Tell the customer today."),
+        "risks": ("Backfill may double-count.", "Pausing delays their month-end close."),
+        "unresolved_questions": ("Who owns the backfill window?",),
+        "follow_ups": (),
+        "self_review": "I named the trade-off late and should have led with it.",
+        "elapsed_seconds": 3_300,
+    }
+    data.update(overrides)
+    return CaseCommitment.model_validate(data)
+
+
+def test_the_six_case_stages_are_ordered_and_fill_the_hour() -> None:
+    assert CASE_PHASE_ORDER == (
+        "understand",
+        "discovery",
+        "structure",
+        "solve",
+        "present",
+        "self_review",
+    )
+    assert [CASE_PHASE_SECONDS[phase] for phase in CASE_PHASE_ORDER] == [
+        300,
+        600,
+        300,
+        1_500,
+        600,
+        300,
+    ]
+    assert CASE_SESSION_SECONDS == 3_600
+
+
+@pytest.mark.parametrize(
+    "elapsed,expected",
+    [
+        (0, "understand"),
+        (299, "understand"),
+        (300, "discovery"),
+        (899, "discovery"),
+        (900, "structure"),
+        (1_199, "structure"),
+        (1_200, "solve"),
+        (2_699, "solve"),
+        (2_700, "present"),
+        (3_299, "present"),
+        (3_300, "self_review"),
+        (3_599, "self_review"),
+        (3_600, None),
+    ],
+)
+def test_case_stage_boundaries(elapsed: int, expected: str | None) -> None:
+    assert case_phase_at(elapsed) == expected
+
+
+def test_a_negative_case_clock_is_rejected() -> None:
+    with pytest.raises(WorkspaceRuleError):
+        case_phase_at(-1)
+
+
+def test_the_defense_answers_at_most_two_routine_follow_ups() -> None:
+    assert MAX_ROUTINE_FOLLOW_UPS == 2
+    assert accept_follow_up(answered=0) == 1
+    assert accept_follow_up(answered=1) == 2
+    with pytest.raises(WorkspaceRuleError, match="two"):
+        accept_follow_up(answered=MAX_ROUTINE_FOLLOW_UPS)
+
+
+def test_a_third_follow_up_cannot_be_committed_either() -> None:
+    exchange = {"question": "What if the backfill fails?", "answer": "Stop and escalate."}
+    assert case(follow_ups=(exchange, exchange | {"question": "And the close?"}))
+    with pytest.raises(ValidationError):
+        case(
+            follow_ups=(
+                exchange,
+                exchange | {"question": "And the close?"},
+                exchange | {"question": "And the audit?"},
+            )
+        )
+
+
+def test_the_commitment_saves_discovery_through_defense() -> None:
+    committed = case()
+
+    assert committed.discovery_questions and committed.assumptions
+    assert committed.working_notes and committed.final_artifact
+    assert committed.decisions and committed.risks
+    assert committed.self_review
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["discovery_questions", "assumptions", "decisions", "risks"],
+)
+def test_an_empty_stage_of_the_trail_is_not_a_case(field: str) -> None:
+    with pytest.raises(ValidationError):
+        case(**{field: ()})
+
+
+@pytest.mark.parametrize("field", ["working_notes", "final_artifact", "self_review"])
+def test_the_written_stages_cannot_be_blank(field: str) -> None:
+    with pytest.raises(ValidationError):
+        case(**{field: "   "})
+
+
+def test_the_same_decision_twice_is_one_decision() -> None:
+    for field in ("discovery_questions", "decisions", "risks"):
+        repeated = getattr(case(), field)[0]
+        with pytest.raises(ValidationError):
+            case(**{field: (repeated, repeated)})
+
+
+def test_a_case_cannot_outlast_its_hour() -> None:
+    assert case(elapsed_seconds=CASE_SESSION_SECONDS)
+    with pytest.raises(ValidationError):
+        case(elapsed_seconds=CASE_SESSION_SECONDS + 1)
