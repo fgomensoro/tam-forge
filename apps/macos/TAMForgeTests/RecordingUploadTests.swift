@@ -755,24 +755,32 @@ private actor UploadTestKeyStore: RecordingKeyStoring {
     func delete(recordingID: UUID) async throws { keys.removeValue(forKey: recordingID) }
 }
 
-private actor FakeRecordingServer: RecordingServerServicing {
+// Not private: RecordingFeatureTests.swift's coordinator-level transcript
+// tests reuse this same double instead of duplicating create/upload/seal
+// bookkeeping.
+actor FakeRecordingServer: RecordingServerServicing {
     private(set) var uploadedParts: [RecordingPreparedPart] = []
     private(set) var uploadAttempts = 0
     private(set) var createCalls = 0
     private(set) var sealCommands: [RecordingSealPayload] = []
+    private(set) var submittedTranscripts: [TranscriptSubmitPayload] = []
+    private(set) var submissionAttempts = 0
     private let failureOnUploadAttempt: Int?
     private let uploadFailure: RecordingUploadError
     private let blockUploads: Bool
+    private let failSubmission: Bool
     private var statusByRecording: [UUID: RecordingServerStatus] = [:]
 
     init(
         failureOnUploadAttempt: Int? = nil,
         uploadFailure: RecordingUploadError = .offline,
-        blockUploads: Bool = false
+        blockUploads: Bool = false,
+        failSubmission: Bool = false
     ) {
         self.failureOnUploadAttempt = failureOnUploadAttempt
         self.uploadFailure = uploadFailure
         self.blockUploads = blockUploads
+        self.failSubmission = failSubmission
     }
 
     func create(_ command: RecordingCreatePayload, idempotencyKey: String) async throws {
@@ -780,10 +788,14 @@ private actor FakeRecordingServer: RecordingServerServicing {
         guard let id = UUID(uuidString: command.recordingID) else {
             throw RecordingUploadError.invalidResponse
         }
+        // Preserve an already-accepted transcript: submission and the audio
+        // pipeline race independently, and create/seal must not clobber a
+        // lineage flag a concurrent submitTranscript already set true.
+        let alreadyAccepted = statusByRecording[id]?.transcriptLineageAccepted ?? false
         statusByRecording[id] = .init(
             recordingID: id,
             audioCreatedOnServer: false,
-            transcriptLineageAccepted: false
+            transcriptLineageAccepted: alreadyAccepted
         )
     }
 
@@ -802,10 +814,35 @@ private actor FakeRecordingServer: RecordingServerServicing {
             throw RecordingUploadError.invalidResponse
         }
         sealCommands.append(command)
+        let alreadyAccepted = statusByRecording[id]?.transcriptLineageAccepted ?? false
         let status = RecordingServerStatus(
             recordingID: id,
             audioCreatedOnServer: true,
-            transcriptLineageAccepted: false
+            transcriptLineageAccepted: alreadyAccepted
+        )
+        statusByRecording[id] = status
+        return status
+    }
+
+    func submitTranscript(
+        _ command: TranscriptSubmitPayload,
+        idempotencyKey: String
+    ) async throws -> RecordingServerStatus {
+        submissionAttempts += 1
+        guard let id = UUID(uuidString: command.recordingID) else {
+            throw RecordingUploadError.invalidResponse
+        }
+        if failSubmission { throw RecordingUploadError.server(statusCode: 500) }
+        submittedTranscripts.append(command)
+        // Mirrors LiveRecordingServerClient.submitTranscript: a successful
+        // submission only ever happens once the backend's
+        // transcript_lineage_requires_audio constraint already passed, so
+        // audio is unconditionally true here too, regardless of whether
+        // create/seal have run yet on this fake.
+        let status = RecordingServerStatus(
+            recordingID: id,
+            audioCreatedOnServer: true,
+            transcriptLineageAccepted: true
         )
         statusByRecording[id] = status
         return status

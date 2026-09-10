@@ -428,6 +428,207 @@ struct RecordingSealPayload: Codable, Equatable, Sendable {
     }
 }
 
+// The wire body for POST /recordings/{id}/transcripts. recordingID routes
+// the URL only: TranscriptSubmitCommand carries no recording_id field (the
+// path already names the recording), so it is deliberately left out of
+// CodingKeys and never reaches the JSON body.
+struct TranscriptSubmitPayload: Encodable, Equatable, Sendable {
+    let recordingID: String
+    let schemaVersion = 1
+    let track: String
+    let segments: [TranscriptSegmentPayload]
+    let modelIdentity: TranscriptModelIdentityPayload
+    let derivation: TranscriptDerivationPayload
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case track
+        case segments
+        case modelIdentity = "model_identity"
+        case derivation
+    }
+}
+
+extension TranscriptSubmitPayload {
+    // Pure mapping from the local ASR result to the wire shape; no
+    // validation here, since the server is the authority on bounds and a
+    // rejection never needs to explain itself with transcript content.
+    static func make(recordingID: UUID, result: SpeechTranscriptionResult) -> TranscriptSubmitPayload {
+        .init(
+            recordingID: recordingID.uuidString.lowercased(),
+            track: result.lineage.track.rawValue,
+            segments: result.segments.map { segment in
+                TranscriptSegmentPayload(
+                    text: segment.text,
+                    startMilliseconds: segment.startMilliseconds,
+                    endMilliseconds: segment.endMilliseconds,
+                    words: segment.words.map { word in
+                        TranscriptWordPayload(
+                            text: word.text,
+                            startMilliseconds: word.startMilliseconds,
+                            endMilliseconds: word.endMilliseconds,
+                            probability: word.probability
+                        )
+                    }
+                )
+            },
+            modelIdentity: TranscriptModelIdentityPayload(
+                runtimeVersion: result.identity.runtimeVersion,
+                modelFilename: result.identity.modelFilename,
+                modelSHA256: result.identity.modelSHA256,
+                metalRequested: result.identity.metalRequested,
+                usedBuiltInVAD: result.identity.usedBuiltInVAD,
+                language: result.identity.language
+            ),
+            derivation: TranscriptDerivationPayload(
+                derivationVersion: result.lineage.derivationVersion,
+                sourceSampleRate: result.lineage.sourceSampleRate,
+                sourceChannelCount: result.lineage.sourceChannelCount,
+                sourceSampleCount: result.lineage.sourceSampleCount,
+                outputSampleRate: result.lineage.outputSampleRate,
+                outputSampleCount: result.lineage.outputSampleCount,
+                zeroFilledGaps: result.lineage.zeroFilledGaps.map { gap in
+                    TranscriptDerivationGapPayload(
+                        sampleStart: gap.sampleStart,
+                        sampleCount: gap.sampleCount,
+                        reason: gap.reason.rawValue
+                    )
+                },
+                sourcePCMSHA256: result.lineage.sourcePCMSHA256,
+                derivedPCMSHA256: result.lineage.derivedPCMSHA256,
+                quality: TranscriptAudioQualityPayload(
+                    version: result.lineage.quality.version,
+                    sampleRate: result.lineage.quality.sampleRate,
+                    channelCount: result.lineage.quality.channelCount,
+                    sourceSampleCount: result.lineage.quality.sourceSampleCount,
+                    durationSeconds: result.lineage.quality.durationSeconds,
+                    peakAbsolute: result.lineage.quality.peakAbsolute,
+                    allSilence: result.lineage.quality.allSilence,
+                    clippedRatio: result.lineage.quality.clippedRatio,
+                    dcOffset: result.lineage.quality.dcOffset,
+                    channelImbalanceDecibels: result.lineage.quality.channelImbalanceDecibels,
+                    discontinuityCount: result.lineage.quality.discontinuityCount,
+                    unavailableDimensions: result.lineage.quality.unavailableDimensions
+                )
+            )
+        )
+    }
+}
+
+struct TranscriptSegmentPayload: Codable, Equatable, Sendable {
+    let text: String
+    let startMilliseconds: Int64
+    let endMilliseconds: Int64
+    let words: [TranscriptWordPayload]
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case startMilliseconds = "start_ms"
+        case endMilliseconds = "end_ms"
+        case words
+    }
+}
+
+struct TranscriptWordPayload: Codable, Equatable, Sendable {
+    let text: String
+    let startMilliseconds: Int64
+    let endMilliseconds: Int64
+    let probability: Double
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case startMilliseconds = "start_ms"
+        case endMilliseconds = "end_ms"
+        case probability
+    }
+}
+
+struct TranscriptModelIdentityPayload: Codable, Equatable, Sendable {
+    let runtimeVersion: String
+    let modelFilename: String
+    let modelSHA256: String
+    let metalRequested: Bool
+    let usedBuiltInVAD: Bool
+    let language: String
+
+    enum CodingKeys: String, CodingKey {
+        case runtimeVersion = "runtime_version"
+        case modelFilename = "model_filename"
+        case modelSHA256 = "model_sha256"
+        case metalRequested = "metal_requested"
+        case usedBuiltInVAD = "used_builtin_vad"
+        case language
+    }
+}
+
+struct TranscriptDerivationPayload: Codable, Equatable, Sendable {
+    let derivationVersion: String
+    let sourceSampleRate: Int
+    let sourceChannelCount: Int
+    let sourceSampleCount: Int64
+    let outputSampleRate: Int
+    let outputSampleCount: Int64
+    let zeroFilledGaps: [TranscriptDerivationGapPayload]
+    let sourcePCMSHA256: String
+    let derivedPCMSHA256: String
+    let quality: TranscriptAudioQualityPayload
+
+    enum CodingKeys: String, CodingKey {
+        case derivationVersion = "derivation_version"
+        case sourceSampleRate = "source_sample_rate"
+        case sourceChannelCount = "source_channel_count"
+        case sourceSampleCount = "source_sample_count"
+        case outputSampleRate = "output_sample_rate"
+        case outputSampleCount = "output_sample_count"
+        case zeroFilledGaps = "zero_filled_gaps"
+        case sourcePCMSHA256 = "source_pcm_sha256"
+        case derivedPCMSHA256 = "derived_pcm_sha256"
+        case quality
+    }
+}
+
+struct TranscriptDerivationGapPayload: Codable, Equatable, Sendable {
+    let sampleStart: Int64
+    let sampleCount: Int
+    let reason: String
+
+    enum CodingKeys: String, CodingKey {
+        case sampleStart = "sample_start"
+        case sampleCount = "sample_count"
+        case reason
+    }
+}
+
+struct TranscriptAudioQualityPayload: Codable, Equatable, Sendable {
+    let version: String
+    let sampleRate: Int
+    let channelCount: Int
+    let sourceSampleCount: Int64
+    let durationSeconds: Double
+    let peakAbsolute: Int
+    let allSilence: Bool
+    let clippedRatio: Double
+    let dcOffset: Double
+    let channelImbalanceDecibels: Double?
+    let discontinuityCount: Int
+    let unavailableDimensions: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case version
+        case sampleRate = "sample_rate"
+        case channelCount = "channel_count"
+        case sourceSampleCount = "source_sample_count"
+        case durationSeconds = "duration_seconds"
+        case peakAbsolute = "peak_absolute"
+        case allSilence = "all_silence"
+        case clippedRatio = "clipped_ratio"
+        case dcOffset = "dc_offset"
+        case channelImbalanceDecibels = "channel_imbalance_decibels"
+        case discontinuityCount = "discontinuity_count"
+        case unavailableDimensions = "unavailable_dimensions"
+    }
+}
+
 struct RecordingPartAADPayload: Codable, Equatable, Sendable {
     let schemaVersion = 1
     let recordingID: String

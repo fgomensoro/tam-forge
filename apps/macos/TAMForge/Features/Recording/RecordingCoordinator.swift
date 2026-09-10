@@ -149,6 +149,7 @@ final class RecordingCoordinator: ObservableObject {
     private let source: any RecordingCaptureSource
     private let spoolFactory: any RecordingSpoolCreating
     private let uploader: (any RecordingUploading)?
+    private let server: (any RecordingServerServicing)?
     private let audioReader: (any RecordingAudioReading)?
     private let transcriber: (any SpeechTranscribing)?
     private var uploadQueue: [UUID] = []
@@ -171,6 +172,7 @@ final class RecordingCoordinator: ObservableObject {
         source: any RecordingCaptureSource = ScreenCaptureAudioSource(),
         spoolFactory: any RecordingSpoolCreating = EncryptedRecordingSpoolFactory(),
         uploader: (any RecordingUploading)? = nil,
+        server: (any RecordingServerServicing)? = nil,
         audioReader: (any RecordingAudioReading)? = nil,
         transcriber: (any SpeechTranscribing)? = nil
     ) {
@@ -178,6 +180,7 @@ final class RecordingCoordinator: ObservableObject {
         self.source = source
         self.spoolFactory = spoolFactory
         self.uploader = uploader
+        self.server = server
         self.audioReader = audioReader
         self.transcriber = transcriber
         lifecycleTask = Task { [weak self] in
@@ -379,11 +382,27 @@ final class RecordingCoordinator: ObservableObject {
                 )
                 guard !Task.isCancelled else { return }
                 self.transcriptState = .ready(recordingID, result)
+                await self.submitTranscript(recordingID: recordingID, result: result)
             } catch {
                 guard !Task.isCancelled else { return }
                 self.transcriptState = .failed(recordingID, "Transcription failed")
             }
         }
+    }
+
+    // Submission failure is silent by design: transcriptState stays .ready
+    // (the transcript is still valid locally) and the upload state stays
+    // whatever the audio pipeline already made it, typically
+    // waitingForTranscript. The next status check the upload worker already
+    // performs finds the lineage flag still false and simply leaves the
+    // spool retained; nothing here deletes on failure, and no transcript
+    // text ever reaches an error path.
+    private func submitTranscript(recordingID: UUID, result: SpeechTranscriptionResult) async {
+        guard let server, !Task.isCancelled else { return }
+        let payload = TranscriptSubmitPayload.make(recordingID: recordingID, result: result)
+        let idempotencyKey =
+            "recording.transcript.\(recordingID.uuidString.lowercased()).\(payload.track)"
+        _ = try? await server.submitTranscript(payload, idempotencyKey: idempotencyKey)
     }
 
     // A transcript is derived audio, so it cannot outlive the recording it came

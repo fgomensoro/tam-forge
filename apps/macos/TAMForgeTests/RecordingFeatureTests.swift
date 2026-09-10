@@ -1485,6 +1485,186 @@ final class RecordingFeatureTests: XCTestCase {
         XCTAssertTrue(receivedRequests.isEmpty)
     }
 
+    func testSuccessfulTranscriptionSubmitsExactlyOneTranscriptMatchingWordCount() async throws {
+        let micChunk = RecordingPCMChunk.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 48_000
+        )
+        let reader = FakeRecordingAudioReader(microphoneChunks: [micChunk])
+        let words: [SpeechTranscribedWord] = [
+            .init(text: "hello", startMilliseconds: 0, endMilliseconds: 200, probability: 0.9),
+            .init(text: "there", startMilliseconds: 200, endMilliseconds: 400, probability: 0.85),
+            .init(text: "world", startMilliseconds: 400, endMilliseconds: 600, probability: 0.8),
+        ]
+        let transcriber = FakeSealTranscriber(text: "hello there world", words: words)
+        let server = FakeRecordingServer()
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: FakeRecordingSpoolFactory(),
+                server: server,
+                audioReader: reader,
+                transcriber: transcriber
+            )
+        }
+
+        await coordinator.start()
+        await coordinator.stop()
+        let state = await waitUntilTranscriptSettles(coordinator)
+        guard case .ready = state else {
+            return XCTFail("expected .ready, got \(state)")
+        }
+
+        let submitted = await waitUntilSubmissionCount(server, atLeast: 1)
+        XCTAssertEqual(submitted.count, 1)
+        XCTAssertEqual(submitted.first?.segments.flatMap(\.words).count, words.count)
+    }
+
+    func testFailedTranscriptionSubmitsNothingAndLeavesUploadWaitingForTranscript() async throws {
+        let root = try temporaryDirectory()
+        let keyStore = InMemoryRecordingKeyStore()
+        let factory = EncryptedRecordingSpoolFactory(
+            rootURL: root, keyStore: keyStore, reservationBytes: 0
+        )
+        let server = FakeRecordingServer()
+        let source = FakeRecordingCaptureSource()
+        let transcriber = FakeSealTranscriber(shouldFail: true)
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: factory,
+                uploader: RecordingUploadPipeline(spoolFactory: factory, server: server),
+                server: server,
+                audioReader: factory,
+                transcriber: transcriber
+            )
+        }
+
+        await coordinator.start()
+        await source.emit(.chunk(.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 48
+        )))
+        await source.emit(.chunk(.fixture(
+            track: .systemAudio, presentationNanoseconds: 1_000_000_000, sampleCount: 48
+        )))
+        await coordinator.stop()
+
+        let state = await waitUntilTranscriptSettles(coordinator)
+        guard case let .failed(recordingID, _) = state else {
+            return XCTFail("expected .failed, got \(state)")
+        }
+        let submitted = await server.submittedTranscripts
+        XCTAssertTrue(submitted.isEmpty)
+
+        let finalUploadState = await waitUntilUploadState(
+            coordinator, recordingID: recordingID, equals: .waitingForTranscript
+        )
+        XCTAssertEqual(finalUploadState, .waitingForTranscript)
+    }
+
+    func testThrowingSubmissionLeavesSpoolPresentForNextPassToRetry() async throws {
+        let root = try temporaryDirectory()
+        let keyStore = InMemoryRecordingKeyStore()
+        let factory = EncryptedRecordingSpoolFactory(
+            rootURL: root, keyStore: keyStore, reservationBytes: 0
+        )
+        let server = FakeRecordingServer(failSubmission: true)
+        let source = FakeRecordingCaptureSource()
+        let transcriber = FakeSealTranscriber(text: "throws on submit")
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: factory,
+                uploader: RecordingUploadPipeline(spoolFactory: factory, server: server),
+                server: server,
+                audioReader: factory,
+                transcriber: transcriber
+            )
+        }
+
+        await coordinator.start()
+        await source.emit(.chunk(.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 48
+        )))
+        await source.emit(.chunk(.fixture(
+            track: .systemAudio, presentationNanoseconds: 1_000_000_000, sampleCount: 48
+        )))
+        await coordinator.stop()
+
+        let state = await waitUntilTranscriptSettles(coordinator)
+        guard case let .ready(recordingID, _) = state else {
+            return XCTFail("expected .ready, got \(state)")
+        }
+        _ = await waitUntilSubmissionAttempt(server, atLeast: 1)
+
+        let spoolPath = root.appendingPathComponent(recordingID.uuidString).path
+        XCTAssertTrue(FileManager.default.fileExists(atPath: spoolPath))
+
+        _ = await waitUntilUploadState(
+            coordinator, recordingID: recordingID, equals: .waitingForTranscript
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: spoolPath))
+
+        // The next upload worker pass only re-checks status; a submission
+        // that threw must never cause it to delete.
+        let pipeline = RecordingUploadPipeline(spoolFactory: factory, server: server)
+        let gates = try await pipeline.upload(recordingID: recordingID, progress: { _ in })
+        XCTAssertTrue(gates.audioCreatedOnServer)
+        XCTAssertFalse(gates.transcriptLineageAccepted)
+        XCTAssertFalse(gates.mayDeleteLocalSpool)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: spoolPath))
+    }
+
+    func testSpoolReleasesOnceServerReportsBothGatesTrueAfterSubmission() async throws {
+        let root = try temporaryDirectory()
+        let keyStore = InMemoryRecordingKeyStore()
+        let factory = EncryptedRecordingSpoolFactory(
+            rootURL: root, keyStore: keyStore, reservationBytes: 0
+        )
+        let server = FakeRecordingServer()
+        let source = FakeRecordingCaptureSource()
+        let transcriber = FakeSealTranscriber(text: "released once accepted")
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: factory,
+                server: server,
+                audioReader: factory,
+                transcriber: transcriber
+            )
+        }
+
+        await coordinator.start()
+        await source.emit(.chunk(.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 48
+        )))
+        await source.emit(.chunk(.fixture(
+            track: .systemAudio, presentationNanoseconds: 1_000_000_000, sampleCount: 48
+        )))
+        await coordinator.stop()
+
+        let state = await waitUntilTranscriptSettles(coordinator)
+        guard case let .ready(recordingID, _) = state else {
+            return XCTFail("expected .ready, got \(state)")
+        }
+        // The coordinator has no automatic worker here (no uploader:
+        // configured), so this waits only for the submission the .ready
+        // hook itself triggers, then drives one upload pass directly,
+        // standing in for "the next worker pass" the brief describes.
+        _ = await waitUntilSubmissionCount(server, atLeast: 1)
+
+        let pipeline = RecordingUploadPipeline(spoolFactory: factory, server: server)
+        let gates = try await pipeline.upload(recordingID: recordingID, progress: { _ in })
+
+        XCTAssertTrue(gates.mayDeleteLocalSpool)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: root.appendingPathComponent(recordingID.uuidString).path
+        ))
+    }
+
     private func waitUntilCoordinatorSettles(
         _ coordinator: RecordingCoordinator,
         file: StaticString = #filePath,
@@ -1513,6 +1693,57 @@ final class RecordingFeatureTests: XCTestCase {
         }
         XCTFail("transcription never left the running state", file: file, line: line)
         return await MainActor.run { coordinator.transcriptState }
+    }
+
+    // Submission happens fire-and-forget after transcriptState flips to
+    // .ready, inside the same background task, so tests must poll for it
+    // rather than assume it is done once .ready is observed.
+    private func waitUntilSubmissionCount(
+        _ server: FakeRecordingServer,
+        atLeast minimum: Int,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async -> [TranscriptSubmitPayload] {
+        for _ in 0..<500 {
+            let submitted = await server.submittedTranscripts
+            if submitted.count >= minimum { return submitted }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("transcript submission never reached the server", file: file, line: line)
+        return await server.submittedTranscripts
+    }
+
+    // Counts attempts even when the fake is configured to throw, so a
+    // throwing submission can still be observed as "attempted".
+    private func waitUntilSubmissionAttempt(
+        _ server: FakeRecordingServer,
+        atLeast minimum: Int,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async -> Int {
+        for _ in 0..<500 {
+            let attempts = await server.submissionAttempts
+            if attempts >= minimum { return attempts }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("submission was never attempted", file: file, line: line)
+        return await server.submissionAttempts
+    }
+
+    private func waitUntilUploadState(
+        _ coordinator: RecordingCoordinator,
+        recordingID: UUID,
+        equals expected: RecordingUploadState,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async -> RecordingUploadState? {
+        for _ in 0..<500 {
+            let state = await MainActor.run { coordinator.uploadStates[recordingID] }
+            if state == expected { return state }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("upload state never reached \(expected)", file: file, line: line)
+        return await MainActor.run { coordinator.uploadStates[recordingID] }
     }
 
     private func temporaryDirectory() throws -> URL {
@@ -1837,11 +2068,17 @@ private actor FakeSealTranscriber: SpeechTranscribing {
     enum Failure: Error { case transcriptionFailed }
 
     private let text: String
+    private let words: [SpeechTranscribedWord]
     private let shouldFail: Bool
     private(set) var receivedRequests: [SpeechTranscriptionRequest] = []
 
-    init(text: String = "fake transcript", shouldFail: Bool = false) {
+    init(
+        text: String = "fake transcript",
+        words: [SpeechTranscribedWord] = [],
+        shouldFail: Bool = false
+    ) {
         self.text = text
+        self.words = words
         self.shouldFail = shouldFail
     }
 
@@ -1850,7 +2087,7 @@ private actor FakeSealTranscriber: SpeechTranscribing {
         if shouldFail { throw Failure.transcriptionFailed }
         try request.validate()
         return SpeechTranscriptionResult(
-            segments: [.init(text: text, startMilliseconds: 0, endMilliseconds: 0, words: [])],
+            segments: [.init(text: text, startMilliseconds: 0, endMilliseconds: 0, words: words)],
             identity: .init(
                 runtimeVersion: "fake",
                 modelFilename: "fake-model.bin",

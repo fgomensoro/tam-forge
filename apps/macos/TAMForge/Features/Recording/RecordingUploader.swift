@@ -16,6 +16,8 @@ protocol RecordingServerServicing: Sendable {
     func upload(_ part: RecordingPreparedPart) async throws
     func seal(_ command: RecordingSealPayload, idempotencyKey: String) async throws
         -> RecordingServerStatus
+    func submitTranscript(_ command: TranscriptSubmitPayload, idempotencyKey: String) async throws
+        -> RecordingServerStatus
     func status(recordingID: UUID) async throws -> RecordingServerStatus
 }
 
@@ -107,6 +109,37 @@ struct LiveRecordingServerClient: RecordingServerServicing, @unchecked Sendable 
             throw RecordingUploadError.invalidResponse
         }
         return status
+    }
+
+    func submitTranscript(
+        _ command: TranscriptSubmitPayload,
+        idempotencyKey: String
+    ) async throws -> RecordingServerStatus {
+        let body = try generatedRequestBody(
+            command,
+            as: Components.Schemas.TranscriptSubmitCommand.self
+        )
+        let data = try await sendJSON(
+            method: "POST",
+            path: "/api/v1/recordings/\(command.recordingID)/transcripts",
+            body: body,
+            idempotencyKey: idempotencyKey,
+            expectedStatus: 201
+        )
+        _ = try decodeGenerated(Components.Schemas.TranscriptResponse.self, data: data)
+        let recordingID = try decode(TranscriptResponsePayload.self, data: data).recordingID
+        guard recordingID == command.recordingID, let id = UUID(uuidString: recordingID) else {
+            throw RecordingUploadError.invalidResponse
+        }
+        // TranscriptResponse is a transcript summary, not a recording status:
+        // it carries no release-gate fields. A 201 here only happens once the
+        // backend's transcript_lineage_requires_audio constraint has already
+        // passed, so both gates are true by construction.
+        return RecordingServerStatus(
+            recordingID: id,
+            audioCreatedOnServer: true,
+            transcriptLineageAccepted: true
+        )
     }
 
     func status(recordingID: UUID) async throws -> RecordingServerStatus {
@@ -509,6 +542,12 @@ private struct RecordingPartReceiptPayload: Decodable {
         case sequence
         case plaintextSHA256 = "plaintext_sha256"
     }
+}
+
+private struct TranscriptResponsePayload: Decodable {
+    let recordingID: String
+
+    enum CodingKeys: String, CodingKey { case recordingID = "recording_id" }
 }
 
 private struct RecordingServerStatusPayload: Decodable {
