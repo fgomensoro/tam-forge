@@ -939,3 +939,62 @@ def test_append_correction_reports_whether_it_inserted_or_replayed() -> None:
         assert second.replayed is True
 
     asyncio.run(exercise())
+
+
+def test_by_recording_track_selects_only_the_requested_track() -> None:
+    """The track filter has to be part of the SELECT, not a pass over rows the
+    query already returned. `system_audio` is stored first here on purpose: a
+    lookup that fetched every transcript on the recording and picked in Python
+    would still be answering from a list whose first entry is the wrong track.
+    """
+
+    async def exercise() -> None:
+        session = FakeSession()
+        repository = SqlAlchemyTranscriptRepository(session)
+        recording = SimpleNamespace(id=42)
+
+        await repository.store(
+            owner_id=1,
+            recording=recording,
+            track="system_audio",
+            body=transcript_body(track="system_audio"),
+        )
+        stored = await repository.store(
+            owner_id=1, recording=recording, track="microphone", body=transcript_body()
+        )
+
+        found = await repository.by_recording_track(
+            owner_id=1, recording_id=42, track="microphone"
+        )
+
+        assert found is not None
+        assert found.id == stored.row.id
+        assert found.track == "microphone"
+
+    asyncio.run(exercise())
+
+
+def test_by_recording_track_is_owner_scoped_and_reports_a_missing_track_as_none() -> None:
+    async def exercise() -> None:
+        session = FakeSession()
+        repository = SqlAlchemyTranscriptRepository(session)
+        recording = SimpleNamespace(id=42)
+
+        await repository.store(
+            owner_id=1, recording=recording, track="microphone", body=transcript_body()
+        )
+
+        assert (
+            await repository.by_recording_track(owner_id=2, recording_id=42, track="microphone")
+            is None
+        )
+        assert (
+            await repository.by_recording_track(owner_id=1, recording_id=42, track="system_audio")
+            is None
+        )
+        assert (
+            await repository.by_recording_track(owner_id=1, recording_id=43, track="microphone")
+            is None
+        )
+
+    asyncio.run(exercise())

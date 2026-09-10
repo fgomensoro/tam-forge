@@ -166,17 +166,13 @@ class SqlAlchemyTranscriptRepository:
 
         try:
             async with transaction_scope(self.session):
-                existing = await self.session.scalar(
-                    select(SpeechTranscript).where(
-                        SpeechTranscript.owner_id == owner_id,
-                        SpeechTranscript.recording_id == recording_id,
-                        SpeechTranscript.track == track,
-                    )
+                existing = await self.by_recording_track(
+                    owner_id=owner_id, recording_id=recording_id, track=track
                 )
                 if existing is not None:
                     if existing.content_hash != content_hash:
                         raise TranscriptConflict()
-                    return Written(_snapshot(existing), replayed=True)
+                    return Written(existing, replayed=True)
                 row = SpeechTranscript(
                     owner_id=owner_id,
                     canonical_json=canonical.decode("utf-8"),
@@ -225,18 +221,50 @@ class SqlAlchemyTranscriptRepository:
         """
         try:
             async with transaction_scope(self.session):
-                existing = await self.session.scalar(
-                    select(SpeechTranscript).where(
-                        SpeechTranscript.owner_id == owner_id,
-                        SpeechTranscript.recording_id == recording_id,
-                        SpeechTranscript.track == track,
-                    )
+                existing = await self.by_recording_track(
+                    owner_id=owner_id, recording_id=recording_id, track=track
                 )
         except SQLAlchemyError:
             raise TranscriptUnavailable() from None
         if existing is None or existing.content_hash != content_hash:
             raise TranscriptConflict() from None
-        return _snapshot(existing)
+        return existing
+
+    async def by_recording_track(
+        self, *, owner_id: int, recording_id: int, track: str
+    ) -> SpeechTranscript | None:
+        """Read the one transcript a (owner, recording, track) identity can hold.
+
+        That identity is `uq_speech_transcripts_recording_track`, so this is a
+        single-row lookup by definition, and `track` is a persisted computed
+        column under a `track_allowed` check constraint -- a cheap equality
+        filter, not an expression evaluated per row.
+
+        This is the lookup `store` and `_reconcile_lost_race` were already
+        doing inline, hoisted so `TranscriptService.add_correction` can share
+        it. That caller used to resolve its track by reading `by_recording`
+        and picking the match in Python, which meant loading a transcript
+        body -- up to `TRANSCRIPT_BODY_LIMIT` bytes -- for each of the
+        recording's tracks in order to use nothing off the row but its `id`
+        and `owner_id`. Filtering in SQL leaves one row instead of all of
+        them; the row is still whole because `store` needs its
+        `content_hash` and hands it back to its own caller.
+
+        Owner scoping is part of the identity here, exactly as in
+        `by_recording`: another owner's transcript reads as missing rather
+        than forbidden, so a correction request cannot be used to confirm one
+        exists. Like every other read method on this repository, this one
+        opens no transaction of its own, so `store` can call it from inside
+        the one it already holds.
+        """
+        existing: SpeechTranscript | None = await self.session.scalar(
+            select(SpeechTranscript).where(
+                SpeechTranscript.owner_id == owner_id,
+                SpeechTranscript.recording_id == recording_id,
+                SpeechTranscript.track == track,
+            )
+        )
+        return None if existing is None else _snapshot(existing)
 
     async def by_recording(
         self, *, owner_id: int, recording_id: int
@@ -261,7 +289,8 @@ class SqlAlchemyTranscriptRepository:
         """Insert once per correction body; replay an identical one by content hash.
 
         `transcript` must already belong to `owner_id` -- the caller is expected
-        to have obtained it from `store` or `by_recording` under that same owner.
+        to have obtained it from `store`, `by_recording_track`, or
+        `by_recording` under that same owner.
         A mismatch reads as not-found rather than forbidden, so a correction
         request cannot be used to confirm another owner's transcript exists.
 

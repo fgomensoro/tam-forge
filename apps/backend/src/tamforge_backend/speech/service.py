@@ -153,12 +153,20 @@ class TranscriptService:
         to do, and it cost a full read of every correction body on the
         transcript, up to `MAX_CORRECTIONS_PER_TRANSCRIPT` of them, on every
         single append.
+
+        Resolving which transcript the correction belongs to is the same
+        story a level up. `track` is part of a transcript's stored identity,
+        so `repository.by_recording_track` answers it in one filtered SELECT.
+        Reading `by_recording` and picking the matching track in Python --
+        what this used to do -- loaded a body of up to
+        `TRANSCRIPT_BODY_LIMIT` bytes for each of the recording's tracks, to
+        end up using nothing off the row but the `id` and `owner_id`
+        `append_correction` reads from it.
         """
         recording = await self._resolve_recording(owner_id=owner_id, recording_id=recording_id)
-        transcripts = await self._repository.by_recording(
-            owner_id=owner_id, recording_id=recording.id
+        transcript = await self._repository.by_recording_track(
+            owner_id=owner_id, recording_id=recording.id, track=track
         )
-        transcript = next((row for row in transcripts if row.track == track), None)
         if transcript is None:
             raise TranscriptNotFound()
         appended = await self._repository.append_correction(

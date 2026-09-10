@@ -168,6 +168,7 @@ class FakeTranscriptRepository:
         self._next_correction_id = 1
         self.store_calls: list[tuple[int, int, str]] = []
         self.by_recording_calls = 0
+        self.by_recording_track_calls = 0
         self.corrections_calls = 0
 
     async def store(
@@ -201,6 +202,13 @@ class FakeTranscriptRepository:
         del owner_id
         self.by_recording_calls += 1
         return tuple(row for (pk, _track), row in self._rows.items() if pk == recording_id)
+
+    async def by_recording_track(
+        self, *, owner_id: int, recording_id: int, track: str
+    ) -> SimpleNamespace | None:
+        del owner_id
+        self.by_recording_track_calls += 1
+        return self._rows.get((recording_id, track))
 
     async def corrections(
         self, *, owner_id: int, transcript_id: int
@@ -585,6 +593,41 @@ def test_submit_decides_replay_without_rereading_the_recordings_transcripts() ->
 
         assert first.replayed is False
         assert second.replayed is True
+        assert repository.by_recording_calls == 0
+
+    asyncio.run(exercise())
+
+
+def test_add_correction_resolves_the_track_without_reading_the_other_one() -> None:
+    """Resolving which transcript a correction belongs to used to read every
+    transcript on the recording and pick the matching track in Python. A
+    recording holds one transcript per track and a transcript body is bounded
+    at `TRANSCRIPT_BODY_LIMIT` bytes, so that pulled both bodies -- megabytes
+    at the limit -- out of the database to end up using nothing but the row's
+    id and owner. The track belongs in the SELECT.
+    """
+    recording_id = uuid4()
+    session = FakeSession([fake_recording(client_recording_id=recording_id)])
+    repository = FakeTranscriptRepository()
+    service = TranscriptService(session, repository)  # type: ignore[arg-type]
+
+    async def exercise() -> None:
+        await service.submit(owner_id=1, recording_id=recording_id, command=submit_command())
+        await service.submit(
+            owner_id=1,
+            recording_id=recording_id,
+            command=submit_command(track="system_audio"),
+        )
+
+        appended = await service.add_correction(
+            owner_id=1,
+            recording_id=recording_id,
+            track="microphone",
+            command=correction_command(),
+        )
+
+        assert appended.transcript_id == 1
+        assert repository.by_recording_track_calls == 1
         assert repository.by_recording_calls == 0
 
     asyncio.run(exercise())
