@@ -102,3 +102,96 @@ def test_a_naive_timestamp_is_refused_on_both_sides() -> None:
 def test_a_day_without_a_budget_or_an_interview_length_is_refused(changes) -> None:
     with pytest.raises(SchedulingError):
         plan(**changes)
+
+
+# Issue #86: only explicit outcomes and stage events move conversion and timing, and
+# tone or demeanour never produces a pass/fail prediction.
+
+from tamforge_backend.opportunities import outcomes as oc  # noqa: E402
+from tamforge_protocol.opportunities import Opportunity  # noqa: E402
+
+DAY_ZERO = datetime(2026, 9, 1, 9, tzinfo=UTC)
+
+
+def stage(name: str, day: int) -> dict:
+    return {"stage": name, "occurred_at": DAY_ZERO + timedelta(days=day)}
+
+
+def opportunity(**overrides: object) -> Opportunity:
+    data: dict[str, object] = {
+        "opportunity_id": 4,
+        "owner_id": 1,
+        "company": "Northwind",
+        "role": "Technical Account Manager",
+        "job_description": {
+            "captured_at": DAY_ZERO,
+            "sha256": "a" * 64,
+            "text": "Owns renewal health.",
+        },
+        "stage_history": (stage("applied", 0), stage("screen", 5), stage("panel", 12)),
+    }
+    data.update(overrides)
+    return Opportunity.model_validate(data)
+
+
+def test_timing_is_arithmetic_over_the_recorded_dates() -> None:
+    durations = oc.stage_durations(opportunity())
+
+    assert [(item.stage, item.days) for item in durations] == [("applied", 5), ("screen", 7)]
+
+
+def test_the_stage_still_running_is_not_given_a_duration() -> None:
+    # An open-ended duration read as a number is how "we are still waiting" turns into
+    # "this took two days".
+    durations = oc.stage_durations(opportunity())
+
+    assert "panel" not in [item.stage for item in durations]
+
+
+def test_conversion_counts_opportunities_that_recorded_both_stages() -> None:
+    advanced = opportunity()
+    stalled = opportunity(
+        opportunity_id=5, stage_history=(stage("applied", 0), stage("screen", 3))
+    )
+
+    assert oc.conversion([advanced, stalled], from_stage="screen", to_stage="panel") == (1, 2)
+    assert oc.reached([advanced, stalled], stage="applied") == 2
+
+
+def test_conversion_returns_two_numbers_rather_than_a_rate() -> None:
+    # A rate over three opportunities is noise wearing a percentage sign.
+    result = oc.conversion([opportunity()], from_stage="applied", to_stage="panel")
+
+    assert result == (1, 1)
+    assert isinstance(result, tuple) and len(result) == 2
+
+
+def test_there_is_no_input_for_tone_and_no_output_that_predicts() -> None:
+    from dataclasses import fields
+
+    duration_fields = {field.name for field in fields(oc.StageDuration)}
+    for banned in ("tone", "sentiment", "demeanour", "demeanor", "confidence", "prediction"):
+        assert banned not in duration_fields
+        assert not hasattr(oc, banned)
+
+    for predictor in ("predict", "predict_outcome", "likelihood", "will_pass", "score_interview"):
+        assert not hasattr(oc, predictor)
+
+
+def test_only_recorded_stage_events_are_outcome_events() -> None:
+    assert "panel" in oc.OUTCOME_EVENTS
+    assert "seemed_positive" not in oc.OUTCOME_EVENTS
+
+    with pytest.raises(oc.OutcomeError, match="not a recorded outcome event"):
+        oc.reached([opportunity()], stage="seemed_positive")  # type: ignore[arg-type]
+
+
+def test_open_and_closed_opportunities_are_told_apart_by_their_last_event() -> None:
+    open_one = opportunity()
+    closed = opportunity(
+        opportunity_id=6,
+        stage_history=(stage("applied", 0), stage("closed_lost", 9)),
+        next_action=None,
+    )
+
+    assert oc.still_open([open_one, closed]) == (open_one,)
