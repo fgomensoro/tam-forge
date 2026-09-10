@@ -449,8 +449,11 @@ final class RecordingCoordinator: ObservableObject {
     // upload-worker pass (via RecordingUploadPipeline's own status-recheck
     // branch) can retry it if this attempt fails or arrives before the
     // audio pipeline's create/seal has finished; nothing here deletes on
-    // failure, and no transcript text ever reaches an error path or a log
-    // line.
+    // a transient failure, and no transcript text ever reaches an error
+    // path or a log line. A permanent rejection is different: the server
+    // will never accept this exact body on a later pass either, so this
+    // drops it from the cache and marks the upload terminal right away,
+    // rather than let it get silently resubmitted forever (Important 3).
     private func submitTranscript(recordingID: UUID, result: SpeechTranscriptionResult) async {
         guard !Task.isCancelled else { return }
         let payload = TranscriptSubmitPayload.make(recordingID: recordingID, result: result)
@@ -465,6 +468,10 @@ final class RecordingCoordinator: ObservableObject {
             Self.logger.error(
                 "Transcript submission failed for recording \(recordingIDText, privacy: .public): \(failureText, privacy: .public)"
             )
+            if let uploadError = error as? RecordingUploadError, uploadError.isPermanentTranscriptRejection {
+                await transcriptCache.remove(recordingID: recordingID)
+                uploadStates[recordingID] = .needsAttention("Transcript was rejected and could not be resubmitted")
+            }
         }
     }
 

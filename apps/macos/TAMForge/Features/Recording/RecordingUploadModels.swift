@@ -28,6 +28,21 @@ extension RecordingUploadError {
         }
         return "\(type(of: error))"
     }
+
+    // A permanent rejection is a 4xx the server will never accept on retry --
+    // the submitted body itself is invalid (its schema, its bounds), not a
+    // transient condition, so resubmitting the identical payload forever
+    // (Important 3) only wastes a full-body POST every upload-worker pass
+    // with no chance of success. 409 arrives as `.conflict`, not `.server`,
+    // and means "audio is not stored yet," which the next upload pass
+    // resolves on its own once the audio upload catches up -- deliberately
+    // excluded here. A 5xx `.server` case (`TranscriptUnavailable`, or an
+    // unexpected server error) is the backend's own distinctly-retryable
+    // error and must keep retrying.
+    var isPermanentTranscriptRejection: Bool {
+        if case let .server(statusCode) = self { return (400...499).contains(statusCode) }
+        return false
+    }
 }
 
 enum RecordingConversionIdentifier {
@@ -465,9 +480,19 @@ struct TranscriptSubmitPayload: Encodable, Equatable, Sendable {
 }
 
 extension TranscriptSubmitPayload {
-    // Pure mapping from the local ASR result to the wire shape; no
-    // validation here, since the server is the authority on bounds and a
-    // rejection never needs to explain itself with transcript content.
+    // Maps the local ASR result to the wire shape, normalizing whisper's word
+    // timestamps on the way so the body satisfies the server's contract:
+    // `TranscriptSegment.validate_words` requires every word contained within
+    // its segment's span and chronological (never starting before the
+    // previous word in the same segment ends). whisper.cpp's per-token
+    // timestamps come from a separate heuristic than its segment timestamps
+    // and are not guaranteed to satisfy either -- a token can land outside
+    // its segment, or two tokens can overlap -- so without `normalizedWords`
+    // below, a real recording could produce a body the server rejects with a
+    // 422 (transcript-lineage final review, Important 3). Segment spans and
+    // text pass through unchanged; only words -- whisper's
+    // questionable-timestamp output -- are touched, and only their
+    // timestamps, never their text or probability.
     static func make(recordingID: UUID, result: SpeechTranscriptionResult) -> TranscriptSubmitPayload {
         .init(
             recordingID: recordingID.uuidString.lowercased(),
@@ -477,14 +502,11 @@ extension TranscriptSubmitPayload {
                     text: segment.text,
                     startMilliseconds: segment.startMilliseconds,
                     endMilliseconds: segment.endMilliseconds,
-                    words: segment.words.map { word in
-                        TranscriptWordPayload(
-                            text: word.text,
-                            startMilliseconds: word.startMilliseconds,
-                            endMilliseconds: word.endMilliseconds,
-                            probability: word.probability
-                        )
-                    }
+                    words: normalizedWords(
+                        segment.words,
+                        segmentStart: segment.startMilliseconds,
+                        segmentEnd: segment.endMilliseconds
+                    )
                 )
             },
             modelIdentity: TranscriptModelIdentityPayload(
@@ -527,6 +549,38 @@ extension TranscriptSubmitPayload {
                 )
             )
         )
+    }
+
+    // Clamps each word into [segmentStart, segmentEnd] and forces
+    // non-decreasing, non-overlapping spans in a single left-to-right pass,
+    // so every word satisfies the server's containment and chronological
+    // rules by construction: `start` is raised to `previousEnd` when a raw
+    // timestamp would otherwise overlap the prior word, and `end` is raised
+    // to match if clamping ever left it behind `start`. Drops tokens whose
+    // text decoded empty -- whisper.cpp's own boundary artifact, and the
+    // server's `BoundedText` requires at least one character.
+    private static func normalizedWords(
+        _ words: [SpeechTranscribedWord], segmentStart: Int64, segmentEnd: Int64
+    ) -> [TranscriptWordPayload] {
+        var payloads: [TranscriptWordPayload] = []
+        payloads.reserveCapacity(words.count)
+        var previousEnd = segmentStart
+        for word in words where !word.text.isEmpty {
+            let clampedStart = min(max(segmentStart, word.startMilliseconds), segmentEnd)
+            let clampedEnd = max(min(segmentEnd, word.endMilliseconds), segmentStart)
+            let start = max(clampedStart, previousEnd)
+            let end = max(clampedEnd, start)
+            payloads.append(
+                TranscriptWordPayload(
+                    text: word.text,
+                    startMilliseconds: start,
+                    endMilliseconds: end,
+                    probability: word.probability
+                )
+            )
+            previousEnd = end
+        }
+        return payloads
     }
 
     // Stable across retries: recordingID and track never change for a

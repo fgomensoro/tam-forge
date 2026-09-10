@@ -477,11 +477,12 @@ actor RecordingUploadPipeline: RecordingUploading {
     // "recording.transcript.<id>.<track>" key: retrying an
     // already-accepted submission is a harmless replay, and retrying a
     // still-rejected one just leaves the gates unchanged for the pass
-    // after this one. A failure here is swallowed (logged, never thrown)
-    // so a still-failing submission never turns an otherwise-normal
-    // "waiting for transcript" pass into an error state; only
-    // cancellation propagates, matching every other cancellable operation
-    // in this actor.
+    // after this one. A transiently-failing submission is swallowed here
+    // (logged, never thrown) so it never turns an otherwise-normal
+    // "waiting for transcript" pass into an error state -- but a
+    // permanently-rejected one (`isPermanentTranscriptRejection`) is not
+    // transient, and both it and cancellation do propagate, matching every
+    // other cancellable operation in this actor.
     private func recheckStatusRetryingTranscriptIfNeeded(
         recordingID: UUID
     ) async throws -> RecordingReleaseGates {
@@ -493,6 +494,16 @@ actor RecordingUploadPipeline: RecordingUploading {
                 status = try await server.submitTranscript(
                     payload, idempotencyKey: payload.idempotencyKey
                 )
+            } catch let error as RecordingUploadError where error.isPermanentTranscriptRejection {
+                // Unlike every other failure here, this one will never
+                // resolve itself on a later pass: the body itself is what
+                // the server rejected. Drop it from the cache so it stops
+                // being resubmitted, and propagate instead of swallowing so
+                // the coordinator's existing `.server` handling surfaces
+                // `.needsAttention` (Important 3) rather than this method
+                // quietly reporting the same incomplete gates forever.
+                await transcriptCache.remove(recordingID: recordingID)
+                throw error
             } catch {
                 guard !(error is CancellationError) else { throw error }
                 let recordingIDText = recordingID.uuidString
