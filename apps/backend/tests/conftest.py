@@ -3,38 +3,40 @@
 from __future__ import annotations
 
 import fcntl
+import os
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
-
-# A fixed absolute path, not tempfile.gettempdir(): the lock only works when every
-# checkout on the machine opens the same file, and TMPDIR is per user session.
-DATABASE_LOCK_PATH = Path("/tmp/tamforge-test-database.lock")
 
 
 @pytest.fixture(scope="session")
 def destructive_database_lock(request: pytest.FixtureRequest) -> Iterator[None]:
-    """Serialize the suites that drop and recreate the single shared test schema.
+    """Serialize the suites that drop and recreate one test database's schema.
 
-    validate_test_database_url pins every checkout on a machine to the same
-    127.0.0.1:54329/tamforge_test instance, and these tests migrate that database
-    down to base and back up between cases. Two sessions running at once therefore
-    delete each other's tables mid-test, which surfaces as unrelated tests failing
-    with missing relations, deadlocks or duplicate catalog keys and then passing on
-    a rerun. An exclusive file lock makes the second session wait its turn.
+    These tests migrate their database down to base and back up between cases, so two
+    sessions pointed at the same database delete each other's tables mid-test. That
+    surfaces as unrelated tests failing with missing relations, deadlocks or duplicate
+    catalog keys and then passing on a rerun. An exclusive file lock makes the second
+    session wait its turn.
+
+    The lock is named after the target instance, so a checkout that publishes its own
+    container runs at full speed beside the others, and a session with no usable
+    TEST_DATABASE_URL takes no lock at all because it cannot reach a database.
     """
-    # ponytail: one machine-wide lock; move to per-database locks if a checkout
-    # ever gets its own PostgreSQL instance.
-    with DATABASE_LOCK_PATH.open("w") as handle:
+    from tamforge_backend.testing.database_lock import destructive_database_lock_path
+
+    path = destructive_database_lock_path(os.getenv("TEST_DATABASE_URL"))
+    if path is None:
+        yield
+        return
+    with path.open("w") as handle:
         try:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             capture = request.config.pluginmanager.getplugin("capturemanager")
             with capture.global_and_fixture_disabled():
                 print(
-                    f"\nwaiting for another TAM Forge test session to release "
-                    f"{DATABASE_LOCK_PATH}",
+                    f"\nwaiting for another TAM Forge test session to release {path}",
                     flush=True,
                 )
             fcntl.flock(handle, fcntl.LOCK_EX)
