@@ -118,10 +118,15 @@ class FakeSession:
     `scalar` matches the same way `test_transcript_repository.py`'s
     `FakeSession` does: read the compiled statement's mapped class and bound
     parameters, filter by attribute equality. `begin` is a no-op transaction
-    (nothing here ever fails or rolls back) and `flush` needs to do nothing
-    because `_accept_lineage` mutates the fake `Recording` namespace in
-    place -- the same object stays in `self.recordings`, so the mutation is
-    already visible without a real flush.
+    (nothing here ever fails) and `flush` needs to do nothing because
+    `_accept_lineage` mutates the fake `Recording` namespace in place -- the
+    same object stays in `self.recordings`, so the mutation is already
+    visible without a real flush. `rollback` is also a no-op, but it is a
+    real call site, not a formality: `_resolve_recording` calls it after
+    every read (Critical 1's fix), so this fake has to answer it or every
+    test through `TranscriptService.submit`/`list_for_recording`/
+    `add_correction` fails with AttributeError before it reaches anything
+    this file is actually testing.
     """
 
     def __init__(self, recordings: list[SimpleNamespace]) -> None:
@@ -142,6 +147,9 @@ class FakeSession:
         return matches[0] if matches else None
 
     async def flush(self) -> None:
+        pass
+
+    async def rollback(self) -> None:
         pass
 
     @asynccontextmanager

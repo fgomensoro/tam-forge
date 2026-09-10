@@ -65,6 +65,38 @@ from .schemas import (
 )
 
 
+def _detached_recording(row: Recording) -> Recording:
+    """Copy just the two attributes this module ever reads off a resolved
+    `Recording` into a new instance the session does not track.
+
+    `_resolve_recording` calls this on its result, before rolling back the
+    transaction its own read autobegins: a `Recording` still tracked by the
+    session would have every attribute expired by that rollback (rollback
+    expires the *whole* identity map, not just rows the rolled-back work
+    touched), and a plain synchronous attribute access on an expired
+    attribute needs a lazy refresh `AsyncSession` cannot perform outside an
+    awaited ORM call, raising `MissingGreenlet`. `submit()` reads
+    `.id`/`.state` off the resolved recording immediately, and passes it
+    into `store()`, which reads `.id` again as its first line -- both would
+    hit that, verified against real PostgreSQL.
+
+    Copies only `.id` and `.state` -- the only two attributes anything in
+    this module (or `store()`) ever reads off a resolved `Recording` --
+    rather than every mapped column the way `speech.repository._snapshot`
+    copies a whole `SpeechTranscript`/`SpeechTranscriptCorrection` row (whose
+    callers do read the whole row back). Narrower is not just simpler: a
+    brand-new `Recording(id=..., state=...)` is transient, so nothing here
+    needs `__table__` introspection or `make_transient_to_detached` either --
+    a transient instance was never loaded from a session in the first place,
+    so it was never subject to expiry, and its attributes are plain,
+    already-set values from this constructor call. That also keeps this
+    working against `tests/speech/test_transcript_service.py`'s
+    `FakeSession`, whose `Recording` stand-in is a `SimpleNamespace` with no
+    `__table__` to introspect.
+    """
+    return Recording(id=row.id, state=row.state)
+
+
 def _correction_response(
     correction: SpeechTranscriptCorrection, *, replayed: bool
 ) -> TranscriptCorrectionResponse:
@@ -167,6 +199,10 @@ class TranscriptService:
         transcript = await self._repository.by_recording_track(
             owner_id=owner_id, recording_id=recording.id, track=track
         )
+        # Same reason as `_resolve_recording`: this plain read reopens a
+        # transaction on the request session, and `append_correction` below
+        # opens its own via `transaction_scope`. Close this one first.
+        await self._session.rollback()
         if transcript is None:
             raise TranscriptNotFound()
         appended = await self._repository.append_correction(
@@ -203,6 +239,26 @@ class TranscriptService:
         )
 
     async def _resolve_recording(self, *, owner_id: int, recording_id: UUID) -> Recording:
+        """Resolve the caller's recording, then close the read's autobegun transaction.
+
+        `AsyncSession.scalar` autobegins a transaction on the request session if
+        none is open. Every route that reaches here (`submit`, `list_for_recording`,
+        `add_correction`) may go on to call a repository write, and both writes open
+        their own unit of work via `transaction_scope`, whose `AsyncSession.begin()`
+        raises `InvalidRequestError` -- a `SQLAlchemyError` -- if a transaction is
+        already begun. Rolling back here, unconditionally after the read, closes it
+        before that can happen, matching the same convention at
+        `auth/repository.py:475` (`find_active_native_session`). This has to live
+        here and not in a repository read method: `SqlAlchemyTranscriptRepository.store`
+        calls `by_recording_track` from *inside* the transaction it already holds, and
+        a rollback there would tear that down mid-write.
+
+        Unlike `find_active_native_session` -- which selects individual columns
+        into a plain `Row`, immune to ORM expiration -- this selects the full
+        `Recording` entity, which rollback *would* expire. See
+        `_detached_recording`, called below before the rollback, for why that
+        needs handling and can't just be copied verbatim from the auth convention.
+        """
         try:
             recording = await self._session.scalar(
                 select(Recording).where(
@@ -210,6 +266,9 @@ class TranscriptService:
                     Recording.client_recording_id == recording_id,
                 )
             )
+            if recording is not None:
+                recording = _detached_recording(recording)
+            await self._session.rollback()
         except SQLAlchemyError:
             raise TranscriptUnavailable() from None
         if recording is None:
