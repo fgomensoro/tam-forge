@@ -15,6 +15,11 @@ real thing, and its commitment carries the whole trail from the questions asked 
 discovery to the decisions defended at the end. Follow-ups after the defense are capped
 at two, since an unbounded question queue turns the defense into a second solve.
 
+The Northstar history is what carries across cases. It is append-only by construction:
+a fact is never edited, and changing one means adding an entry that names the entry it
+supersedes. Only a scenario may do that. An agent contributes to the record and never
+rewrites it, which is the whole reason the history is worth reading months later.
+
 The technical-reading workspace answers a different question. Its five timeboxes exist
 so that recall is recall: the source is visible while previewing and reading and gone
 from the moment recall starts, and no clock lets the tutor in early. The note the
@@ -142,6 +147,17 @@ CASE_SESSION_SECONDS = sum(CASE_PHASE_SECONDS.values())
 
 # A defense answers questions; it does not become a second solve. Two is the cap.
 MAX_ROUTINE_FOLLOW_UPS = 2
+
+
+NorthstarEntryKind = Literal[
+    "fact", "assumption", "decision", "risk", "unresolved_question"
+]
+NorthstarSource = Literal["scenario", "learner", "agent"]
+
+# Only a scenario changes the past, and only by naming what it replaces. An agent may
+# add to the record; letting it supersede would make the history a summary of whatever
+# the last model believed.
+SUPERSEDING_SOURCES: frozenset[str] = frozenset({"scenario"})
 
 
 class WorkspaceRuleError(ValueError):
@@ -357,6 +373,77 @@ class CaseCommitment(_StrictModel):
         return self
 
 
+class NorthstarEntry(_StrictModel):
+    """One immutable line of the record, and what it replaces if it replaces anything."""
+
+    entry_id: Annotated[int, Field(strict=True, gt=0)]
+    kind: NorthstarEntryKind
+    statement: LearnerText
+    activity_id: Annotated[int, Field(strict=True, gt=0)]
+    source: NorthstarSource
+    supersedes_entry_id: Annotated[int, Field(strict=True, gt=0)] | None = None
+
+    @model_validator(mode="after")
+    def only_a_scenario_rewrites(self) -> Self:
+        if self.supersedes_entry_id is None:
+            return self
+        if self.supersedes_entry_id >= self.entry_id:
+            raise ValueError("an entry can only supersede one recorded before it")
+        if self.source not in SUPERSEDING_SOURCES:
+            raise ValueError("only a scenario event may supersede a recorded entry")
+        return self
+
+
+class NorthstarHistory(_StrictModel):
+    """Every entry ever recorded, in the order it was recorded."""
+
+    entries: Annotated[tuple[NorthstarEntry, ...], Field(max_length=4_096)] = ()
+
+    @model_validator(mode="after")
+    def append_only(self) -> Self:
+        seen: dict[int, NorthstarEntry] = {}
+        superseded: set[int] = set()
+        for entry in self.entries:
+            if seen and entry.entry_id <= max(seen):
+                raise ValueError("entries must be recorded in increasing order")
+            target = entry.supersedes_entry_id
+            if target is not None:
+                if target not in seen:
+                    raise ValueError("an entry can only supersede one already recorded")
+                if seen[target].kind != entry.kind:
+                    raise ValueError("an entry can only supersede one of its own kind")
+                if target in superseded:
+                    # Two replacements for one line means the record forks, and a
+                    # forked record cannot answer what is true now.
+                    raise ValueError("an entry has already been superseded")
+                superseded.add(target)
+            seen[entry.entry_id] = entry
+        return self
+
+    def superseded_ids(self) -> frozenset[int]:
+        return frozenset(
+            entry.supersedes_entry_id
+            for entry in self.entries
+            if entry.supersedes_entry_id is not None
+        )
+
+    def current(self, kind: NorthstarEntryKind | None = None) -> tuple[NorthstarEntry, ...]:
+        """What still stands: every entry nothing later replaced."""
+        replaced = self.superseded_ids()
+        return tuple(
+            entry
+            for entry in self.entries
+            if entry.entry_id not in replaced and (kind is None or entry.kind == kind)
+        )
+
+    def append(self, entry: NorthstarEntry) -> NorthstarHistory:
+        """Return the history with one more entry, or refuse to record it."""
+        try:
+            return NorthstarHistory(entries=(*self.entries, entry))
+        except ValueError as error:
+            raise WorkspaceRuleError(str(error)) from None
+
+
 __all__ = [
     "CASE_PHASE_ORDER",
     "CASE_PHASE_SECONDS",
@@ -381,7 +468,12 @@ __all__ = [
     "CaseFollowUp",
     "CasePhase",
     "MistakeCategory",
+    "NorthstarEntry",
+    "NorthstarEntryKind",
+    "NorthstarHistory",
+    "NorthstarSource",
     "ReadingPhase",
+    "SUPERSEDING_SOURCES",
     "ReadingRecallNote",
     "SOURCE_VISIBLE_PHASES",
     "SqlAttemptCommitment",

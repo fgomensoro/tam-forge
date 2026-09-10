@@ -60,3 +60,57 @@ def test_a_case_commitment_is_frozen_once_written() -> None:
     )
     with pytest.raises(ValidationError):
         committed.working_notes = "rewritten after the fact"
+
+
+def test_the_northstar_record_survives_a_scenario_that_contradicts_it() -> None:
+    """A later scenario changes what is true without erasing what was recorded.
+
+    This is the property months of accumulated history rests on. The old fact stays
+    readable and the new one names it, so an answer given under the old fact can still
+    be judged against what was known at the time.
+    """
+    from tamforge_protocol.workspaces import NorthstarEntry, NorthstarHistory
+
+    def line(**overrides):
+        return NorthstarEntry.model_validate(
+            {
+                "entry_id": 1,
+                "kind": "fact",
+                "statement": "The renewal lands in March.",
+                "activity_id": 1,
+                "source": "scenario",
+                **overrides,
+            }
+        )
+
+    record = NorthstarHistory().append(line())
+    record = record.append(
+        line(
+            entry_id=2,
+            statement="The renewal moved to May.",
+            activity_id=7,
+            supersedes_entry_id=1,
+        )
+    )
+
+    assert [item.entry_id for item in record.current("fact")] == [2]
+    assert [item.entry_id for item in record.entries] == [1, 2]
+    assert record.entries[0].statement == "The renewal lands in March."
+
+
+def test_an_agent_cannot_quietly_correct_the_history_it_reads() -> None:
+    from pydantic import ValidationError as PydanticValidationError
+    from tamforge_protocol.workspaces import SUPERSEDING_SOURCES, NorthstarEntry
+
+    assert SUPERSEDING_SOURCES == frozenset({"scenario"})
+    with pytest.raises(PydanticValidationError):
+        NorthstarEntry.model_validate(
+            {
+                "entry_id": 2,
+                "kind": "decision",
+                "statement": "Actually we decided the opposite.",
+                "activity_id": 4,
+                "source": "agent",
+                "supersedes_entry_id": 1,
+            }
+        )

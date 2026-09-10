@@ -22,6 +22,8 @@ from tamforge_protocol.workspaces import (
     SESSION_SECONDS,
     SOLUTION_HINT_LEVEL,
     CaseCommitment,
+    NorthstarEntry,
+    NorthstarHistory,
     ReadingRecallNote,
     SqlAttemptCommitment,
     WorkspaceRuleError,
@@ -469,3 +471,107 @@ def test_a_case_cannot_outlast_its_hour() -> None:
     assert case(elapsed_seconds=CASE_SESSION_SECONDS)
     with pytest.raises(ValidationError):
         case(elapsed_seconds=CASE_SESSION_SECONDS + 1)
+
+
+# Northstar history: append-only, and only a scenario may replace what it names.
+
+
+def entry(**overrides: object) -> dict:
+    data: dict[str, object] = {
+        "entry_id": 1,
+        "kind": "fact",
+        "statement": "The renewal lands in March.",
+        "activity_id": 1,
+        "source": "scenario",
+    }
+    data.update(overrides)
+    return data
+
+
+def history(*entries: dict) -> NorthstarHistory:
+    return NorthstarHistory.model_validate({"entries": entries or (entry(),)})
+
+
+def test_an_entry_is_recorded_with_where_it_came_from() -> None:
+    recorded = history().entries[0]
+
+    assert recorded.kind == "fact"
+    assert recorded.source == "scenario"
+    assert recorded.activity_id == 1
+    assert recorded.supersedes_entry_id is None
+
+
+def test_every_kind_of_line_accumulates() -> None:
+    kinds = ("fact", "assumption", "decision", "risk", "unresolved_question")
+    built = history(
+        *(entry(entry_id=index + 1, kind=kind) for index, kind in enumerate(kinds))
+    )
+
+    assert [item.kind for item in built.current()] == list(kinds)
+
+
+def test_a_recorded_entry_cannot_be_edited() -> None:
+    recorded = history().entries[0]
+
+    with pytest.raises(ValidationError):
+        recorded.statement = "something else entirely"
+
+
+def test_a_change_replaces_by_naming_what_it_replaces() -> None:
+    built = history(
+        entry(),
+        entry(entry_id=2, statement="The renewal moved to May.", supersedes_entry_id=1),
+    )
+
+    assert [item.entry_id for item in built.current("fact")] == [2]
+    assert len(built.entries) == 2
+
+
+def test_an_agent_may_add_to_the_record_but_never_rewrite_it() -> None:
+    assert history(entry(source="agent"))
+
+    with pytest.raises(ValidationError):
+        history(entry(), entry(entry_id=2, source="agent", supersedes_entry_id=1))
+    with pytest.raises(ValidationError):
+        history(entry(), entry(entry_id=2, source="learner", supersedes_entry_id=1))
+
+
+def test_a_replacement_must_name_an_entry_already_recorded() -> None:
+    with pytest.raises(ValidationError):
+        history(entry(entry_id=2, supersedes_entry_id=9))
+    with pytest.raises(ValidationError):
+        history(entry(entry_id=1, supersedes_entry_id=1))
+
+
+def test_a_replacement_stays_within_its_own_kind() -> None:
+    with pytest.raises(ValidationError):
+        history(entry(), entry(entry_id=2, kind="decision", supersedes_entry_id=1))
+
+
+def test_one_line_cannot_be_replaced_twice() -> None:
+    with pytest.raises(ValidationError):
+        history(
+            entry(),
+            entry(entry_id=2, supersedes_entry_id=1),
+            entry(entry_id=3, supersedes_entry_id=1),
+        )
+
+
+def test_entries_are_recorded_in_order() -> None:
+    with pytest.raises(ValidationError):
+        history(entry(entry_id=5), entry(entry_id=2))
+
+
+def test_appending_returns_a_new_history_and_leaves_the_old_one_alone() -> None:
+    original = history()
+    extended = original.append(
+        NorthstarEntry.model_validate(entry(entry_id=2, kind="risk", statement="Budget froze."))
+    )
+
+    assert len(original.entries) == 1
+    assert len(extended.entries) == 2
+
+
+def test_a_refused_append_raises_a_workspace_rule_rather_than_a_schema_error() -> None:
+    with pytest.raises(WorkspaceRuleError):
+        history(entry(entry_id=5)).append(NorthstarEntry.model_validate(entry(entry_id=2)))
