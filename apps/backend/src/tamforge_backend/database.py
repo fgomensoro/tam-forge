@@ -133,8 +133,17 @@ def resolve_migration_url(
         ) from None
 
 
+# IANA dynamic/private ports: excludes 5432 and every registered service port.
+PRIVATE_PORT_MIN = 49152
+PRIVATE_PORT_MAX = 65535
+
+
 def validate_test_database_url(raw_url: str) -> str:
-    """Fail closed before a destructive migration test targets the wrong database."""
+    """Fail closed before a destructive migration test targets the wrong database.
+
+    The port is only constrained to the IANA dynamic/private range so that each
+    checkout can publish its own throwaway container instead of sharing one.
+    """
     try:
         url = make_url(raw_url)
         port = url.port
@@ -148,7 +157,8 @@ def validate_test_database_url(raw_url: str) -> str:
         or not url.username
         or not url.password
         or url.database != "tamforge_test"
-        or port != 54329
+        or port is None
+        or not PRIVATE_PORT_MIN <= port <= PRIVATE_PORT_MAX
         or bool(url.query)
     ):
         raise ValueError("TEST_DATABASE_URL must target local PostgreSQL tamforge_test")

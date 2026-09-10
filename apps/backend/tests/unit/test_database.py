@@ -233,9 +233,17 @@ def test_migration_url_translation_rejects_unsupported_or_malformed_urls(url: st
         database.database_url_to_sync(url)
 
 
-def test_test_database_url_validation_accepts_only_the_named_test_database() -> None:
-    url = "postgresql+asyncpg://tamforge:secret@127.0.0.1:54329/tamforge_test"
-
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgresql+asyncpg://tamforge:secret@127.0.0.1:54329/tamforge_test",
+        "postgresql+asyncpg://tamforge:secret@127.0.0.1:49152/tamforge_test",
+        "postgresql+asyncpg://tamforge:secret@127.0.0.1:65535/tamforge_test",
+    ],
+)
+def test_test_database_url_validation_accepts_any_private_port_test_database(
+    url: str,
+) -> None:
     assert database.validate_test_database_url(url) == url
 
 
@@ -252,8 +260,12 @@ def test_test_database_url_validation_accepts_only_the_named_test_database() -> 
         "postgresql+asyncpg://tamforge:secret@host1,host2:54329/tamforge_test",
         "postgresql+asyncpg://tamforge:secret@127.0.0.1/tamforge_test",
         "postgresql+asyncpg://tamforge:secret@127.0.0.1:5432/tamforge_test",
+        "postgresql+asyncpg://tamforge:secret@127.0.0.1:8080/tamforge_test",
+        "postgresql+asyncpg://tamforge:secret@127.0.0.1:49151/tamforge_test",
         "postgresql+asyncpg://tamforge:secret@127.0.0.1:0/tamforge_test",
         "postgresql+asyncpg://tamforge:secret@127.0.0.1:65536/tamforge_test",
+        "postgresql+asyncpg://tamforge:secret@prod.invalid:54330/tamforge_test",
+        "postgresql+asyncpg://tamforge:secret@127.0.0.1:54330/tamforge",
         (
             "postgresql+asyncpg://tamforge:secret@127.0.0.1:54329/tamforge_test"
             "?sslmode=require"
