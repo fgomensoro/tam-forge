@@ -20,6 +20,7 @@ markers = [
 pythonpath = ["."]
 testpaths = [
   "apps/backend/tests",
+  "infra/tests",
   "packages/protocol/tests",
   "scripts/ci/tests",
   "scripts/dev/tests",
