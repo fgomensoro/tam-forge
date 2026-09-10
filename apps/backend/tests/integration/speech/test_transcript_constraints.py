@@ -45,6 +45,8 @@ from hashlib import sha256
 from uuid import uuid4
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 from tamforge_backend.agents.hashing import canonical_bytes
@@ -189,13 +191,38 @@ def _insert_valid_correction(connection: Connection, *, owner_id: int, transcrip
     ).scalar_one()
 
 
+def _migration(url):
+    config = Config("apps/backend/alembic.ini")
+    config.attributes["database_url"] = url
+    return config
+
+
+def _reset(url):
+    engine = create_engine(database_url_to_sync(url))
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("DROP SCHEMA public CASCADE"))
+            connection.execute(text("CREATE SCHEMA public"))
+    finally:
+        engine.dispose()
+    command.upgrade(_migration(url), "head")
+
+
 @pytest.fixture(scope="module")
 def engine(test_database_url: str) -> Iterator[Engine]:
+    # This file cannot assume another test left the schema migrated to head: ordering
+    # between integration test files is not guaranteed, and several of them tear down
+    # or rebuild the `public` schema themselves (see e.g.
+    # apps/backend/tests/integration/agents/test_agent_runtime_migration.py, whose
+    # `_reset` this copies). So this module takes responsibility for its own schema,
+    # the same way every other integration test file here does.
+    _reset(test_database_url)
     engine = create_engine(database_url_to_sync(test_database_url))
     try:
         yield engine
     finally:
         engine.dispose()
+        _reset(test_database_url)
 
 
 @pytest.fixture
