@@ -2315,6 +2315,147 @@ final class RecordingFeatureTests: XCTestCase {
         ))
     }
 
+    // Starting a second recording resets the on-screen transcript, but it must
+    // not abandon the first recording's transcription: that transcript is the
+    // only thing that can ever set transcript_lineage_accepted, and without it
+    // the first recording's encrypted spool is retained forever, which is the
+    // exact failure issue #44 exists to close. The submission here races the
+    // still-running second take, so the server rejects it for having no audio
+    // yet; the cached payload has to carry it to a later upload pass.
+    func testStartingASecondRecordingStillReleasesTheFirstRecordingsSpool() async throws {
+        let root = try temporaryDirectory()
+        let keyStore = InMemoryRecordingKeyStore()
+        let factory = EncryptedRecordingSpoolFactory(
+            rootURL: root, keyStore: keyStore, reservationBytes: 0
+        )
+        let server = FakeRecordingServer(requireAudioBeforeTranscript: true)
+        let cache = RecordingTranscriptCache()
+        let source = FakeRecordingCaptureSource()
+        let gate = TranscriptionGate()
+        let transcriber = FakeSealTranscriber(text: "outlives the interruption", gate: gate)
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: factory,
+                server: server,
+                transcriptCache: cache,
+                audioReader: factory,
+                transcriber: transcriber
+            )
+        }
+
+        await coordinator.start()
+        await source.emit(.chunk(.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 48
+        )))
+        await source.emit(.chunk(.fixture(
+            track: .systemAudio, presentationNanoseconds: 1_000_000_000, sampleCount: 48
+        )))
+        await coordinator.stop()
+
+        // Hold the first transcription inside transcribe() so the second
+        // recording starts while it is genuinely mid-flight.
+        await waitUntilTranscriberEnters(gate, atLeast: 1)
+        let interruptedID = await MainActor.run { coordinator.transcriptState.recordingID }
+        let firstID = try XCTUnwrap(interruptedID)
+
+        await coordinator.start()
+        let stateWhileRecordingAgain = await MainActor.run { coordinator.transcriptState }
+        XCTAssertEqual(stateWhileRecordingAgain, .idle)
+
+        await gate.open()
+        _ = await waitUntilSubmissionAttempt(server, atLeast: 1)
+
+        // The transcript belongs to a recording nobody is looking at any more,
+        // so it must reach the cache without ever reappearing on screen.
+        let cached = await cache.payload(for: firstID)
+        XCTAssertNotNil(cached)
+        XCTAssertEqual(cached?.recordingID, firstID.uuidString.lowercased())
+        let stateAfterTheLateTranscript = await MainActor.run { coordinator.transcriptState }
+        XCTAssertEqual(stateAfterTheLateTranscript, .idle)
+
+        await coordinator.stop()
+
+        let pipeline = RecordingUploadPipeline(
+            spoolFactory: factory, server: server, transcriptCache: cache
+        )
+        let firstPass = try await pipeline.upload(recordingID: firstID, progress: { _ in })
+        XCTAssertTrue(firstPass.audioCreatedOnServer)
+        XCTAssertFalse(firstPass.transcriptLineageAccepted)
+
+        let secondPass = try await pipeline.upload(recordingID: firstID, progress: { _ in })
+        XCTAssertTrue(secondPass.transcriptLineageAccepted)
+        XCTAssertTrue(secondPass.mayDeleteLocalSpool)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: root.appendingPathComponent(firstID.uuidString).path
+        ))
+    }
+
+    // The mirror image of the test above. A transcription now survives losing
+    // the on-screen slot, so the one case that must still stop it dead needs
+    // its own proof: discarding crypto-shreds the audio, and a transcript of
+    // shredded audio must never reach the server.
+    func testDiscardingARecordingMidTranscriptionNeverSubmitsItsTranscript() async throws {
+        let root = try temporaryDirectory()
+        let keyStore = InMemoryRecordingKeyStore()
+        let factory = EncryptedRecordingSpoolFactory(
+            rootURL: root, keyStore: keyStore, reservationBytes: 0
+        )
+        let server = FakeRecordingServer()
+        let cache = RecordingTranscriptCache()
+        let source = FakeRecordingCaptureSource()
+        let gate = TranscriptionGate()
+        let transcriber = FakeSealTranscriber(text: "never leaves this Mac", gate: gate)
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: factory,
+                server: server,
+                transcriptCache: cache,
+                audioReader: factory,
+                transcriber: transcriber
+            )
+        }
+
+        await coordinator.start()
+        await source.emit(.chunk(.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 48
+        )))
+        await source.emit(.chunk(.fixture(
+            track: .systemAudio, presentationNanoseconds: 1_000_000_000, sampleCount: 48
+        )))
+        await coordinator.stop()
+
+        await waitUntilTranscriberEnters(gate, atLeast: 1)
+        let runningID = await MainActor.run { coordinator.transcriptState.recordingID }
+        let recordingID = try XCTUnwrap(runningID)
+
+        await coordinator.discardPending(recordingID: recordingID, confirmed: true)
+        await gate.open()
+
+        // The transcriber hands back a result, so the discarded transcription
+        // reaches the exact point where an uncancelled one would submit.
+        for _ in 0..<500 {
+            if await transcriber.returnedResults >= 1 { break }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        let returned = await transcriber.returnedResults
+        XCTAssertEqual(returned, 1)
+
+        // A submission would follow within one main-actor hop, so a short
+        // watch is enough to catch it.
+        var attemptsSeen = 0
+        for _ in 0..<25 {
+            attemptsSeen = max(attemptsSeen, await server.submissionAttempts)
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(attemptsSeen, 0)
+        let cached = await cache.payload(for: recordingID)
+        XCTAssertNil(cached)
+    }
+
     private func waitUntilCoordinatorSettles(
         _ coordinator: RecordingCoordinator,
         file: StaticString = #filePath,
@@ -2378,6 +2519,19 @@ final class RecordingFeatureTests: XCTestCase {
         }
         XCTFail("submission was never attempted", file: file, line: line)
         return await server.submissionAttempts
+    }
+
+    private func waitUntilTranscriberEnters(
+        _ gate: TranscriptionGate,
+        atLeast minimum: Int,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        for _ in 0..<500 {
+            if await gate.entered >= minimum { return }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("transcription never started", file: file, line: line)
     }
 
     private func waitUntilUploadState(
@@ -2770,28 +2924,57 @@ private actor FakeRecordingAudioReader: RecordingAudioReading {
     }
 }
 
+// Holds a fake transcription inside transcribe() so a test can act while one
+// is genuinely mid-flight. Deliberately blind to cancellation, like the C
+// whisper call it stands in for: cancelling the surrounding task neither
+// shortens the hold nor stops a result from coming back.
+private actor TranscriptionGate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private(set) var entered = 0
+
+    func holdUntilOpen() async {
+        entered += 1
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        let pending = waiters
+        waiters = []
+        for waiter in pending { waiter.resume() }
+    }
+}
+
 private actor FakeSealTranscriber: SpeechTranscribing {
     enum Failure: Error { case transcriptionFailed }
 
     private let text: String
     private let words: [SpeechTranscribedWord]
     private let shouldFail: Bool
+    private let gate: TranscriptionGate?
     private(set) var receivedRequests: [SpeechTranscriptionRequest] = []
+    private(set) var returnedResults = 0
 
     init(
         text: String = "fake transcript",
         words: [SpeechTranscribedWord] = [],
-        shouldFail: Bool = false
+        shouldFail: Bool = false,
+        gate: TranscriptionGate? = nil
     ) {
         self.text = text
         self.words = words
         self.shouldFail = shouldFail
+        self.gate = gate
     }
 
     func transcribe(_ request: SpeechTranscriptionRequest) async throws -> SpeechTranscriptionResult {
         receivedRequests.append(request)
+        if let gate { await gate.holdUntilOpen() }
         if shouldFail { throw Failure.transcriptionFailed }
         try request.validate()
+        returnedResults += 1
         return SpeechTranscriptionResult(
             segments: [.init(text: text, startMilliseconds: 0, endMilliseconds: 0, words: words)],
             identity: .init(
