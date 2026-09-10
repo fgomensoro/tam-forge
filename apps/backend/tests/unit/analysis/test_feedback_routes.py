@@ -709,3 +709,73 @@ def test_closing_a_correction_never_schedules_another_attempt():
 
     with pytest.raises(ValueError):
         next_attempt_label(["attempt_a", "attempt_b"])
+
+
+# Issue #60's acceptance criterion: an unresolved correction returns later in a
+# materially different scenario and is not marked demonstrated from repetition of the
+# original prompt.
+
+
+def queued(**overrides):
+    from tamforge_protocol.agents import QueuedRetrieval
+
+    data = {
+        "target_skill": "trade_offs",
+        "source_scenario_key": "renewal_at_risk",
+        "source_core_prompt_sha256": "a" * 64,
+        "queued_from_attempt_b_id": 11,
+    }
+    data.update(overrides)
+    return QueuedRetrieval.model_validate(data)
+
+
+def later(**overrides):
+    from tamforge_protocol.agents import TransferAttempt
+
+    data = {
+        "attempt_id": 27,
+        "attempt_label": "attempt_a",
+        "scenario_key": "migration_slipped",
+        "core_prompt_sha256": "c" * 64,
+    }
+    data.update(overrides)
+    return TransferAttempt.model_validate(data)
+
+
+def test_an_unresolved_correction_is_queued_for_a_different_scenario():
+    from tamforge_protocol.agents import close_correction, require_material_difference
+
+    assert close_correction(comparison(outcome="not_improved")) == "retrieval_queued"
+    assert require_material_difference(queued(), later()) is None
+
+
+def test_repeating_the_original_prompt_cannot_demonstrate_the_correction():
+    import pytest
+    from tamforge_protocol.agents import TransferError, require_material_difference
+
+    with pytest.raises(TransferError, match="prompt"):
+        require_material_difference(queued(), later(core_prompt_sha256="a" * 64))
+
+
+def test_repeating_the_original_scenario_cannot_demonstrate_it_either():
+    import pytest
+    from tamforge_protocol.agents import TransferError, require_material_difference
+
+    with pytest.raises(TransferError, match="scenario"):
+        require_material_difference(queued(), later(scenario_key="renewal_at_risk"))
+
+
+def test_the_attempt_that_queued_the_correction_cannot_retire_it():
+    import pytest
+    from tamforge_protocol.agents import TransferError, require_material_difference
+
+    with pytest.raises(TransferError, match="new attempt"):
+        require_material_difference(queued(), later(attempt_id=11))
+
+
+def test_transfer_needs_a_fresh_attempt_a_rather_than_another_redo():
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        later(attempt_label="attempt_b")
