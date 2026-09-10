@@ -473,11 +473,16 @@ final class RecordingCoordinator: ObservableObject {
         // pipeline's own retry pass is resubmitting it; recomputing would burn
         // a full transcription for a payload already in hand.
         guard await transcriptCache.payload(for: recordingID) == nil else { return }
-        // .idle is the only state holding no transcript worth keeping: a run
-        // in flight owns transcriptionTask, and a settled .ready or .failed
-        // belongs to a recording whose result this pass must not overwrite.
-        // Anything else recovers on a later pass. Checked after the cache read
-        // so no suspension can invalidate it.
+        // A transcription outlives the on-screen slot it started in, so .idle
+        // no longer means nothing is running: this recording's own run can be
+        // in flight with the panel already cleared by a later recording. This
+        // is what keeps a resumed pass from starting a second, duplicate run
+        // over the same audio. Checked after the cache read so no suspension
+        // can invalidate it.
+        guard transcriptionTasks[recordingID] == nil else { return }
+        // A settled .ready or .failed belongs to a recording whose result this
+        // pass must not overwrite, and beginTranscription claims the slot
+        // unconditionally. Anything but .idle recovers on a later pass.
         guard transcriptState == .idle else { return }
         beginTranscription(recordingID: recordingID)
     }

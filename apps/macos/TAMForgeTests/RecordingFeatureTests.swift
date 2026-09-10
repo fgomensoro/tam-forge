@@ -2456,6 +2456,84 @@ final class RecordingFeatureTests: XCTestCase {
         XCTAssertNil(cached)
     }
 
+    // A resumed pass recomputes the transcript of a recording the server never
+    // accepted. Now that a transcription survives losing the on-screen slot,
+    // an idle panel no longer means nothing is running, so the resume guard
+    // has to key off the run itself. Otherwise a recording whose panel was
+    // dismissed mid-transcription gets a second, duplicate run over the same
+    // audio, and the first run's task handle is lost with it.
+    func testAResumedPassNeverStartsASecondRunOverTheSameAudio() async throws {
+        let root = try temporaryDirectory()
+        let keyStore = InMemoryRecordingKeyStore()
+        let factory = EncryptedRecordingSpoolFactory(
+            rootURL: root, keyStore: keyStore, reservationBytes: 0
+        )
+        let server = FakeRecordingServer()
+        let cache = RecordingTranscriptCache()
+        let source = FakeRecordingCaptureSource()
+        let gate = TranscriptionGate()
+        let transcriber = FakeSealTranscriber(text: "computed exactly once", gate: gate)
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: factory,
+                uploader: RecordingUploadPipeline(
+                    spoolFactory: factory, server: server, transcriptCache: cache
+                ),
+                server: server,
+                transcriptCache: cache,
+                audioReader: factory,
+                transcriber: transcriber
+            )
+        }
+
+        await coordinator.start()
+        await source.emit(.chunk(.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 48
+        )))
+        await source.emit(.chunk(.fixture(
+            track: .systemAudio, presentationNanoseconds: 1_000_000_000, sampleCount: 48
+        )))
+        await coordinator.stop()
+
+        await waitUntilTranscriberEnters(gate, atLeast: 1)
+        let runningID = await MainActor.run { coordinator.transcriptState.recordingID }
+        let recordingID = try XCTUnwrap(runningID)
+        _ = await waitUntilUploadState(
+            coordinator, recordingID: recordingID, equals: .waitingForTranscript
+        )
+
+        // Dismissing the sealed banner clears the panel while the run behind
+        // it keeps going, which is exactly the state the resume guard has to
+        // recognise.
+        await MainActor.run { coordinator.resetSealedState() }
+        let clearedState = await MainActor.run { coordinator.transcriptState }
+        XCTAssertEqual(clearedState, .idle)
+
+        await MainActor.run { coordinator.retryUpload(recordingID: recordingID) }
+        _ = await waitUntilUploadState(
+            coordinator, recordingID: recordingID, equals: .waitingForTranscript
+        )
+
+        // A duplicate run reaches the transcriber within a few hops, well
+        // inside this watch, because the first run is parked at the gate and
+        // leaves the fake actor free.
+        var runsSeen = 0
+        for _ in 0..<25 {
+            runsSeen = max(runsSeen, await transcriber.receivedRequests.count)
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(runsSeen, 1)
+
+        // The single run still finishes and submits, so the recording is not
+        // stranded by the guard that stopped the duplicate.
+        await gate.open()
+        _ = await waitUntilSubmissionCount(server, atLeast: 1)
+        let finalRuns = await transcriber.receivedRequests
+        XCTAssertEqual(finalRuns.count, 1)
+    }
+
     private func waitUntilCoordinatorSettles(
         _ coordinator: RecordingCoordinator,
         file: StaticString = #filePath,
