@@ -14,6 +14,13 @@ from tamforge_protocol.assessments import (
     SaturdayAssessment,
     demonstrated_from,
 )
+from tamforge_protocol.cadence import (
+    MAX_NEXT_CORRECTIONS,
+    CadenceError,
+    DailyClose,
+    absorb,
+    replacement_minutes,
+)
 from tamforge_protocol.reports import (
     FORBIDDEN_PROGRESS_SIGNALS,
     MAX_OPEN_CORRECTIONS,
@@ -275,3 +282,125 @@ def test_an_evidence_id_counts_once_inside_one_assessment() -> None:
 def test_collecting_without_an_owner_is_refused() -> None:
     with pytest.raises(AssessmentError, match="owner id"):
         demonstrated_from([assessment()], competency="trade_offs", owner_id=0)
+
+
+# Issue #98: the daily close carries at most two corrections, classifies unfinished work,
+# and replaces or drops missed work rather than cramming or extending a later day.
+
+
+def unfinished(**overrides: object) -> dict:
+    data: dict[str, object] = {
+        "activity_id": 7,
+        "minutes_remaining": 20,
+        "reason": "ran_out_of_time",
+        "disposition": "carry_forward",
+    }
+    data.update(overrides)
+    return data
+
+
+def close(**overrides: object) -> DailyClose:
+    data: dict[str, object] = {
+        "owner_id": 1,
+        "closed_on": date(2026, 9, 10),
+        "completed_activity_ids": (4, 5),
+        "unfinished": (unfinished(),),
+        "next_corrections": (
+            {"target_skill": "trade_offs", "instruction": "State the cost in one sentence."},
+        ),
+    }
+    data.update(overrides)
+    return DailyClose.model_validate(data)
+
+
+def test_a_close_hands_forward_at_most_two_corrections() -> None:
+    assert MAX_NEXT_CORRECTIONS == 2
+    two = tuple(
+        {"target_skill": f"skill_{index}", "instruction": "Do the thing."} for index in range(2)
+    )
+    assert len(close(next_corrections=two).next_corrections) == 2
+
+    three = tuple(
+        {"target_skill": f"skill_{index}", "instruction": "Do the thing."} for index in range(3)
+    )
+    with pytest.raises(ValidationError):
+        close(next_corrections=three)
+
+
+def test_two_corrections_on_one_skill_is_one_correction() -> None:
+    doubled = (
+        {"target_skill": "trade_offs", "instruction": "State the cost."},
+        {"target_skill": "trade_offs", "instruction": "Name the risk."},
+    )
+    with pytest.raises(ValidationError, match="one correction"):
+        close(next_corrections=doubled)
+
+
+def test_unfinished_work_is_classified_rather_than_left_ambiguous() -> None:
+    from typing import get_args
+
+    from tamforge_protocol.cadence import UnfinishedDisposition, UnfinishedReason
+
+    assert set(get_args(UnfinishedDisposition)) == {"carry_forward", "replaced", "dropped"}
+    assert "other" not in get_args(UnfinishedReason)
+    assert close().unfinished[0].reason == "ran_out_of_time"
+
+
+def test_an_activity_is_finished_or_unfinished_but_not_both() -> None:
+    with pytest.raises(ValidationError, match="once"):
+        close(completed_activity_ids=(4, 7), unfinished=(unfinished(activity_id=7),))
+
+
+def test_work_carries_forward_only_into_room_a_day_already_has() -> None:
+    assert absorb(minutes_remaining=20, target_budget_minutes=90, target_planned_minutes=60) == (
+        "carry_forward"
+    )
+    assert absorb(minutes_remaining=30, target_budget_minutes=90, target_planned_minutes=60) == (
+        "carry_forward"
+    )
+
+
+def test_work_that_does_not_fit_is_replaced_rather_than_crammed() -> None:
+    # Nothing here can make a day longer. The alternative is a plan that always fits on
+    # paper and never fits in an evening.
+    assert absorb(minutes_remaining=45, target_budget_minutes=90, target_planned_minutes=60) == (
+        "replaced"
+    )
+    assert replacement_minutes(target_budget_minutes=90, target_planned_minutes=60) == 30
+
+
+def test_a_full_day_drops_the_work_instead_of_absorbing_it() -> None:
+    # Dropping is a real outcome. A day that absorbs everything that went wrong before
+    # it is a day nobody finishes either.
+    assert absorb(minutes_remaining=10, target_budget_minutes=90, target_planned_minutes=90) == (
+        "dropped"
+    )
+    assert absorb(minutes_remaining=10, target_budget_minutes=90, target_planned_minutes=120) == (
+        "dropped"
+    )
+    assert replacement_minutes(target_budget_minutes=90, target_planned_minutes=120) == 0
+
+
+def test_finished_work_is_not_unfinished_work() -> None:
+    with pytest.raises(CadenceError, match="time remaining"):
+        absorb(minutes_remaining=0, target_budget_minutes=90, target_planned_minutes=10)
+
+
+@pytest.mark.parametrize("budget,planned", [(-1, 10), (90, -1)])
+def test_a_negative_budget_or_plan_is_refused(budget: int, planned: int) -> None:
+    with pytest.raises(CadenceError, match="not negative"):
+        absorb(minutes_remaining=10, target_budget_minutes=budget, target_planned_minutes=planned)
+    with pytest.raises(CadenceError, match="not negative"):
+        replacement_minutes(target_budget_minutes=budget, target_planned_minutes=planned)
+
+
+def test_carried_forward_reads_back_only_what_carried() -> None:
+    mixed = close(
+        unfinished=(
+            unfinished(activity_id=7, disposition="carry_forward"),
+            unfinished(activity_id=8, disposition="dropped"),
+            unfinished(activity_id=9, disposition="replaced"),
+        )
+    )
+
+    assert [item.activity_id for item in mixed.carried_forward] == [7]
