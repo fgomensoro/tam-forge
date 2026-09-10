@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import os
 
 typealias RecordingBearerTokenProvider = @Sendable () async throws -> NativeAccessTokenLease
 typealias RecordingBearerRefresh =
@@ -15,6 +16,8 @@ protocol RecordingServerServicing: Sendable {
     func create(_ command: RecordingCreatePayload, idempotencyKey: String) async throws
     func upload(_ part: RecordingPreparedPart) async throws
     func seal(_ command: RecordingSealPayload, idempotencyKey: String) async throws
+        -> RecordingServerStatus
+    func submitTranscript(_ command: TranscriptSubmitPayload, idempotencyKey: String) async throws
         -> RecordingServerStatus
     func status(recordingID: UUID) async throws -> RecordingServerStatus
 }
@@ -107,6 +110,37 @@ struct LiveRecordingServerClient: RecordingServerServicing, @unchecked Sendable 
             throw RecordingUploadError.invalidResponse
         }
         return status
+    }
+
+    func submitTranscript(
+        _ command: TranscriptSubmitPayload,
+        idempotencyKey: String
+    ) async throws -> RecordingServerStatus {
+        let body = try generatedRequestBody(
+            command,
+            as: Components.Schemas.TranscriptSubmitCommand.self
+        )
+        let data = try await sendJSON(
+            method: "POST",
+            path: "/api/v1/recordings/\(command.recordingID)/transcripts",
+            body: body,
+            idempotencyKey: idempotencyKey,
+            expectedStatus: 201
+        )
+        _ = try decodeGenerated(Components.Schemas.TranscriptResponse.self, data: data)
+        let recordingID = try decode(TranscriptResponsePayload.self, data: data).recordingID
+        guard recordingID == command.recordingID, let id = UUID(uuidString: recordingID) else {
+            throw RecordingUploadError.invalidResponse
+        }
+        // TranscriptResponse is a transcript summary, not a recording status:
+        // it carries no release-gate fields. A 201 here only happens once the
+        // backend's transcript_lineage_requires_audio constraint has already
+        // passed, so both gates are true by construction.
+        return RecordingServerStatus(
+            recordingID: id,
+            audioCreatedOnServer: true,
+            transcriptLineageAccepted: true
+        )
     }
 
     func status(recordingID: UUID) async throws -> RecordingServerStatus {
@@ -270,18 +304,25 @@ struct LiveRecordingServerClient: RecordingServerServicing, @unchecked Sendable 
 }
 
 actor RecordingUploadPipeline: RecordingUploading {
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "TAMForge", category: "RecordingUpload"
+    )
+
     private let spoolFactory: EncryptedRecordingSpoolFactory
     private let server: any RecordingServerServicing
     private let partBuilder: RecordingUploadPartBuilder
+    private let transcriptCache: RecordingTranscriptCache
 
     init(
         spoolFactory: EncryptedRecordingSpoolFactory,
         server: any RecordingServerServicing,
-        partBuilder: RecordingUploadPartBuilder = .init()
+        partBuilder: RecordingUploadPartBuilder = .init(),
+        transcriptCache: RecordingTranscriptCache = .init()
     ) {
         self.spoolFactory = spoolFactory
         self.server = server
         self.partBuilder = partBuilder
+        self.transcriptCache = transcriptCache
     }
 
     func upload(
@@ -302,14 +343,7 @@ actor RecordingUploadPipeline: RecordingUploading {
         else { throw RecordingUploadError.unsealedSpool }
 
         if metadata.releaseGates.audioCreatedOnServer {
-            let status = try await server.status(recordingID: recordingID)
-            let gates = RecordingReleaseGates(
-                audioCreatedOnServer: status.audioCreatedOnServer,
-                transcriptLineageAccepted: status.transcriptLineageAccepted
-            )
-            try await spoolFactory.markReleaseGates(recordingID: recordingID, gates: gates)
-            _ = try await spoolFactory.releaseIfEligible(recordingID: recordingID)
-            return gates
+            return try await recheckStatusRetryingTranscriptIfNeeded(recordingID: recordingID)
         }
 
         // Opening the reader verifies the complete sealed spool (authenticated
@@ -425,7 +459,68 @@ actor RecordingUploadPipeline: RecordingUploading {
         )
         guard gates.audioCreatedOnServer else { throw RecordingUploadError.invalidResponse }
         try await spoolFactory.markReleaseGates(recordingID: recordingID, gates: gates)
-        _ = try await spoolFactory.releaseIfEligible(recordingID: recordingID)
+        if try await spoolFactory.releaseIfEligible(recordingID: recordingID) {
+            await transcriptCache.remove(recordingID: recordingID)
+        }
+        return gates
+    }
+
+    // The status-recheck pass for a recording whose audio the server
+    // already has. Previously this only re-read status; now, if the
+    // lineage flag is still false and a locally computed transcript is
+    // waiting in the cache, it retries the submission before recomputing
+    // gates. This is what makes a submission that arrived before this same
+    // recording's create/seal completed (rejected with a 409 by the
+    // backend's transcript_lineage_requires_audio constraint), or one that
+    // failed for a transient reason, self-heal on a later pass instead of
+    // being abandoned. Idempotent by the stable
+    // "recording.transcript.<id>.<track>" key: retrying an
+    // already-accepted submission is a harmless replay, and retrying a
+    // still-rejected one just leaves the gates unchanged for the pass
+    // after this one. A transiently-failing submission is swallowed here
+    // (logged, never thrown) so it never turns an otherwise-normal
+    // "waiting for transcript" pass into an error state -- but a
+    // permanently-rejected one (`isPermanentTranscriptRejection`) is not
+    // transient, and both it and cancellation do propagate, matching every
+    // other cancellable operation in this actor.
+    private func recheckStatusRetryingTranscriptIfNeeded(
+        recordingID: UUID
+    ) async throws -> RecordingReleaseGates {
+        var status = try await server.status(recordingID: recordingID)
+        if !status.transcriptLineageAccepted,
+            let payload = await transcriptCache.payload(for: recordingID)
+        {
+            do {
+                status = try await server.submitTranscript(
+                    payload, idempotencyKey: payload.idempotencyKey
+                )
+            } catch let error as RecordingUploadError where error.isPermanentTranscriptRejection {
+                // Unlike every other failure here, this one will never
+                // resolve itself on a later pass: the body itself is what
+                // the server rejected. Drop it from the cache so it stops
+                // being resubmitted, and propagate instead of swallowing so
+                // the coordinator's existing `.server` handling surfaces
+                // `.needsAttention` (Important 3) rather than this method
+                // quietly reporting the same incomplete gates forever.
+                await transcriptCache.remove(recordingID: recordingID)
+                throw error
+            } catch {
+                guard !(error is CancellationError) else { throw error }
+                let recordingIDText = recordingID.uuidString
+                let failureText = RecordingUploadError.safeLogDescription(for: error)
+                Self.logger.error(
+                    "Transcript resubmission failed for recording \(recordingIDText, privacy: .public): \(failureText, privacy: .public)"
+                )
+            }
+        }
+        let gates = RecordingReleaseGates(
+            audioCreatedOnServer: status.audioCreatedOnServer,
+            transcriptLineageAccepted: status.transcriptLineageAccepted
+        )
+        try await spoolFactory.markReleaseGates(recordingID: recordingID, gates: gates)
+        if try await spoolFactory.releaseIfEligible(recordingID: recordingID) {
+            await transcriptCache.remove(recordingID: recordingID)
+        }
         return gates
     }
 
@@ -509,6 +604,12 @@ private struct RecordingPartReceiptPayload: Decodable {
         case sequence
         case plaintextSHA256 = "plaintext_sha256"
     }
+}
+
+private struct TranscriptResponsePayload: Decodable {
+    let recordingID: String
+
+    enum CodingKeys: String, CodingKey { case recordingID = "recording_id" }
 }
 
 private struct RecordingServerStatusPayload: Decodable {

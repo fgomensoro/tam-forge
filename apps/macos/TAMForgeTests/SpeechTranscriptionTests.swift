@@ -88,6 +88,99 @@ final class SpeechTranscriptionTests: XCTestCase {
         XCTAssertEqual(result.lineage, sourceRequest.lineage)
     }
 
+    // MARK: - TranscriptSubmitPayload.make word normalization (Important 3)
+
+    // whisper.cpp's per-token timestamps come from a separate heuristic than
+    // its segment timestamps and are not guaranteed to satisfy the server's
+    // contract (transcript-lineage final review, Important 3): this builds a
+    // segment whose raw words land outside its span on both ends and overlap
+    // each other in the middle -- exactly the shape the review calls out --
+    // plus one token that decoded to empty text, and asserts `.make()`
+    // produces a body every one of the server's rules
+    // (`TranscriptSegment.validate_words`, schemas.py:96-105) would accept:
+    // every word contained within [segmentStart, segmentEnd], every word's
+    // own span non-negative, and no word starting before the previous one in
+    // the same segment ends.
+    func testMakeClampsWordsIntoTheirSegmentAndOrdersThemChronologically() {
+        let segment = SpeechTranscribedSegment(
+            text: "hello there world",
+            startMilliseconds: 100,
+            endMilliseconds: 500,
+            words: [
+                // Starts 20ms before the segment: whisper's token heuristic
+                // ran slightly ahead of its own segment boundary.
+                .init(text: "hello", startMilliseconds: 80, endMilliseconds: 250, probability: 0.9),
+                // Starts inside "hello"'s already-clamped span: two tokens
+                // whose heuristics disagree about where one word ends and
+                // the next begins.
+                .init(text: "there", startMilliseconds: 200, endMilliseconds: 320, probability: 0.85),
+                // A token that decoded to empty text -- BoundedText requires
+                // at least one character, so this must be dropped, not sent.
+                .init(text: "", startMilliseconds: 320, endMilliseconds: 330, probability: 0.5),
+                // Ends 20ms past the segment: the symmetric case of the
+                // first word.
+                .init(text: "world", startMilliseconds: 328, endMilliseconds: 520, probability: 0.8),
+            ]
+        )
+        let result = SpeechTranscriptionResult(
+            segments: [segment], identity: fakeIdentity(), lineage: fakeLineage()
+        )
+
+        let payload = TranscriptSubmitPayload.make(recordingID: UUID(), result: result)
+
+        XCTAssertEqual(payload.segments.count, 1)
+        let words = payload.segments[0].words
+        // The empty-text token is gone; the other three survive with their
+        // text untouched and in the original order.
+        XCTAssertEqual(words.map(\.text), ["hello", "there", "world"])
+
+        for word in words {
+            XCTAssertGreaterThanOrEqual(word.startMilliseconds, segment.startMilliseconds)
+            XCTAssertLessThanOrEqual(word.endMilliseconds, segment.endMilliseconds)
+            XCTAssertLessThanOrEqual(word.startMilliseconds, word.endMilliseconds)
+        }
+        for (previous, current) in zip(words, words.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(current.startMilliseconds, previous.endMilliseconds)
+        }
+
+        // The exact values the hand-worked clamp produces, not just the
+        // invariants: "hello" is pulled up to the segment start; "there"'s
+        // start is pushed to "hello"'s clamped end (250), the overlap the
+        // fake segment was built to provoke; "world"'s end is pulled down
+        // to the segment end.
+        XCTAssertEqual(words[0].startMilliseconds, 100)
+        XCTAssertEqual(words[0].endMilliseconds, 250)
+        XCTAssertEqual(words[1].startMilliseconds, 250)
+        XCTAssertEqual(words[1].endMilliseconds, 320)
+        XCTAssertEqual(words[2].startMilliseconds, 328)
+        XCTAssertEqual(words[2].endMilliseconds, 500)
+    }
+
+    func testMakePassesThroughAWordTimelineThatAlreadySatisfiesTheContract() {
+        // The common case -- whisper's tokens already land inside their
+        // segment and in order -- must come through byte-for-byte
+        // unchanged, so normalization never rewrites a timeline that was
+        // already valid.
+        let segment = SpeechTranscribedSegment(
+            text: "hello there",
+            startMilliseconds: 0,
+            endMilliseconds: 900,
+            words: [
+                .init(text: "hello", startMilliseconds: 0, endMilliseconds: 400, probability: 0.98),
+                .init(text: "there", startMilliseconds: 400, endMilliseconds: 900, probability: 0.91),
+            ]
+        )
+        let result = SpeechTranscriptionResult(
+            segments: [segment], identity: fakeIdentity(), lineage: fakeLineage()
+        )
+
+        let payload = TranscriptSubmitPayload.make(recordingID: UUID(), result: result)
+
+        let words = payload.segments[0].words
+        XCTAssertEqual(words.map(\.startMilliseconds), [0, 400])
+        XCTAssertEqual(words.map(\.endMilliseconds), [400, 900])
+    }
+
     // MARK: - Fixtures
 
     private func fakeQuality() -> AudioQualityObservations {

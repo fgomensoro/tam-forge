@@ -25,6 +25,9 @@ from .recordings.service import RecordingError
 from .roadmaps.ports import RoadmapWorkflowError
 from .roadmaps.routes import roadmap_exception_handler
 from .roadmaps.routes import router as roadmap_router
+from .speech.contracts import TranscriptError
+from .speech.routes import router as speech_router
+from .speech.routes import transcript_exception_handler
 from .storage.models import ObjectStoreError
 from .today.routes import router as today_router
 from .today.routes import today_exception_handler
@@ -44,6 +47,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(notification_router)
     app.include_router(roadmap_router)
     app.include_router(recording_router)
+    app.include_router(speech_router)
     app.include_router(today_router)
     app.include_router(sql_execution_router)
     app.add_exception_handler(AuthError, auth_exception_handler)
@@ -55,6 +59,7 @@ def register_routes(app: FastAPI) -> None:
     app.add_exception_handler(NotificationError, notification_exception_handler)
     app.add_exception_handler(RoadmapWorkflowError, roadmap_exception_handler)
     app.add_exception_handler(RecordingError, recording_exception_handler)
+    app.add_exception_handler(TranscriptError, transcript_exception_handler)
     app.add_exception_handler(ObjectStoreError, roadmap_exception_handler)
     app.add_exception_handler(TodayError, today_exception_handler)
     app.add_exception_handler(SqlExecutionError, sql_execution_exception_handler)

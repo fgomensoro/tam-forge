@@ -14,6 +14,7 @@ _MODEL_MODULES = (
     "tamforge_backend.recordings.models",
     "tamforge_backend.workspaces.models",
     "tamforge_backend.agents.models",
+    "tamforge_backend.speech.models",
 )
 
 

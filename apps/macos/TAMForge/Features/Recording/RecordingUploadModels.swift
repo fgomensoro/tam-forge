@@ -15,6 +15,43 @@ enum RecordingUploadError: Error, Equatable {
     case server(statusCode: Int)
 }
 
+extension RecordingUploadError {
+    // The only safe representation of a transcript-submission failure to
+    // log: every case here is either content-free or, for `.server`, an
+    // Int status code, so this description can never carry transcript
+    // text. Any other error type (URLError, a decoding error, ...) logs
+    // only its Swift type name, never a message, since this call site
+    // cannot audit every error type the network stack might throw.
+    static func safeLogDescription(for error: Error) -> String {
+        if let uploadError = error as? RecordingUploadError {
+            return String(describing: uploadError)
+        }
+        return "\(type(of: error))"
+    }
+
+    // A permanent rejection is a 4xx that means the submitted body itself is
+    // invalid and resubmitting the identical payload can never succeed: 400
+    // (malformed request), 413 (body too large), and 422 (schema/bounds
+    // validation failure -- see `TranscriptTooLarge`/FastAPI validation in
+    // `speech/routes.py`). Every other 4xx this call site can see is a
+    // timing artifact, not a body problem, and must stay retryable. 404
+    // means the recording row does not exist *yet*: `submitTranscript` races
+    // the create/upload/seal pass the same `stop()` call started, so a 404
+    // here is ordinary and self-heals once that pass catches up on a later
+    // worker pass -- treating it as permanent would drop the cached payload
+    // with no way to recompute it (`beginTranscription` only runs from
+    // `stop()`), reintroducing the never-released spool this feature exists
+    // to fix. 409 arrives as `.conflict`, not `.server`, and means "audio is
+    // not stored yet," resolved the same way -- already excluded here. A 5xx
+    // `.server` case (`TranscriptUnavailable`, or an unexpected server
+    // error) is the backend's own distinctly-retryable error and must keep
+    // retrying.
+    var isPermanentTranscriptRejection: Bool {
+        if case let .server(statusCode) = self { return [400, 413, 422].contains(statusCode) }
+        return false
+    }
+}
+
 enum RecordingConversionIdentifier {
     // Unknown local conversion versions can never be declared as v1; upload
     // fails closed instead of guessing lineage.
@@ -425,6 +462,274 @@ struct RecordingSealPayload: Codable, Equatable, Sendable {
         case endedAt = "ended_at"
         case coverageStatus = "coverage_status"
         case tracks
+    }
+}
+
+// The wire body for POST /recordings/{id}/transcripts. recordingID routes
+// the URL only: TranscriptSubmitCommand carries no recording_id field (the
+// path already names the recording), so it is deliberately left out of
+// CodingKeys and never reaches the JSON body.
+struct TranscriptSubmitPayload: Encodable, Equatable, Sendable {
+    let recordingID: String
+    let schemaVersion = 1
+    let track: String
+    let segments: [TranscriptSegmentPayload]
+    let modelIdentity: TranscriptModelIdentityPayload
+    let derivation: TranscriptDerivationPayload
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case track
+        case segments
+        case modelIdentity = "model_identity"
+        case derivation
+    }
+}
+
+extension TranscriptSubmitPayload {
+    // Maps the local ASR result to the wire shape, normalizing whisper's word
+    // timestamps on the way so the body satisfies the server's contract:
+    // `TranscriptSegment.validate_words` requires every word contained within
+    // its segment's span and chronological (never starting before the
+    // previous word in the same segment ends). whisper.cpp's per-token
+    // timestamps come from a separate heuristic than its segment timestamps
+    // and are not guaranteed to satisfy either -- a token can land outside
+    // its segment, or two tokens can overlap -- so without `normalizedWords`
+    // below, a real recording could produce a body the server rejects with a
+    // 422 (transcript-lineage final review, Important 3). Segment spans and
+    // text pass through unchanged; only words -- whisper's
+    // questionable-timestamp output -- are touched, and only their
+    // timestamps, never their text or probability.
+    static func make(recordingID: UUID, result: SpeechTranscriptionResult) -> TranscriptSubmitPayload {
+        .init(
+            recordingID: recordingID.uuidString.lowercased(),
+            track: result.lineage.track.rawValue,
+            segments: result.segments.map { segment in
+                TranscriptSegmentPayload(
+                    text: segment.text,
+                    startMilliseconds: segment.startMilliseconds,
+                    endMilliseconds: segment.endMilliseconds,
+                    words: normalizedWords(
+                        segment.words,
+                        segmentStart: segment.startMilliseconds,
+                        segmentEnd: segment.endMilliseconds
+                    )
+                )
+            },
+            modelIdentity: TranscriptModelIdentityPayload(
+                runtimeVersion: result.identity.runtimeVersion,
+                modelFilename: result.identity.modelFilename,
+                modelSHA256: result.identity.modelSHA256,
+                metalRequested: result.identity.metalRequested,
+                usedBuiltInVAD: result.identity.usedBuiltInVAD,
+                language: result.identity.language
+            ),
+            derivation: TranscriptDerivationPayload(
+                derivationVersion: result.lineage.derivationVersion,
+                sourceSampleRate: result.lineage.sourceSampleRate,
+                sourceChannelCount: result.lineage.sourceChannelCount,
+                sourceSampleCount: result.lineage.sourceSampleCount,
+                outputSampleRate: result.lineage.outputSampleRate,
+                outputSampleCount: result.lineage.outputSampleCount,
+                zeroFilledGaps: result.lineage.zeroFilledGaps.map { gap in
+                    TranscriptDerivationGapPayload(
+                        sampleStart: gap.sampleStart,
+                        sampleCount: gap.sampleCount,
+                        reason: gap.reason.rawValue
+                    )
+                },
+                sourcePCMSHA256: result.lineage.sourcePCMSHA256,
+                derivedPCMSHA256: result.lineage.derivedPCMSHA256,
+                quality: TranscriptAudioQualityPayload(
+                    version: result.lineage.quality.version,
+                    sampleRate: result.lineage.quality.sampleRate,
+                    channelCount: result.lineage.quality.channelCount,
+                    sourceSampleCount: result.lineage.quality.sourceSampleCount,
+                    durationSeconds: result.lineage.quality.durationSeconds,
+                    peakAbsolute: result.lineage.quality.peakAbsolute,
+                    allSilence: result.lineage.quality.allSilence,
+                    clippedRatio: result.lineage.quality.clippedRatio,
+                    dcOffset: result.lineage.quality.dcOffset,
+                    channelImbalanceDecibels: result.lineage.quality.channelImbalanceDecibels,
+                    discontinuityCount: result.lineage.quality.discontinuityCount,
+                    unavailableDimensions: result.lineage.quality.unavailableDimensions
+                )
+            )
+        )
+    }
+
+    // Clamps each word into [segmentStart, segmentEnd] and forces
+    // non-decreasing, non-overlapping spans in a single left-to-right pass,
+    // so every word satisfies the server's containment and chronological
+    // rules by construction: `start` is raised to `previousEnd` when a raw
+    // timestamp would otherwise overlap the prior word, and `end` is raised
+    // to match if clamping ever left it behind `start`. Drops tokens whose
+    // text decoded empty -- whisper.cpp's own boundary artifact, and the
+    // server's `BoundedText` requires at least one character.
+    private static func normalizedWords(
+        _ words: [SpeechTranscribedWord], segmentStart: Int64, segmentEnd: Int64
+    ) -> [TranscriptWordPayload] {
+        var payloads: [TranscriptWordPayload] = []
+        payloads.reserveCapacity(words.count)
+        var previousEnd = segmentStart
+        for word in words where !word.text.isEmpty {
+            let clampedStart = min(max(segmentStart, word.startMilliseconds), segmentEnd)
+            let clampedEnd = max(min(segmentEnd, word.endMilliseconds), segmentStart)
+            let start = max(clampedStart, previousEnd)
+            let end = max(clampedEnd, start)
+            payloads.append(
+                TranscriptWordPayload(
+                    text: word.text,
+                    startMilliseconds: start,
+                    endMilliseconds: end,
+                    probability: word.probability
+                )
+            )
+            previousEnd = end
+        }
+        return payloads
+    }
+
+    // Stable across retries: recordingID and track never change for a
+    // given submission, so resubmitting after a failed or premature
+    // attempt is a replay of the same command, not a new one, no matter
+    // how many upload-worker passes it takes.
+    var idempotencyKey: String { "recording.transcript.\(recordingID).\(track)" }
+}
+
+// Bridges a recording's just-computed local transcript from the
+// coordinator (the only place transcription happens, and the only place
+// that can rebuild this payload) to the upload pipeline's retry pass (a
+// separate actor with no visibility into transcription state). An entry
+// is removed once its recording's spool is released or discarded, so this
+// never grows unbounded across a long-running session.
+actor RecordingTranscriptCache {
+    private var payloads: [UUID: TranscriptSubmitPayload] = [:]
+
+    func store(_ payload: TranscriptSubmitPayload, recordingID: UUID) {
+        payloads[recordingID] = payload
+    }
+
+    func payload(for recordingID: UUID) -> TranscriptSubmitPayload? {
+        payloads[recordingID]
+    }
+
+    func remove(recordingID: UUID) {
+        payloads.removeValue(forKey: recordingID)
+    }
+}
+
+struct TranscriptSegmentPayload: Codable, Equatable, Sendable {
+    let text: String
+    let startMilliseconds: Int64
+    let endMilliseconds: Int64
+    let words: [TranscriptWordPayload]
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case startMilliseconds = "start_ms"
+        case endMilliseconds = "end_ms"
+        case words
+    }
+}
+
+struct TranscriptWordPayload: Codable, Equatable, Sendable {
+    let text: String
+    let startMilliseconds: Int64
+    let endMilliseconds: Int64
+    let probability: Double
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case startMilliseconds = "start_ms"
+        case endMilliseconds = "end_ms"
+        case probability
+    }
+}
+
+struct TranscriptModelIdentityPayload: Codable, Equatable, Sendable {
+    let runtimeVersion: String
+    let modelFilename: String
+    let modelSHA256: String
+    let metalRequested: Bool
+    let usedBuiltInVAD: Bool
+    let language: String
+
+    enum CodingKeys: String, CodingKey {
+        case runtimeVersion = "runtime_version"
+        case modelFilename = "model_filename"
+        case modelSHA256 = "model_sha256"
+        case metalRequested = "metal_requested"
+        case usedBuiltInVAD = "used_builtin_vad"
+        case language
+    }
+}
+
+struct TranscriptDerivationPayload: Codable, Equatable, Sendable {
+    let derivationVersion: String
+    let sourceSampleRate: Int
+    let sourceChannelCount: Int
+    let sourceSampleCount: Int64
+    let outputSampleRate: Int
+    let outputSampleCount: Int64
+    let zeroFilledGaps: [TranscriptDerivationGapPayload]
+    let sourcePCMSHA256: String
+    let derivedPCMSHA256: String
+    let quality: TranscriptAudioQualityPayload
+
+    enum CodingKeys: String, CodingKey {
+        case derivationVersion = "derivation_version"
+        case sourceSampleRate = "source_sample_rate"
+        case sourceChannelCount = "source_channel_count"
+        case sourceSampleCount = "source_sample_count"
+        case outputSampleRate = "output_sample_rate"
+        case outputSampleCount = "output_sample_count"
+        case zeroFilledGaps = "zero_filled_gaps"
+        case sourcePCMSHA256 = "source_pcm_sha256"
+        case derivedPCMSHA256 = "derived_pcm_sha256"
+        case quality
+    }
+}
+
+struct TranscriptDerivationGapPayload: Codable, Equatable, Sendable {
+    let sampleStart: Int64
+    let sampleCount: Int
+    let reason: String
+
+    enum CodingKeys: String, CodingKey {
+        case sampleStart = "sample_start"
+        case sampleCount = "sample_count"
+        case reason
+    }
+}
+
+struct TranscriptAudioQualityPayload: Codable, Equatable, Sendable {
+    let version: String
+    let sampleRate: Int
+    let channelCount: Int
+    let sourceSampleCount: Int64
+    let durationSeconds: Double
+    let peakAbsolute: Int
+    let allSilence: Bool
+    let clippedRatio: Double
+    let dcOffset: Double
+    let channelImbalanceDecibels: Double?
+    let discontinuityCount: Int
+    let unavailableDimensions: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case version
+        case sampleRate = "sample_rate"
+        case channelCount = "channel_count"
+        case sourceSampleCount = "source_sample_count"
+        case durationSeconds = "duration_seconds"
+        case peakAbsolute = "peak_absolute"
+        case allSilence = "all_silence"
+        case clippedRatio = "clipped_ratio"
+        case dcOffset = "dc_offset"
+        case channelImbalanceDecibels = "channel_imbalance_decibels"
+        case discontinuityCount = "discontinuity_count"
+        case unavailableDimensions = "unavailable_dimensions"
     }
 }
 
