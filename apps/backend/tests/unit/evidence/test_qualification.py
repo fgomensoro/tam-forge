@@ -251,3 +251,18 @@ def test_readiness_is_read_from_the_levels_and_stored_nowhere() -> None:
     assert readiness_from({"a": "practicing", "b": "not_started"}) == "partially_ready"
     assert readiness_from({"a": "demonstrated", "b": "not_started"}) == "partially_ready"
     assert readiness_from({"a": "demonstrated", "b": "demonstrated"}) == "ready"
+
+
+def test_the_report_competency_vocabulary_matches_the_advance_ladder() -> None:
+    """The report lives in the protocol package and cannot import the backend.
+
+    Its level literal is a second copy of the ladder `advance_competency` walks. A value
+    that drifted apart would let a report show a level no evidence rule can produce, or
+    hide one it can.
+    """
+    from typing import get_args
+
+    from tamforge_backend.evidence.qualification import COMPETENCY_LADDER
+    from tamforge_protocol.reports import CompetencyLevel
+
+    assert get_args(CompetencyLevel) == COMPETENCY_LADDER
