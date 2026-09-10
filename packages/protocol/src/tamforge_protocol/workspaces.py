@@ -15,6 +15,13 @@ real thing, and its commitment carries the whole trail from the questions asked 
 discovery to the decisions defended at the end. Follow-ups after the defense are capped
 at two, since an unbounded question queue turns the defense into a second solve.
 
+The career block is thirty minutes of pipeline work rather than practice, and it exists
+to end in something that was not there before. Select, produce, record, and a concrete
+artifact named at the end: a block that produced nothing is a block that reviewed the
+list again. It reuses the opportunity stage vocabulary rather than inventing a parallel
+one, and it links to an opportunity when there is one, because general pipeline work is
+still pipeline work.
+
 The written workspace is the smallest of them and the strictest about order. A draft
 and one self-edit are committed before any feedback exists, because feedback on a draft
 the learner has not yet reread is feedback on a first thought. One self-edit, not a
@@ -46,6 +53,8 @@ from types import MappingProxyType
 from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+
+from .opportunities import OpportunityStage
 
 SqlPhase = Literal["retrieval", "primary_work", "validation", "self_review"]
 
@@ -172,6 +181,15 @@ REQUIRED_SELF_EDITS = 1
 
 WritingStage = Literal["draft", "self_edit", "feedback", "attempt_b"]
 WRITING_STAGE_ORDER: tuple[WritingStage, ...] = ("draft", "self_edit", "feedback", "attempt_b")
+
+
+CareerPhase = Literal["select", "produce", "record"]
+
+CAREER_PHASE_ORDER: tuple[CareerPhase, ...] = ("select", "produce", "record")
+CAREER_PHASE_SECONDS: Mapping[CareerPhase, int] = MappingProxyType(
+    {"select": 300, "produce": 1_200, "record": 300}
+)
+CAREER_SESSION_SECONDS = sum(CAREER_PHASE_SECONDS.values())
 
 
 class WorkspaceRuleError(ValueError):
@@ -492,7 +510,48 @@ def require_feedback_ready(*, draft_committed: bool, self_edits_committed: int) 
         raise WorkspaceRuleError("feedback needs a committed draft and one self-edit")
 
 
+def career_phase_at(elapsed_seconds: int) -> CareerPhase | None:
+    """Return the career-block phase, or None once the half hour is spent."""
+    if elapsed_seconds < 0:
+        raise WorkspaceRuleError("elapsed time cannot be negative")
+    boundary = 0
+    for phase in CAREER_PHASE_ORDER:
+        boundary += CAREER_PHASE_SECONDS[phase]
+        if elapsed_seconds < boundary:
+            return phase
+    return None
+
+
+class CareerBlockCommitment(_StrictModel):
+    """One block of pipeline work, and the artifact it is not complete without."""
+
+    company: LearnerText
+    role: LearnerText
+    stage: OpportunityStage
+    completed_action: LearnerText
+    artifact_summary: LearnerText
+    next_action: LearnerText
+    opportunity_id: Annotated[int, Field(strict=True, gt=0)] | None = None
+    related_interview_ids: Annotated[
+        tuple[Annotated[int, Field(strict=True, gt=0)], ...], Field(max_length=16)
+    ] = ()
+    elapsed_seconds: Annotated[int, Field(strict=True, ge=0, le=CAREER_SESSION_SECONDS)]
+
+    @model_validator(mode="after")
+    def interviews_belong_to_an_opportunity(self) -> Self:
+        # An interview hangs from an opportunity, so naming one here without the
+        # opportunity leaves a link that points at nothing.
+        if self.related_interview_ids and self.opportunity_id is None:
+            raise ValueError("related interviews need the opportunity they belong to")
+        if len(set(self.related_interview_ids)) != len(self.related_interview_ids):
+            raise ValueError("an interview is linked once")
+        return self
+
+
 __all__ = [
+    "CAREER_PHASE_ORDER",
+    "CAREER_PHASE_SECONDS",
+    "CAREER_SESSION_SECONDS",
     "CASE_PHASE_ORDER",
     "CASE_PHASE_SECONDS",
     "CASE_SESSION_SECONDS",
@@ -512,6 +571,8 @@ __all__ = [
     "SOLUTION_HINT_LEVEL",
     "AiLockReason",
     "AssistanceCode",
+    "CareerBlockCommitment",
+    "CareerPhase",
     "CaseCommitment",
     "CaseFollowUp",
     "CasePhase",
@@ -534,6 +595,7 @@ __all__ = [
     "accept_follow_up",
     "ai_lock_reason",
     "assistance_code",
+    "career_phase_at",
     "case_phase_at",
     "phase_at",
     "qualifies_as_evidence",
