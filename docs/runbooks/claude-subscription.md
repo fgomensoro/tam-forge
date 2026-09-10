@@ -9,8 +9,8 @@ that procedure: obtaining the credential, judging the policy it operates under, 
 recording that judgment. The compatibility probe that checks the installed SDK, the
 subscription login, the resolved model and the structured-response path now lives
 beside it in the same module and is described under "Running the compatibility probe"
-below. The API-credential rejection and no-paid-fallback policy is #66's work, extends
-the same module, and does not exist yet.
+below. The API-credential rejection and no-paid-fallback policy lives beside both, under
+"Refusing every other way in" below.
 
 This is a manual, single-operator procedure, run once per Anthropic policy version,
 not an onboarding flow a second user ever goes through. TAM Forge is, per its own
@@ -138,3 +138,34 @@ window rather than hammering it, and never resolve it by adding an API key. And 
 `blocked` result stops Claude work from claiming jobs without making the API
 unready — every non-Claude study path keeps working, which is the whole point of the
 gate failing closed.
+
+## Refusing every other way in
+
+`ClaudeSubscriptionSettings.for_worker` decides whether the Claude worker may start at
+all. It judges an environment mapping the caller passes in rather than reading the
+process environment, so a stray variable from a shell, a dotenv file or a secrets
+directory cannot reach the decision.
+
+It refuses when any of `FORBIDDEN_CREDENTIAL_VARS` is present. That list is longer than
+an API key on purpose. An unset `ANTHROPIC_API_KEY` does not mean there are no
+credentials: the SDK also resolves `ANTHROPIC_AUTH_TOKEN`, a named profile through
+`ANTHROPIC_PROFILE`, and a workload-identity federation set, and `ANTHROPIC_BASE_URL`
+can point an otherwise valid token at another endpoint. The Bedrock, Vertex and Foundry
+switches are on the list for the same reason. Presence is what counts, not the value:
+an empty `ANTHROPIC_API_KEY` still outranks the subscription profile in the SDK's
+resolution order.
+
+It then requires a current attestation and the subscription credential itself. A
+missing credential is a refusal, never a fallback, because a fallback is exactly what
+must not exist here. Every rejection names the variable and never its value, and the
+token is a `SecretStr` that stays redacted in reprs, dumps and JSON.
+
+The worker process receives only what `worker_environment()` returns: the subscription
+token plus the telemetry opt-outs. Nonessential traffic, error reporting and the bug
+command are all off, because this is a private single-user workspace and its
+transcripts are the last thing that should leave it in a crash report. Concurrency is
+fixed at one job, since a personal subscription is not a pool and parallel jobs turn a
+quota into an outage.
+
+None of this makes the API depend on a Claude credential. With `CLAUDE_ENABLED` false
+the application starts with no credential at all and every non-Claude study path works.
