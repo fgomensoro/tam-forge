@@ -19,6 +19,7 @@ from .service import (
     TodayInvalidRequest,
     TodayNotReady,
     TodayService,
+    TodayUnavailable,
 )
 
 router = APIRouter(prefix="/api/v1/today", tags=["today"])
@@ -83,6 +84,8 @@ def today_problem_response(exc: Exception) -> JSONResponse:
         status, code, title = 409, "today_conflict", "Today operation conflicts"
     elif isinstance(exc, TodayInvalidRequest):
         status, code, title = 422, "invalid_today_request", "Invalid Today request"
+    elif isinstance(exc, TodayUnavailable):
+        status, code, title = 503, "today_unavailable", "Today service unavailable"
     else:
         status, code, title = 500, "today_error", "Today operation failed"
     problem = ProblemResponse(
