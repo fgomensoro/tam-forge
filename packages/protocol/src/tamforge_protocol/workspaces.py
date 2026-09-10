@@ -1,16 +1,25 @@
-"""SQL workspace session rules: phase timing, the AI lock, the hint ladder, mistakes.
+"""Workspace session rules: phase timing, source visibility, AI locks, and commitments.
 
-The workspace exists to make a learner's own reasoning visible before any assistance
-touches it, so three rules are structural rather than advisory. Assistance is locked
+Two specialized workspaces live here. The SQL workspace exists to make a learner's own
+reasoning visible before any assistance touches it, so three rules are structural
+rather than advisory. Assistance is locked
 until the learner commits an attempt or the primary-work clock runs out. Hints are
 revealed one rung at a time in a fixed order, and the last rung, the full solution, is
 unreachable until an attempt has been saved. The committed record then carries both
 the rung the learner reached and the canonical category of the mistake, so later
 scoring can tell unassisted work from assisted work instead of guessing.
 
+The technical-reading workspace answers a different question. Its five timeboxes exist
+so that recall is recall: the source is visible while previewing and reading and gone
+from the moment recall starts, and no clock lets the tutor in early. The note the
+learner writes from memory carries four fields, and all four are required, because a
+note missing its boundary case or its customer example is the note someone writes when
+they did not understand the reading.
+
 The assistance vocabulary here is the same closed set the evidence tables accept, and
-`apps/backend/tests/unit/workspaces/test_sql_contracts.py` asserts the two agree. A
-value that drifts apart would produce a commitment the database rejects at write time.
+`apps/backend/tests/unit/workspaces/test_sql.py` asserts the two agree, as
+`test_reading.py` does for the recall-note fields. A value that drifts apart would
+produce a commitment the database rejects at write time.
 """
 
 from __future__ import annotations
@@ -73,6 +82,32 @@ QUALIFYING_ASSISTANCE: frozenset[str] = frozenset({"no_ai", "ai_after_committed_
 LearnerText = Annotated[
     str, StringConstraints(strict=True, min_length=1, max_length=8_192, pattern=r"\S")
 ]
+
+
+ReadingPhase = Literal["preview", "reading", "recall", "application", "teach_back"]
+
+READING_PHASE_ORDER: tuple[ReadingPhase, ...] = (
+    "preview",
+    "reading",
+    "recall",
+    "application",
+    "teach_back",
+)
+READING_PHASE_SECONDS: Mapping[ReadingPhase, int] = MappingProxyType(
+    {"preview": 120, "reading": 1_200, "recall": 480, "application": 600, "teach_back": 300}
+)
+READING_SESSION_SECONDS = sum(READING_PHASE_SECONDS.values())
+
+# The source is available while previewing and reading, and gone from the moment recall
+# starts. Recall that can consult the source is not recall.
+SOURCE_VISIBLE_PHASES: frozenset[str] = frozenset({"preview", "reading"})
+
+# The four fields of the recall note. This set is the same one `LEARNER_FIELDS["reading"]`
+# declares in the backend's redaction layer; a backend test compares them.
+READING_NOTE_FIELDS: frozenset[str] = frozenset(
+    {"key_ideas", "boundary_or_failure", "tam_customer_example", "unresolved_question"}
+)
+REQUIRED_KEY_IDEAS = 3
 
 
 class WorkspaceRuleError(ValueError):
@@ -182,6 +217,53 @@ class SqlAttemptCommitment(_StrictModel):
         return self
 
 
+def reading_phase_at(elapsed_seconds: int) -> ReadingPhase | None:
+    """Return the reading phase the session is in, or None once it has ended."""
+    if elapsed_seconds < 0:
+        raise WorkspaceRuleError("elapsed time cannot be negative")
+    boundary = 0
+    for phase in READING_PHASE_ORDER:
+        boundary += READING_PHASE_SECONDS[phase]
+        if elapsed_seconds < boundary:
+            return phase
+    return None
+
+
+def source_visible(phase: ReadingPhase | None) -> bool:
+    """A finished session shows no source either, so None is not visible."""
+    return phase in SOURCE_VISIBLE_PHASES
+
+
+def reading_ai_lock_reason(*, note_committed: bool) -> AiLockReason:
+    """The tutor opens on the committed note and on nothing else.
+
+    Unlike the SQL workspace, no expiring clock lets assistance in. A recall note the
+    learner never wrote is not a recall note, and a tutor that fills it in has replaced
+    the exercise rather than evaluated it.
+    """
+    return "unlocked" if note_committed else "awaiting_commitment"
+
+
+class ReadingRecallNote(_StrictModel):
+    """What the learner writes from memory, with the source already hidden."""
+
+    key_ideas: Annotated[
+        tuple[LearnerText, ...],
+        Field(min_length=REQUIRED_KEY_IDEAS, max_length=REQUIRED_KEY_IDEAS),
+    ]
+    boundary_or_failure: LearnerText
+    tam_customer_example: LearnerText
+    unresolved_question: LearnerText
+
+    @model_validator(mode="after")
+    def distinct_key_ideas(self) -> Self:
+        # Three copies of one idea is one idea, and passing the count that way turns the
+        # requirement into a typing exercise.
+        if len({idea.strip().casefold() for idea in self.key_ideas}) != REQUIRED_KEY_IDEAS:
+            raise ValueError("the key ideas must be distinct")
+        return self
+
+
 __all__ = [
     "HINT_LADDER",
     "NO_HINT_LEVEL",
@@ -189,11 +271,19 @@ __all__ = [
     "PHASE_SECONDS",
     "PRIMARY_WORK_DEADLINE_SECONDS",
     "QUALIFYING_ASSISTANCE",
+    "READING_NOTE_FIELDS",
+    "READING_PHASE_ORDER",
+    "READING_PHASE_SECONDS",
+    "READING_SESSION_SECONDS",
+    "REQUIRED_KEY_IDEAS",
     "SESSION_SECONDS",
     "SOLUTION_HINT_LEVEL",
     "AiLockReason",
     "AssistanceCode",
     "MistakeCategory",
+    "ReadingPhase",
+    "ReadingRecallNote",
+    "SOURCE_VISIBLE_PHASES",
     "SqlAttemptCommitment",
     "SqlPhase",
     "WorkspaceRuleError",
@@ -201,5 +291,8 @@ __all__ = [
     "assistance_code",
     "phase_at",
     "qualifies_as_evidence",
+    "reading_ai_lock_reason",
+    "reading_phase_at",
     "reveal_hint",
+    "source_visible",
 ]
