@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -27,6 +27,12 @@ from tamforge_protocol.reports import (
     CalibrationDelta,
     DailyReport,
     WeeklyReport,
+)
+from tamforge_protocol.transitions import (
+    MonthExitReview,
+    NextRoadmapActivation,
+    TransitionError,
+    activate_next_roadmap,
 )
 
 DAY = date(2026, 9, 10)
@@ -404,3 +410,121 @@ def test_carried_forward_reads_back_only_what_carried() -> None:
     )
 
     assert [item.activity_id for item in mixed.carried_forward] == [7]
+
+
+# Issue #99: a month transition compares immutable evidence to the exit criteria,
+# preserves the prior roadmap link, and waits for an imported and approved next version.
+
+IMPORTED_AT = datetime(2026, 9, 28, 9, tzinfo=UTC)
+
+
+def criterion(competency: str = "trade_offs", level: str = "demonstrated") -> dict:
+    return {"competency": competency, "required_level": level}
+
+
+def observed(competency: str = "trade_offs", level: str = "demonstrated", **overrides) -> dict:
+    data = {
+        "competency": competency,
+        "level": level,
+        "qualifying_event_ids": () if level == "not_started" else (41,),
+    }
+    data.update(overrides)
+    return data
+
+
+def review(**overrides: object) -> MonthExitReview:
+    data: dict[str, object] = {
+        "owner_id": 1,
+        "month_key": "month-1",
+        "criteria": (criterion(),),
+        "observed": (observed(),),
+    }
+    data.update(overrides)
+    return MonthExitReview.model_validate(data)
+
+
+def activation(**overrides: object) -> NextRoadmapActivation:
+    data: dict[str, object] = {
+        "previous_roadmap_id": 3,
+        "next_version_key": "month-2",
+        "imported_at": IMPORTED_AT,
+        "approved_at": IMPORTED_AT,
+        "approved_by": "owner",
+    }
+    data.update(overrides)
+    return NextRoadmapActivation.model_validate(data)
+
+
+def test_a_month_ends_when_the_evidence_reaches_the_criteria() -> None:
+    passing = review()
+
+    assert passing.met is True
+    assert passing.unmet == ()
+    assert activate_next_roadmap(passing, activation()).next_version_key == "month-2"
+
+
+def test_a_month_does_not_end_because_the_calendar_moved() -> None:
+    short = review(observed=(observed(level="practicing"),))
+
+    assert short.met is False
+    assert [item.competency for item in short.unmet] == ["trade_offs"]
+    with pytest.raises(TransitionError, match="trade_offs"):
+        activate_next_roadmap(short, activation())
+
+
+def test_a_competency_nobody_observed_is_unmet_rather_than_assumed() -> None:
+    unobserved = review(observed=())
+
+    assert unobserved.met is False
+    with pytest.raises(TransitionError):
+        activate_next_roadmap(unobserved, activation())
+
+
+def test_exceeding_a_criterion_still_meets_it() -> None:
+    exceeded = review(
+        criteria=(criterion(level="practicing"),), observed=(observed(level="demonstrated"),)
+    )
+
+    assert exceeded.met is True
+
+
+def test_requiring_nothing_is_not_a_criterion() -> None:
+    with pytest.raises(ValidationError, match="not a criterion"):
+        review(criteria=(criterion(level="not_started"),))
+
+
+def test_an_observed_level_carries_the_evidence_behind_it() -> None:
+    with pytest.raises(ValidationError, match="cite its evidence"):
+        review(observed=(observed(qualifying_event_ids=()),))
+
+
+def test_one_line_per_competency_on_both_sides() -> None:
+    with pytest.raises(ValidationError, match="one criterion"):
+        review(criteria=(criterion(), criterion(level="practicing")))
+    with pytest.raises(ValidationError, match="one observation"):
+        review(observed=(observed(), observed(level="practicing")))
+
+
+def test_the_next_roadmap_keeps_the_link_to_the_one_before_it() -> None:
+    # A transition that forgets what came before turns a sequence of months into a
+    # series of unrelated plans.
+    assert activation().previous_roadmap_id == 3
+
+    with pytest.raises(ValidationError):
+        activation(previous_roadmap_id=None)
+
+
+def test_a_next_version_is_imported_on_purpose_and_then_approved() -> None:
+    for missing in ("imported_at", "approved_at", "approved_by"):
+        with pytest.raises(ValidationError):
+            activation(**{missing: None})
+
+
+def test_approval_cannot_precede_the_import_it_approves() -> None:
+    with pytest.raises(ValidationError, match="after it is imported"):
+        activation(approved_at=IMPORTED_AT - timedelta(days=1))
+
+
+def test_naive_transition_timestamps_are_refused() -> None:
+    with pytest.raises(ValidationError):
+        activation(imported_at=datetime(2026, 9, 28, 9))
