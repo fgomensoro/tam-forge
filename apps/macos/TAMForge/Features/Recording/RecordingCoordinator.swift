@@ -167,7 +167,7 @@ final class RecordingCoordinator: ObservableObject {
     private var pendingGapWrites: PendingGapWrites?
     private var environmentTask: Task<Void, Never>?
     private var durationLimitTask: Task<Void, Never>?
-    private var transcriptionTask: Task<Void, Never>?
+    private var transcriptionTasks: [UUID: Task<Void, Never>] = [:]
     private var accumulatedGaps: [RecordingGap] = []
     private var activeStorageFailure: Error?
     // Terminal coverage loss (a required track never anchored). The unsealed
@@ -216,7 +216,7 @@ final class RecordingCoordinator: ObservableObject {
         durationLimitTask?.cancel()
         writerTask?.cancel()
         uploadWorkerTask?.cancel()
-        transcriptionTask?.cancel()
+        for task in transcriptionTasks.values { task.cancel() }
         eventContinuation?.finish()
     }
 
@@ -393,11 +393,18 @@ final class RecordingCoordinator: ObservableObject {
     // Runs only when both an audio reader and a transcriber are configured;
     // otherwise the recording flow is byte-identical to today. Never touches
     // spool, pendingRecordingIDs, uploadStates, or phase.
+    //
+    // Keyed by recording rather than held in a single slot: a transcription
+    // now outlives the recording that started it (see publishTranscript), so
+    // more than one can be in flight and each has to stay individually
+    // cancellable. Each entry removes itself once its task returns, so the
+    // map holds only what is actually running.
     private func beginTranscription(recordingID: UUID) {
         guard let audioReader, let transcriber else { return }
         transcriptState = .running(recordingID)
-        transcriptionTask = Task { [weak self] in
+        transcriptionTasks[recordingID] = Task { [weak self] in
             guard let self else { return }
+            defer { self.transcriptionTasks[recordingID] = nil }
             let samples: [Int16]
             let lineage: ASRDerivationLineage
             do {
@@ -417,14 +424,17 @@ final class RecordingCoordinator: ObservableObject {
                 lineage = finalLineage
             } catch {
                 guard !Task.isCancelled else { return }
-                self.transcriptState = .failed(
-                    recordingID, "Recorded audio could not be read for transcription"
+                self.publishTranscript(
+                    .failed(recordingID, "Recorded audio could not be read for transcription"),
+                    for: recordingID
                 )
                 return
             }
             guard !samples.isEmpty else {
                 guard !Task.isCancelled else { return }
-                self.transcriptState = .failed(recordingID, "No speech audio was captured")
+                self.publishTranscript(
+                    .failed(recordingID, "No speech audio was captured"), for: recordingID
+                )
                 return
             }
             guard !Task.isCancelled else { return }
@@ -433,11 +443,13 @@ final class RecordingCoordinator: ObservableObject {
                     .init(samples: samples, lineage: lineage)
                 )
                 guard !Task.isCancelled else { return }
-                self.transcriptState = .ready(recordingID, result)
+                self.publishTranscript(.ready(recordingID, result), for: recordingID)
                 await self.submitTranscript(recordingID: recordingID, result: result)
             } catch {
                 guard !Task.isCancelled else { return }
-                self.transcriptState = .failed(recordingID, "Transcription failed")
+                self.publishTranscript(
+                    .failed(recordingID, "Transcription failed"), for: recordingID
+                )
             }
         }
     }
@@ -461,11 +473,16 @@ final class RecordingCoordinator: ObservableObject {
         // pipeline's own retry pass is resubmitting it; recomputing would burn
         // a full transcription for a payload already in hand.
         guard await transcriptCache.payload(for: recordingID) == nil else { return }
-        // .idle is the only state holding no transcript worth keeping: a run
-        // in flight owns transcriptionTask, and a settled .ready or .failed
-        // belongs to a recording whose result this pass must not overwrite.
-        // Anything else recovers on a later pass. Checked after the cache read
-        // so no suspension can invalidate it.
+        // A transcription outlives the on-screen slot it started in, so .idle
+        // no longer means nothing is running: this recording's own run can be
+        // in flight with the panel already cleared by a later recording. This
+        // is what keeps a resumed pass from starting a second, duplicate run
+        // over the same audio. Checked after the cache read so no suspension
+        // can invalidate it.
+        guard transcriptionTasks[recordingID] == nil else { return }
+        // A settled .ready or .failed belongs to a recording whose result this
+        // pass must not overwrite, and beginTranscription claims the slot
+        // unconditionally. Anything but .idle recovers on a later pass.
         guard transcriptState == .idle else { return }
         beginTranscription(recordingID: recordingID)
     }
@@ -503,15 +520,27 @@ final class RecordingCoordinator: ObservableObject {
         }
     }
 
-    // A transcript is derived audio, so it cannot outlive the recording it came
-    // from. Discarding crypto-shreds the encrypted spool and the confirmation
-    // says so; a transcript of that same audio still on screen afterwards would
-    // contradict it. Passing a recordingID clears only that recording's
-    // transcript, so discarding one pending recording never wipes another's.
+    // The on-screen transcript is a single slot owned by whichever recording
+    // most recently claimed it, which keeps the panel about one recording at a
+    // time. A transcription that has lost that claim -- the user started
+    // another recording, or dismissed the sealed banner -- still has to finish
+    // and submit, because an accepted submission is the only thing that can
+    // set transcript_lineage_accepted and let the encrypted spool be released.
+    // So it finishes silently instead of pushing a stale result back on screen.
+    private func publishTranscript(_ state: RecordingTranscriptState, for recordingID: UUID) {
+        guard transcriptState.recordingID == recordingID else { return }
+        transcriptState = state
+    }
+
+    // Clears the on-screen transcript only. Losing the panel is not a reason
+    // to abandon the work behind it: cancelling a running transcription here
+    // would leave that recording with no transcript to submit, ever, and its
+    // spool retained forever. Cancelling belongs with discarding, which
+    // destroys the audio the transcript came from. Passing a recordingID
+    // clears only that recording's transcript, so discarding one pending
+    // recording never wipes another's.
     private func clearTranscript(forRecording recordingID: UUID? = nil) {
         if let recordingID, transcriptState.recordingID != recordingID { return }
-        transcriptionTask?.cancel()
-        transcriptionTask = nil
         transcriptState = .idle
     }
 
@@ -529,6 +558,10 @@ final class RecordingCoordinator: ObservableObject {
             try await spoolFactory.discard(recordingID: recordingID)
             uploadQueue.removeAll { $0 == recordingID }
             uploadStates.removeValue(forKey: recordingID)
+            // Discarding crypto-shreds the encrypted spool and the
+            // confirmation says so. A transcript derived from that same audio
+            // must neither finish on screen nor reach the server afterwards.
+            transcriptionTasks.removeValue(forKey: recordingID)?.cancel()
             clearTranscript(forRecording: recordingID)
             await transcriptCache.remove(recordingID: recordingID)
             await refreshPendingRecordings()
