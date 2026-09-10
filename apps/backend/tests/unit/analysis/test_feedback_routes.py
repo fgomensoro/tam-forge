@@ -779,3 +779,45 @@ def test_transfer_needs_a_fresh_attempt_a_rather_than_another_redo():
 
     with pytest.raises(ValidationError):
         later(attempt_label="attempt_b")
+
+
+# Issue #61's acceptance criterion: competency and readiness states advance only from
+# independent attempts, no-AI assessments, mocks, or real-interview evidence, and retain
+# the qualifying evidence link.
+
+
+def test_only_the_four_approved_kinds_of_evidence_can_move_a_competency():
+    from pathlib import Path
+
+    from tamforge_backend.evidence.config_loader import load_config_bundle
+
+    formula = load_config_bundle(Path(__file__).parents[5] / "config").formula
+
+    assert formula.qualifying_modes == frozenset(
+        {"independent_practice", "timed_assessment", "mock_interview", "real_interview"}
+    )
+    assert formula.qualifying_assistance == frozenset({"no_ai", "ai_after_committed_attempt"})
+    assert formula.attempt_b_qualifies is False
+
+
+def test_an_advanced_competency_always_names_the_evidence_that_advanced_it():
+    import pytest
+    from tamforge_backend.evidence.qualification import (
+        CompetencyAdvance,
+        CompetencyAdvanceError,
+    )
+
+    for level in ("practicing", "demonstrated"):
+        assert CompetencyAdvance(level, (11,), "qualifies").qualifying_event_ids == (11,)
+        with pytest.raises(CompetencyAdvanceError):
+            CompetencyAdvance(level, (), "qualifies")
+
+
+def test_readiness_cannot_advance_on_its_own():
+    from tamforge_backend.evidence.qualification import readiness_from
+
+    # It is derived, so there is no second place it could move from. Every reading
+    # below follows from the levels and from nothing else.
+    assert readiness_from({"structure": "practicing"}) == "partially_ready"
+    assert readiness_from({"structure": "demonstrated"}) == "ready"
+    assert readiness_from({"structure": "not_started"}) == "not_ready"
