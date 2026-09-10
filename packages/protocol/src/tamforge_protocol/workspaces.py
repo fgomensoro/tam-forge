@@ -15,6 +15,12 @@ real thing, and its commitment carries the whole trail from the questions asked 
 discovery to the decisions defended at the end. Follow-ups after the defense are capped
 at two, since an unbounded question queue turns the defense into a second solve.
 
+The written workspace is the smallest of them and the strictest about order. A draft
+and one self-edit are committed before any feedback exists, because feedback on a draft
+the learner has not yet reread is feedback on a first thought. One self-edit, not a
+stream of them: the point is to look again once, not to polish until the weakness is
+gone before anyone sees it.
+
 The Northstar history is what carries across cases. It is append-only by construction:
 a fact is never edited, and changing one means adding an entry that names the entry it
 supersedes. Only a scenario may do that. An agent contributes to the record and never
@@ -158,6 +164,14 @@ NorthstarSource = Literal["scenario", "learner", "agent"]
 # add to the record; letting it supersede would make the history a summary of whatever
 # the last model believed.
 SUPERSEDING_SOURCES: frozenset[str] = frozenset({"scenario"})
+
+
+# One draft, one self-edit, and then feedback. A second self-edit before feedback is
+# polishing, and it hides the mistake the exercise exists to surface.
+REQUIRED_SELF_EDITS = 1
+
+WritingStage = Literal["draft", "self_edit", "feedback", "attempt_b"]
+WRITING_STAGE_ORDER: tuple[WritingStage, ...] = ("draft", "self_edit", "feedback", "attempt_b")
 
 
 class WorkspaceRuleError(ValueError):
@@ -444,6 +458,40 @@ class NorthstarHistory(_StrictModel):
             raise WorkspaceRuleError(str(error)) from None
 
 
+class WritingCommitment(_StrictModel):
+    """A written attempt and the one rereading that follows it."""
+
+    attempt_label: Literal["attempt_a", "attempt_b"]
+    draft_markdown: LearnerText
+    self_edit_notes: LearnerText
+    elapsed_seconds: Annotated[int, Field(strict=True, ge=0, le=SESSION_SECONDS)]
+
+
+def writing_feedback_stage(
+    *, draft_committed: bool, self_edits_committed: int
+) -> WritingStage:
+    """Return the stage the written workspace is in, refusing the ones that cannot exist."""
+    if self_edits_committed < 0:
+        raise WorkspaceRuleError("self-edit count cannot be negative")
+    if not draft_committed:
+        if self_edits_committed:
+            raise WorkspaceRuleError("a self-edit needs a draft to edit")
+        return "draft"
+    if self_edits_committed < REQUIRED_SELF_EDITS:
+        return "self_edit"
+    if self_edits_committed > REQUIRED_SELF_EDITS:
+        raise WorkspaceRuleError("the written workspace takes one self-edit, not more")
+    return "feedback"
+
+
+def require_feedback_ready(*, draft_committed: bool, self_edits_committed: int) -> None:
+    """Raise unless the draft and its one self-edit are both on record."""
+    if writing_feedback_stage(
+        draft_committed=draft_committed, self_edits_committed=self_edits_committed
+    ) != "feedback":
+        raise WorkspaceRuleError("feedback needs a committed draft and one self-edit")
+
+
 __all__ = [
     "CASE_PHASE_ORDER",
     "CASE_PHASE_SECONDS",
@@ -469,6 +517,10 @@ __all__ = [
     "CasePhase",
     "MistakeCategory",
     "NorthstarEntry",
+    "REQUIRED_SELF_EDITS",
+    "WRITING_STAGE_ORDER",
+    "WritingCommitment",
+    "WritingStage",
     "NorthstarEntryKind",
     "NorthstarHistory",
     "NorthstarSource",
@@ -486,7 +538,9 @@ __all__ = [
     "phase_at",
     "qualifies_as_evidence",
     "reading_ai_lock_reason",
+    "require_feedback_ready",
     "reading_phase_at",
     "reveal_hint",
     "source_visible",
+    "writing_feedback_stage",
 ]
