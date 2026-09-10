@@ -237,3 +237,165 @@ def test_unauthenticated_read_is_rejected():
     with TestClient(app) as client:
         response = client.get("/api/v1/activities/7/attempts/9/feedback")
     assert response.status_code in (401, 403)
+
+
+# Issue #56's acceptance criterion, pinned to the contract and to the wire: every
+# analysis observation carries evidence IDs or timestamps, confidence, availability,
+# and a clear distinction between observed content, user recollection, inference, and
+# unknowns. These assert the rule itself, not one fixture's good behaviour.
+
+ATTRIBUTIONS = ("observed_content", "user_stated", "inferred", "unknown")
+
+
+def _released_observations(body: dict) -> list[dict]:
+    observations = []
+    for analysis in ("english", "tam"):
+        for dimension in body[analysis]["dimensions"].values():
+            observations.extend(dimension.get("observations") or [])
+    return observations
+
+
+def _identifies_evidence(reference: dict) -> bool:
+    """A reference locates evidence by id plus either a text range or a time range."""
+    if reference["kind"] == "attempt_text":
+        return bool(reference["attempt_id"]) and reference["end_codepoint"] > (
+            reference["start_codepoint"]
+        )
+    if not (reference["artifact_id"] and reference["immutable_version"]):
+        return False
+    if reference["kind"] == "artifact_time":
+        return reference["end_ms"] > reference["start_ms"]
+    return reference["end_codepoint"] > reference["start_codepoint"]
+
+
+def test_every_released_observation_reaches_the_client_fully_attributed():
+    body = (
+        client(StubFeedbackRepository(released_feedback()))
+        .get("/api/v1/activities/7/attempts/9/feedback")
+        .json()
+    )
+    observations = _released_observations(body)
+
+    assert observations
+    for observation in observations:
+        assert observation["attribution"] in ATTRIBUTIONS
+        assert observation["availability"] in ("available", "unavailable")
+        assert 0 <= float(observation["confidence"]) <= 1
+        assert observation["references"]
+        assert all(_identifies_evidence(reference) for reference in observation["references"])
+
+
+def test_the_attribution_vocabulary_separates_all_four_kinds_of_claim():
+    from typing import get_args
+
+    from tamforge_protocol.agents import AnalysisObservation
+
+    attribution = AnalysisObservation.model_fields["attribution"].annotation
+    assert get_args(attribution) == ATTRIBUTIONS
+
+
+def _observation(**overrides):
+    from tamforge_protocol.agents import AnalysisObservation
+
+    data = {
+        "statement": "The answer named the customer impact.",
+        "attribution": "observed_content",
+        "availability": "available",
+        "confidence": "0.8",
+        "references": [
+            {
+                "kind": "attempt_text",
+                "attempt_id": 9,
+                "commitment_sha256": "a" * 64,
+                "json_pointer": "/output/draft_markdown",
+                "start_codepoint": 0,
+                "end_codepoint": 4,
+            }
+        ],
+    }
+    data.update(overrides)
+    return AnalysisObservation.model_validate(data)
+
+
+def _scored_with(observation):
+    from tamforge_protocol.agents import ScoredDimension
+
+    return ScoredDimension.model_validate(
+        {
+            "availability": "scored",
+            "score": 3,
+            "rationale": "Supported by prepared text.",
+            "observations": [observation.model_dump(mode="json")],
+        }
+    )
+
+
+def test_a_score_cannot_rest_on_an_observation_without_evidence():
+    import pytest
+    from pydantic import ValidationError
+
+    for broken in (
+        _observation(references=[]),
+        _observation(availability="unavailable", references=[]),
+        _observation(attribution="unknown"),
+    ):
+        with pytest.raises(ValidationError):
+            _scored_with(broken)
+
+    assert _scored_with(_observation(attribution="user_stated"))
+    assert _scored_with(_observation(attribution="inferred"))
+
+
+def test_confidence_outside_zero_to_one_is_not_a_confidence():
+    import pytest
+    from pydantic import ValidationError
+
+    for value in ("-0.1", "1.1"):
+        with pytest.raises(ValidationError):
+            _observation(confidence=value)
+
+
+def test_an_unassessed_dimension_names_its_reason_instead_of_scoring():
+    import pytest
+    from pydantic import ValidationError
+    from tamforge_protocol.agents import UnassessedDimension
+
+    unassessed = UnassessedDimension.model_validate(
+        {
+            "availability": "unavailable",
+            "score": None,
+            "reason_code": "speech_pipeline_unavailable",
+            "explanation": "Speech pipeline is not installed.",
+        }
+    )
+    assert unassessed.score is None
+    assert unassessed.reason_code
+
+    with pytest.raises(ValidationError):
+        UnassessedDimension.model_validate(
+            {
+                "availability": "unavailable",
+                "score": 3,
+                "reason_code": "speech_pipeline_unavailable",
+                "explanation": "Speech pipeline is not installed.",
+            }
+        )
+
+
+def test_a_time_referenced_observation_carries_a_nonempty_span():
+    import pytest
+    from pydantic import ValidationError
+
+    timed = {
+        "kind": "artifact_time",
+        "artifact_id": 4,
+        "immutable_version": 2,
+        "sha256": "b" * 64,
+        "start_ms": 1_000,
+        "end_ms": 4_500,
+    }
+    assert _scored_with(_observation(references=[timed]))
+    assert _identifies_evidence(timed)
+
+    with pytest.raises(ValidationError):
+        _observation(references=[{**timed, "end_ms": 1_000}])
