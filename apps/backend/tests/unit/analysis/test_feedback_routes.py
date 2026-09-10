@@ -632,3 +632,80 @@ def test_the_redo_is_never_longer_than_the_next_lesson_allows():
     from tamforge_protocol.agents import ATTEMPT_B_MAX_MINUTES
 
     assert released_feedback().attempt_b.minutes <= ATTEMPT_B_MAX_MINUTES == 10
+
+
+# Issue #59's acceptance criterion: Attempt A and B are compared as improved, partially
+# improved, or not improved using versioned evidence, and the workflow cannot create
+# Attempt C.
+
+
+def comparison(**overrides):
+    from tamforge_protocol.agents import AttemptComparison
+
+    data = {
+        "attempt_a_id": 9,
+        "attempt_b_id": 11,
+        "comparator_version": "attempt-comparison-v1",
+        "core_prompt_sha256": "a" * 64,
+        "outcome": "improved",
+        "observations": [evidence("Attempt B named the cost of the chosen option.")],
+    }
+    data.update(overrides)
+    return AttemptComparison.model_validate(data)
+
+
+def test_a_comparison_returns_one_of_exactly_three_outcomes():
+    from typing import get_args
+
+    import pytest
+    from pydantic import ValidationError
+    from tamforge_protocol.agents import ComparisonOutcome
+
+    assert get_args(ComparisonOutcome) == ("improved", "partially_improved", "not_improved")
+    for outcome in get_args(ComparisonOutcome):
+        assert comparison(outcome=outcome).outcome == outcome
+
+    for refused in ("regressed", "inconclusive", "demonstrated"):
+        with pytest.raises(ValidationError):
+            comparison(outcome=refused)
+
+
+def test_a_comparison_pins_the_versions_it_judged_against():
+    judged = comparison()
+
+    assert judged.comparator_version == "attempt-comparison-v1"
+    assert judged.core_prompt_sha256 == released_feedback().versions.prompt.content_hash
+    assert judged.attempt_a_id != judged.attempt_b_id
+
+
+def test_a_comparison_of_one_attempt_with_itself_is_not_a_comparison():
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        comparison(attempt_b_id=9)
+
+
+def test_an_outcome_rests_on_available_attributed_evidence():
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        comparison(observations=[])
+    for broken in ({"references": []}, {"attribution": "unknown"}):
+        with pytest.raises(ValidationError):
+            comparison(observations=[{**evidence("Attempt B improved."), **broken}])
+
+
+def test_closing_a_correction_never_schedules_another_attempt():
+    from tamforge_protocol.agents import close_correction, next_attempt_label
+
+    assert close_correction(comparison(outcome="improved")) == "resolved"
+    for unresolved in ("partially_improved", "not_improved"):
+        assert close_correction(comparison(outcome=unresolved)) == "retrieval_queued"
+
+    # And whatever the disposition, the attempt vocabulary still ends at Attempt B.
+    import pytest
+
+    with pytest.raises(ValueError):
+        next_attempt_label(["attempt_a", "attempt_b"])
