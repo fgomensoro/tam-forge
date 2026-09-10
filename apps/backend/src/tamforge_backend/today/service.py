@@ -47,6 +47,10 @@ class TodayInvalidRequest(TodayError):
     """The Today request violates a bounded public contract."""
 
 
+class TodayUnavailable(TodayError):
+    """A Today session call failed against the database."""
+
+
 class TodayStore(Protocol):
     async def load_today(self, *, owner_id: int, local_date: date) -> TodayReadInput: ...
 
@@ -428,6 +432,7 @@ __all__ = [
     "TodayNotReady",
     "TodayService",
     "TodayStore",
+    "TodayUnavailable",
     "build_today_response",
     "create_correction_with_slot_reservation",
     "select_primary_action",
