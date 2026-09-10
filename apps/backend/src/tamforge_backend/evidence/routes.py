@@ -23,6 +23,7 @@ from .service import (
     EvidenceInvalidRequest,
     EvidenceNotFound,
     EvidenceQueryService,
+    EvidenceStorageUnavailable,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["evidence"])
@@ -125,6 +126,8 @@ def evidence_problem_response(exc: Exception) -> JSONResponse:
         status, code, title = 422, "invalid_evidence_request", "Invalid evidence request"
     elif isinstance(exc, EvidenceConflict):
         status, code, title = 409, "evidence_lineage_conflict", "Evidence lineage conflict"
+    elif isinstance(exc, EvidenceStorageUnavailable):
+        status, code, title = 503, "evidence_storage_unavailable", "Evidence storage unavailable"
     else:
         status, code, title = 500, "evidence_error", "Evidence operation failed"
     problem = ProblemResponse(

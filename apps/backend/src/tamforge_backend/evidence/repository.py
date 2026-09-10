@@ -1,14 +1,42 @@
-"""PostgreSQL persistence and stable read models for evidence history."""
+"""PostgreSQL persistence and stable read models for evidence history.
+
+Every public method translates a `SQLAlchemyError` into
+`EvidenceStorageUnavailable`, because this is the only layer that can still
+recognise one for what it is. Above it nothing catches a raw one:
+`api.register_routes` installs a handler per domain error type and none for
+SQLAlchemy's, and `observability.middleware` re-raises, so a dropped connection
+or a statement timeout used to reach Starlette's own server-error handling as a
+plain-text 500 rather than the `application/problem+json` the evidence routes
+declare.
+
+The translation wraps `transaction_scope` from outside rather than sitting inside
+the block, so the commit that scope issues on its way out is covered too -- a
+write can survive every statement and still fail there.
+`EvidenceStorageUnavailable` is not a `SQLAlchemyError`, so nesting is harmless:
+`get_skill` calls `list_skills`, and an inner failure is translated once and
+passes through the outer wrapper untouched.
+
+`raise ... from None` is deliberate. The `SQLAlchemyError` carries the rejected
+statement and its bound parameters, which are owner data; the problem handler
+renders whatever reaches it, so the chain must not ride along. The failure is
+still logged with its own context by the layer that raised it.
+
+The private helpers stay untranslated on purpose: everything from `_lock_owner`
+through `_latest_config_id` is only ever called from inside a public method that
+already translates.
+"""
 
 from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.audit import (
@@ -62,6 +90,7 @@ from .service import (
     EvidenceConflict,
     EvidenceInvalidRequest,
     EvidenceNotFound,
+    EvidenceStorageUnavailable,
     PersistedDimension,
     PersistedSkill,
     PreparedEvaluation,
@@ -77,6 +106,15 @@ def _json_number(value: Decimal) -> int | float:
     if value == integral:
         return int(integral)
     return float(value)
+
+
+@asynccontextmanager
+async def _unavailable_on_database_error() -> AsyncIterator[None]:
+    """Report a failed database call as an outage the caller may retry."""
+    try:
+        yield
+    except SQLAlchemyError:
+        raise EvidenceStorageUnavailable("evidence storage is unavailable") from None
 
 
 class SqlAlchemyEvidenceRepository:
@@ -100,86 +138,87 @@ class SqlAlchemyEvidenceRepository:
         command: EvidenceEvaluationCommand,
         prepare: Callable[[EvaluationContext], PreparedEvaluation],
     ) -> RecordEvaluationResponse:
-        async with transaction_scope(self._session):
-            await self._lock_owner(owner_id)
-            duplicate = await self._duplicate(
-                owner_id=owner_id,
-                idempotency_key=idempotency_key,
-                request_hash=request_hash,
-            )
-            if duplicate is not None:
-                return duplicate
-            now = self._clock()
-            if now.tzinfo is None or now.utcoffset() is None:
-                raise EvidenceInvalidRequest("repository clock must be timezone-aware")
-            if command.evaluated_at > now:
-                raise EvidenceConflict("evaluation timestamp cannot be in the future")
-            context = await self._load_context(owner_id=owner_id, command=command)
-            prepared = prepare(context)
-            evaluation = await self._save_evaluation(
-                owner_id=owner_id,
-                prepared=prepared,
-                now=now,
-            )
-            dimension_rows = await self._save_dimension_scores(
-                owner_id=owner_id,
-                evaluation=evaluation,
-                prepared=prepared,
-                now=now,
-            )
-            events = await self._save_skill_events(
-                owner_id=owner_id,
-                evaluation=evaluation,
-                dimension_rows=dimension_rows,
-                prepared=prepared,
-                now=now,
-            )
-            snapshot_ids: list[int] = []
-            for skill_id in sorted({item.competency_id for item in events}):
-                snapshot = await self._save_snapshot(
+        async with _unavailable_on_database_error():
+            async with transaction_scope(self._session):
+                await self._lock_owner(owner_id)
+                duplicate = await self._duplicate(
                     owner_id=owner_id,
-                    skill_id=skill_id,
+                    idempotency_key=idempotency_key,
+                    request_hash=request_hash,
+                )
+                if duplicate is not None:
+                    return duplicate
+                now = self._clock()
+                if now.tzinfo is None or now.utcoffset() is None:
+                    raise EvidenceInvalidRequest("repository clock must be timezone-aware")
+                if command.evaluated_at > now:
+                    raise EvidenceConflict("evaluation timestamp cannot be in the future")
+                context = await self._load_context(owner_id=owner_id, command=command)
+                prepared = prepare(context)
+                evaluation = await self._save_evaluation(
+                    owner_id=owner_id,
                     prepared=prepared,
                     now=now,
                 )
-                snapshot_ids.append(snapshot.id)
-            portfolio = await self._save_portfolio_score(
-                owner_id=owner_id,
-                evaluation=evaluation,
-                prepared=prepared,
-                now=now,
-            )
-            await self._save_audit_and_outbox(
-                owner_id=owner_id,
-                evaluation_id=evaluation.id,
-                activity_id=prepared.activity_id,
-                event_count=len(events),
-                idempotency_key=idempotency_key,
-                now=now,
-            )
-            result = RecordEvaluationResponse(
-                evaluation_id=evaluation.id,
-                activity_id=prepared.activity_id,
-                attempt_id=prepared.attempt_id,
-                evidence_event_ids=tuple(item.id for item in events),
-                snapshot_ids=tuple(snapshot_ids),
-                portfolio_score_id=portfolio.id if portfolio is not None else None,
-                replayed=False,
-            )
-            self._session.add(
-                CommandReceipt(
+                dimension_rows = await self._save_dimension_scores(
                     owner_id=owner_id,
-                    command_scope="evidence.record",
-                    idempotency_key=idempotency_key,
-                    request_hash=request_hash,
-                    status="completed",
-                    result_payload=result.model_dump(mode="json"),
-                    created_at=now,
-                    expires_at=now + timedelta(days=30),
+                    evaluation=evaluation,
+                    prepared=prepared,
+                    now=now,
                 )
-            )
-            await self._session.flush()
-            return result
+                events = await self._save_skill_events(
+                    owner_id=owner_id,
+                    evaluation=evaluation,
+                    dimension_rows=dimension_rows,
+                    prepared=prepared,
+                    now=now,
+                )
+                snapshot_ids: list[int] = []
+                for skill_id in sorted({item.competency_id for item in events}):
+                    snapshot = await self._save_snapshot(
+                        owner_id=owner_id,
+                        skill_id=skill_id,
+                        prepared=prepared,
+                        now=now,
+                    )
+                    snapshot_ids.append(snapshot.id)
+                portfolio = await self._save_portfolio_score(
+                    owner_id=owner_id,
+                    evaluation=evaluation,
+                    prepared=prepared,
+                    now=now,
+                )
+                await self._save_audit_and_outbox(
+                    owner_id=owner_id,
+                    evaluation_id=evaluation.id,
+                    activity_id=prepared.activity_id,
+                    event_count=len(events),
+                    idempotency_key=idempotency_key,
+                    now=now,
+                )
+                result = RecordEvaluationResponse(
+                    evaluation_id=evaluation.id,
+                    activity_id=prepared.activity_id,
+                    attempt_id=prepared.attempt_id,
+                    evidence_event_ids=tuple(item.id for item in events),
+                    snapshot_ids=tuple(snapshot_ids),
+                    portfolio_score_id=portfolio.id if portfolio is not None else None,
+                    replayed=False,
+                )
+                self._session.add(
+                    CommandReceipt(
+                        owner_id=owner_id,
+                        command_scope="evidence.record",
+                        idempotency_key=idempotency_key,
+                        request_hash=request_hash,
+                        status="completed",
+                        result_payload=result.model_dump(mode="json"),
+                        created_at=now,
+                        expires_at=now + timedelta(days=30),
+                    )
+                )
+                await self._session.flush()
+                return result
 
     async def _lock_owner(self, owner_id: int) -> None:
         locked = await self._session.scalar(
@@ -863,60 +902,62 @@ class SqlAlchemyEvidenceRepository:
         await self._session.flush()
 
     async def list_skills(self, *, owner_id: int) -> SkillListResponse:
-        config_id = await self._latest_config_id(owner_id)
-        skills = tuple(
-            (
-                await self._session.scalars(
-                    select(Competency)
-                    .where(Competency.owner_id == owner_id)
-                    .where(Competency.config_seed_version_id == config_id)
-                    .order_by(Competency.slug, Competency.id)
-                )
-            ).all()
-        )
-        snapshots = tuple(
-            (
-                await self._session.scalars(
-                    select(SkillSnapshot)
-                    .where(SkillSnapshot.owner_id == owner_id)
-                    .where(SkillSnapshot.config_seed_version_id == config_id)
-                    .order_by(
-                        SkillSnapshot.competency_id,
-                        SkillSnapshot.created_at.desc(),
-                        SkillSnapshot.id.desc(),
+        async with _unavailable_on_database_error():
+            config_id = await self._latest_config_id(owner_id)
+            skills = tuple(
+                (
+                    await self._session.scalars(
+                        select(Competency)
+                        .where(Competency.owner_id == owner_id)
+                        .where(Competency.config_seed_version_id == config_id)
+                        .order_by(Competency.slug, Competency.id)
                     )
-                )
-            ).all()
-        )
-        latest: dict[int, SkillSnapshot] = {}
-        for item in snapshots:
-            latest.setdefault(item.competency_id, item)
-        result = SkillListResponse(
-            items=tuple(
-                SkillSummaryResponse(
-                    slug=item.slug,
-                    name=item.name,
-                    baseline=item.baseline_level,
-                    month_one_target=item.month_one_target,
-                    final_target=item.final_target,
-                    latest_snapshot=(
-                        self._snapshot_response(latest[item.id])
-                        if item.id in latest
-                        else None
-                    ),
-                )
-                for item in skills
+                ).all()
             )
-        )
-        await self._session.rollback()
-        return result
+            snapshots = tuple(
+                (
+                    await self._session.scalars(
+                        select(SkillSnapshot)
+                        .where(SkillSnapshot.owner_id == owner_id)
+                        .where(SkillSnapshot.config_seed_version_id == config_id)
+                        .order_by(
+                            SkillSnapshot.competency_id,
+                            SkillSnapshot.created_at.desc(),
+                            SkillSnapshot.id.desc(),
+                        )
+                    )
+                ).all()
+            )
+            latest: dict[int, SkillSnapshot] = {}
+            for item in snapshots:
+                latest.setdefault(item.competency_id, item)
+            result = SkillListResponse(
+                items=tuple(
+                    SkillSummaryResponse(
+                        slug=item.slug,
+                        name=item.name,
+                        baseline=item.baseline_level,
+                        month_one_target=item.month_one_target,
+                        final_target=item.final_target,
+                        latest_snapshot=(
+                            self._snapshot_response(latest[item.id])
+                            if item.id in latest
+                            else None
+                        ),
+                    )
+                    for item in skills
+                )
+            )
+            await self._session.rollback()
+            return result
 
     async def get_skill(self, *, owner_id: int, skill_slug: str) -> SkillSummaryResponse:
-        items = (await self.list_skills(owner_id=owner_id)).items
-        for item in items:
-            if item.slug == skill_slug:
-                return item
-        raise EvidenceNotFound("skill was not found")
+        async with _unavailable_on_database_error():
+            items = (await self.list_skills(owner_id=owner_id)).items
+            for item in items:
+                if item.slug == skill_slug:
+                    return item
+            raise EvidenceNotFound("skill was not found")
 
     async def list_skill_evidence(
         self,
@@ -926,13 +967,14 @@ class SqlAlchemyEvidenceRepository:
         cursor: int | None,
         limit: int,
     ) -> EvidenceEventPage:
-        return await self._list_evidence(
-            owner_id=owner_id,
-            skill_slug=skill_slug,
-            activity_id=None,
-            cursor=cursor,
-            limit=limit,
-        )
+        async with _unavailable_on_database_error():
+            return await self._list_evidence(
+                owner_id=owner_id,
+                skill_slug=skill_slug,
+                activity_id=None,
+                cursor=cursor,
+                limit=limit,
+            )
 
     async def list_activity_evidence(
         self,
@@ -942,13 +984,14 @@ class SqlAlchemyEvidenceRepository:
         cursor: int | None,
         limit: int,
     ) -> EvidenceEventPage:
-        return await self._list_evidence(
-            owner_id=owner_id,
-            skill_slug=None,
-            activity_id=activity_id,
-            cursor=cursor,
-            limit=limit,
-        )
+        async with _unavailable_on_database_error():
+            return await self._list_evidence(
+                owner_id=owner_id,
+                skill_slug=None,
+                activity_id=activity_id,
+                cursor=cursor,
+                limit=limit,
+            )
 
     async def _list_evidence(
         self,
@@ -1057,39 +1100,40 @@ class SqlAlchemyEvidenceRepository:
         cursor: int | None,
         limit: int,
     ) -> PortfolioHistoryResponse:
-        if not 1 <= limit <= _READ_LIMIT_MAX:
-            raise EvidenceInvalidRequest("portfolio page limit is invalid")
-        query = (
-            select(PortfolioJudgmentScore, RubricVersion.version_key)
-            .join(
-                RubricVersion,
-                (RubricVersion.owner_id == PortfolioJudgmentScore.owner_id)
-                & (
-                    RubricVersion.config_seed_version_id
-                    == PortfolioJudgmentScore.config_seed_version_id
+        async with _unavailable_on_database_error():
+            if not 1 <= limit <= _READ_LIMIT_MAX:
+                raise EvidenceInvalidRequest("portfolio page limit is invalid")
+            query = (
+                select(PortfolioJudgmentScore, RubricVersion.version_key)
+                .join(
+                    RubricVersion,
+                    (RubricVersion.owner_id == PortfolioJudgmentScore.owner_id)
+                    & (
+                        RubricVersion.config_seed_version_id
+                        == PortfolioJudgmentScore.config_seed_version_id
+                    )
+                    & (RubricVersion.id == PortfolioJudgmentScore.rubric_version_id),
                 )
-                & (RubricVersion.id == PortfolioJudgmentScore.rubric_version_id),
+                .where(PortfolioJudgmentScore.owner_id == owner_id)
             )
-            .where(PortfolioJudgmentScore.owner_id == owner_id)
-        )
-        if cursor is not None:
-            query = query.where(PortfolioJudgmentScore.id < cursor)
-        rows = (
-            await self._session.execute(
-                query.order_by(PortfolioJudgmentScore.id.desc()).limit(limit + 1)
+            if cursor is not None:
+                query = query.where(PortfolioJudgmentScore.id < cursor)
+            rows = (
+                await self._session.execute(
+                    query.order_by(PortfolioJudgmentScore.id.desc()).limit(limit + 1)
+                )
+            ).all()
+            has_more = len(rows) > limit
+            selected = rows[:limit]
+            result = PortfolioHistoryResponse(
+                items=tuple(
+                    self._portfolio_response(item, rubric_version)
+                    for item, rubric_version in selected
+                ),
+                next_cursor=selected[-1][0].id if has_more and selected else None,
             )
-        ).all()
-        has_more = len(rows) > limit
-        selected = rows[:limit]
-        result = PortfolioHistoryResponse(
-            items=tuple(
-                self._portfolio_response(item, rubric_version)
-                for item, rubric_version in selected
-            ),
-            next_cursor=selected[-1][0].id if has_more and selected else None,
-        )
-        await self._session.rollback()
-        return result
+            await self._session.rollback()
+            return result
 
     async def _latest_config_id(self, owner_id: int) -> int:
         config_id = await self._session.scalar(
