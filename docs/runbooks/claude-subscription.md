@@ -6,10 +6,11 @@ stored as a `PrivacyAttestation` row (`apps/backend/src/tamforge_backend/agents/
 row through `AttestationRepository.current` and reports `disabled` for every
 combination except `CLAUDE_ENABLED=true` plus a current attestation. This document is
 that procedure: obtaining the credential, judging the policy it operates under, and
-recording that judgment. It does not cover the compatibility probe that checks the
-installed SDK, the subscription login and the resolved model, which is #65's work, or
-the API-credential rejection and no-paid-fallback policy, which is #66's. Both extend
-`agents/compatibility.py`; neither exists yet.
+recording that judgment. The compatibility probe that checks the installed SDK, the
+subscription login, the resolved model and the structured-response path now lives
+beside it in the same module and is described under "Running the compatibility probe"
+below. The API-credential rejection and no-paid-fallback policy is #66's work, extends
+the same module, and does not exist yet.
 
 This is a manual, single-operator procedure, run once per Anthropic policy version,
 not an onboarding flow a second user ever goes through. TAM Forge is, per its own
@@ -106,3 +107,34 @@ with a reason from the closed `DISABLED_REASONS` vocabulary — `not_enabled`,
 secret. `apps/backend/tests/unit/agents/test_settings.py` and
 `test_compatibility.py` are the executable form of this rule; rerunning them is
 sufficient to confirm the gate still behaves as this document describes.
+
+## Running the compatibility probe
+
+Recording the attestation opens the gate; it does not prove the host can actually run
+Claude work. `probe_claude_compatibility` answers that second question by asking the
+installed runtime what it is. It sends no owner content: one requested model
+identifier goes out, and versions, an authentication method, a resolved model and a
+fixed structured echo come back. It also runs the attestation gate first and skips the
+runtime entirely while Claude is disabled, so an operator can never learn anything
+about the runtime that the gate has not already permitted.
+
+The result is one of four statuses. `ready` means every check passed and Claude work
+may claim jobs. `disabled` repeats the gate's own reason. `blocked` means the host is
+misconfigured in a way a human has to fix: the SDK is missing or below
+`MINIMUM_SDK_VERSION`, the credential is absent or is not the subscription one, the
+requested model did not resolve to one the subscription supports, the structured
+response did not come back, the credential was refused, or Anthropic policy refused
+the use. `needs_attention` means the quota is spent or the probe itself did not
+complete, both of which resolve without a configuration change.
+
+Every reason carries nonsecret remediation from `PROBE_REMEDIATION`, and every entry
+in that table is safe to display anywhere. An unexpected runtime exception is
+classified as `probe_failed` and its message is deliberately dropped rather than
+rendered, because an SDK error can carry the credential it tried to use. Read the
+worker host's own logs for the detail.
+
+Two rules matter operationally. A quota failure is not a retry loop: wait for the
+window rather than hammering it, and never resolve it by adding an API key. And a
+`blocked` result stops Claude work from claiming jobs without making the API
+unready — every non-Claude study path keeps working, which is the whole point of the
+gate failing closed.
