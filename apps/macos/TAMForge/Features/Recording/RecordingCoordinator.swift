@@ -442,6 +442,34 @@ final class RecordingCoordinator: ObservableObject {
         }
     }
 
+    // A transcript exists only in memory between the moment it is computed
+    // and the moment the server accepts it. Quitting the app inside that
+    // window, or calling start(), which cancels the run in progress, used to
+    // leave a recording with durable audio on the server, an unaccepted
+    // transcript, and a spool no release gate would ever open. Any upload
+    // pass whose gates come back as exactly that pair recomputes the
+    // transcript from the sealed spool, which is still on disk precisely
+    // because the transcript gate is what keeps it there. Recomputing writes
+    // nothing new: it reads the same encrypted audio the first run read, so
+    // no transcript text ever reaches the filesystem.
+    private func resumeTranscriptionIfNeeded(
+        recordingID: UUID,
+        gates: RecordingReleaseGates
+    ) async {
+        guard gates.audioCreatedOnServer, !gates.transcriptLineageAccepted else { return }
+        // A cached payload means the transcript already exists and the upload
+        // pipeline's own retry pass is resubmitting it; recomputing would burn
+        // a full transcription for a payload already in hand.
+        guard await transcriptCache.payload(for: recordingID) == nil else { return }
+        // .idle is the only state holding no transcript worth keeping: a run
+        // in flight owns transcriptionTask, and a settled .ready or .failed
+        // belongs to a recording whose result this pass must not overwrite.
+        // Anything else recovers on a later pass. Checked after the cache read
+        // so no suspension can invalidate it.
+        guard transcriptState == .idle else { return }
+        beginTranscription(recordingID: recordingID)
+    }
+
     // transcriptState stays .ready either way (the transcript is still
     // valid locally) and the upload state stays whatever the audio
     // pipeline already made it, typically waitingForTranscript. The
@@ -717,6 +745,7 @@ final class RecordingCoordinator: ObservableObject {
                 uploadStates.removeValue(forKey: recordingID)
             } else {
                 uploadStates[recordingID] = .waitingForTranscript
+                await resumeTranscriptionIfNeeded(recordingID: recordingID, gates: gates)
             }
             await refreshPendingRecordings()
         } catch is CancellationError {

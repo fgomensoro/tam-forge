@@ -531,7 +531,8 @@ final class RecordingUploadTests: XCTestCase {
         await XCTAssertAsyncThrowsError {
             _ = try await server.submitTranscript(payload, idempotencyKey: payload.idempotencyKey)
         }
-        XCTAssertTrue(await server.submittedTranscripts.isEmpty)
+        let submittedBeforeAudio = await server.submittedTranscripts
+        XCTAssertTrue(submittedBeforeAudio.isEmpty)
 
         let pipeline = RecordingUploadPipeline(
             spoolFactory: fixture.factory, server: server, transcriptCache: cache
@@ -552,8 +553,10 @@ final class RecordingUploadTests: XCTestCase {
         // spool releases.
         let secondPass = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
         XCTAssertTrue(secondPass.mayDeleteLocalSpool)
-        XCTAssertEqual(await server.submissionAttempts, 2)
-        XCTAssertEqual(await server.submittedTranscripts.count, 1)
+        let attemptsAfterSecondPass = await server.submissionAttempts
+        XCTAssertEqual(attemptsAfterSecondPass, 2)
+        let acceptedSubmissions = await server.submittedTranscripts
+        XCTAssertEqual(acceptedSubmissions.count, 1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.directory.path))
     }
 
@@ -571,7 +574,8 @@ final class RecordingUploadTests: XCTestCase {
         // submitted yet (the retry branch has not run).
         let firstPass = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
         XCTAssertTrue(firstPass.audioCreatedOnServer)
-        XCTAssertEqual(await server.submissionAttempts, 0)
+        let attemptsAfterFirstPass = await server.submissionAttempts
+        XCTAssertEqual(attemptsAfterFirstPass, 0)
 
         // Second pass: the retry branch resubmits the cached payload, but
         // the configured transient failure rejects it. The pass must still
@@ -580,7 +584,8 @@ final class RecordingUploadTests: XCTestCase {
         let secondPass = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
         XCTAssertFalse(secondPass.transcriptLineageAccepted)
         XCTAssertFalse(secondPass.mayDeleteLocalSpool)
-        XCTAssertEqual(await server.submissionAttempts, 1)
+        let attemptsAfterFailedRetry = await server.submissionAttempts
+        XCTAssertEqual(attemptsAfterFailedRetry, 1)
         XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.directory.path))
 
         // The transient condition clears. A later pass retries the exact
@@ -588,8 +593,10 @@ final class RecordingUploadTests: XCTestCase {
         await server.setFailSubmission(false)
         let thirdPass = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
         XCTAssertTrue(thirdPass.mayDeleteLocalSpool)
-        XCTAssertEqual(await server.submissionAttempts, 2)
-        XCTAssertEqual(await server.submittedTranscripts.count, 1)
+        let attemptsAfterSuccessfulRetry = await server.submissionAttempts
+        XCTAssertEqual(attemptsAfterSuccessfulRetry, 2)
+        let acceptedSubmissions = await server.submittedTranscripts
+        XCTAssertEqual(acceptedSubmissions.count, 1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.directory.path))
     }
 

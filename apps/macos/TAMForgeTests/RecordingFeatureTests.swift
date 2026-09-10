@@ -2130,6 +2130,143 @@ final class RecordingFeatureTests: XCTestCase {
         XCTAssertGreaterThan(attemptsAfterRetryPass, attemptsAfterFirstTry)
     }
 
+    // Issue #44's own failure reached through a different door. The audio is
+    // durable on the server, the transcript never was, and the in-memory
+    // cache that would have held it did not survive the quit. Without
+    // recovery the spool waits forever on a gate nothing can open.
+    func testRelaunchTranscribesARecordingWhoseTranscriptNeverReachedTheServer() async throws {
+        let root = try temporaryDirectory()
+        let keyStore = InMemoryRecordingKeyStore()
+        let factory = EncryptedRecordingSpoolFactory(
+            rootURL: root, keyStore: keyStore, reservationBytes: 0
+        )
+        let server = FakeRecordingServer()
+        let source = FakeRecordingCaptureSource()
+
+        // The session that quit: no transcriber configured, so the recording
+        // seals and its audio uploads while no transcript is ever computed.
+        let before = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: factory
+            )
+        }
+        await before.start()
+        await source.emit(.chunk(.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 48
+        )))
+        await source.emit(.chunk(.fixture(
+            track: .systemAudio, presentationNanoseconds: 1_000_000_000, sampleCount: 48
+        )))
+        await before.stop()
+        let sealedPhase = await MainActor.run { before.phase }
+        guard case let .sealed(recordingID) = sealedPhase else {
+            return XCTFail("expected .sealed, got \(sealedPhase)")
+        }
+        let strandedGates = try await RecordingUploadPipeline(
+            spoolFactory: factory, server: server
+        ).upload(recordingID: recordingID, progress: { _ in })
+        XCTAssertTrue(strandedGates.audioCreatedOnServer)
+        XCTAssertFalse(strandedGates.transcriptLineageAccepted)
+        let submittedBeforeRelaunch = await server.submittedTranscripts
+        XCTAssertTrue(submittedBeforeRelaunch.isEmpty)
+
+        // The relaunch: a fresh coordinator over the same spool with an empty
+        // transcript cache, which is all a cold start ever has.
+        let cache = RecordingTranscriptCache()
+        let relaunched = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: factory,
+                uploader: RecordingUploadPipeline(
+                    spoolFactory: factory, server: server, transcriptCache: cache
+                ),
+                server: server,
+                transcriptCache: cache,
+                audioReader: factory,
+                transcriber: FakeSealTranscriber(text: "recovered after relaunch")
+            )
+        }
+
+        let submitted = await waitUntilSubmissionCount(server, atLeast: 1)
+        XCTAssertEqual(submitted.count, 1)
+        XCTAssertEqual(submitted.first?.recordingID, recordingID.uuidString.lowercased())
+        let recovered = await MainActor.run { relaunched.transcriptState }
+        guard case let .ready(transcribedID, result) = recovered else {
+            return XCTFail("expected .ready, got \(recovered)")
+        }
+        XCTAssertEqual(transcribedID, recordingID)
+        XCTAssertEqual(result.text, "recovered after relaunch")
+
+        // And the recording is no longer stranded: the pass after acceptance
+        // finds both gates open and releases the spool.
+        let releaseGates = try await RecordingUploadPipeline(
+            spoolFactory: factory, server: server, transcriptCache: cache
+        ).upload(recordingID: recordingID, progress: { _ in })
+        XCTAssertTrue(releaseGates.mayDeleteLocalSpool)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: root.appendingPathComponent(recordingID.uuidString).path
+        ))
+    }
+
+    // The same-session flow stays untouched: stop() starts the transcription
+    // and the upload pass that follows finds a transcript already in hand, so
+    // it must never start a second run over the same audio.
+    func testUploadPassNeverRecomputesATranscriptTheSessionAlreadyHas() async throws {
+        let root = try temporaryDirectory()
+        let keyStore = InMemoryRecordingKeyStore()
+        let factory = EncryptedRecordingSpoolFactory(
+            rootURL: root, keyStore: keyStore, reservationBytes: 0
+        )
+        // Submission always fails here, so every pass sees the same gates a
+        // stranded recording shows: audio durable, transcript unaccepted.
+        let server = FakeRecordingServer(failSubmission: true)
+        let cache = RecordingTranscriptCache()
+        let source = FakeRecordingCaptureSource()
+        let transcriber = FakeSealTranscriber(text: "computed once")
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: source,
+                spoolFactory: factory,
+                uploader: RecordingUploadPipeline(
+                    spoolFactory: factory, server: server, transcriptCache: cache
+                ),
+                server: server,
+                transcriptCache: cache,
+                audioReader: factory,
+                transcriber: transcriber
+            )
+        }
+
+        await coordinator.start()
+        await source.emit(.chunk(.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 48
+        )))
+        await source.emit(.chunk(.fixture(
+            track: .systemAudio, presentationNanoseconds: 1_000_000_000, sampleCount: 48
+        )))
+        await coordinator.stop()
+
+        let state = await waitUntilTranscriptSettles(coordinator)
+        guard case let .ready(recordingID, _) = state else {
+            return XCTFail("expected .ready, got \(state)")
+        }
+        _ = await waitUntilSubmissionAttempt(server, atLeast: 1)
+        _ = await waitUntilUploadState(
+            coordinator, recordingID: recordingID, equals: .waitingForTranscript
+        )
+        // The recovery decision runs just after that upload state is written,
+        // so hold the assertion open long enough for a wrong one to show up.
+        for _ in 0..<20 {
+            try? await Task.sleep(for: .milliseconds(10))
+            let transcriptionRuns = await transcriber.receivedRequests
+            XCTAssertEqual(transcriptionRuns.count, 1)
+        }
+    }
+
     func testSpoolReleasesOnceServerReportsBothGatesTrueAfterSubmission() async throws {
         let root = try temporaryDirectory()
         let keyStore = InMemoryRecordingKeyStore()
