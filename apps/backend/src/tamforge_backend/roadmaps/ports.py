@@ -24,6 +24,20 @@ class ActivationNotEligible(RoadmapWorkflowError):
     """A roadmap version cannot be activated yet."""
 
 
+class RoadmapStorageUnavailable(RoadmapWorkflowError):
+    """The roadmap's backing store rejected the work and the caller may retry.
+
+    Raised by the repository for a `SQLAlchemyError` and nothing else, which
+    is why it lives beside the other repository-boundary errors rather than in
+    `service`: the repository imports this module and must not import the
+    service. It shares the 503 `roadmap_storage_unavailable` problem with
+    `ObjectStoreError` on purpose. Both say the same thing to a client -- the
+    store behind this roadmap is not answering, the request was not applied,
+    try again -- and which store it was is an operator's detail, not a
+    caller's.
+    """
+
+
 _MIRROR_CODES = frozenset(
     {
         "storage_unavailable",

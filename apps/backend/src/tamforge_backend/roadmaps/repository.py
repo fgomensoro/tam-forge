@@ -1,12 +1,42 @@
-"""Transactional PostgreSQL persistence for immutable roadmap workflows."""
+"""Transactional PostgreSQL persistence for immutable roadmap workflows.
+
+Every public method translates a `SQLAlchemyError` into
+`RoadmapStorageUnavailable`, because this is the only layer that can still
+recognise one for what it is. Above it nothing catches a raw one:
+`api.register_routes` installs a handler per domain error type and none for
+SQLAlchemy's, and `observability.middleware` re-raises, so a dropped
+connection or a statement timeout used to reach Starlette's own server-error
+handling as a plain-text 500 rather than the `application/problem+json` 503
+the roadmap routes declare.
+
+The translation wraps `transaction_scope` from outside rather than sitting
+inside the block, so the commit that scope issues on its way out is covered
+too -- a write can survive every statement and still fail there.
+`RoadmapStorageUnavailable` is not a `SQLAlchemyError`, so nesting is
+harmless: an inner failure is translated once and passes through any outer
+wrapper untouched.
+
+`raise ... from None` is deliberate. The `SQLAlchemyError` carries the
+rejected statement and its bound parameters, which are owner data; the
+problem handler renders whatever reaches it, so the chain must not ride
+along. The failure is still logged with its own context by the layer that
+raised it.
+
+The private helpers stay untranslated on purpose: `_locked_import`,
+`_locked_version` and `_persist_curriculum` are only ever called from inside
+a public method that already translates.
+"""
 
 from __future__ import annotations
 
 import hashlib
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any, cast
 
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import transaction_scope
@@ -31,8 +61,18 @@ from .ports import (
     ImportConflict,
     RoadmapImportRecord,
     RoadmapNotFound,
+    RoadmapStorageUnavailable,
     RoadmapVersionRecord,
 )
+
+
+@asynccontextmanager
+async def _unavailable_on_database_error() -> AsyncIterator[None]:
+    """Report a failed database call as an outage the caller may retry."""
+    try:
+        yield
+    except SQLAlchemyError:
+        raise RoadmapStorageUnavailable("roadmap storage is unavailable") from None
 
 
 class SqlAlchemyRoadmapRepository:
@@ -49,21 +89,8 @@ class SqlAlchemyRoadmapRepository:
         idempotency_key: str,
         package_hash: str,
     ) -> RoadmapImportRecord | None:
-        idempotency_row = (
-            await self._session.execute(
-                select(RoadmapImport, RoadmapSource.source_key)
-                .join(
-                    RoadmapSource,
-                    (RoadmapSource.owner_id == RoadmapImport.owner_id)
-                    & (RoadmapSource.id == RoadmapImport.source_id),
-                )
-                .where(RoadmapImport.owner_id == owner_id)
-                .where(RoadmapImport.idempotency_key == idempotency_key)
-            )
-        ).first()
-        package_row = None
-        if idempotency_row is None:
-            package_row = (
+        async with _unavailable_on_database_error():
+            idempotency_row = (
                 await self._session.execute(
                     select(RoadmapImport, RoadmapSource.source_key)
                     .join(
@@ -72,14 +99,28 @@ class SqlAlchemyRoadmapRepository:
                         & (RoadmapSource.id == RoadmapImport.source_id),
                     )
                     .where(RoadmapImport.owner_id == owner_id)
-                    .where(RoadmapSource.source_key == source_key)
-                    .where(RoadmapImport.package_hash == bytes.fromhex(package_hash))
+                    .where(RoadmapImport.idempotency_key == idempotency_key)
                 )
             ).first()
-        row = idempotency_row or package_row
-        result = self._to_import(row[0], row[1]) if row is not None else None
-        await self._session.rollback()
-        return result
+            package_row = None
+            if idempotency_row is None:
+                package_row = (
+                    await self._session.execute(
+                        select(RoadmapImport, RoadmapSource.source_key)
+                        .join(
+                            RoadmapSource,
+                            (RoadmapSource.owner_id == RoadmapImport.owner_id)
+                            & (RoadmapSource.id == RoadmapImport.source_id),
+                        )
+                        .where(RoadmapImport.owner_id == owner_id)
+                        .where(RoadmapSource.source_key == source_key)
+                        .where(RoadmapImport.package_hash == bytes.fromhex(package_hash))
+                    )
+                ).first()
+            row = idempotency_row or package_row
+            result = self._to_import(row[0], row[1]) if row is not None else None
+            await self._session.rollback()
+            return result
 
     async def create_staged_import(
         self,
@@ -92,93 +133,95 @@ class SqlAlchemyRoadmapRepository:
         object_key: str,
         idempotency_key: str,
     ) -> CreateImportResult:
-        digest = bytes.fromhex(package_hash)
-        async with transaction_scope(self._session):
-            await self._session.execute(
-                select(func.pg_advisory_xact_lock(owner_id, func.hashtext(source_key)))
-            )
-            await self._session.execute(
-                insert(RoadmapSource)
-                .values(
-                    owner_id=owner_id,
-                    source_key=source_key,
-                    name=source_name,
-                    source_kind=source_kind,
-                )
-                .on_conflict_do_nothing(
-                    index_elements=[RoadmapSource.owner_id, RoadmapSource.source_key]
-                )
-            )
-            source = (
+        async with _unavailable_on_database_error():
+            digest = bytes.fromhex(package_hash)
+            async with transaction_scope(self._session):
                 await self._session.execute(
-                    select(RoadmapSource)
-                    .where(RoadmapSource.owner_id == owner_id)
-                    .where(RoadmapSource.source_key == source_key)
-                    .with_for_update()
+                    select(func.pg_advisory_xact_lock(owner_id, func.hashtext(source_key)))
                 )
-            ).scalar_one()
-            existing_by_key = (
                 await self._session.execute(
-                    select(RoadmapImport)
-                    .where(RoadmapImport.owner_id == owner_id)
-                    .where(RoadmapImport.idempotency_key == idempotency_key)
-                    .with_for_update()
-                )
-            ).scalar_one_or_none()
-            if existing_by_key is not None:
-                if (
-                    existing_by_key.source_id != source.id
-                    or existing_by_key.package_hash != digest
-                ):
-                    raise ImportConflict(
-                        "Idempotency-Key was already used for different content"
+                    insert(RoadmapSource)
+                    .values(
+                        owner_id=owner_id,
+                        source_key=source_key,
+                        name=source_name,
+                        source_kind=source_kind,
                     )
-                return CreateImportResult(
-                    record=self._to_import(existing_by_key, source.source_key),
-                    created=False,
+                    .on_conflict_do_nothing(
+                        index_elements=[RoadmapSource.owner_id, RoadmapSource.source_key]
+                    )
                 )
-            existing_by_hash = (
-                await self._session.execute(
-                    select(RoadmapImport)
-                    .where(RoadmapImport.owner_id == owner_id)
-                    .where(RoadmapImport.source_id == source.id)
-                    .where(RoadmapImport.package_hash == digest)
-                    .with_for_update()
+                source = (
+                    await self._session.execute(
+                        select(RoadmapSource)
+                        .where(RoadmapSource.owner_id == owner_id)
+                        .where(RoadmapSource.source_key == source_key)
+                        .with_for_update()
+                    )
+                ).scalar_one()
+                existing_by_key = (
+                    await self._session.execute(
+                        select(RoadmapImport)
+                        .where(RoadmapImport.owner_id == owner_id)
+                        .where(RoadmapImport.idempotency_key == idempotency_key)
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                if existing_by_key is not None:
+                    if (
+                        existing_by_key.source_id != source.id
+                        or existing_by_key.package_hash != digest
+                    ):
+                        raise ImportConflict(
+                            "Idempotency-Key was already used for different content"
+                        )
+                    return CreateImportResult(
+                        record=self._to_import(existing_by_key, source.source_key),
+                        created=False,
+                    )
+                existing_by_hash = (
+                    await self._session.execute(
+                        select(RoadmapImport)
+                        .where(RoadmapImport.owner_id == owner_id)
+                        .where(RoadmapImport.source_id == source.id)
+                        .where(RoadmapImport.package_hash == digest)
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                if existing_by_hash is not None:
+                    return CreateImportResult(
+                        record=self._to_import(existing_by_hash, source.source_key),
+                        created=False,
+                    )
+                item = RoadmapImport(
+                    owner_id=owner_id,
+                    source_id=source.id,
+                    package_hash=digest,
+                    object_key=object_key,
+                    status="staged",
+                    validation_report={},
+                    semantic_diff={},
+                    idempotency_key=idempotency_key,
+                    failure_code=None,
+                    started_at=None,
+                    completed_at=None,
                 )
-            ).scalar_one_or_none()
-            if existing_by_hash is not None:
-                return CreateImportResult(
-                    record=self._to_import(existing_by_hash, source.source_key),
-                    created=False,
-                )
-            item = RoadmapImport(
-                owner_id=owner_id,
-                source_id=source.id,
-                package_hash=digest,
-                object_key=object_key,
-                status="staged",
-                validation_report={},
-                semantic_diff={},
-                idempotency_key=idempotency_key,
-                failure_code=None,
-                started_at=None,
-                completed_at=None,
-            )
-            self._session.add(item)
-            await self._session.flush()
-            result = self._to_import(item, source.source_key)
-        return CreateImportResult(record=result, created=True)
+                self._session.add(item)
+                await self._session.flush()
+                result = self._to_import(item, source.source_key)
+            return CreateImportResult(record=result, created=True)
 
     async def begin_validation(
         self, *, owner_id: int, import_id: int
     ) -> RoadmapImportRecord:
-        async with transaction_scope(self._session):
-            item, source_key = await self._locked_import(owner_id, import_id)
-            item.status = "validating"
-            item.started_at = utc_now()
-            await self._session.flush()
-            result = self._to_import(item, source_key)
-        return result
+        async with _unavailable_on_database_error():
+            async with transaction_scope(self._session):
+                item, source_key = await self._locked_import(owner_id, import_id)
+                item.status = "validating"
+                item.started_at = utc_now()
+                await self._session.flush()
+                result = self._to_import(item, source_key)
+            return result
 
     async def finish_validation(
         self,
@@ -188,15 +231,16 @@ class SqlAlchemyRoadmapRepository:
         validation_report: dict[str, object],
         semantic_diff: dict[str, object],
     ) -> RoadmapImportRecord:
-        async with transaction_scope(self._session):
-            item, source_key = await self._locked_import(owner_id, import_id)
-            item.validation_report = cast(dict[str, Any], validation_report)
-            item.semantic_diff = cast(dict[str, Any], semantic_diff)
-            item.status = "validated"
-            item.completed_at = utc_now()
-            await self._session.flush()
-            result = self._to_import(item, source_key)
-        return result
+        async with _unavailable_on_database_error():
+            async with transaction_scope(self._session):
+                item, source_key = await self._locked_import(owner_id, import_id)
+                item.validation_report = cast(dict[str, Any], validation_report)
+                item.semantic_diff = cast(dict[str, Any], semantic_diff)
+                item.status = "validated"
+                item.completed_at = utc_now()
+                await self._session.flush()
+                result = self._to_import(item, source_key)
+            return result
 
     async def reject_validation(
         self,
@@ -206,252 +250,262 @@ class SqlAlchemyRoadmapRepository:
         validation_report: dict[str, object],
         failure_code: str,
     ) -> RoadmapImportRecord:
-        async with transaction_scope(self._session):
-            item, source_key = await self._locked_import(owner_id, import_id)
-            item.validation_report = cast(dict[str, Any], validation_report)
-            item.failure_code = failure_code
-            item.status = "rejected"
-            item.completed_at = utc_now()
-            await self._session.flush()
-            result = self._to_import(item, source_key)
-        return result
+        async with _unavailable_on_database_error():
+            async with transaction_scope(self._session):
+                item, source_key = await self._locked_import(owner_id, import_id)
+                item.validation_report = cast(dict[str, Any], validation_report)
+                item.failure_code = failure_code
+                item.status = "rejected"
+                item.completed_at = utc_now()
+                await self._session.flush()
+                result = self._to_import(item, source_key)
+            return result
 
     async def get_import(
         self, *, owner_id: int, import_id: int
     ) -> RoadmapImportRecord | None:
-        row = (
-            await self._session.execute(
-                select(RoadmapImport, RoadmapSource.source_key)
-                .join(
-                    RoadmapSource,
-                    (RoadmapSource.owner_id == RoadmapImport.owner_id)
-                    & (RoadmapSource.id == RoadmapImport.source_id),
+        async with _unavailable_on_database_error():
+            row = (
+                await self._session.execute(
+                    select(RoadmapImport, RoadmapSource.source_key)
+                    .join(
+                        RoadmapSource,
+                        (RoadmapSource.owner_id == RoadmapImport.owner_id)
+                        & (RoadmapSource.id == RoadmapImport.source_id),
+                    )
+                    .where(RoadmapImport.owner_id == owner_id)
+                    .where(RoadmapImport.id == import_id)
                 )
-                .where(RoadmapImport.owner_id == owner_id)
-                .where(RoadmapImport.id == import_id)
-            )
-        ).first()
-        result = self._to_import(row[0], row[1]) if row is not None else None
-        await self._session.rollback()
-        return result
+            ).first()
+            result = self._to_import(row[0], row[1]) if row is not None else None
+            await self._session.rollback()
+            return result
 
     async def latest_normalized_payload(
         self, *, owner_id: int, source_id: int
     ) -> dict[str, object] | None:
-        value = (
-            await self._session.execute(
-                select(RoadmapVersion.normalized_payload)
-                .where(RoadmapVersion.owner_id == owner_id)
-                .where(RoadmapVersion.source_id == source_id)
-                .order_by(RoadmapVersion.version_number.desc())
-                .limit(1)
-            )
-        ).scalar_one_or_none()
-        await self._session.rollback()
-        return cast(dict[str, object] | None, value)
-
-    async def approve_import(self, approval: ImportApproval) -> RoadmapVersionRecord:
-        async with transaction_scope(self._session):
-            item, _ = await self._locked_import(approval.owner_id, approval.import_id)
-            if item.status != "validated":
-                raise ImportConflict("roadmap import is not validated")
-            source = (
+        async with _unavailable_on_database_error():
+            value = (
                 await self._session.execute(
-                    select(RoadmapSource)
-                    .where(RoadmapSource.owner_id == approval.owner_id)
-                    .where(RoadmapSource.id == item.source_id)
-                    .with_for_update()
-                )
-            ).scalar_one()
-            predecessor = (
-                await self._session.execute(
-                    select(RoadmapVersion)
-                    .where(RoadmapVersion.owner_id == approval.owner_id)
-                    .where(RoadmapVersion.source_id == item.source_id)
+                    select(RoadmapVersion.normalized_payload)
+                    .where(RoadmapVersion.owner_id == owner_id)
+                    .where(RoadmapVersion.source_id == source_id)
                     .order_by(RoadmapVersion.version_number.desc())
                     .limit(1)
-                    .with_for_update()
                 )
             ).scalar_one_or_none()
-            version_number = 1 if predecessor is None else predecessor.version_number + 1
-            parsed = approval.parsed
-            version = RoadmapVersion(
-                owner_id=approval.owner_id,
-                source_id=source.id,
-                version_key=parsed.roadmap_version,
-                version_number=version_number,
-                month_number=parsed.tasks[0].month,
-                predecessor_id=None if predecessor is None else predecessor.id,
-                content_hash=bytes.fromhex(parsed.normalized_hash),
-                object_key=item.object_key,
-                manifest=cast(dict[str, Any], approval.manifest),
-                raw_payload=cast(dict[str, Any], approval.raw_payload),
-                normalized_payload=cast(dict[str, Any], parsed.to_dict()),
-                approved_at=None,
-                activated_at=None,
-                superseded_at=None,
-                mirror_status="pending" if approval.mirror_required else "not_required",
-                mirror_ref=None,
-                mirror_error_code=None,
-                state="draft",
-            )
-            self._session.add(version)
-            await self._session.flush()
-            await self._persist_curriculum(approval.owner_id, version.id, parsed)
-            now = utc_now()
-            version.approved_at = now
-            version.state = "approved"
-            item.status = "imported"
-            self._session.add(
-                OutboxEvent(
+            await self._session.rollback()
+            return cast(dict[str, object] | None, value)
+
+    async def approve_import(self, approval: ImportApproval) -> RoadmapVersionRecord:
+        async with _unavailable_on_database_error():
+            async with transaction_scope(self._session):
+                item, _ = await self._locked_import(approval.owner_id, approval.import_id)
+                if item.status != "validated":
+                    raise ImportConflict("roadmap import is not validated")
+                source = (
+                    await self._session.execute(
+                        select(RoadmapSource)
+                        .where(RoadmapSource.owner_id == approval.owner_id)
+                        .where(RoadmapSource.id == item.source_id)
+                        .with_for_update()
+                    )
+                ).scalar_one()
+                predecessor = (
+                    await self._session.execute(
+                        select(RoadmapVersion)
+                        .where(RoadmapVersion.owner_id == approval.owner_id)
+                        .where(RoadmapVersion.source_id == item.source_id)
+                        .order_by(RoadmapVersion.version_number.desc())
+                        .limit(1)
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                version_number = 1 if predecessor is None else predecessor.version_number + 1
+                parsed = approval.parsed
+                version = RoadmapVersion(
                     owner_id=approval.owner_id,
-                    aggregate_type="roadmap",
-                    aggregate_id=version.id,
-                    event_type="roadmap.version_approved",
-                    payload_schema_version=1,
-                    payload={"schema_version": 1, "subject_id": version.id},
-                    published_at=None,
-                    attempts=0,
-                    idempotency_key=f"roadmap-version-approved:{version.id}",
+                    source_id=source.id,
+                    version_key=parsed.roadmap_version,
+                    version_number=version_number,
+                    month_number=parsed.tasks[0].month,
+                    predecessor_id=None if predecessor is None else predecessor.id,
+                    content_hash=bytes.fromhex(parsed.normalized_hash),
+                    object_key=item.object_key,
+                    manifest=cast(dict[str, Any], approval.manifest),
+                    raw_payload=cast(dict[str, Any], approval.raw_payload),
+                    normalized_payload=cast(dict[str, Any], parsed.to_dict()),
+                    approved_at=None,
+                    activated_at=None,
+                    superseded_at=None,
+                    mirror_status="pending" if approval.mirror_required else "not_required",
+                    mirror_ref=None,
+                    mirror_error_code=None,
+                    state="draft",
                 )
-            )
-            await self._session.flush()
-            result = self._to_version(version)
-        return result
+                self._session.add(version)
+                await self._session.flush()
+                await self._persist_curriculum(approval.owner_id, version.id, parsed)
+                now = utc_now()
+                version.approved_at = now
+                version.state = "approved"
+                item.status = "imported"
+                self._session.add(
+                    OutboxEvent(
+                        owner_id=approval.owner_id,
+                        aggregate_type="roadmap",
+                        aggregate_id=version.id,
+                        event_type="roadmap.version_approved",
+                        payload_schema_version=1,
+                        payload={"schema_version": 1, "subject_id": version.id},
+                        published_at=None,
+                        attempts=0,
+                        idempotency_key=f"roadmap-version-approved:{version.id}",
+                    )
+                )
+                await self._session.flush()
+                result = self._to_version(version)
+            return result
 
     async def get_version(
         self, *, owner_id: int, version_id: int
     ) -> RoadmapVersionRecord | None:
-        version = (
-            await self._session.execute(
-                select(RoadmapVersion)
-                .where(RoadmapVersion.owner_id == owner_id)
-                .where(RoadmapVersion.id == version_id)
-            )
-        ).scalar_one_or_none()
-        result = self._to_version(version) if version is not None else None
-        await self._session.rollback()
-        return result
+        async with _unavailable_on_database_error():
+            version = (
+                await self._session.execute(
+                    select(RoadmapVersion)
+                    .where(RoadmapVersion.owner_id == owner_id)
+                    .where(RoadmapVersion.id == version_id)
+                )
+            ).scalar_one_or_none()
+            result = self._to_version(version) if version is not None else None
+            await self._session.rollback()
+            return result
 
     async def list_versions(self, *, owner_id: int) -> tuple[RoadmapVersionRecord, ...]:
-        versions = (
-            await self._session.execute(
-                select(RoadmapVersion)
-                .where(RoadmapVersion.owner_id == owner_id)
-                .order_by(RoadmapVersion.version_number.desc(), RoadmapVersion.id.desc())
-            )
-        ).scalars()
-        result = tuple(self._to_version(item) for item in versions)
-        await self._session.rollback()
-        return result
+        async with _unavailable_on_database_error():
+            versions = (
+                await self._session.execute(
+                    select(RoadmapVersion)
+                    .where(RoadmapVersion.owner_id == owner_id)
+                    .order_by(RoadmapVersion.version_number.desc(), RoadmapVersion.id.desc())
+                )
+            ).scalars()
+            result = tuple(self._to_version(item) for item in versions)
+            await self._session.rollback()
+            return result
 
     async def begin_mirror(
         self, *, owner_id: int, version_id: int
     ) -> RoadmapVersionRecord:
-        async with transaction_scope(self._session):
-            version = await self._locked_version(owner_id, version_id)
-            version.mirror_error_code = None
-            version.mirror_ref = None
-            version.mirror_status = "syncing"
-            await self._session.flush()
-            result = self._to_version(version)
-        return result
+        async with _unavailable_on_database_error():
+            async with transaction_scope(self._session):
+                version = await self._locked_version(owner_id, version_id)
+                version.mirror_error_code = None
+                version.mirror_ref = None
+                version.mirror_status = "syncing"
+                await self._session.flush()
+                result = self._to_version(version)
+            return result
 
     async def finish_mirror(
         self, *, owner_id: int, version_id: int, mirror_ref: str
     ) -> RoadmapVersionRecord:
-        async with transaction_scope(self._session):
-            version = await self._locked_version(owner_id, version_id)
-            version.mirror_ref = mirror_ref
-            version.mirror_error_code = None
-            version.mirror_status = "synced"
-            await self._session.flush()
-            result = self._to_version(version)
-        return result
+        async with _unavailable_on_database_error():
+            async with transaction_scope(self._session):
+                version = await self._locked_version(owner_id, version_id)
+                version.mirror_ref = mirror_ref
+                version.mirror_error_code = None
+                version.mirror_status = "synced"
+                await self._session.flush()
+                result = self._to_version(version)
+            return result
 
     async def fail_mirror(
         self, *, owner_id: int, version_id: int, error_code: str
     ) -> RoadmapVersionRecord:
-        async with transaction_scope(self._session):
-            version = await self._locked_version(owner_id, version_id)
-            version.mirror_ref = None
-            version.mirror_error_code = error_code
-            version.mirror_status = "failed"
-            await self._session.flush()
-            result = self._to_version(version)
-        return result
+        async with _unavailable_on_database_error():
+            async with transaction_scope(self._session):
+                version = await self._locked_version(owner_id, version_id)
+                version.mirror_ref = None
+                version.mirror_error_code = error_code
+                version.mirror_status = "failed"
+                await self._session.flush()
+                result = self._to_version(version)
+            return result
 
     async def activate_version(
         self, *, owner_id: int, version_id: int
     ) -> RoadmapVersionRecord:
-        from ..learning.models import LearnerSetting
+        async with _unavailable_on_database_error():
+            from ..learning.models import LearnerSetting
 
-        async with transaction_scope(self._session):
-            versions = tuple(
-                (
-                    await self._session.execute(
-                        select(RoadmapVersion)
-                        .where(RoadmapVersion.owner_id == owner_id)
-                        .order_by(RoadmapVersion.id)
-                        .with_for_update()
-                    )
-                ).scalars()
-            )
-            target = next((item for item in versions if item.id == version_id), None)
-            if target is None:
-                raise RoadmapNotFound("roadmap version was not found")
-            if target.state != "approved":
-                raise ActivationNotEligible("roadmap version is not approved")
-            if target.month_number > 1:
-                eligible = (
-                    await self._session.execute(
-                        select(MonthExitReview.id)
-                        .join(
-                            RoadmapVersion,
-                            (RoadmapVersion.owner_id == MonthExitReview.owner_id)
-                            & (RoadmapVersion.id == MonthExitReview.roadmap_version_id),
+            async with transaction_scope(self._session):
+                versions = tuple(
+                    (
+                        await self._session.execute(
+                            select(RoadmapVersion)
+                            .where(RoadmapVersion.owner_id == owner_id)
+                            .order_by(RoadmapVersion.id)
+                            .with_for_update()
                         )
-                        .where(MonthExitReview.owner_id == owner_id)
-                        .where(RoadmapVersion.month_number == target.month_number - 1)
-                        .where(MonthExitReview.state == "completed")
-                        .where(MonthExitReview.decision == "advance")
-                        .where(MonthExitReview.activation_eligible.is_(True))
-                        .limit(1)
-                    )
-                ).scalar_one_or_none()
-                if eligible is None:
-                    raise ActivationNotEligible(
-                        "previous month exit review is not activation eligible"
-                    )
-            now = utc_now()
-            active = next((item for item in versions if item.state == "active"), None)
-            if active is not None:
-                active.superseded_at = now
-                active.state = "superseded"
-                await self._session.flush()
-            target.activated_at = now
-            target.state = "active"
-            await self._session.execute(
-                update(LearnerSetting)
-                .where(LearnerSetting.owner_id == owner_id)
-                .values(active_roadmap_version_id=target.id)
-            )
-            self._session.add(
-                OutboxEvent(
-                    owner_id=owner_id,
-                    aggregate_type="roadmap",
-                    aggregate_id=target.id,
-                    event_type="roadmap.version_activated",
-                    payload_schema_version=1,
-                    payload={"schema_version": 1, "subject_id": target.id},
-                    published_at=None,
-                    attempts=0,
-                    idempotency_key=f"roadmap-version-activated:{target.id}",
+                    ).scalars()
                 )
-            )
-            await self._session.flush()
-            result = self._to_version(target)
-        return result
+                target = next((item for item in versions if item.id == version_id), None)
+                if target is None:
+                    raise RoadmapNotFound("roadmap version was not found")
+                if target.state != "approved":
+                    raise ActivationNotEligible("roadmap version is not approved")
+                if target.month_number > 1:
+                    eligible = (
+                        await self._session.execute(
+                            select(MonthExitReview.id)
+                            .join(
+                                RoadmapVersion,
+                                (RoadmapVersion.owner_id == MonthExitReview.owner_id)
+                                & (RoadmapVersion.id == MonthExitReview.roadmap_version_id),
+                            )
+                            .where(MonthExitReview.owner_id == owner_id)
+                            .where(RoadmapVersion.month_number == target.month_number - 1)
+                            .where(MonthExitReview.state == "completed")
+                            .where(MonthExitReview.decision == "advance")
+                            .where(MonthExitReview.activation_eligible.is_(True))
+                            .limit(1)
+                        )
+                    ).scalar_one_or_none()
+                    if eligible is None:
+                        raise ActivationNotEligible(
+                            "previous month exit review is not activation eligible"
+                        )
+                now = utc_now()
+                active = next((item for item in versions if item.state == "active"), None)
+                if active is not None:
+                    active.superseded_at = now
+                    active.state = "superseded"
+                    await self._session.flush()
+                target.activated_at = now
+                target.state = "active"
+                await self._session.execute(
+                    update(LearnerSetting)
+                    .where(LearnerSetting.owner_id == owner_id)
+                    .values(active_roadmap_version_id=target.id)
+                )
+                self._session.add(
+                    OutboxEvent(
+                        owner_id=owner_id,
+                        aggregate_type="roadmap",
+                        aggregate_id=target.id,
+                        event_type="roadmap.version_activated",
+                        payload_schema_version=1,
+                        payload={"schema_version": 1, "subject_id": target.id},
+                        published_at=None,
+                        attempts=0,
+                        idempotency_key=f"roadmap-version-activated:{target.id}",
+                    )
+                )
+                await self._session.flush()
+                result = self._to_version(target)
+            return result
 
     async def _locked_import(
         self, owner_id: int, import_id: int
