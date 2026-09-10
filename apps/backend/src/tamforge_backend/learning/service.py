@@ -12,6 +12,7 @@ from typing import TypeVar, cast
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.models import CommandReceipt, Owner
@@ -182,10 +183,13 @@ class ActivityService:
         self._object_store = object_store
 
     async def get_activity(self, *, owner_id: int, activity_id: int) -> ActivityDetailResponse:
-        row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=False)
-        result = await self._detail_response(row)
-        await self._session.rollback()
-        return result
+        try:
+            row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=False)
+            result = await self._detail_response(row)
+            await self._session.rollback()
+            return result
+        except SQLAlchemyError:
+            raise ActivityUnavailable("activity storage is unavailable") from None
 
     async def start(
         self,
@@ -195,152 +199,28 @@ class ActivityService:
         expected_version: int,
         idempotency_key: str,
     ) -> ActivityResponse:
-        async with transaction_scope(self._session):
-            row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
-            request_hash = self._request_hash("start", activity_id, expected_version)
-            duplicate = await self._duplicate(
-                owner_id, "activity.start", idempotency_key, request_hash
-            )
-            if duplicate is not None:
-                return duplicate
-            await self._assert_timer_key_available(owner_id, idempotency_key)
-            decision = self._transition(
-                row, ActivityState.ACTIVE, expected_version=expected_version
-            )
-            now = self._now()
-            if row.day.status == "planned":
-                row.day.status = "in_progress"
-                row.day.started_at = now
-            row.activity.state = decision.state.value
-            row.activity.started_at = now
-            row.activity.optimistic_version = decision.next_version
-            initial = start_timer(now)
-            timer = ActivityTimerSession(
-                owner_id=owner_id,
-                activity_instance_id=activity_id,
-                idempotency_key=idempotency_key,
-                started_at=initial.started_at,
-                last_heartbeat_at=initial.last_heartbeat_at,
-                paused_at=None,
-                ended_at=None,
-                counted_seconds=0,
-                last_client_sequence=0,
-            )
-            self._session.add(timer)
-            await self._session.flush()
-            result = await self._response(row)
-            await self._save_receipt(
-                owner_id, "activity.start", idempotency_key, request_hash, result
-            )
-            return result
-
-    async def heartbeat(
-        self,
-        *,
-        owner_id: int,
-        activity_id: int,
-        expected_version: int,
-        client_sequence: int,
-        idempotency_key: str,
-    ) -> ActivityResponse:
-        async with transaction_scope(self._session):
-            row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
-            request_hash = self._request_hash(
-                "heartbeat", activity_id, expected_version, client_sequence
-            )
-            duplicate = await self._duplicate(
-                owner_id, "activity.heartbeat", idempotency_key, request_hash
-            )
-            if duplicate is not None:
-                return duplicate
-            if row.activity.optimistic_version != expected_version:
-                raise ActivityConflict("stale activity version")
-            if row.activity.state != ActivityState.ACTIVE.value:
-                raise ActivityConflict("activity is not active")
-            timer = await self._open_timer(row.activity, lock=True)
-            if timer is None:
-                raise ActivityConflict("active activity has no open timer")
-            await self._apply_timer_heartbeat(
-                row=row,
-                timer=timer,
-                client_sequence=client_sequence,
-                server_now=self._now(),
-            )
-            result = await self._response(row)
-            await self._save_receipt(
-                owner_id, "activity.heartbeat", idempotency_key, request_hash, result
-            )
-            return result
-
-    async def pause(
-        self,
-        *,
-        owner_id: int,
-        activity_id: int,
-        expected_version: int,
-        client_sequence: int,
-        idempotency_key: str,
-    ) -> ActivityResponse:
-        async with transaction_scope(self._session):
-            row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
-            request_hash = self._request_hash(
-                "pause", activity_id, expected_version, client_sequence
-            )
-            duplicate = await self._duplicate(
-                owner_id, "activity.pause", idempotency_key, request_hash
-            )
-            if duplicate is not None:
-                return duplicate
-            decision = self._transition(
-                row, ActivityState.PAUSED, expected_version=expected_version
-            )
-            timer = await self._open_timer(row.activity, lock=True)
-            if timer is None:
-                raise ActivityConflict("active activity has no open timer")
-            now = self._now()
-            await self._apply_timer_heartbeat(
-                row=row,
-                timer=timer,
-                client_sequence=client_sequence,
-                server_now=now,
-            )
-            timer.paused_at = now
-            timer.ended_at = now
-            row.activity.state = decision.state.value
-            row.activity.optimistic_version = decision.next_version
-            await self._session.flush()
-            result = await self._response(row)
-            await self._save_receipt(
-                owner_id, "activity.pause", idempotency_key, request_hash, result
-            )
-            return result
-
-    async def resume(
-        self,
-        *,
-        owner_id: int,
-        activity_id: int,
-        expected_version: int,
-        idempotency_key: str,
-    ) -> ActivityResponse:
-        async with transaction_scope(self._session):
-            row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
-            request_hash = self._request_hash("resume", activity_id, expected_version)
-            duplicate = await self._duplicate(
-                owner_id, "activity.resume", idempotency_key, request_hash
-            )
-            if duplicate is not None:
-                return duplicate
-            await self._assert_timer_key_available(owner_id, idempotency_key)
-            decision = self._transition(
-                row, ActivityState.ACTIVE, expected_version=expected_version
-            )
-            if await self._open_timer(row.activity, lock=True) is not None:
-                raise ActivityConflict("paused activity already has an open timer")
-            now = self._now()
-            initial = start_timer(now)
-            self._session.add(
-                ActivityTimerSession(
+        try:
+            async with transaction_scope(self._session):
+                row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
+                request_hash = self._request_hash("start", activity_id, expected_version)
+                duplicate = await self._duplicate(
+                    owner_id, "activity.start", idempotency_key, request_hash
+                )
+                if duplicate is not None:
+                    return duplicate
+                await self._assert_timer_key_available(owner_id, idempotency_key)
+                decision = self._transition(
+                    row, ActivityState.ACTIVE, expected_version=expected_version
+                )
+                now = self._now()
+                if row.day.status == "planned":
+                    row.day.status = "in_progress"
+                    row.day.started_at = now
+                row.activity.state = decision.state.value
+                row.activity.started_at = now
+                row.activity.optimistic_version = decision.next_version
+                initial = start_timer(now)
+                timer = ActivityTimerSession(
                     owner_id=owner_id,
                     activity_instance_id=activity_id,
                     idempotency_key=idempotency_key,
@@ -351,15 +231,151 @@ class ActivityService:
                     counted_seconds=0,
                     last_client_sequence=0,
                 )
-            )
-            row.activity.state = decision.state.value
-            row.activity.optimistic_version = decision.next_version
-            await self._session.flush()
-            result = await self._response(row)
-            await self._save_receipt(
-                owner_id, "activity.resume", idempotency_key, request_hash, result
-            )
-            return result
+                self._session.add(timer)
+                await self._session.flush()
+                result = await self._response(row)
+                await self._save_receipt(
+                    owner_id, "activity.start", idempotency_key, request_hash, result
+                )
+                return result
+        except SQLAlchemyError:
+            raise ActivityUnavailable("activity storage is unavailable") from None
+
+    async def heartbeat(
+        self,
+        *,
+        owner_id: int,
+        activity_id: int,
+        expected_version: int,
+        client_sequence: int,
+        idempotency_key: str,
+    ) -> ActivityResponse:
+        try:
+            async with transaction_scope(self._session):
+                row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
+                request_hash = self._request_hash(
+                    "heartbeat", activity_id, expected_version, client_sequence
+                )
+                duplicate = await self._duplicate(
+                    owner_id, "activity.heartbeat", idempotency_key, request_hash
+                )
+                if duplicate is not None:
+                    return duplicate
+                if row.activity.optimistic_version != expected_version:
+                    raise ActivityConflict("stale activity version")
+                if row.activity.state != ActivityState.ACTIVE.value:
+                    raise ActivityConflict("activity is not active")
+                timer = await self._open_timer(row.activity, lock=True)
+                if timer is None:
+                    raise ActivityConflict("active activity has no open timer")
+                await self._apply_timer_heartbeat(
+                    row=row,
+                    timer=timer,
+                    client_sequence=client_sequence,
+                    server_now=self._now(),
+                )
+                result = await self._response(row)
+                await self._save_receipt(
+                    owner_id, "activity.heartbeat", idempotency_key, request_hash, result
+                )
+                return result
+        except SQLAlchemyError:
+            raise ActivityUnavailable("activity storage is unavailable") from None
+
+    async def pause(
+        self,
+        *,
+        owner_id: int,
+        activity_id: int,
+        expected_version: int,
+        client_sequence: int,
+        idempotency_key: str,
+    ) -> ActivityResponse:
+        try:
+            async with transaction_scope(self._session):
+                row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
+                request_hash = self._request_hash(
+                    "pause", activity_id, expected_version, client_sequence
+                )
+                duplicate = await self._duplicate(
+                    owner_id, "activity.pause", idempotency_key, request_hash
+                )
+                if duplicate is not None:
+                    return duplicate
+                decision = self._transition(
+                    row, ActivityState.PAUSED, expected_version=expected_version
+                )
+                timer = await self._open_timer(row.activity, lock=True)
+                if timer is None:
+                    raise ActivityConflict("active activity has no open timer")
+                now = self._now()
+                await self._apply_timer_heartbeat(
+                    row=row,
+                    timer=timer,
+                    client_sequence=client_sequence,
+                    server_now=now,
+                )
+                timer.paused_at = now
+                timer.ended_at = now
+                row.activity.state = decision.state.value
+                row.activity.optimistic_version = decision.next_version
+                await self._session.flush()
+                result = await self._response(row)
+                await self._save_receipt(
+                    owner_id, "activity.pause", idempotency_key, request_hash, result
+                )
+                return result
+        except SQLAlchemyError:
+            raise ActivityUnavailable("activity storage is unavailable") from None
+
+    async def resume(
+        self,
+        *,
+        owner_id: int,
+        activity_id: int,
+        expected_version: int,
+        idempotency_key: str,
+    ) -> ActivityResponse:
+        try:
+            async with transaction_scope(self._session):
+                row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
+                request_hash = self._request_hash("resume", activity_id, expected_version)
+                duplicate = await self._duplicate(
+                    owner_id, "activity.resume", idempotency_key, request_hash
+                )
+                if duplicate is not None:
+                    return duplicate
+                await self._assert_timer_key_available(owner_id, idempotency_key)
+                decision = self._transition(
+                    row, ActivityState.ACTIVE, expected_version=expected_version
+                )
+                if await self._open_timer(row.activity, lock=True) is not None:
+                    raise ActivityConflict("paused activity already has an open timer")
+                now = self._now()
+                initial = start_timer(now)
+                self._session.add(
+                    ActivityTimerSession(
+                        owner_id=owner_id,
+                        activity_instance_id=activity_id,
+                        idempotency_key=idempotency_key,
+                        started_at=initial.started_at,
+                        last_heartbeat_at=initial.last_heartbeat_at,
+                        paused_at=None,
+                        ended_at=None,
+                        counted_seconds=0,
+                        last_client_sequence=0,
+                    )
+                )
+                row.activity.state = decision.state.value
+                row.activity.optimistic_version = decision.next_version
+                await self._session.flush()
+                result = await self._response(row)
+                await self._save_receipt(
+                    owner_id, "activity.resume", idempotency_key, request_hash, result
+                )
+                return result
+        except SQLAlchemyError:
+            raise ActivityUnavailable("activity storage is unavailable") from None
 
     async def classify_incomplete(
         self,
@@ -371,57 +387,60 @@ class ActivityService:
         stronger_evidence_id: int | None,
         idempotency_key: str,
     ) -> ActivityResponse:
-        async with transaction_scope(self._session):
-            row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
-            request_hash = self._request_hash(
-                "classify-incomplete",
-                activity_id,
-                expected_version,
-                classification.value,
-                stronger_evidence_id,
-            )
-            duplicate = await self._duplicate(
-                owner_id,
-                "activity.classify-incomplete",
-                idempotency_key,
-                request_hash,
-            )
-            if duplicate is not None:
-                return duplicate
-            await self._validate_incomplete_evidence(
-                owner_id=owner_id,
-                activity_id=activity_id,
-                classification=classification,
-                stronger_evidence_id=stronger_evidence_id,
-            )
-            decision = self._transition(
-                row, ActivityState.INCOMPLETE, expected_version=expected_version
-            )
-            timer = await self._open_timer(row.activity, lock=True)
-            now = self._now()
-            if timer is not None:
-                await self._apply_timer_heartbeat(
-                    row=row,
-                    timer=timer,
-                    client_sequence=timer.last_client_sequence + 1,
-                    server_now=now,
+        try:
+            async with transaction_scope(self._session):
+                row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
+                request_hash = self._request_hash(
+                    "classify-incomplete",
+                    activity_id,
+                    expected_version,
+                    classification.value,
+                    stronger_evidence_id,
                 )
-                timer.ended_at = now
-            row.activity.classification = classification.value
-            row.activity.stronger_evidence_activity_id = stronger_evidence_id
-            row.activity.completed_at = now
-            row.activity.state = decision.state.value
-            row.activity.optimistic_version = decision.next_version
-            await self._session.flush()
-            result = await self._response(row)
-            await self._save_receipt(
-                owner_id,
-                "activity.classify-incomplete",
-                idempotency_key,
-                request_hash,
-                result,
-            )
-            return result
+                duplicate = await self._duplicate(
+                    owner_id,
+                    "activity.classify-incomplete",
+                    idempotency_key,
+                    request_hash,
+                )
+                if duplicate is not None:
+                    return duplicate
+                await self._validate_incomplete_evidence(
+                    owner_id=owner_id,
+                    activity_id=activity_id,
+                    classification=classification,
+                    stronger_evidence_id=stronger_evidence_id,
+                )
+                decision = self._transition(
+                    row, ActivityState.INCOMPLETE, expected_version=expected_version
+                )
+                timer = await self._open_timer(row.activity, lock=True)
+                now = self._now()
+                if timer is not None:
+                    await self._apply_timer_heartbeat(
+                        row=row,
+                        timer=timer,
+                        client_sequence=timer.last_client_sequence + 1,
+                        server_now=now,
+                    )
+                    timer.ended_at = now
+                row.activity.classification = classification.value
+                row.activity.stronger_evidence_activity_id = stronger_evidence_id
+                row.activity.completed_at = now
+                row.activity.state = decision.state.value
+                row.activity.optimistic_version = decision.next_version
+                await self._session.flush()
+                result = await self._response(row)
+                await self._save_receipt(
+                    owner_id,
+                    "activity.classify-incomplete",
+                    idempotency_key,
+                    request_hash,
+                    result,
+                )
+                return result
+        except SQLAlchemyError:
+            raise ActivityUnavailable("activity storage is unavailable") from None
 
     async def presign_artifact(
         self,
@@ -436,85 +455,88 @@ class ActivityService:
         original_filename: str,
         idempotency_key: str,
     ) -> ArtifactPresignResponse:
-        store = self._require_object_store()
-        async with transaction_scope(self._session):
-            row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
-            request_hash = self._request_hash(
-                "artifact-presign",
-                activity_id,
-                expected_version,
-                artifact_class,
-                sha256,
-                byte_length,
-                content_type,
-                original_filename,
-            )
-            receipt = await self._duplicate_as(
-                owner_id,
-                "activity.artifact.presign",
-                idempotency_key,
-                request_hash,
-                _ArtifactIntentReceipt,
-            )
-            if receipt is None:
-                self._require_version_and_state(
-                    row,
-                    expected_version=expected_version,
-                    allowed_states={ActivityState.ACTIVE, ActivityState.PAUSED},
+        try:
+            store = self._require_object_store()
+            async with transaction_scope(self._session):
+                row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
+                request_hash = self._request_hash(
+                    "artifact-presign",
+                    activity_id,
+                    expected_version,
+                    artifact_class,
+                    sha256,
+                    byte_length,
+                    content_type,
+                    original_filename,
                 )
-                try:
-                    intent = build_upload_intent(
-                        owner_id=owner_id,
-                        activity_id=activity_id,
-                        artifact_class=artifact_class,
-                        sha256=sha256,
-                        byte_length=byte_length,
-                        content_type=content_type,
-                        original_filename=original_filename,
-                    )
-                except ArtifactValidationError as exc:
-                    raise ActivityInvalidRequest(str(exc)) from None
-                existing = await self._artifact_by_hash(owner_id=owner_id, sha256=sha256)
-                if existing is not None:
-                    self._validate_reusable_artifact(existing, intent)
-                    await self._verify_reusable_stored_object(
-                        store=store,
-                        owner_id=owner_id,
-                        artifact=existing,
-                    )
-                    receipt = self._intent_receipt(
-                        intent,
-                        expected_version=expected_version,
-                        artifact_id=existing.id,
-                        reused=True,
-                        object_key=existing.object_key,
-                    )
-                else:
-                    receipt = self._intent_receipt(
-                        intent,
-                        expected_version=expected_version,
-                        artifact_id=None,
-                        reused=False,
-                    )
-                await self._save_receipt(
+                receipt = await self._duplicate_as(
                     owner_id,
                     "activity.artifact.presign",
                     idempotency_key,
                     request_hash,
-                    receipt,
+                    _ArtifactIntentReceipt,
                 )
-            if receipt.reused and receipt.artifact_id is not None:
-                await self._ensure_pending_artifact_link(
-                    owner_id=owner_id,
-                    activity_id=activity_id,
-                    artifact_id=receipt.artifact_id,
-                )
-            if not receipt.reused and row.activity.state not in {
-                ActivityState.ACTIVE.value,
-                ActivityState.PAUSED.value,
-            }:
-                raise ActivityConflict("upload URL cannot be refreshed after output commitment")
-            return await self._presign_response(store=store, receipt=receipt)
+                if receipt is None:
+                    self._require_version_and_state(
+                        row,
+                        expected_version=expected_version,
+                        allowed_states={ActivityState.ACTIVE, ActivityState.PAUSED},
+                    )
+                    try:
+                        intent = build_upload_intent(
+                            owner_id=owner_id,
+                            activity_id=activity_id,
+                            artifact_class=artifact_class,
+                            sha256=sha256,
+                            byte_length=byte_length,
+                            content_type=content_type,
+                            original_filename=original_filename,
+                        )
+                    except ArtifactValidationError as exc:
+                        raise ActivityInvalidRequest(str(exc)) from None
+                    existing = await self._artifact_by_hash(owner_id=owner_id, sha256=sha256)
+                    if existing is not None:
+                        self._validate_reusable_artifact(existing, intent)
+                        await self._verify_reusable_stored_object(
+                            store=store,
+                            owner_id=owner_id,
+                            artifact=existing,
+                        )
+                        receipt = self._intent_receipt(
+                            intent,
+                            expected_version=expected_version,
+                            artifact_id=existing.id,
+                            reused=True,
+                            object_key=existing.object_key,
+                        )
+                    else:
+                        receipt = self._intent_receipt(
+                            intent,
+                            expected_version=expected_version,
+                            artifact_id=None,
+                            reused=False,
+                        )
+                    await self._save_receipt(
+                        owner_id,
+                        "activity.artifact.presign",
+                        idempotency_key,
+                        request_hash,
+                        receipt,
+                    )
+                if receipt.reused and receipt.artifact_id is not None:
+                    await self._ensure_pending_artifact_link(
+                        owner_id=owner_id,
+                        activity_id=activity_id,
+                        artifact_id=receipt.artifact_id,
+                    )
+                if not receipt.reused and row.activity.state not in {
+                    ActivityState.ACTIVE.value,
+                    ActivityState.PAUSED.value,
+                }:
+                    raise ActivityConflict("upload URL cannot be refreshed after output commitment")
+                return await self._presign_response(store=store, receipt=receipt)
+        except SQLAlchemyError:
+            raise ActivityUnavailable("activity storage is unavailable") from None
 
     async def confirm_artifact(
         self,
@@ -526,107 +548,112 @@ class ActivityService:
         object_key: str,
         idempotency_key: str,
     ) -> ArtifactResponse:
-        store = self._require_object_store()
-        async with transaction_scope(self._session):
-            row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
-            request_hash = self._request_hash(
-                "artifact-confirm",
-                activity_id,
-                expected_version,
-                upload_idempotency_key,
-                object_key,
-            )
-            duplicate = await self._duplicate_as(
-                owner_id,
-                "activity.artifact.confirm",
-                idempotency_key,
-                request_hash,
-                ArtifactResponse,
-            )
-            if duplicate is not None:
-                return duplicate
-            self._require_version_and_state(
-                row,
-                expected_version=expected_version,
-                allowed_states={ActivityState.ACTIVE, ActivityState.PAUSED},
-            )
-            upload_receipt = await self._load_artifact_intent(
-                owner_id=owner_id,
-                idempotency_key=upload_idempotency_key,
-            )
-            if (
-                upload_receipt.owner_id != owner_id
-                or upload_receipt.activity_id != activity_id
-                or upload_receipt.expected_version != expected_version
-            ):
-                raise ActivityInvalidRequest("upload intent does not belong to this activity state")
-            if upload_receipt.reused:
-                if upload_receipt.artifact_id is None:
-                    raise ActivityInvalidRequest("reused upload intent is invalid")
-                artifact = await self._artifact_by_id(
-                    owner_id=owner_id,
-                    artifact_id=upload_receipt.artifact_id,
+        try:
+            store = self._require_object_store()
+            async with transaction_scope(self._session):
+                row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
+                request_hash = self._request_hash(
+                    "artifact-confirm",
+                    activity_id,
+                    expected_version,
+                    upload_idempotency_key,
+                    object_key,
                 )
-                if artifact is None:
-                    raise ActivityConflict("reused artifact no longer exists")
-                await self._verify_reusable_stored_object(
-                    store=store,
-                    owner_id=owner_id,
-                    artifact=artifact,
+                duplicate = await self._duplicate_as(
+                    owner_id,
+                    "activity.artifact.confirm",
+                    idempotency_key,
+                    request_hash,
+                    ArtifactResponse,
                 )
-                await self._ensure_pending_artifact_link(
-                    owner_id=owner_id,
-                    activity_id=activity_id,
-                    artifact_id=artifact.id,
+                if duplicate is not None:
+                    return duplicate
+                self._require_version_and_state(
+                    row,
+                    expected_version=expected_version,
+                    allowed_states={ActivityState.ACTIVE, ActivityState.PAUSED},
                 )
-            else:
-                intent = self._upload_intent(upload_receipt)
-                try:
-                    verify_confirm_request(intent, object_key=object_key)
-                    stored = await store.stat(intent.object_key)
-                    if stored is None:
-                        raise ArtifactValidationError("uploaded object was not found")
-                    verify_stored_object(intent, stored)
-                except ArtifactValidationError as exc:
-                    raise ActivityInvalidRequest(str(exc)) from None
-                except ObjectStoreError as exc:
-                    raise ActivityUnavailable("private object storage is unavailable") from exc
-
-                await self._lock_owner(owner_id)
-                existing = await self._artifact_by_hash(owner_id=owner_id, sha256=intent.sha256)
-                if existing is not None:
-                    self._validate_reusable_artifact(existing, intent)
-                    artifact = existing
-                else:
-                    artifact = Artifact(
-                        owner_id=owner_id,
-                        object_key=intent.object_key,
-                        content_hash=bytes.fromhex(intent.sha256),
-                        content_type=intent.content_type,
-                        original_filename=intent.original_filename,
-                        byte_size=intent.byte_length,
-                        artifact_class=intent.artifact_class,
-                        encryption_metadata=unencrypted_metadata(),
-                        derived_from_artifact_id=None,
-                        immutable_version=1,
-                        created_at=self._now(),
+                upload_receipt = await self._load_artifact_intent(
+                    owner_id=owner_id,
+                    idempotency_key=upload_idempotency_key,
+                )
+                if (
+                    upload_receipt.owner_id != owner_id
+                    or upload_receipt.activity_id != activity_id
+                    or upload_receipt.expected_version != expected_version
+                ):
+                    raise ActivityInvalidRequest(
+                        "upload intent does not belong to this activity state"
                     )
-                    self._session.add(artifact)
-                    await self._session.flush()
-                await self._ensure_pending_artifact_link(
-                    owner_id=owner_id,
-                    activity_id=activity_id,
-                    artifact_id=artifact.id,
+                if upload_receipt.reused:
+                    if upload_receipt.artifact_id is None:
+                        raise ActivityInvalidRequest("reused upload intent is invalid")
+                    artifact = await self._artifact_by_id(
+                        owner_id=owner_id,
+                        artifact_id=upload_receipt.artifact_id,
+                    )
+                    if artifact is None:
+                        raise ActivityConflict("reused artifact no longer exists")
+                    await self._verify_reusable_stored_object(
+                        store=store,
+                        owner_id=owner_id,
+                        artifact=artifact,
+                    )
+                    await self._ensure_pending_artifact_link(
+                        owner_id=owner_id,
+                        activity_id=activity_id,
+                        artifact_id=artifact.id,
+                    )
+                else:
+                    intent = self._upload_intent(upload_receipt)
+                    try:
+                        verify_confirm_request(intent, object_key=object_key)
+                        stored = await store.stat(intent.object_key)
+                        if stored is None:
+                            raise ArtifactValidationError("uploaded object was not found")
+                        verify_stored_object(intent, stored)
+                    except ArtifactValidationError as exc:
+                        raise ActivityInvalidRequest(str(exc)) from None
+                    except ObjectStoreError as exc:
+                        raise ActivityUnavailable("private object storage is unavailable") from exc
+
+                    await self._lock_owner(owner_id)
+                    existing = await self._artifact_by_hash(owner_id=owner_id, sha256=intent.sha256)
+                    if existing is not None:
+                        self._validate_reusable_artifact(existing, intent)
+                        artifact = existing
+                    else:
+                        artifact = Artifact(
+                            owner_id=owner_id,
+                            object_key=intent.object_key,
+                            content_hash=bytes.fromhex(intent.sha256),
+                            content_type=intent.content_type,
+                            original_filename=intent.original_filename,
+                            byte_size=intent.byte_length,
+                            artifact_class=intent.artifact_class,
+                            encryption_metadata=unencrypted_metadata(),
+                            derived_from_artifact_id=None,
+                            immutable_version=1,
+                            created_at=self._now(),
+                        )
+                        self._session.add(artifact)
+                        await self._session.flush()
+                    await self._ensure_pending_artifact_link(
+                        owner_id=owner_id,
+                        activity_id=activity_id,
+                        artifact_id=artifact.id,
+                    )
+                result = self._artifact_response(artifact)
+                await self._save_receipt(
+                    owner_id,
+                    "activity.artifact.confirm",
+                    idempotency_key,
+                    request_hash,
+                    result,
                 )
-            result = self._artifact_response(artifact)
-            await self._save_receipt(
-                owner_id,
-                "activity.artifact.confirm",
-                idempotency_key,
-                request_hash,
-                result,
-            )
-            return result
+                return result
+        except SQLAlchemyError:
+            raise ActivityUnavailable("activity storage is unavailable") from None
 
     async def set_source_visibility(
         self,
@@ -637,38 +664,45 @@ class ActivityService:
         hidden: bool,
         idempotency_key: str,
     ) -> ActivityDetailResponse:
-        async with transaction_scope(self._session):
-            row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
-            request_hash = self._request_hash(
-                "source-visibility", activity_id, expected_version, hidden
-            )
-            duplicate = await self._duplicate_as(
-                owner_id,
-                "activity.source-visibility",
-                idempotency_key,
-                request_hash,
-                ActivityDetailResponse,
-            )
-            if duplicate is not None:
-                return duplicate
-            self._require_version_and_state(
-                row,
-                expected_version=expected_version,
-                allowed_states={ActivityState.READY, ActivityState.ACTIVE, ActivityState.PAUSED},
-            )
-            if row.activity.source_hidden != hidden:
-                row.activity.source_hidden = hidden
-                row.activity.optimistic_version += 1
-                await self._session.flush()
-            result = await self._detail_response(row)
-            await self._save_receipt(
-                owner_id,
-                "activity.source-visibility",
-                idempotency_key,
-                request_hash,
-                result,
-            )
-            return result
+        try:
+            async with transaction_scope(self._session):
+                row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
+                request_hash = self._request_hash(
+                    "source-visibility", activity_id, expected_version, hidden
+                )
+                duplicate = await self._duplicate_as(
+                    owner_id,
+                    "activity.source-visibility",
+                    idempotency_key,
+                    request_hash,
+                    ActivityDetailResponse,
+                )
+                if duplicate is not None:
+                    return duplicate
+                self._require_version_and_state(
+                    row,
+                    expected_version=expected_version,
+                    allowed_states={
+                        ActivityState.READY,
+                        ActivityState.ACTIVE,
+                        ActivityState.PAUSED,
+                    },
+                )
+                if row.activity.source_hidden != hidden:
+                    row.activity.source_hidden = hidden
+                    row.activity.optimistic_version += 1
+                    await self._session.flush()
+                result = await self._detail_response(row)
+                await self._save_receipt(
+                    owner_id,
+                    "activity.source-visibility",
+                    idempotency_key,
+                    request_hash,
+                    result,
+                )
+                return result
+        except SQLAlchemyError:
+            raise ActivityUnavailable("activity storage is unavailable") from None
 
     async def commit_output(
         self,
@@ -682,113 +716,116 @@ class ActivityService:
         parent_attempt_id: int | None,
         idempotency_key: str,
     ) -> OutputCommitResponse:
-        async with transaction_scope(self._session):
-            row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
-            request_hash = self._request_hash(
-                "commit-output",
-                activity_id,
-                expected_version,
-                client_sequence,
-                output,
-                [item.model_dump(mode="json") for item in artifact_refs],
-                parent_attempt_id,
-            )
-            duplicate = await self._duplicate_as(
-                owner_id,
-                "activity.commit-output",
-                idempotency_key,
-                request_hash,
-                OutputCommitResponse,
-            )
-            if duplicate is not None:
-                return duplicate
-            decision = self._transition(
-                row, ActivityState.OUTPUT_COMMITTED, expected_version=expected_version
-            )
-            validated = await self._validate_output(
-                row,
-                output,
-                owner_id=owner_id,
-                parent_attempt_id=parent_attempt_id,
-            )
-            attempt_kind = await self._select_attempt_kind(
-                row=row,
-                owner_id=owner_id,
-                parent_attempt_id=parent_attempt_id,
-                prompt=validated.prompt,
-            )
-            commitments, artifacts = await self._load_commitment_artifacts(
-                owner_id=owner_id,
-                activity_id=activity_id,
-                refs=artifact_refs,
-            )
-            try:
-                commitment_hash = build_commitment_digest(validated, commitments)
-            except ArtifactValidationError as exc:
-                raise ActivityInvalidRequest(str(exc)) from None
-
-            timer = await self._open_timer(row.activity, lock=True)
-            if timer is None:
-                raise ActivityConflict("active activity has no open timer")
-            now = self._now()
-            await self._apply_timer_heartbeat(
-                row=row,
-                timer=timer,
-                client_sequence=client_sequence,
-                server_now=now,
-            )
-            timer.ended_at = now
-            row.activity.attempt_kind = attempt_kind
-            row.activity.state = decision.state.value
-            row.activity.output_committed_at = now
-            row.activity.optimistic_version = decision.next_version
-            await self._session.flush()
-
-            attempt = Attempt(
-                owner_id=owner_id,
-                activity_instance_id=activity_id,
-                attempt_kind=attempt_kind,
-                parent_attempt_id=parent_attempt_id,
-                original_text=validated.canonical_json,
-                original_markdown=validated.original_markdown,
-                original_sql=validated.original_sql,
-                audience=validated.audience,
-                prompt=validated.prompt,
-                assistance_mode=row.activity.assistance_mode,
-                commitment_hash=commitment_hash,
-                committed_at=now,
-                created_at=now,
-            )
-            self._session.add(attempt)
-            await self._session.flush()
-            for reference, artifact in artifacts:
-                self._session.add(
-                    ActivityArtifactLink(
-                        owner_id=owner_id,
-                        activity_instance_id=activity_id,
-                        attempt_id=attempt.id,
-                        artifact_id=artifact.id,
-                        link_role=reference.link_role,
-                        created_at=now,
-                    )
+        try:
+            async with transaction_scope(self._session):
+                row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
+                request_hash = self._request_hash(
+                    "commit-output",
+                    activity_id,
+                    expected_version,
+                    client_sequence,
+                    output,
+                    [item.model_dump(mode="json") for item in artifact_refs],
+                    parent_attempt_id,
                 )
-            await self._session.flush()
-            result = OutputCommitResponse(
-                activity_id=activity_id,
-                state=ActivityState.OUTPUT_COMMITTED,
-                optimistic_version=row.activity.optimistic_version,
-                attempt_id=attempt.id,
-                commitment_sha256=commitment_hash.hex(),
-                artifact_ids=tuple(sorted(artifact.id for _, artifact in artifacts)),
-            )
-            await self._save_receipt(
-                owner_id,
-                "activity.commit-output",
-                idempotency_key,
-                request_hash,
-                result,
-            )
-            return result
+                duplicate = await self._duplicate_as(
+                    owner_id,
+                    "activity.commit-output",
+                    idempotency_key,
+                    request_hash,
+                    OutputCommitResponse,
+                )
+                if duplicate is not None:
+                    return duplicate
+                decision = self._transition(
+                    row, ActivityState.OUTPUT_COMMITTED, expected_version=expected_version
+                )
+                validated = await self._validate_output(
+                    row,
+                    output,
+                    owner_id=owner_id,
+                    parent_attempt_id=parent_attempt_id,
+                )
+                attempt_kind = await self._select_attempt_kind(
+                    row=row,
+                    owner_id=owner_id,
+                    parent_attempt_id=parent_attempt_id,
+                    prompt=validated.prompt,
+                )
+                commitments, artifacts = await self._load_commitment_artifacts(
+                    owner_id=owner_id,
+                    activity_id=activity_id,
+                    refs=artifact_refs,
+                )
+                try:
+                    commitment_hash = build_commitment_digest(validated, commitments)
+                except ArtifactValidationError as exc:
+                    raise ActivityInvalidRequest(str(exc)) from None
+
+                timer = await self._open_timer(row.activity, lock=True)
+                if timer is None:
+                    raise ActivityConflict("active activity has no open timer")
+                now = self._now()
+                await self._apply_timer_heartbeat(
+                    row=row,
+                    timer=timer,
+                    client_sequence=client_sequence,
+                    server_now=now,
+                )
+                timer.ended_at = now
+                row.activity.attempt_kind = attempt_kind
+                row.activity.state = decision.state.value
+                row.activity.output_committed_at = now
+                row.activity.optimistic_version = decision.next_version
+                await self._session.flush()
+
+                attempt = Attempt(
+                    owner_id=owner_id,
+                    activity_instance_id=activity_id,
+                    attempt_kind=attempt_kind,
+                    parent_attempt_id=parent_attempt_id,
+                    original_text=validated.canonical_json,
+                    original_markdown=validated.original_markdown,
+                    original_sql=validated.original_sql,
+                    audience=validated.audience,
+                    prompt=validated.prompt,
+                    assistance_mode=row.activity.assistance_mode,
+                    commitment_hash=commitment_hash,
+                    committed_at=now,
+                    created_at=now,
+                )
+                self._session.add(attempt)
+                await self._session.flush()
+                for reference, artifact in artifacts:
+                    self._session.add(
+                        ActivityArtifactLink(
+                            owner_id=owner_id,
+                            activity_instance_id=activity_id,
+                            attempt_id=attempt.id,
+                            artifact_id=artifact.id,
+                            link_role=reference.link_role,
+                            created_at=now,
+                        )
+                    )
+                await self._session.flush()
+                result = OutputCommitResponse(
+                    activity_id=activity_id,
+                    state=ActivityState.OUTPUT_COMMITTED,
+                    optimistic_version=row.activity.optimistic_version,
+                    attempt_id=attempt.id,
+                    commitment_sha256=commitment_hash.hex(),
+                    artifact_ids=tuple(sorted(artifact.id for _, artifact in artifacts)),
+                )
+                await self._save_receipt(
+                    owner_id,
+                    "activity.commit-output",
+                    idempotency_key,
+                    request_hash,
+                    result,
+                )
+                return result
+        except SQLAlchemyError:
+            raise ActivityUnavailable("activity storage is unavailable") from None
 
     async def submit_self_review(
         self,
@@ -805,21 +842,8 @@ class ActivityService:
         self_score: int,
         idempotency_key: str,
     ) -> SelfReviewResponse:
-        self._validate_self_review_values(
-            main_answer,
-            did_well,
-            structure_weakness,
-            vague_points,
-            hesitation_points,
-            change_next,
-            self_score,
-        )
-        async with transaction_scope(self._session):
-            row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
-            request_hash = self._request_hash(
-                "self-review",
-                activity_id,
-                expected_version,
+        try:
+            self._validate_self_review_values(
                 main_answer,
                 did_well,
                 structure_weakness,
@@ -828,59 +852,75 @@ class ActivityService:
                 change_next,
                 self_score,
             )
-            duplicate = await self._duplicate_as(
-                owner_id,
-                "activity.self-review",
-                idempotency_key,
-                request_hash,
-                SelfReviewResponse,
-            )
-            if duplicate is not None:
-                return duplicate
-            decision = self._transition(
-                row, ActivityState.SELF_REVIEW_COMPLETE, expected_version=expected_version
-            )
-            attempt = await self._attempt_for_activity(
-                owner_id=owner_id,
-                activity_id=activity_id,
-                lock=True,
-            )
-            if attempt is None:
-                raise ActivityConflict("committed activity has no immutable attempt")
-            now = self._now()
-            review = SelfReview(
-                owner_id=owner_id,
-                activity_instance_id=activity_id,
-                attempt_id=attempt.id,
-                main_answer=main_answer,
-                did_well=did_well,
-                structure_weakness=structure_weakness,
-                vague_points=vague_points,
-                hesitation_points=hesitation_points,
-                change_next=change_next,
-                self_score=self_score,
-                submitted_at=now,
-            )
-            self._session.add(review)
-            row.activity.state = decision.state.value
-            row.activity.optimistic_version = decision.next_version
-            await self._session.flush()
-            result = SelfReviewResponse(
-                activity_id=activity_id,
-                state=ActivityState.SELF_REVIEW_COMPLETE,
-                optimistic_version=row.activity.optimistic_version,
-                self_review_id=review.id,
-                attempt_id=attempt.id,
-                self_score=self_score,
-            )
-            await self._save_receipt(
-                owner_id,
-                "activity.self-review",
-                idempotency_key,
-                request_hash,
-                result,
-            )
-            return result
+            async with transaction_scope(self._session):
+                row = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
+                request_hash = self._request_hash(
+                    "self-review",
+                    activity_id,
+                    expected_version,
+                    main_answer,
+                    did_well,
+                    structure_weakness,
+                    vague_points,
+                    hesitation_points,
+                    change_next,
+                    self_score,
+                )
+                duplicate = await self._duplicate_as(
+                    owner_id,
+                    "activity.self-review",
+                    idempotency_key,
+                    request_hash,
+                    SelfReviewResponse,
+                )
+                if duplicate is not None:
+                    return duplicate
+                decision = self._transition(
+                    row, ActivityState.SELF_REVIEW_COMPLETE, expected_version=expected_version
+                )
+                attempt = await self._attempt_for_activity(
+                    owner_id=owner_id,
+                    activity_id=activity_id,
+                    lock=True,
+                )
+                if attempt is None:
+                    raise ActivityConflict("committed activity has no immutable attempt")
+                now = self._now()
+                review = SelfReview(
+                    owner_id=owner_id,
+                    activity_instance_id=activity_id,
+                    attempt_id=attempt.id,
+                    main_answer=main_answer,
+                    did_well=did_well,
+                    structure_weakness=structure_weakness,
+                    vague_points=vague_points,
+                    hesitation_points=hesitation_points,
+                    change_next=change_next,
+                    self_score=self_score,
+                    submitted_at=now,
+                )
+                self._session.add(review)
+                row.activity.state = decision.state.value
+                row.activity.optimistic_version = decision.next_version
+                await self._session.flush()
+                result = SelfReviewResponse(
+                    activity_id=activity_id,
+                    state=ActivityState.SELF_REVIEW_COMPLETE,
+                    optimistic_version=row.activity.optimistic_version,
+                    self_review_id=review.id,
+                    attempt_id=attempt.id,
+                    self_score=self_score,
+                )
+                await self._save_receipt(
+                    owner_id,
+                    "activity.self-review",
+                    idempotency_key,
+                    request_hash,
+                    result,
+                )
+                return result
+        except SQLAlchemyError:
+            raise ActivityUnavailable("activity storage is unavailable") from None
 
     async def _load(self, *, owner_id: int, activity_id: int, lock: bool) -> _LockedActivity:
         statement = (
