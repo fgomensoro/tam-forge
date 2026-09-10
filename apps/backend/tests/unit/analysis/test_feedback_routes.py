@@ -175,6 +175,62 @@ def released_feedback() -> FeedbackRead:
         ),
         english=english,
         tam=tam,
+        verdict="Clear on impact, thin on the trade-off.",
+        strengths=strengths(),
+        corrections=corrections(),
+        attempt_b={
+            "instruction": "Rewrite the recommendation naming the trade-off you skipped.",
+            "minutes": 10,
+        },
+    )
+
+
+def evidence(statement: str) -> dict:
+    return {
+        "statement": statement,
+        "attribution": "observed_content",
+        "availability": "available",
+        "confidence": "0.8",
+        "references": [
+            {
+                "kind": "attempt_text",
+                "attempt_id": 9,
+                "commitment_sha256": "a" * 64,
+                "json_pointer": "/output/draft_markdown",
+                "start_codepoint": 0,
+                "end_codepoint": 4,
+            }
+        ],
+    }
+
+
+def strengths() -> tuple[dict, ...]:
+    return (
+        {
+            "statement": "Named the customer impact before the mechanism.",
+            "evidence": evidence("The answer named the customer impact."),
+        },
+        {
+            "statement": "Closed with a decision rather than a summary.",
+            "evidence": evidence("The answer ended on a recommendation."),
+        },
+    )
+
+
+def corrections() -> tuple[dict, ...]:
+    return (
+        {
+            "statement": "The trade-off behind the recommendation was never stated.",
+            "instruction": "State the cost of the option you chose in one sentence.",
+            "target_skill": "trade_offs",
+            "evidence": evidence("The recommendation cited no cost."),
+        },
+        {
+            "statement": "The timeline was asserted without a basis.",
+            "instruction": "Give the timeline a source or mark it as an estimate.",
+            "target_skill": "business_framing",
+            "evidence": evidence("The answer gave a date with no basis."),
+        },
     )
 
 
@@ -399,3 +455,124 @@ def test_a_time_referenced_observation_carries_a_nonempty_span():
 
     with pytest.raises(ValidationError):
         _observation(references=[{**timed, "end_ms": 1_000}])
+
+
+# Issue #57's acceptance criterion: feedback carries a short verdict, two demonstrated
+# strengths, exactly two highest-impact corrections, timestamped evidence, a compact
+# structure, and bounded Attempt B instructions.
+
+
+def _ready(**overrides):
+    base = released_feedback().model_dump(mode="json")
+    base.update(overrides)
+    return FeedbackRead.model_validate(base)
+
+
+def test_ready_feedback_names_exactly_two_strengths_and_two_corrections():
+    import pytest
+    from pydantic import ValidationError
+    from tamforge_protocol.agents import REQUIRED_CORRECTIONS, REQUIRED_STRENGTHS
+
+    assert (REQUIRED_STRENGTHS, REQUIRED_CORRECTIONS) == (2, 2)
+    feedback = released_feedback()
+    assert len(feedback.strengths) == 2
+    assert len(feedback.corrections) == 2
+
+    for field, items in (("strengths", strengths()), ("corrections", corrections())):
+        for count in (0, 1, 3):
+            supply = (items * 3)[:count]
+            with pytest.raises(ValidationError):
+                _ready(**{field: list(supply)})
+
+
+def test_the_same_point_twice_does_not_fill_the_second_slot():
+    import pytest
+    from pydantic import ValidationError
+
+    first = strengths()[0]
+    with pytest.raises(ValidationError):
+        _ready(strengths=[first, dict(first)])
+
+    correction = corrections()[0]
+    with pytest.raises(ValidationError):
+        _ready(corrections=[correction, dict(correction)])
+
+
+def test_a_correction_carries_an_instruction_and_a_target_skill():
+    feedback = released_feedback()
+    for correction in feedback.corrections:
+        assert correction.instruction.strip()
+        assert correction.target_skill
+        assert correction.evidence.references
+
+
+def test_every_strength_and_correction_cites_available_attributed_evidence():
+    import pytest
+    from pydantic import ValidationError
+
+    for field, items in (("strengths", strengths()), ("corrections", corrections())):
+        for broken in ("references", "availability", "attribution"):
+            first, second = ({**items[0]}, items[1])
+            unusable = dict(first["evidence"])
+            unusable[broken] = {
+                "references": [],
+                "availability": "unavailable",
+                "attribution": "unknown",
+            }[broken]
+            if broken == "availability":
+                unusable["references"] = []
+            first["evidence"] = unusable
+            with pytest.raises(ValidationError):
+                _ready(**{field: [first, second]})
+
+
+def test_the_attempt_b_instruction_stays_inside_the_next_lesson():
+    import pytest
+    from pydantic import ValidationError
+    from tamforge_protocol.agents import ATTEMPT_B_MAX_MINUTES
+
+    assert ATTEMPT_B_MAX_MINUTES == 10
+    assert released_feedback().attempt_b.minutes <= ATTEMPT_B_MAX_MINUTES
+
+    for minutes in (0, ATTEMPT_B_MAX_MINUTES + 1):
+        with pytest.raises(ValidationError):
+            _ready(attempt_b={"instruction": "Redo the recommendation.", "minutes": minutes})
+
+
+def test_ready_feedback_without_a_verdict_or_an_attempt_b_is_not_ready():
+    import pytest
+    from pydantic import ValidationError
+
+    for field in ("verdict", "attempt_b"):
+        with pytest.raises(ValidationError):
+            _ready(**{field: None})
+
+
+def test_withheld_feedback_carries_no_verdict_findings_or_redo():
+    import pytest
+    from pydantic import ValidationError
+
+    for overrides in (
+        {"verdict": "Clear on impact."},
+        {"strengths": list(strengths())},
+        {"corrections": list(corrections())},
+        {"attempt_b": {"instruction": "Redo it.", "minutes": 5}},
+    ):
+        with pytest.raises(ValidationError):
+            FeedbackRead.model_validate(
+                {"status": "processing", "activity_id": 7, "attempt_id": 9, **overrides}
+            )
+
+
+def test_the_client_receives_the_verdict_the_findings_and_the_redo():
+    body = (
+        client(StubFeedbackRepository(released_feedback()))
+        .get("/api/v1/activities/7/attempts/9/feedback")
+        .json()
+    )
+
+    assert body["verdict"]
+    assert len(body["strengths"]) == 2
+    assert len(body["corrections"]) == 2
+    assert body["attempt_b"]["minutes"] == 10
+    assert body["corrections"][0]["evidence"]["references"][0]["attempt_id"] == 9

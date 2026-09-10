@@ -8,6 +8,7 @@ Text offsets are exclusive-end Unicode code points, without normalization.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from decimal import Decimal
 from typing import Annotated, Literal, Self
 
@@ -98,6 +99,24 @@ class AnalysisObservation(_StrictModel):
         return self
 
 
+def require_attributed_evidence(
+    observations: Iterable[AnalysisObservation], *, what: str
+) -> None:
+    """A claim the learner is scored or corrected on has to cite something real.
+
+    Available, referenced, and attributed to one of the three known kinds of claim. An
+    unknown attribution is the reviewer saying it does not know where this came from,
+    which is not a basis for a score or for asking someone to redo work.
+    """
+    for observation in observations:
+        if (
+            observation.availability != "available"
+            or not observation.references
+            or observation.attribution == "unknown"
+        ):
+            raise ValueError(f"{what} require available attributed evidence")
+
+
 class ScoredDimension(_StrictModel):
     availability: Literal["scored"]
     score: Annotated[Decimal, Field(ge=0, le=4, allow_inf_nan=False)]
@@ -106,13 +125,7 @@ class ScoredDimension(_StrictModel):
 
     @model_validator(mode="after")
     def supported_score(self) -> Self:
-        for observation in self.observations:
-            if (
-                observation.availability != "available"
-                or not observation.references
-                or observation.attribution == "unknown"
-            ):
-                raise ValueError("scored dimensions require available attributed evidence")
+        require_attributed_evidence(self.observations, what="scored dimensions")
         return self
 
 
@@ -243,6 +256,47 @@ WithheldReason = Literal[
 ]
 
 
+# One report says two things went well and two things to fix next, and nothing more.
+# The number is the point: a list of nine corrections is a list nobody acts on.
+REQUIRED_STRENGTHS = 2
+REQUIRED_CORRECTIONS = 2
+# Attempt B is a bounded redo inside the next lesson, not a second full attempt.
+ATTEMPT_B_MAX_MINUTES = 10
+
+
+class FeedbackStrength(_StrictModel):
+    """Something the learner demonstrated, with the evidence that shows it."""
+
+    statement: Text
+    evidence: AnalysisObservation
+
+    @model_validator(mode="after")
+    def supported(self) -> Self:
+        require_attributed_evidence((self.evidence,), what="strengths")
+        return self
+
+
+class FeedbackCorrection(_StrictModel):
+    """One of the two highest-impact fixes, with what to actually do about it."""
+
+    statement: Text
+    instruction: Text
+    target_skill: Slug
+    evidence: AnalysisObservation
+
+    @model_validator(mode="after")
+    def supported(self) -> Self:
+        require_attributed_evidence((self.evidence,), what="corrections")
+        return self
+
+
+class AttemptBInstruction(_StrictModel):
+    """The bounded redo the learner is asked for, in minutes they actually have."""
+
+    instruction: Text
+    minutes: Annotated[int, Field(strict=True, ge=1, le=ATTEMPT_B_MAX_MINUTES)]
+
+
 class PinnedRecord(_StrictModel):
     """One immutable provenance row identified by id and content hash."""
 
@@ -272,6 +326,14 @@ class FeedbackRead(_StrictModel):
     english: EnglishAnalysisV1 | None = None
     tam: TAMAnalysisV1 | None = None
     withheld_reason: WithheldReason | None = None
+    verdict: Text | None = None
+    strengths: Annotated[
+        tuple[FeedbackStrength, ...], Field(max_length=REQUIRED_STRENGTHS)
+    ] = ()
+    corrections: Annotated[
+        tuple[FeedbackCorrection, ...], Field(max_length=REQUIRED_CORRECTIONS)
+    ] = ()
+    attempt_b: AttemptBInstruction | None = None
 
     @model_validator(mode="after")
     def release_gate(self) -> Self:
@@ -280,11 +342,29 @@ class FeedbackRead(_StrictModel):
                 raise ValueError("withheld feedback must not carry analysis or versions")
             if (self.status == "needs_attention") != (self.withheld_reason is not None):
                 raise ValueError("only needs_attention carries a withholding reason")
+            if self.verdict is not None or self.strengths or self.corrections:
+                raise ValueError("withheld feedback must not carry a verdict or its findings")
+            if self.attempt_b is not None:
+                raise ValueError("withheld feedback must not ask for an Attempt B")
             return self
         if self.english is None or self.tam is None or self.versions is None:
             raise ValueError("ready feedback requires both analyses and their versions")
         if self.withheld_reason is not None:
             raise ValueError("ready feedback cannot carry a withholding reason")
+        if self.verdict is None or self.attempt_b is None:
+            raise ValueError("ready feedback requires a verdict and an Attempt B instruction")
+        if len(self.strengths) != REQUIRED_STRENGTHS:
+            raise ValueError("ready feedback names exactly two demonstrated strengths")
+        if len(self.corrections) != REQUIRED_CORRECTIONS:
+            raise ValueError("ready feedback names exactly two highest-impact corrections")
+        for label, statements in (
+            ("strengths", [item.statement for item in self.strengths]),
+            ("corrections", [item.statement for item in self.corrections]),
+        ):
+            # The same point twice fills a slot without adding a finding, which is the
+            # cheapest way to satisfy a count and the least useful.
+            if len({statement.strip().casefold() for statement in statements}) != len(statements):
+                raise ValueError(f"the two {label} must be distinct")
         for analysis in (self.english, self.tam):
             if (analysis.activity_id, analysis.attempt_id) != (self.activity_id, self.attempt_id):
                 raise ValueError("released analysis must identify the read attempt")
