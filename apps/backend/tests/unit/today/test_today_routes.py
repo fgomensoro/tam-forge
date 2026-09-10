@@ -14,7 +14,11 @@ from tamforge_backend.today.schemas import (
     TodayReadInput,
     TodayRoadmap,
 )
-from tamforge_backend.today.service import TodayConflict, build_today_response
+from tamforge_backend.today.service import (
+    TodayConflict,
+    TodayUnavailable,
+    build_today_response,
+)
 
 OWNER = AuthenticatedOwner(
     owner_id=1,
@@ -30,9 +34,12 @@ class StubTodayService:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.conflict = False
+        self.unavailable = False
 
     async def get_today(self, **values):  # type: ignore[no-untyped-def]
         self.calls.append(("get", values))
+        if self.unavailable:
+            raise TodayUnavailable("private repository detail")
         now = datetime(2026, 8, 30, 18, tzinfo=UTC)
         return build_today_response(
             TodayReadInput(
@@ -146,4 +153,16 @@ def test_today_conflict_is_safe_and_does_not_leak_details() -> None:
 
     assert response.status_code == 409
     assert response.json()["code"] == "today_conflict"
+    assert "private repository detail" not in response.text
+
+
+def test_today_storage_failure_is_a_service_unavailable_problem() -> None:
+    client, service = _client()
+    service.unavailable = True
+    with client:
+        response = client.get("/api/v1/today?date=2026-08-30")
+
+    assert response.status_code == 503
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["code"] == "today_dependency_unavailable"
     assert "private repository detail" not in response.text

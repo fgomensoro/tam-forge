@@ -8,6 +8,7 @@ from typing import Any, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -22,7 +23,11 @@ from ..learning.models import (
     SelfReview,
     StudyDay,
 )
-from ..learning.repository import StudyDayNotReady, StudyDayService
+from ..learning.repository import (
+    StudyDayNotReady,
+    StudyDayService,
+    StudyDayUnavailable,
+)
 from ..models.base import utc_now
 from ..notifications.models import OutboxEvent
 from ..roadmaps.models import CurriculumNode, RoadmapVersion, TaskDefinition
@@ -39,7 +44,7 @@ from .schemas import (
     TodaySourceReference,
     TodayTaskCard,
 )
-from .service import TodayConflict, TodayNotReady
+from .service import TodayConflict, TodayNotReady, TodayUnavailable
 
 
 class SqlAlchemyTodayRepository:
@@ -55,214 +60,219 @@ class SqlAlchemyTodayRepository:
         self._clock = clock
 
     async def load_today(self, *, owner_id: int, local_date: date) -> TodayReadInput:
-        setting = await self._session.scalar(
-            select(LearnerSetting).where(LearnerSetting.owner_id == owner_id)
-        )
-        if setting is None or setting.active_roadmap_version_id is None:
-            await self._session.rollback()
-            raise TodayNotReady("learner settings and an active roadmap are required")
-        start_utc, end_utc, materialize_at = self._date_boundaries(
-            local_date, setting.timezone
-        )
-        if local_date < setting.study_start_date:
-            await self._session.rollback()
-            raise TodayNotReady("study date precedes the roadmap start")
-        if local_date.weekday() != 6:
-            await self._session.rollback()
-            try:
-                await StudyDayService(self._session).ensure_current_day(
-                    owner_id=owner_id,
-                    at=materialize_at,
-                )
-            except StudyDayNotReady as exc:
-                raise TodayNotReady(str(exc)) from exc
+        try:
+            setting = await self._session.scalar(
+                select(LearnerSetting).where(LearnerSetting.owner_id == owner_id)
+            )
+            if setting is None or setting.active_roadmap_version_id is None:
+                await self._session.rollback()
+                raise TodayNotReady("learner settings and an active roadmap are required")
+            start_utc, end_utc, materialize_at = self._date_boundaries(
+                local_date, setting.timezone
+            )
+            if local_date < setting.study_start_date:
+                await self._session.rollback()
+                raise TodayNotReady("study date precedes the roadmap start")
+            if local_date.weekday() != 6:
+                await self._session.rollback()
+                try:
+                    await StudyDayService(self._session).ensure_current_day(
+                        owner_id=owner_id,
+                        at=materialize_at,
+                    )
+                except StudyDayNotReady as exc:
+                    raise TodayNotReady(str(exc)) from exc
+                except StudyDayUnavailable:
+                    raise TodayUnavailable("today storage is unavailable") from None
 
-        day = await self._session.scalar(
-            select(StudyDay)
-            .where(StudyDay.owner_id == owner_id)
-            .where(StudyDay.local_date == local_date)
-        )
-        version_id = (
-            day.roadmap_version_id
-            if day is not None
-            else setting.active_roadmap_version_id
-        )
-        version = await self._session.scalar(
-            select(RoadmapVersion)
-            .where(RoadmapVersion.owner_id == owner_id)
-            .where(RoadmapVersion.id == version_id)
-        )
-        if version is None:
+            day = await self._session.scalar(
+                select(StudyDay)
+                .where(StudyDay.owner_id == owner_id)
+                .where(StudyDay.local_date == local_date)
+            )
+            version_id = (
+                day.roadmap_version_id
+                if day is not None
+                else setting.active_roadmap_version_id
+            )
+            version = await self._session.scalar(
+                select(RoadmapVersion)
+                .where(RoadmapVersion.owner_id == owner_id)
+                .where(RoadmapVersion.id == version_id)
+            )
+            if version is None:
+                await self._session.rollback()
+                raise TodayNotReady("roadmap version is unavailable")
+
+            tasks: tuple[TodayTaskCard, ...] = ()
+            activity_rows: tuple[ActivityInstance, ...] = ()
+            if day is not None:
+                task_node = aliased(CurriculumNode, name="today_task_node")
+                rows = (
+                    await self._session.execute(
+                        select(ActivityInstance, TaskDefinition, task_node.ordinal)
+                        .join(
+                            TaskDefinition,
+                            (TaskDefinition.owner_id == ActivityInstance.owner_id)
+                            & (
+                                TaskDefinition.roadmap_version_id
+                                == ActivityInstance.roadmap_version_id
+                            )
+                            & (TaskDefinition.id == ActivityInstance.task_definition_id),
+                        )
+                        .join(
+                            task_node,
+                            (task_node.owner_id == TaskDefinition.owner_id)
+                            & (
+                                task_node.roadmap_version_id
+                                == TaskDefinition.roadmap_version_id
+                            )
+                            & (task_node.id == TaskDefinition.curriculum_node_id),
+                        )
+                        .where(ActivityInstance.owner_id == owner_id)
+                        .where(ActivityInstance.study_day_id == day.id)
+                        .order_by(task_node.ordinal, ActivityInstance.id)
+                    )
+                ).all()
+                tasks = tuple(
+                    self._task_card(activity, definition, int(ordinal))
+                    for activity, definition, ordinal in rows
+                )
+                activity_rows = tuple(row[0] for row in rows)
+
+            correction_rows = tuple(
+                (
+                    await self._session.scalars(
+                        select(Correction)
+                        .where(Correction.owner_id == owner_id)
+                        .where(Correction.status.in_(("pending", "scheduled")))
+                        .where(Correction.due_date <= local_date)
+                        .order_by(Correction.due_date, Correction.priority, Correction.id)
+                        .limit(100)
+                    )
+                ).all()
+            )
+            corrections = tuple(
+                TodayCorrection(
+                    id=item.id,
+                    priority=cast(Any, item.priority),
+                    due_date=item.due_date,
+                    instruction=item.instruction,
+                    status=cast(Any, item.status),
+                    attempt_b_activity_id=item.attempt_b_activity_id,
+                )
+                for item in correction_rows
+            )
+            interview_rows = tuple(
+                (
+                    await self._session.scalars(
+                        select(Interview)
+                        .where(Interview.owner_id == owner_id)
+                        .where(Interview.status == "scheduled")
+                        .where(Interview.starts_at >= start_utc)
+                        .where(Interview.starts_at < end_utc)
+                        .order_by(Interview.starts_at, Interview.id)
+                    )
+                ).all()
+            )
+            interviews = tuple(
+                TodayInterview(
+                    id=item.id,
+                    company=item.company,
+                    role=item.role,
+                    stage=item.stage,
+                    starts_at=item.starts_at,
+                    expected_duration_minutes=item.expected_duration_minutes,
+                    privacy_permission_code=cast(Any, item.privacy_permission_code),
+                )
+                for item in interview_rows
+            )
+            self_review_rows = tuple(
+                (
+                    await self._session.scalars(
+                        select(ActivityInstance)
+                        .where(ActivityInstance.owner_id == owner_id)
+                        .where(ActivityInstance.state == "output_committed")
+                        .order_by(ActivityInstance.output_committed_at, ActivityInstance.id)
+                        .limit(100)
+                    )
+                ).all()
+            )
+            awaiting_self_reviews = tuple(
+                TodaySelfReview(
+                    activity_id=item.id,
+                    objective=item.task_objective_snapshot,
+                    output_committed_at=cast(datetime, item.output_committed_at),
+                )
+                for item in self_review_rows
+            )
+            analysis_rows = tuple(
+                (
+                    await self._session.scalars(
+                        select(ActivityProcessingStatus)
+                        .where(ActivityProcessingStatus.owner_id == owner_id)
+                        .where(
+                            ActivityProcessingStatus.state.in_(
+                                ("ready", "needs_attention")
+                            )
+                        )
+                        .order_by(
+                            ActivityProcessingStatus.updated_at,
+                            ActivityProcessingStatus.activity_instance_id,
+                        )
+                        .limit(100)
+                    )
+                ).all()
+            )
+            analyses = tuple(
+                TodayAnalysis(
+                    activity_id=item.activity_instance_id,
+                    state=cast(Any, item.state),
+                    progress_label=cast(Any, item.progress_label),
+                    updated_at=item.updated_at,
+                )
+                for item in analysis_rows
+            )
+            source_updated_at = max(
+                self._timestamps(
+                    setting,
+                    version,
+                    day,
+                    activities=activity_rows,
+                    corrections=correction_rows,
+                    interviews=interview_rows,
+                    self_reviews=self_review_rows,
+                    analyses=analysis_rows,
+                )
+            )
+            roadmap_day = (local_date - setting.study_start_date).days
+            source = TodayReadInput(
+                local_date=local_date,
+                timezone=setting.timezone,
+                day_id=day.id if day is not None else None,
+                day_type=cast(Any, day.day_type if day is not None else "sunday"),
+                day_status=cast(Any, day.status if day is not None else "off"),
+                roadmap=TodayRoadmap(
+                    version_id=version.id,
+                    version_key=version.version_key,
+                    version_number=version.version_number,
+                    month=version.month_number,
+                    week=(roadmap_day // 7) + 1,
+                    day=local_date.weekday() + 1,
+                ),
+                planned_minutes=day.planned_minutes if day is not None else 0,
+                focused_minutes=day.focused_minutes if day is not None else 0,
+                tasks=tasks,
+                corrections=corrections,
+                interviews=interviews,
+                awaiting_self_reviews=awaiting_self_reviews,
+                analyses=analyses,
+                source_updated_at=source_updated_at,
+            )
             await self._session.rollback()
-            raise TodayNotReady("roadmap version is unavailable")
-
-        tasks: tuple[TodayTaskCard, ...] = ()
-        activity_rows: tuple[ActivityInstance, ...] = ()
-        if day is not None:
-            task_node = aliased(CurriculumNode, name="today_task_node")
-            rows = (
-                await self._session.execute(
-                    select(ActivityInstance, TaskDefinition, task_node.ordinal)
-                    .join(
-                        TaskDefinition,
-                        (TaskDefinition.owner_id == ActivityInstance.owner_id)
-                        & (
-                            TaskDefinition.roadmap_version_id
-                            == ActivityInstance.roadmap_version_id
-                        )
-                        & (TaskDefinition.id == ActivityInstance.task_definition_id),
-                    )
-                    .join(
-                        task_node,
-                        (task_node.owner_id == TaskDefinition.owner_id)
-                        & (
-                            task_node.roadmap_version_id
-                            == TaskDefinition.roadmap_version_id
-                        )
-                        & (task_node.id == TaskDefinition.curriculum_node_id),
-                    )
-                    .where(ActivityInstance.owner_id == owner_id)
-                    .where(ActivityInstance.study_day_id == day.id)
-                    .order_by(task_node.ordinal, ActivityInstance.id)
-                )
-            ).all()
-            tasks = tuple(
-                self._task_card(activity, definition, int(ordinal))
-                for activity, definition, ordinal in rows
-            )
-            activity_rows = tuple(row[0] for row in rows)
-
-        correction_rows = tuple(
-            (
-                await self._session.scalars(
-                    select(Correction)
-                    .where(Correction.owner_id == owner_id)
-                    .where(Correction.status.in_(("pending", "scheduled")))
-                    .where(Correction.due_date <= local_date)
-                    .order_by(Correction.due_date, Correction.priority, Correction.id)
-                    .limit(100)
-                )
-            ).all()
-        )
-        corrections = tuple(
-            TodayCorrection(
-                id=item.id,
-                priority=cast(Any, item.priority),
-                due_date=item.due_date,
-                instruction=item.instruction,
-                status=cast(Any, item.status),
-                attempt_b_activity_id=item.attempt_b_activity_id,
-            )
-            for item in correction_rows
-        )
-        interview_rows = tuple(
-            (
-                await self._session.scalars(
-                    select(Interview)
-                    .where(Interview.owner_id == owner_id)
-                    .where(Interview.status == "scheduled")
-                    .where(Interview.starts_at >= start_utc)
-                    .where(Interview.starts_at < end_utc)
-                    .order_by(Interview.starts_at, Interview.id)
-                )
-            ).all()
-        )
-        interviews = tuple(
-            TodayInterview(
-                id=item.id,
-                company=item.company,
-                role=item.role,
-                stage=item.stage,
-                starts_at=item.starts_at,
-                expected_duration_minutes=item.expected_duration_minutes,
-                privacy_permission_code=cast(Any, item.privacy_permission_code),
-            )
-            for item in interview_rows
-        )
-        self_review_rows = tuple(
-            (
-                await self._session.scalars(
-                    select(ActivityInstance)
-                    .where(ActivityInstance.owner_id == owner_id)
-                    .where(ActivityInstance.state == "output_committed")
-                    .order_by(ActivityInstance.output_committed_at, ActivityInstance.id)
-                    .limit(100)
-                )
-            ).all()
-        )
-        awaiting_self_reviews = tuple(
-            TodaySelfReview(
-                activity_id=item.id,
-                objective=item.task_objective_snapshot,
-                output_committed_at=cast(datetime, item.output_committed_at),
-            )
-            for item in self_review_rows
-        )
-        analysis_rows = tuple(
-            (
-                await self._session.scalars(
-                    select(ActivityProcessingStatus)
-                    .where(ActivityProcessingStatus.owner_id == owner_id)
-                    .where(
-                        ActivityProcessingStatus.state.in_(
-                            ("ready", "needs_attention")
-                        )
-                    )
-                    .order_by(
-                        ActivityProcessingStatus.updated_at,
-                        ActivityProcessingStatus.activity_instance_id,
-                    )
-                    .limit(100)
-                )
-            ).all()
-        )
-        analyses = tuple(
-            TodayAnalysis(
-                activity_id=item.activity_instance_id,
-                state=cast(Any, item.state),
-                progress_label=cast(Any, item.progress_label),
-                updated_at=item.updated_at,
-            )
-            for item in analysis_rows
-        )
-        source_updated_at = max(
-            self._timestamps(
-                setting,
-                version,
-                day,
-                activities=activity_rows,
-                corrections=correction_rows,
-                interviews=interview_rows,
-                self_reviews=self_review_rows,
-                analyses=analysis_rows,
-            )
-        )
-        roadmap_day = (local_date - setting.study_start_date).days
-        source = TodayReadInput(
-            local_date=local_date,
-            timezone=setting.timezone,
-            day_id=day.id if day is not None else None,
-            day_type=cast(Any, day.day_type if day is not None else "sunday"),
-            day_status=cast(Any, day.status if day is not None else "off"),
-            roadmap=TodayRoadmap(
-                version_id=version.id,
-                version_key=version.version_key,
-                version_number=version.version_number,
-                month=version.month_number,
-                week=(roadmap_day // 7) + 1,
-                day=local_date.weekday() + 1,
-            ),
-            planned_minutes=day.planned_minutes if day is not None else 0,
-            focused_minutes=day.focused_minutes if day is not None else 0,
-            tasks=tasks,
-            corrections=corrections,
-            interviews=interviews,
-            awaiting_self_reviews=awaiting_self_reviews,
-            analyses=analyses,
-            source_updated_at=source_updated_at,
-        )
-        await self._session.rollback()
-        return source
+            return source
+        except SQLAlchemyError:
+            raise TodayUnavailable("today storage is unavailable") from None
 
     async def close_day(
         self,
@@ -272,135 +282,138 @@ class SqlAlchemyTodayRepository:
         command: DailyCloseCommand,
         idempotency_key: str,
     ) -> DailyCloseResponse:
-        del idempotency_key
-        now = self._now()
-        manifest = command.evidence_manifest.model_dump(mode="json")
-        async with transaction_scope(self._session):
-            day = await self._session.scalar(
-                select(StudyDay)
-                .where(StudyDay.owner_id == owner_id)
-                .where(StudyDay.local_date == local_date)
-                .with_for_update()
-            )
-            if day is None or day.day_type == "sunday":
-                raise TodayNotReady("study day is unavailable")
-            existing = await self._session.scalar(
-                select(DailyClose)
-                .where(DailyClose.owner_id == owner_id)
-                .where(DailyClose.study_day_id == day.id)
-            )
-            if existing is not None:
-                if not self._same_close(existing, command, manifest):
-                    raise TodayConflict("study day was already closed differently")
-                return self._close_response(existing, day.status, command, replayed=True)
-            if day.status not in {"planned", "in_progress"}:
-                raise TodayConflict("study day cannot be closed from its current state")
-            await self._validate_evidence(
-                owner_id=owner_id,
-                study_day_id=day.id,
-                command=command,
-            )
-            await self._validate_corrections(
-                owner_id=owner_id,
-                local_date=local_date,
-                correction_ids=command.correction_ids,
-            )
-            open_timer = await self._session.scalar(
-                select(ActivityTimerSession.id)
-                .join(
-                    ActivityInstance,
-                    (ActivityInstance.owner_id == ActivityTimerSession.owner_id)
-                    & (ActivityInstance.id == ActivityTimerSession.activity_instance_id),
+        try:
+            del idempotency_key
+            now = self._now()
+            manifest = command.evidence_manifest.model_dump(mode="json")
+            async with transaction_scope(self._session):
+                day = await self._session.scalar(
+                    select(StudyDay)
+                    .where(StudyDay.owner_id == owner_id)
+                    .where(StudyDay.local_date == local_date)
+                    .with_for_update()
                 )
-                .where(ActivityTimerSession.owner_id == owner_id)
-                .where(ActivityInstance.study_day_id == day.id)
-                .where(ActivityTimerSession.ended_at.is_(None))
-                .limit(1)
-            )
-            if open_timer is not None:
-                raise TodayConflict("an active study timer must be stopped before close")
-            if command.unfinished_classification == "none":
-                blocker = await self._session.scalar(
-                    select(ActivityInstance.id)
+                if day is None or day.day_type == "sunday":
+                    raise TodayNotReady("study day is unavailable")
+                existing = await self._session.scalar(
+                    select(DailyClose)
+                    .where(DailyClose.owner_id == owner_id)
+                    .where(DailyClose.study_day_id == day.id)
+                )
+                if existing is not None:
+                    if not self._same_close(existing, command, manifest):
+                        raise TodayConflict("study day was already closed differently")
+                    return self._close_response(existing, day.status, command, replayed=True)
+                if day.status not in {"planned", "in_progress"}:
+                    raise TodayConflict("study day cannot be closed from its current state")
+                await self._validate_evidence(
+                    owner_id=owner_id,
+                    study_day_id=day.id,
+                    command=command,
+                )
+                await self._validate_corrections(
+                    owner_id=owner_id,
+                    local_date=local_date,
+                    correction_ids=command.correction_ids,
+                )
+                open_timer = await self._session.scalar(
+                    select(ActivityTimerSession.id)
                     .join(
-                        TaskDefinition,
-                        (TaskDefinition.owner_id == ActivityInstance.owner_id)
-                        & (
-                            TaskDefinition.roadmap_version_id
-                            == ActivityInstance.roadmap_version_id
-                        )
-                        & (TaskDefinition.id == ActivityInstance.task_definition_id),
+                        ActivityInstance,
+                        (ActivityInstance.owner_id == ActivityTimerSession.owner_id)
+                        & (ActivityInstance.id == ActivityTimerSession.activity_instance_id),
                     )
-                    .where(ActivityInstance.owner_id == owner_id)
+                    .where(ActivityTimerSession.owner_id == owner_id)
                     .where(ActivityInstance.study_day_id == day.id)
-                    .where(TaskDefinition.required.is_(True))
-                    .where(TaskDefinition.block != "daily_close")
-                    .where(
-                        ActivityInstance.state.not_in(
-                            (
-                                "self_review_complete",
-                                "ai_processing",
-                                "feedback_ready",
-                                "correction_due",
-                                "demonstrated",
-                                "needs_work",
-                                "incomplete",
-                                "superseded",
-                            )
-                        )
-                    )
+                    .where(ActivityTimerSession.ended_at.is_(None))
                     .limit(1)
                 )
-                if blocker is not None:
-                    raise TodayConflict(
-                        "required work must be completed or classified before close"
+                if open_timer is not None:
+                    raise TodayConflict("an active study timer must be stopped before close")
+                if command.unfinished_classification == "none":
+                    blocker = await self._session.scalar(
+                        select(ActivityInstance.id)
+                        .join(
+                            TaskDefinition,
+                            (TaskDefinition.owner_id == ActivityInstance.owner_id)
+                            & (
+                                TaskDefinition.roadmap_version_id
+                                == ActivityInstance.roadmap_version_id
+                            )
+                            & (TaskDefinition.id == ActivityInstance.task_definition_id),
+                        )
+                        .where(ActivityInstance.owner_id == owner_id)
+                        .where(ActivityInstance.study_day_id == day.id)
+                        .where(TaskDefinition.required.is_(True))
+                        .where(TaskDefinition.block != "daily_close")
+                        .where(
+                            ActivityInstance.state.not_in(
+                                (
+                                    "self_review_complete",
+                                    "ai_processing",
+                                    "feedback_ready",
+                                    "correction_due",
+                                    "demonstrated",
+                                    "needs_work",
+                                    "incomplete",
+                                    "superseded",
+                                )
+                            )
+                        )
+                        .limit(1)
                     )
-            if day.status == "planned":
-                day.status = "in_progress"
-                day.started_at = max(now, day.created_at)
-                await self._session.flush()
-            closed_at = max(now, cast(datetime, day.started_at), day.created_at)
-            day.status = (
-                "closed"
-                if command.unfinished_classification == "none"
-                else "incomplete"
-            )
-            day.closed_at = closed_at
-            close = DailyClose(
-                owner_id=owner_id,
-                roadmap_version_id=day.roadmap_version_id,
-                study_day_id=day.id,
-                evidence_confirmed=True,
-                evidence_manifest=manifest,
-                strongest_output=command.strongest_output,
-                repeated_mistake=command.repeated_mistake,
-                unfinished_classification=command.unfinished_classification,
-                unfinished_requirement=command.unfinished_requirement,
-                correction_count=len(command.correction_ids),
-                closed_at=closed_at,
-            )
-            self._session.add(close)
-            await self._session.flush()
-            self._session.add(
-                OutboxEvent(
-                    owner_id=owner_id,
-                    aggregate_type="study_day",
-                    aggregate_id=day.id,
-                    event_type=f"study_day.{day.status}",
-                    payload_schema_version=1,
-                    payload={
-                        "schema_version": 1,
-                        "subject_id": day.id,
-                        "related_id": close.id,
-                    },
-                    occurred_at=closed_at,
-                    published_at=None,
-                    attempts=0,
-                    idempotency_key=f"daily-close:{close.id}:{day.status}",
+                    if blocker is not None:
+                        raise TodayConflict(
+                            "required work must be completed or classified before close"
+                        )
+                if day.status == "planned":
+                    day.status = "in_progress"
+                    day.started_at = max(now, day.created_at)
+                    await self._session.flush()
+                closed_at = max(now, cast(datetime, day.started_at), day.created_at)
+                day.status = (
+                    "closed"
+                    if command.unfinished_classification == "none"
+                    else "incomplete"
                 )
-            )
-            await self._session.flush()
-            return self._close_response(close, day.status, command, replayed=False)
+                day.closed_at = closed_at
+                close = DailyClose(
+                    owner_id=owner_id,
+                    roadmap_version_id=day.roadmap_version_id,
+                    study_day_id=day.id,
+                    evidence_confirmed=True,
+                    evidence_manifest=manifest,
+                    strongest_output=command.strongest_output,
+                    repeated_mistake=command.repeated_mistake,
+                    unfinished_classification=command.unfinished_classification,
+                    unfinished_requirement=command.unfinished_requirement,
+                    correction_count=len(command.correction_ids),
+                    closed_at=closed_at,
+                )
+                self._session.add(close)
+                await self._session.flush()
+                self._session.add(
+                    OutboxEvent(
+                        owner_id=owner_id,
+                        aggregate_type="study_day",
+                        aggregate_id=day.id,
+                        event_type=f"study_day.{day.status}",
+                        payload_schema_version=1,
+                        payload={
+                            "schema_version": 1,
+                            "subject_id": day.id,
+                            "related_id": close.id,
+                        },
+                        occurred_at=closed_at,
+                        published_at=None,
+                        attempts=0,
+                        idempotency_key=f"daily-close:{close.id}:{day.status}",
+                    )
+                )
+                await self._session.flush()
+                return self._close_response(close, day.status, command, replayed=False)
+        except SQLAlchemyError:
+            raise TodayUnavailable("today storage is unavailable") from None
 
     @staticmethod
     def _task_card(

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -25,6 +26,10 @@ from .scheduling import (
 
 class StudyDayNotReady(SchedulePolicyError):
     """The learner or active roadmap cannot produce the requested study day."""
+
+
+class StudyDayUnavailable(SchedulePolicyError):
+    """The study-day store is temporarily unavailable."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,132 +53,135 @@ class StudyDayService:
     async def ensure_current_day(
         self, *, owner_id: int, at: datetime
     ) -> StudyDayRecord | None:
-        if owner_id <= 0:
-            raise StudyDayNotReady("owner is invalid")
-        async with transaction_scope(self._session):
-            setting = (
-                await self._session.execute(
-                    select(LearnerSetting)
-                    .where(LearnerSetting.owner_id == owner_id)
-                    .with_for_update()
-                )
-            ).scalar_one_or_none()
-            if setting is None:
-                raise StudyDayNotReady("learner settings are unavailable")
-            context = local_study_context(at, setting.timezone)
-            curriculum_day = curriculum_day_number(
-                setting.study_start_date, context.local_date
-            )
-            if curriculum_day is None:
-                return None
-            existing = (
-                await self._session.execute(
-                    select(StudyDay)
-                    .where(StudyDay.owner_id == owner_id)
-                    .where(StudyDay.local_date == context.local_date)
-                    .with_for_update()
-                )
-            ).scalar_one_or_none()
-            if existing is not None:
-                return await self._record(existing, created=False)
-            if setting.active_roadmap_version_id is None:
-                raise StudyDayNotReady("an active roadmap is required")
-            version = (
-                await self._session.execute(
-                    select(RoadmapVersion)
-                    .where(RoadmapVersion.owner_id == owner_id)
-                    .where(RoadmapVersion.id == setting.active_roadmap_version_id)
-                )
-            ).scalar_one_or_none()
-            if version is None or version.state != "active":
-                raise StudyDayNotReady("the selected roadmap is not active")
-
-            definitions = await self._definitions(
-                owner_id=owner_id,
-                version_id=version.id,
-                curriculum_day=curriculum_day,
-            )
-            interviews = tuple(
-                InterviewCommitment(id=item.id, minutes=item.expected_duration_minutes)
-                for item in (
+        try:
+            if owner_id <= 0:
+                raise StudyDayNotReady("owner is invalid")
+            async with transaction_scope(self._session):
+                setting = (
                     await self._session.execute(
-                        select(Interview)
-                        .where(Interview.owner_id == owner_id)
-                        .where(Interview.status == "scheduled")
-                        .where(Interview.starts_at >= context.start_utc)
-                        .where(Interview.starts_at < context.end_utc)
-                        .order_by(Interview.starts_at, Interview.id)
+                        select(LearnerSetting)
+                        .where(LearnerSetting.owner_id == owner_id)
+                        .with_for_update()
                     )
-                ).scalars()
-            )
-            templates = tuple(self._template(item, ordinal) for item, ordinal in definitions)
-            if not templates and not interviews:
-                raise StudyDayNotReady("the active roadmap has no task for this study date")
-            plan = build_day(
-                context.local_date,
-                curriculum_day=curriculum_day,
-                tasks=templates,
-                interviews=interviews,
-            )
-            day = StudyDay(
-                owner_id=owner_id,
-                roadmap_version_id=version.id,
-                local_date=context.local_date,
-                planned_minutes=plan.planned_minutes,
-                focused_minutes=0,
-                day_type=plan.day_type,
-                status="planned",
-                started_at=None,
-                closed_at=None,
-            )
-            self._session.add(day)
-            await self._session.flush()
-            definitions_by_id = {item.id: item for item, _ in definitions}
-            activities: list[ActivityInstance] = []
-            for template in plan.tasks:
-                definition = definitions_by_id[template.task_definition_id]
-                activity = ActivityInstance(
-                    owner_id=owner_id,
-                    study_day_id=day.id,
-                    roadmap_version_id=version.id,
-                    task_definition_id=definition.id,
-                    task_stable_id_snapshot=definition.stable_id,
-                    task_mapping_version_snapshot=(
-                        definition.mapping_version or "not-applicable"
-                    ),
-                    task_objective_snapshot=definition.objective,
-                    task_timebox_minutes_snapshot=definition.timebox_minutes,
-                    roadmap_version_key_snapshot=version.version_key,
-                    state="ready",
-                    attempt_kind=(
-                        "no_ai_assessment"
-                        if definition.block == "saturday_assessment"
-                        else "none"
-                    ),
-                    assistance_mode="none",
-                    classification="required" if definition.required else "useful",
-                    timebox_minutes=definition.timebox_minutes,
-                    source_hidden=False,
-                    optimistic_version=1,
-                    replacement_version=1,
-                    replaces_activity_id=None,
-                    started_at=None,
-                    output_committed_at=None,
-                    completed_at=None,
+                ).scalar_one_or_none()
+                if setting is None:
+                    raise StudyDayNotReady("learner settings are unavailable")
+                context = local_study_context(at, setting.timezone)
+                curriculum_day = curriculum_day_number(
+                    setting.study_start_date, context.local_date
                 )
-                self._session.add(activity)
-                activities.append(activity)
-            await self._session.flush()
-            return StudyDayRecord(
-                id=day.id,
-                owner_id=owner_id,
-                roadmap_version_id=version.id,
-                local_date=context.local_date,
-                planned_minutes=day.planned_minutes,
-                day_type=day.day_type,
-                activity_ids=tuple(item.id for item in activities),
-                created=True,
-            )
+                if curriculum_day is None:
+                    return None
+                existing = (
+                    await self._session.execute(
+                        select(StudyDay)
+                        .where(StudyDay.owner_id == owner_id)
+                        .where(StudyDay.local_date == context.local_date)
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                if existing is not None:
+                    return await self._record(existing, created=False)
+                if setting.active_roadmap_version_id is None:
+                    raise StudyDayNotReady("an active roadmap is required")
+                version = (
+                    await self._session.execute(
+                        select(RoadmapVersion)
+                        .where(RoadmapVersion.owner_id == owner_id)
+                        .where(RoadmapVersion.id == setting.active_roadmap_version_id)
+                    )
+                ).scalar_one_or_none()
+                if version is None or version.state != "active":
+                    raise StudyDayNotReady("the selected roadmap is not active")
+
+                definitions = await self._definitions(
+                    owner_id=owner_id,
+                    version_id=version.id,
+                    curriculum_day=curriculum_day,
+                )
+                interviews = tuple(
+                    InterviewCommitment(id=item.id, minutes=item.expected_duration_minutes)
+                    for item in (
+                        await self._session.execute(
+                            select(Interview)
+                            .where(Interview.owner_id == owner_id)
+                            .where(Interview.status == "scheduled")
+                            .where(Interview.starts_at >= context.start_utc)
+                            .where(Interview.starts_at < context.end_utc)
+                            .order_by(Interview.starts_at, Interview.id)
+                        )
+                    ).scalars()
+                )
+                templates = tuple(self._template(item, ordinal) for item, ordinal in definitions)
+                if not templates and not interviews:
+                    raise StudyDayNotReady("the active roadmap has no task for this study date")
+                plan = build_day(
+                    context.local_date,
+                    curriculum_day=curriculum_day,
+                    tasks=templates,
+                    interviews=interviews,
+                )
+                day = StudyDay(
+                    owner_id=owner_id,
+                    roadmap_version_id=version.id,
+                    local_date=context.local_date,
+                    planned_minutes=plan.planned_minutes,
+                    focused_minutes=0,
+                    day_type=plan.day_type,
+                    status="planned",
+                    started_at=None,
+                    closed_at=None,
+                )
+                self._session.add(day)
+                await self._session.flush()
+                definitions_by_id = {item.id: item for item, _ in definitions}
+                activities: list[ActivityInstance] = []
+                for template in plan.tasks:
+                    definition = definitions_by_id[template.task_definition_id]
+                    activity = ActivityInstance(
+                        owner_id=owner_id,
+                        study_day_id=day.id,
+                        roadmap_version_id=version.id,
+                        task_definition_id=definition.id,
+                        task_stable_id_snapshot=definition.stable_id,
+                        task_mapping_version_snapshot=(
+                            definition.mapping_version or "not-applicable"
+                        ),
+                        task_objective_snapshot=definition.objective,
+                        task_timebox_minutes_snapshot=definition.timebox_minutes,
+                        roadmap_version_key_snapshot=version.version_key,
+                        state="ready",
+                        attempt_kind=(
+                            "no_ai_assessment"
+                            if definition.block == "saturday_assessment"
+                            else "none"
+                        ),
+                        assistance_mode="none",
+                        classification="required" if definition.required else "useful",
+                        timebox_minutes=definition.timebox_minutes,
+                        source_hidden=False,
+                        optimistic_version=1,
+                        replacement_version=1,
+                        replaces_activity_id=None,
+                        started_at=None,
+                        output_committed_at=None,
+                        completed_at=None,
+                    )
+                    self._session.add(activity)
+                    activities.append(activity)
+                await self._session.flush()
+                return StudyDayRecord(
+                    id=day.id,
+                    owner_id=owner_id,
+                    roadmap_version_id=version.id,
+                    local_date=context.local_date,
+                    planned_minutes=day.planned_minutes,
+                    day_type=day.day_type,
+                    activity_ids=tuple(item.id for item in activities),
+                    created=True,
+                )
+        except SQLAlchemyError:
+            raise StudyDayUnavailable("study day storage is unavailable") from None
 
     async def _definitions(
         self, *, owner_id: int, version_id: int, curriculum_day: int
