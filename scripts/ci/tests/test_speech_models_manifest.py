@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from pathlib import Path
 
@@ -69,6 +70,14 @@ def test_installed_artifacts_match_their_pins_when_present(tmp_path: Path) -> No
     if vendor.is_dir():
         macos = vendor / "macos-arm64_x86_64" / "whisper.framework"
         assert macos.is_dir(), "installed XCFramework is missing its macOS slice"
+    # Hashing the installed models reads ~190 MB out of the app's sandbox
+    # container, a path that lives outside the repository and can stop
+    # responding: on 2026-09-09 every open under it blocked for minutes while
+    # stat stayed instant, so this test silently turned a 35-second suite into
+    # an indefinite hang. Machine state must never be able to wedge the default
+    # run, so the read is opt-in.
+    if not os.environ.get("TAMFORGE_VERIFY_INSTALLED_MODELS"):
+        pytest.skip("set TAMFORGE_VERIFY_INSTALLED_MODELS=1 to hash the installed models")
     models = install_dir("transcription_model")
     for name in ("transcription_model", "vad_model"):
         entry = artifacts[name]
@@ -76,7 +85,10 @@ def test_installed_artifacts_match_their_pins_when_present(tmp_path: Path) -> No
         if not installed.is_file():
             pytest.skip(f"{entry['filename']} is not installed on this machine")
         assert installed.stat().st_size == entry["bytes"]
-        digest = hashlib.sha256(installed.read_bytes()).hexdigest()
+        # Streamed rather than read_bytes(): a 190 MB allocation is what makes
+        # this hurt most on a machine that is already short of memory.
+        with installed.open("rb") as handle:
+            digest = hashlib.file_digest(handle, "sha256").hexdigest()
         assert digest == entry["sha256"]
 
 
