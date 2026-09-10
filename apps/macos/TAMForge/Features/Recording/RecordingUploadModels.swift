@@ -603,19 +603,140 @@ extension TranscriptSubmitPayload {
 // separate actor with no visibility into transcription state). An entry
 // is removed once its recording's spool is released or discarded, so this
 // never grows unbounded across a long-running session.
+//
+// Every entry is also written through to an encrypted file inside its own
+// recording's spool directory, because the process can end between a
+// transcript being computed and the server accepting it. Nothing
+// recomputes a transcript on a later launch, so an in-memory-only entry
+// would leave the next pass's retry branch with nothing to resubmit and
+// strand that recording's spool on disk for the life of the machine. The
+// file is sealed under the same per-recording key as the audio records
+// beside it and lives inside the directory discard() deletes, so
+// releasing or discarding a recording destroys its transcript text along
+// with its audio. A nil spoolFactory keeps the cache purely in memory,
+// which is only ever useful to a test that is not exercising durability.
 actor RecordingTranscriptCache {
+    private static let fileName = "transcript-payload.tfe"
+
+    private let spoolFactory: EncryptedRecordingSpoolFactory?
     private var payloads: [UUID: TranscriptSubmitPayload] = [:]
 
-    func store(_ payload: TranscriptSubmitPayload, recordingID: UUID) {
+    init(spoolFactory: EncryptedRecordingSpoolFactory? = nil) {
+        self.spoolFactory = spoolFactory
+    }
+
+    // A durable write that fails is never worth failing the caller over:
+    // the in-memory entry still serves this process, and a recording whose
+    // directory has already gone (released, discarded) has nothing left to
+    // submit anyway.
+    func store(_ payload: TranscriptSubmitPayload, recordingID: UUID) async {
         payloads[recordingID] = payload
+        try? await persist(payload, recordingID: recordingID)
     }
 
-    func payload(for recordingID: UUID) -> TranscriptSubmitPayload? {
-        payloads[recordingID]
+    func payload(for recordingID: UUID) async -> TranscriptSubmitPayload? {
+        if let cached = payloads[recordingID] { return cached }
+        guard let recovered = try? await recover(recordingID: recordingID) else { return nil }
+        payloads[recordingID] = recovered
+        return recovered
     }
 
+    // The one path that drops a payload while its spool may still be
+    // present, so the durable copy has to go too rather than be read back
+    // on the next launch and resubmitted after the caller decided to stop.
     func remove(recordingID: UUID) {
         payloads.removeValue(forKey: recordingID)
+        guard let url = fileURL(recordingID: recordingID) else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    private func persist(_ payload: TranscriptSubmitPayload, recordingID: UUID) async throws {
+        guard let spoolFactory, let url = fileURL(recordingID: recordingID) else { return }
+        let key = try await spoolFactory.keyStore.load(recordingID: recordingID)
+        let plaintext = try RecordingCanonicalJSON.encode(StoredTranscriptPayload(payload))
+        let sealed = try AES.GCM.seal(
+            plaintext,
+            using: key,
+            authenticating: Self.authenticatedData(recordingID: recordingID)
+        )
+        guard let combined = sealed.combined else { throw RecordingUploadError.invalidResponse }
+        try combined.write(to: url, options: [.atomic])
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: url.path
+        )
+    }
+
+    private func recover(recordingID: UUID) async throws -> TranscriptSubmitPayload {
+        guard let spoolFactory, let url = fileURL(recordingID: recordingID) else {
+            throw RecordingUploadError.invalidResponse
+        }
+        let key = try await spoolFactory.keyStore.load(recordingID: recordingID)
+        let sealed = try AES.GCM.SealedBox(combined: try Data(contentsOf: url))
+        let plaintext = try AES.GCM.open(
+            sealed,
+            using: key,
+            authenticating: Self.authenticatedData(recordingID: recordingID)
+        )
+        let stored = try JSONDecoder().decode(StoredTranscriptPayload.self, from: plaintext)
+        guard stored.schemaVersion == 1 else { throw RecordingUploadError.invalidResponse }
+        return stored.payload
+    }
+
+    private func fileURL(recordingID: UUID) -> URL? {
+        spoolFactory?.rootURL
+            .appendingPathComponent(recordingID.uuidString, isDirectory: true)
+            .appendingPathComponent(Self.fileName)
+    }
+
+    // Domain-separated and bound to the recording, so one recording's
+    // stored transcript can never open as another's even though every
+    // recording's key comes from the same store.
+    private static func authenticatedData(recordingID: UUID) -> Data {
+        Data(
+            "tamforge.recording.transcript-payload.v1|\(recordingID.uuidString.lowercased())".utf8
+        )
+    }
+}
+
+// The durable form of a submit payload. TranscriptSubmitPayload is
+// encode-only, and its wire body deliberately omits recording_id because
+// the URL path already names the recording, so the stored form carries the
+// id explicitly and rebuilds the payload on the way back.
+private struct StoredTranscriptPayload: Codable {
+    let schemaVersion: Int
+    let recordingID: String
+    let track: String
+    let segments: [TranscriptSegmentPayload]
+    let modelIdentity: TranscriptModelIdentityPayload
+    let derivation: TranscriptDerivationPayload
+
+    init(_ payload: TranscriptSubmitPayload) {
+        schemaVersion = payload.schemaVersion
+        recordingID = payload.recordingID
+        track = payload.track
+        segments = payload.segments
+        modelIdentity = payload.modelIdentity
+        derivation = payload.derivation
+    }
+
+    var payload: TranscriptSubmitPayload {
+        .init(
+            recordingID: recordingID,
+            track: track,
+            segments: segments,
+            modelIdentity: modelIdentity,
+            derivation: derivation
+        )
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case recordingID = "recording_id"
+        case track
+        case segments
+        case modelIdentity = "model_identity"
+        case derivation
     }
 }
 

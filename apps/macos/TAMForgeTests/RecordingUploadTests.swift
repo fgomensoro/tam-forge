@@ -720,6 +720,96 @@ final class RecordingUploadTests: XCTestCase {
         _ = try await fixture.keyStore.load(recordingID: fixture.recordingID)
     }
 
+    // The companion to the test above: that one proves the spool survives a
+    // relaunch, this one proves the relaunch can still finish the job. A
+    // transcript is computed and cached in one process, its opportunistic
+    // submission is rejected because the audio is not on the server yet, and
+    // then the process ends. Without a durable copy of the payload the new
+    // process starts with an empty cache, the retry branch has nothing to
+    // resubmit, and this recording's spool is stranded on disk for good.
+    func testTranscriptCachedBeforeRelaunchIsResubmittedAndReleasesTheSpool() async throws {
+        let fixture = try await sealedSpool()
+        let server = FakeRecordingServer(requireAudioBeforeTranscript: true)
+        let payload = TranscriptSubmitPayload.fixture(recordingID: fixture.recordingID)
+
+        let firstLaunchCache = RecordingTranscriptCache(spoolFactory: fixture.factory)
+        await firstLaunchCache.store(payload, recordingID: fixture.recordingID)
+        await XCTAssertAsyncThrowsError {
+            _ = try await server.submitTranscript(payload, idempotencyKey: payload.idempotencyKey)
+        }
+        let firstLaunchGates = try await RecordingUploadPipeline(
+            spoolFactory: fixture.factory,
+            server: server,
+            transcriptCache: firstLaunchCache
+        ).upload(recordingID: fixture.recordingID, progress: { _ in })
+        XCTAssertTrue(firstLaunchGates.audioCreatedOnServer)
+        XCTAssertFalse(firstLaunchGates.transcriptLineageAccepted)
+
+        // The app quits and relaunches. TAMForgeApp builds exactly one cache
+        // per process, so nothing at all survives in memory.
+        let secondLaunchCache = RecordingTranscriptCache(spoolFactory: fixture.factory)
+
+        let gates = try await RecordingUploadPipeline(
+            spoolFactory: fixture.factory,
+            server: server,
+            transcriptCache: secondLaunchCache
+        ).upload(recordingID: fixture.recordingID, progress: { _ in })
+
+        XCTAssertTrue(gates.mayDeleteLocalSpool)
+        let submitted = await server.submittedTranscripts
+        XCTAssertEqual(submitted, [payload])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.directory.path))
+        await XCTAssertAsyncThrowsError {
+            _ = try await fixture.keyStore.load(recordingID: fixture.recordingID)
+        }
+    }
+
+    // The durable copy carries transcript text, so it has to be protected the
+    // way every other byte in the spool directory is: encrypted under the
+    // recording's own key, which discard() destroys along with the directory.
+    func testPersistedTranscriptIsReadableOnlyThroughTheRecordingKey() async throws {
+        let fixture = try await sealedSpool()
+        let payload = TranscriptSubmitPayload.fixture(recordingID: fixture.recordingID)
+        await RecordingTranscriptCache(spoolFactory: fixture.factory)
+            .store(payload, recordingID: fixture.recordingID)
+
+        // A cache that never saw the payload in memory reads it back, so it
+        // really did reach the disk...
+        let reread = await RecordingTranscriptCache(spoolFactory: fixture.factory)
+            .payload(for: fixture.recordingID)
+        XCTAssertEqual(reread, payload)
+
+        // ...and no file under the spool directory spells the transcript out.
+        for path in try FileManager.default.subpathsOfDirectory(atPath: fixture.directory.path) {
+            guard let data = try? Data(contentsOf: fixture.directory.appendingPathComponent(path))
+            else { continue }
+            XCTAssertNil(
+                data.range(of: Data("fixture transcript".utf8)),
+                "\(path) stores transcript text in the clear"
+            )
+        }
+    }
+
+    // remove() is the one path that drops a payload while the spool itself
+    // stays. A transcript the server has permanently rejected has nothing
+    // left to resubmit, so the durable copy has to go with the in-memory
+    // one rather than come back on the next launch.
+    func testRemovingACachedTranscriptAlsoDropsItsDurableCopy() async throws {
+        let fixture = try await sealedSpool()
+        let cache = RecordingTranscriptCache(spoolFactory: fixture.factory)
+        await cache.store(
+            .fixture(recordingID: fixture.recordingID),
+            recordingID: fixture.recordingID
+        )
+
+        await cache.remove(recordingID: fixture.recordingID)
+
+        let reread = await RecordingTranscriptCache(spoolFactory: fixture.factory)
+            .payload(for: fixture.recordingID)
+        XCTAssertNil(reread)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.directory.path))
+    }
+
     func testOfflineFailureLeavesSpoolAndDeterministicRetryConverges() async throws {
         let fixture = try await sealedSpool()
         let server = FakeRecordingServer(failureOnUploadAttempt: 2)
