@@ -146,6 +146,10 @@ docker run -d --name tamforge-postgres-54330 \
 TAMFORGE_TEST_DB_PORT=54330 scripts/dev/ensure_test_database.sh
 ```
 
+Checkouts that skip that step and share one database still take turns rather than
+corrupt each other: the destructive suites hold an exclusive file lock named after the
+host, port and database, and the second session prints which lock it is waiting on.
+
 `make e2e` and CI invoke
 `apps/backend/tests/integration/foundation/test_month1_workspace.py` directly. That
 test creates its own durable journey state. `scripts/dev/seed_foundation_demo.py` is
