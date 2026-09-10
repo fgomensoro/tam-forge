@@ -13,6 +13,10 @@ from .logging import REASONS
 
 COMPONENTS = frozenset({"ingest", "claude", "speech", "backup", "resources", "export", "retention"})
 
+# Comfortably inside the default observation lifetime, so one missed beat does not
+# expire the component and flap readiness.
+HEARTBEAT_INTERVAL_SECONDS = 20
+
 
 class ComponentStatus(TypedDict):
     status: str
@@ -79,7 +83,7 @@ class HealthRegistry:
         }
 
 
-async def probe_database(
+async def probe_dependency(
     probe: Callable[[], Awaitable[None]],
     *,
     timeout_seconds: float = 1,
@@ -91,3 +95,31 @@ async def probe_database(
     except Exception:
         # Cancellation from the caller is a BaseException and still propagates.
         return False
+
+
+async def run_health_heartbeat(
+    registry: HealthRegistry,
+    *,
+    component: str,
+    probe: Callable[[], Awaitable[None]],
+    interval_seconds: float = HEARTBEAT_INTERVAL_SECONDS,
+    timeout_seconds: float = 1,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> None:
+    """Report one component on a schedule, so readiness does not depend on user traffic.
+
+    Reporting only when a request happens to arrive would leave this workspace unready
+    most of the day: observations expire after `max_age_seconds` and a single user
+    records a few times a day, so readiness would flicker true for a minute after an
+    upload and be false the rest of the time.
+
+    The loop sleeps before its first probe on purpose. An application that has just
+    started has observed nothing, and `not_observed` is the honest report until the
+    first beat lands. Cancellation is how this stops; it propagates untouched.
+    """
+    while True:
+        await sleep(interval_seconds)
+        if await probe_dependency(probe, timeout_seconds=timeout_seconds):
+            registry.report(component, "ok", "none")
+        else:
+            registry.report(component, "needs_attention", "transient_dependency")

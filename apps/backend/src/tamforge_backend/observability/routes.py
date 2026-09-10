@@ -8,7 +8,7 @@ from sqlalchemy import text
 
 from ..auth.dependencies import get_authenticated_owner
 from ..database import DatabaseResources
-from .health import HealthRegistry, probe_database
+from .health import HealthRegistry, probe_dependency
 from .metrics import Metrics
 
 router = APIRouter(include_in_schema=False)
@@ -21,7 +21,7 @@ async def get_database_ready(request: Request) -> bool:
         async with database.engine.connect() as connection:
             await connection.execute(text("SELECT 1"))
 
-    return await probe_database(check)
+    return await probe_dependency(check)
 
 
 @router.get("/readyz")

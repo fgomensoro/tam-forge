@@ -11,12 +11,10 @@ from .ports import ObjectStore
 from .s3 import S3ObjectStore
 
 
-def get_object_store(request: Request) -> ObjectStore:
-    configured = getattr(request.app.state, "object_store", None)
-    if configured is not None:
-        return cast(ObjectStore, configured)
-    settings = cast(Settings, request.app.state.settings)
-    store = S3ObjectStore(
+def create_object_store(settings: Settings) -> ObjectStore:
+    """Build the configured store. Separate from the dependency so the application
+    lifespan can build one without a request, for the ingest health heartbeat."""
+    return S3ObjectStore(
         endpoint_url=settings.object_store_endpoint,
         region=settings.object_store_region,
         addressing_style=settings.object_store_addressing_style,
@@ -27,5 +25,12 @@ def get_object_store(request: Request) -> ObjectStore:
         memory_spool_bytes=settings.object_store_memory_spool_bytes,
         max_concurrent_uploads=settings.object_store_max_concurrent_uploads,
     )
+
+
+def get_object_store(request: Request) -> ObjectStore:
+    configured = getattr(request.app.state, "object_store", None)
+    if configured is not None:
+        return cast(ObjectStore, configured)
+    store = create_object_store(cast(Settings, request.app.state.settings))
     request.app.state.object_store = store
     return store

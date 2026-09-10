@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,11 +13,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api import register_routes
 from .config import Settings
 from .database import create_database_resources
-from .observability.health import HealthRegistry
+from .observability.health import HealthRegistry, run_health_heartbeat
 from .observability.logging import AccessLogFilter, ServerErrorFilter
 from .observability.metrics import Metrics
 from .observability.middleware import OperationalMiddleware
 from .observability.routes import router as operational_router
+from .storage.dependencies import create_object_store
+from .storage.models import build_object_key
+from .storage.ports import ObjectStore
+
+# Ingest depends on the object store, so that is what its heartbeat probes. The key
+# names no owner and no artifact, and stat on a key that was never written is a plain
+# reachability question with no side effect.
+INGEST_PROBE_KEY = build_object_key(
+    artifact_class="health", owner_id="probe", logical_id="readiness", sha256="0" * 64
+)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -40,13 +51,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         access_logger.addFilter(access_log_filter)
         error_logger.addFilter(error_log_filter)
         database = None
+        heartbeat = None
         try:
             database = create_database_resources(configured)
             app.state.settings = configured
             app.state.database = database
             app.state.oauth_state_manager = None
+
+            async def probe_ingest() -> None:
+                # Built here rather than at startup on purpose. The store is
+                # constructed lazily on first use, so an application configured
+                # without object-store credentials still starts and still serves
+                # every path that does not touch it. A construction failure is a
+                # probe failure, which reports ingest as needing attention instead
+                # of taking the whole application down.
+                store: ObjectStore | None = getattr(app.state, "object_store", None)
+                if store is None:
+                    store = create_object_store(configured)
+                    app.state.object_store = store
+                await store.stat(INGEST_PROBE_KEY)
+
+            heartbeat = asyncio.create_task(
+                run_health_heartbeat(
+                    app.state.operational_health, component="ingest", probe=probe_ingest
+                )
+            )
+            app.state.ingest_heartbeat = heartbeat
             yield
         finally:
+            if heartbeat is not None:
+                heartbeat.cancel()
+                # A heartbeat that already died carries its own exception, and awaiting
+                # it re-raises that from inside this finally block, masking whatever we
+                # are actually shutting down for. KeyboardInterrupt and SystemExit still
+                # propagate.
+                with suppress(asyncio.CancelledError, Exception):
+                    await heartbeat
             try:
                 if database is not None:
                     await database.dispose()
