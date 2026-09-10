@@ -34,6 +34,7 @@ from tamforge_protocol.families import (
 from tamforge_protocol.reports import (
     FORBIDDEN_PROGRESS_SIGNALS,
     MAX_OPEN_CORRECTIONS,
+    AnalyticsView,
     CalibrationDelta,
     DailyReport,
     WeeklyReport,
@@ -627,3 +628,123 @@ def test_asking_about_something_that_is_not_a_family_is_refused() -> None:
 def test_an_unknown_family_cannot_be_recorded_either() -> None:
     with pytest.raises(ValidationError):
         evidence_for(family="coffee_chat")
+
+
+# Issue #101: analytics lead with qualifying evidence, measurable transfer, and separate
+# self-versus-AI scores, and exclude recording count, app time, streaks and volume.
+
+
+def analytics(**overrides: object) -> AnalyticsView:
+    data: dict[str, object] = {
+        "owner_id": 1,
+        "qualifying_evidence": (
+            {"competency": "trade_offs", "level": "practicing", "qualifying_event_ids": (4,)},
+        ),
+        "transfer": (
+            {
+                "family": "technical_troubleshooting",
+                "readiness": "transferred",
+                "audiences_covered": 2,
+                "held_under_pressure": False,
+            },
+        ),
+        "calibration": (
+            {"competency": "trade_offs", "self_score": "3", "evaluated_score": "2"},
+        ),
+    }
+    data.update(overrides)
+    return AnalyticsView.model_validate(data)
+
+
+def test_the_view_opens_with_qualifying_evidence() -> None:
+    # Field order is reading order. A screen that opens with a total and buries the
+    # evidence teaches the reader to watch the total.
+    sections = [name for name in AnalyticsView.model_fields if name != "owner_id"]
+
+    assert sections[0] == "qualifying_evidence"
+    assert sections == ["qualifying_evidence", "transfer", "calibration"]
+
+
+def test_evidence_still_cites_the_events_behind_each_level() -> None:
+    with pytest.raises(ValidationError, match="cite its evidence"):
+        analytics(
+            qualifying_evidence=({"competency": "trade_offs", "level": "demonstrated"},)
+        )
+
+
+def test_transfer_is_reported_as_movement_not_as_practice_volume() -> None:
+    line = analytics().transfer[0]
+
+    assert line.readiness == "transferred"
+    assert line.audiences_covered == 2
+    assert line.held_under_pressure is False
+
+
+def test_self_and_evaluated_scores_stay_apart() -> None:
+    delta = analytics().calibration[0]
+
+    assert delta.self_score == Decimal("3")
+    assert delta.evaluated_score == Decimal("2")
+    assert delta.direction == "overrated"
+
+
+def test_there_is_no_blended_score_anywhere_in_the_view() -> None:
+    # Averaging what someone thinks of their work with what the rubric said produces a
+    # number that describes neither.
+    for blended in ("overall_score", "combined_score", "average_score", "score"):
+        assert blended not in AnalyticsView.model_fields
+        with pytest.raises(ValidationError):
+            analytics(**{blended: 3})
+
+
+@pytest.mark.parametrize("signal", sorted(FORBIDDEN_PROGRESS_SIGNALS))
+def test_the_view_carries_no_volume_or_streak_either(signal: str) -> None:
+    assert signal not in AnalyticsView.model_fields
+    with pytest.raises(ValidationError):
+        analytics(**{signal: 12})
+
+
+def test_recording_count_app_time_and_transcript_volume_are_named_explicitly() -> None:
+    assert {
+        "recording_count",
+        "recordings_made",
+        "app_time_minutes",
+        "time_in_app",
+        "transcript_words",
+        "words_transcribed",
+        "transcript_volume",
+    } <= FORBIDDEN_PROGRESS_SIGNALS
+
+
+def test_one_line_per_subject_in_every_section() -> None:
+    with pytest.raises(ValidationError, match="one family line"):
+        analytics(
+            transfer=(
+                {
+                    "family": "technical_troubleshooting",
+                    "readiness": "practiced",
+                    "audiences_covered": 1,
+                    "held_under_pressure": False,
+                },
+                {
+                    "family": "technical_troubleshooting",
+                    "readiness": "ready",
+                    "audiences_covered": 3,
+                    "held_under_pressure": True,
+                },
+            )
+        )
+
+
+def test_an_unknown_family_cannot_appear_in_the_transfer_section() -> None:
+    with pytest.raises(ValidationError):
+        analytics(
+            transfer=(
+                {
+                    "family": "coffee_chat",
+                    "readiness": "ready",
+                    "audiences_covered": 2,
+                    "held_under_pressure": True,
+                },
+            )
+        )

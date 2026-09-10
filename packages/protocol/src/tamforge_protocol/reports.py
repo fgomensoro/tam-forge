@@ -20,6 +20,8 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+from .families import FamilyReadiness, InterviewFamily
+
 PositiveId = Annotated[int, Field(strict=True, gt=0)]
 Slug = Annotated[str, StringConstraints(strict=True, pattern=r"^[a-z][a-z0-9_]{0,63}$")]
 Text = Annotated[str, StringConstraints(strict=True, min_length=1, max_length=512, pattern=r"\S")]
@@ -31,7 +33,8 @@ InterviewOutcomeCode = Literal["advanced", "held", "ended", "no_decision_yet"]
 # Two corrections at a time, the same number the feedback contract publishes.
 MAX_OPEN_CORRECTIONS = 2
 
-# Names a report may never carry. Each of them rises while a weakness stays put.
+# Names a report or an analytics view may never carry. Each of them rises while a
+# weakness stays exactly where it was, which is what makes them so tempting to show.
 FORBIDDEN_PROGRESS_SIGNALS: frozenset[str] = frozenset(
     {
         "streak_days",
@@ -42,6 +45,13 @@ FORBIDDEN_PROGRESS_SIGNALS: frozenset[str] = frozenset(
         "minutes_practiced",
         "sessions_this_week",
         "total_attempts",
+        "recordings_made",
+        "recording_count",
+        "app_time_minutes",
+        "time_in_app",
+        "transcript_words",
+        "words_transcribed",
+        "transcript_volume",
     }
 )
 
@@ -129,6 +139,45 @@ class _Report(_StrictModel):
         return self
 
 
+class FamilyTransferLine(_StrictModel):
+    """How far one interview family has actually moved, not how often it was practised."""
+
+    family: InterviewFamily
+    readiness: FamilyReadiness
+    audiences_covered: Annotated[int, Field(strict=True, ge=0, le=16)]
+    held_under_pressure: bool
+
+
+class AnalyticsView(_StrictModel):
+    """What the learner is shown, in the order it is shown.
+
+    Field order is the reading order, and it starts with qualifying evidence on purpose.
+    An analytics screen that opens with a total and buries the evidence teaches the
+    reader to watch the total.
+
+    Self and evaluated scores stay in `CalibrationDelta`, which keeps them apart and
+    derives the gap. There is deliberately no blended score anywhere here: averaging what
+    someone thinks of their work with what the rubric said produces a number that
+    describes neither.
+    """
+
+    owner_id: PositiveId
+    qualifying_evidence: Annotated[tuple[CompetencyLine, ...], Field(max_length=128)] = ()
+    transfer: Annotated[tuple[FamilyTransferLine, ...], Field(max_length=32)] = ()
+    calibration: Annotated[tuple[CalibrationDelta, ...], Field(max_length=128)] = ()
+
+    @model_validator(mode="after")
+    def one_line_each(self) -> Self:
+        for label, names in (
+            ("competency", [line.competency for line in self.qualifying_evidence]),
+            ("family", [line.family for line in self.transfer]),
+            ("calibration", [line.competency for line in self.calibration]),
+        ):
+            if len(set(names)) != len(names):
+                raise ValueError(f"one {label} line per subject")
+        return self
+
+
 class DailyReport(_Report):
     report_date: date
 
@@ -149,8 +198,10 @@ class WeeklyReport(_Report):
 __all__ = [
     "FORBIDDEN_PROGRESS_SIGNALS",
     "MAX_OPEN_CORRECTIONS",
+    "AnalyticsView",
     "CalibrationDelta",
     "CompetencyLevel",
+    "FamilyTransferLine",
     "CompetencyLine",
     "DailyReport",
     "InterviewKind",
