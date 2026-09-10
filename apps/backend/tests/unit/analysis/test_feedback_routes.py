@@ -181,6 +181,7 @@ def released_feedback() -> FeedbackRead:
         attempt_b={
             "instruction": "Rewrite the recommendation naming the trade-off you skipped.",
             "minutes": 10,
+            "core_prompt_sha256": "a" * 64,
         },
     )
 
@@ -536,7 +537,13 @@ def test_the_attempt_b_instruction_stays_inside_the_next_lesson():
 
     for minutes in (0, ATTEMPT_B_MAX_MINUTES + 1):
         with pytest.raises(ValidationError):
-            _ready(attempt_b={"instruction": "Redo the recommendation.", "minutes": minutes})
+            _ready(
+                attempt_b={
+                    "instruction": "Redo the recommendation.",
+                    "minutes": minutes,
+                    "core_prompt_sha256": "a" * 64,
+                }
+            )
 
 
 def test_ready_feedback_without_a_verdict_or_an_attempt_b_is_not_ready():
@@ -556,7 +563,7 @@ def test_withheld_feedback_carries_no_verdict_findings_or_redo():
         {"verdict": "Clear on impact."},
         {"strengths": list(strengths())},
         {"corrections": list(corrections())},
-        {"attempt_b": {"instruction": "Redo it.", "minutes": 5}},
+        {"attempt_b": {"instruction": "Redo it.", "minutes": 5, "core_prompt_sha256": "a" * 64}},
     ):
         with pytest.raises(ValidationError):
             FeedbackRead.model_validate(
@@ -576,3 +583,52 @@ def test_the_client_receives_the_verdict_the_findings_and_the_redo():
     assert len(body["corrections"]) == 2
     assert body["attempt_b"]["minutes"] == 10
     assert body["corrections"][0]["evidence"]["references"][0]["attempt_id"] == 9
+
+
+# Issue #58's acceptance criterion: at most two corrections enter the next lesson,
+# Attempt B uses the same core prompt for no more than ten minutes, and no additional
+# correction attempt is scheduled.
+
+
+def test_attempt_b_runs_against_the_prompt_the_analysis_was_produced_from():
+    import pytest
+    from pydantic import ValidationError
+
+    feedback = released_feedback()
+    assert feedback.attempt_b.core_prompt_sha256 == feedback.versions.prompt.content_hash
+
+    with pytest.raises(ValidationError):
+        _ready(
+            attempt_b={
+                "instruction": "Rewrite the recommendation.",
+                "minutes": 10,
+                "core_prompt_sha256": "f" * 64,
+            }
+        )
+
+
+def test_the_next_lesson_takes_the_two_corrections_the_report_named():
+    from tamforge_protocol.agents import MAX_NEXT_LESSON_CORRECTIONS, REQUIRED_CORRECTIONS
+
+    assert MAX_NEXT_LESSON_CORRECTIONS == REQUIRED_CORRECTIONS == 2
+    scheduled = released_feedback().corrections
+    assert len(scheduled) == MAX_NEXT_LESSON_CORRECTIONS
+    assert [item.target_skill for item in scheduled] == ["trade_offs", "business_framing"]
+
+
+def test_no_attempt_after_attempt_b_can_be_scheduled():
+    import pytest
+    from tamforge_protocol.agents import ATTEMPT_LABELS, next_attempt_label
+
+    assert ATTEMPT_LABELS == ("attempt_a", "attempt_b")
+    assert next_attempt_label([]) == "attempt_a"
+    assert next_attempt_label(["attempt_a"]) == "attempt_b"
+
+    with pytest.raises(ValueError, match="Attempt B"):
+        next_attempt_label(["attempt_a", "attempt_b"])
+
+
+def test_the_redo_is_never_longer_than_the_next_lesson_allows():
+    from tamforge_protocol.agents import ATTEMPT_B_MAX_MINUTES
+
+    assert released_feedback().attempt_b.minutes <= ATTEMPT_B_MAX_MINUTES == 10

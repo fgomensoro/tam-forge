@@ -388,7 +388,11 @@ def released(**overrides):
                 "evidence": cited("A date with no basis."),
             },
         ],
-        attempt_b={"instruction": "Rewrite the recommendation with its cost.", "minutes": 10},
+        attempt_b={
+            "instruction": "Rewrite the recommendation with its cost.",
+            "minutes": 10,
+            "core_prompt_sha256": "b" * 64,
+        },
     )
     data.update(overrides)
     return data
@@ -433,7 +437,13 @@ def test_an_attempt_b_longer_than_the_next_lesson_is_refused():
     for minutes in (0, ATTEMPT_B_MAX_MINUTES + 1):
         with pytest.raises(ValidationError):
             FeedbackRead.model_validate(
-                released(attempt_b={"instruction": "Redo it.", "minutes": minutes})
+                released(
+                    attempt_b={
+                        "instruction": "Redo it.",
+                        "minutes": minutes,
+                        "core_prompt_sha256": "b" * 64,
+                    }
+                )
             )
 
 

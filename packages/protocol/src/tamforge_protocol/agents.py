@@ -262,6 +262,21 @@ REQUIRED_STRENGTHS = 2
 REQUIRED_CORRECTIONS = 2
 # Attempt B is a bounded redo inside the next lesson, not a second full attempt.
 ATTEMPT_B_MAX_MINUTES = 10
+# At most two corrections enter the next lesson, which is the same two the report named.
+MAX_NEXT_LESSON_CORRECTIONS = REQUIRED_CORRECTIONS
+# There is no Attempt C. A second redo of the same work stops being practice and starts
+# being memorization of one answer, and later transfer needs a new independent
+# Attempt A instead.
+ATTEMPT_LABELS: tuple[str, ...] = ("attempt_a", "attempt_b")
+
+
+def next_attempt_label(existing: Iterable[str]) -> str:
+    """Return the label of the attempt that may be scheduled next, or refuse."""
+    taken = tuple(existing)
+    for label in ATTEMPT_LABELS:
+        if label not in taken:
+            return label
+    raise ValueError("no attempt after Attempt B may be scheduled")
 
 
 class FeedbackStrength(_StrictModel):
@@ -295,6 +310,9 @@ class AttemptBInstruction(_StrictModel):
 
     instruction: Text
     minutes: Annotated[int, Field(strict=True, ge=1, le=ATTEMPT_B_MAX_MINUTES)]
+    # The prompt Attempt B runs against. It has to be the one the analysis was produced
+    # from, or the comparison between the two attempts compares two different tasks.
+    core_prompt_sha256: Hash
 
 
 class PinnedRecord(_StrictModel):
@@ -357,6 +375,8 @@ class FeedbackRead(_StrictModel):
             raise ValueError("ready feedback names exactly two demonstrated strengths")
         if len(self.corrections) != REQUIRED_CORRECTIONS:
             raise ValueError("ready feedback names exactly two highest-impact corrections")
+        if self.attempt_b.core_prompt_sha256 != self.versions.prompt.content_hash:
+            raise ValueError("Attempt B must run against the same core prompt as the analysis")
         for label, statements in (
             ("strengths", [item.statement for item in self.strengths]),
             ("corrections", [item.statement for item in self.corrections]),
