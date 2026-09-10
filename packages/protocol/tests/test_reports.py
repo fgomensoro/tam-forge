@@ -21,6 +21,16 @@ from tamforge_protocol.cadence import (
     absorb,
     replacement_minutes,
 )
+from tamforge_protocol.families import (
+    AUDIENCES_FOR_TRANSFER,
+    INTERVIEW_FAMILIES,
+    PRESSURED,
+    READINESS_ORDER,
+    FamilyError,
+    TransferEvidence,
+    family_readiness,
+    readiness_across,
+)
 from tamforge_protocol.reports import (
     FORBIDDEN_PROGRESS_SIGNALS,
     MAX_OPEN_CORRECTIONS,
@@ -528,3 +538,92 @@ def test_approval_cannot_precede_the_import_it_approves() -> None:
 def test_naive_transition_timestamps_are_refused() -> None:
     with pytest.raises(ValidationError):
         activation(imported_at=datetime(2026, 9, 28, 9))
+
+
+# Issue #100: readiness across all seventeen families advances only on independent
+# transfer across the approved audience and pressure variations.
+
+
+def evidence_for(**overrides: object) -> TransferEvidence:
+    data: dict[str, object] = {
+        "event_id": 1,
+        "family": "technical_troubleshooting",
+        "audience": "peer",
+        "pressure": "calm",
+    }
+    data.update(overrides)
+    return TransferEvidence.model_validate(data)
+
+
+def test_all_seventeen_families_are_tracked() -> None:
+    assert len(INTERVIEW_FAMILIES) == 17
+    assert len(set(INTERVIEW_FAMILIES)) == 17
+    assert "recruiter_screen" in INTERVIEW_FAMILIES
+    assert "final_panel_gauntlet" in INTERVIEW_FAMILIES
+    assert set(readiness_across([])) == set(INTERVIEW_FAMILIES)
+
+
+def test_a_family_nothing_has_touched_is_untested() -> None:
+    assert family_readiness([], family="recruiter_screen") == "untested"
+    assert readiness_across([])["sql_reconciliation"] == "untested"
+
+
+def test_one_performance_is_practised_not_transferred() -> None:
+    once = [evidence_for()]
+
+    assert family_readiness(once, family="technical_troubleshooting") == "practiced"
+
+
+def test_the_same_audience_twice_is_still_only_practised() -> None:
+    # Answering the same question well to the same audience twice is evidence of having
+    # answered it before.
+    twice = [evidence_for(), evidence_for(event_id=2, pressure="challenged")]
+
+    assert family_readiness(twice, family="technical_troubleshooting") == "practiced"
+
+
+def test_a_second_audience_is_what_transfer_means() -> None:
+    assert AUDIENCES_FOR_TRANSFER == 2
+    moved = [evidence_for(), evidence_for(event_id=2, audience="hiring_manager")]
+
+    assert family_readiness(moved, family="technical_troubleshooting") == "transferred"
+
+
+def test_readiness_also_needs_it_to_hold_under_pressure() -> None:
+    # An interview that never pushes back is not the interview anyone is preparing for.
+    calm = [evidence_for(), evidence_for(event_id=2, audience="executive")]
+    assert family_readiness(calm, family="technical_troubleshooting") == "transferred"
+
+    for pressure in sorted(PRESSURED):
+        pushed = [*calm, evidence_for(event_id=3, audience="executive", pressure=pressure)]
+        assert family_readiness(pushed, family="technical_troubleshooting") == "ready"
+
+
+def test_evidence_from_another_family_never_counts_here() -> None:
+    elsewhere = [
+        evidence_for(),
+        evidence_for(event_id=2, family="recruiter_screen", audience="hiring_manager"),
+    ]
+
+    assert family_readiness(elsewhere, family="technical_troubleshooting") == "practiced"
+    assert family_readiness(elsewhere, family="recruiter_screen") == "practiced"
+
+
+def test_assisted_work_cannot_be_offered_as_transfer_at_all() -> None:
+    # Single-valued on purpose: a flag that can be False is a flag somebody sets False.
+    with pytest.raises(ValidationError):
+        evidence_for(independent=False)
+
+
+def test_the_states_climb_in_one_order() -> None:
+    assert READINESS_ORDER == ("untested", "practiced", "transferred", "ready")
+
+
+def test_asking_about_something_that_is_not_a_family_is_refused() -> None:
+    with pytest.raises(FamilyError, match="tracked interview families"):
+        family_readiness([], family="coffee_chat")
+
+
+def test_an_unknown_family_cannot_be_recorded_either() -> None:
+    with pytest.raises(ValidationError):
+        evidence_for(family="coffee_chat")
