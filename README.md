@@ -133,6 +133,19 @@ TAMFORGE_OBJECT_STORE_SECRET_KEY=tamforge-local \
   make e2e
 ```
 
+`TEST_DATABASE_URL` must name `127.0.0.1`, the `tamforge_test` database and no query
+parameters, on any port in the IANA dynamic/private range 49152-65535. `compose.dev.yml`
+publishes 54329. The suite drops and rebuilds the schema, so two checkouts must never
+share one database; a second checkout publishes its own container on another private
+port and points `TEST_DATABASE_URL` at it:
+
+```bash
+docker run -d --name tamforge-postgres-54330 \
+  -e POSTGRES_DB=tamforge -e POSTGRES_USER=tamforge -e POSTGRES_PASSWORD=tamforge \
+  -p 127.0.0.1:54330:5432 pgvector/pgvector:pg16
+TAMFORGE_TEST_DB_PORT=54330 scripts/dev/ensure_test_database.sh
+```
+
 `make e2e` and CI invoke
 `apps/backend/tests/integration/foundation/test_month1_workspace.py` directly. That
 test creates its own durable journey state. `scripts/dev/seed_foundation_demo.py` is

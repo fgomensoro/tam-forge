@@ -123,20 +123,9 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
         "sha256": hashlib.sha256(package_bytes).hexdigest(),
         "byte_length": len(package_bytes),
     }
-    validated_database_url = validate_test_database_url(test_database_url)
-    database_target = make_url(validated_database_url)
-    if (
-        database_target.host != "127.0.0.1"
-        or database_target.port != 54329
-        or database_target.database != "tamforge_test"
-        or bool(database_target.query)
-    ):
-        pytest.fail(
-            "durable parity requires exactly "
-            "127.0.0.1:54329/tamforge_test without URL query parameters",
-            pytrace=False,
-        )
-    test_database_url = validated_database_url
+    # validate_test_database_url is the single boundary: local host, tamforge_test,
+    # a private port and no query parameters. Do not re-pin it here.
+    test_database_url = validate_test_database_url(test_database_url)
     bundle = load_config_bundle(ROOT / "config")
     with inspect_zip_stream((package_bytes,)) as inspected_package:
         assert inspected_package.accepted

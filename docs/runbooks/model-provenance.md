@@ -129,7 +129,7 @@ scripts/run-plan-03-integration.sh apps/backend/tests/integration/agents
 ```
 
 The gate requires explicit paths and `TEST_DATABASE_URL`, validates exactly the
-existing `127.0.0.1:54329/tamforge_test` boundary, uses strict markers, and rejects
+existing `127.0.0.1/tamforge_test` boundary, uses strict markers, and rejects
 empty collection, skips, collection failures and incomplete pass counts. It prints
 counts, never credentials. CI retains every existing integration test and runs
 these double-marked cases once through the gate. Tests create attempts through
