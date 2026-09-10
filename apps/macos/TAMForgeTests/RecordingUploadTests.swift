@@ -614,7 +614,8 @@ final class RecordingUploadTests: XCTestCase {
         // submitted yet (the retry branch has not run).
         let firstPass = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
         XCTAssertTrue(firstPass.audioCreatedOnServer)
-        XCTAssertEqual(await server.submissionAttempts, 0)
+        let attemptsAfterFirstPass = await server.submissionAttempts
+        XCTAssertEqual(attemptsAfterFirstPass, 0)
 
         // Second pass: the retry branch submits the cached payload, the
         // server permanently rejects it (422) -- unlike a transient
@@ -624,7 +625,8 @@ final class RecordingUploadTests: XCTestCase {
         await XCTAssertAsyncThrowsError {
             _ = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
         }
-        XCTAssertEqual(await server.submissionAttempts, 1)
+        let attemptsAfterPermanentRejection = await server.submissionAttempts
+        XCTAssertEqual(attemptsAfterPermanentRejection, 1)
         let cachedAfterRejection = await cache.payload(for: fixture.recordingID)
         XCTAssertNil(cachedAfterRejection)
 
@@ -635,7 +637,8 @@ final class RecordingUploadTests: XCTestCase {
         // rather than every later pass repeating the same doomed POST.
         let thirdPass = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
         XCTAssertFalse(thirdPass.transcriptLineageAccepted)
-        XCTAssertEqual(await server.submissionAttempts, 1)
+        let attemptsAfterThirdPass = await server.submissionAttempts
+        XCTAssertEqual(attemptsAfterThirdPass, 1)
     }
 
     // Regression coverage for the fix that narrowed isPermanentTranscriptRejection:
@@ -663,7 +666,8 @@ final class RecordingUploadTests: XCTestCase {
         // submitted yet (the retry branch has not run).
         let firstPass = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
         XCTAssertTrue(firstPass.audioCreatedOnServer)
-        XCTAssertEqual(await server.submissionAttempts, 0)
+        let attemptsAfterFirstPass = await server.submissionAttempts
+        XCTAssertEqual(attemptsAfterFirstPass, 0)
 
         // Second pass: the retry branch submits the cached payload and the
         // server returns 404. Unlike the real permanent-rejection test
@@ -674,7 +678,8 @@ final class RecordingUploadTests: XCTestCase {
         let secondPass = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
         XCTAssertFalse(secondPass.transcriptLineageAccepted)
         XCTAssertFalse(secondPass.mayDeleteLocalSpool)
-        XCTAssertEqual(await server.submissionAttempts, 1)
+        let attemptsAfterSecondPass = await server.submissionAttempts
+        XCTAssertEqual(attemptsAfterSecondPass, 1)
         let cachedAfterRejection = await cache.payload(for: fixture.recordingID)
         XCTAssertNotNil(cachedAfterRejection)
 
@@ -684,7 +689,8 @@ final class RecordingUploadTests: XCTestCase {
         // rather than being dropped after one failure.
         let thirdPass = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
         XCTAssertFalse(thirdPass.transcriptLineageAccepted)
-        XCTAssertEqual(await server.submissionAttempts, 2)
+        let attemptsAfterThirdPass = await server.submissionAttempts
+        XCTAssertEqual(attemptsAfterThirdPass, 2)
         let cachedAfterThirdPass = await cache.payload(for: fixture.recordingID)
         XCTAssertNotNil(cachedAfterThirdPass)
     }
