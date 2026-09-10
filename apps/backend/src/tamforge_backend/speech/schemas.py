@@ -17,19 +17,32 @@ from .models import (
 
 SPEECH_SCHEMA_VERSION: Final[Literal[1]] = 1
 
-# Transcript-body bounds. A 120-minute recording is roughly 18,000 words
-# (see the transcript-lineage design doc), so 20,000 leaves headroom without
-# inviting an unbounded body.
+# Transcript-body bounds. "Word" here means one `TranscriptWord` entry, which is one
+# whisper token, not one English word: `WhisperTranscriber.readWords` emits one entry
+# per whisper BPE token (sub-word pieces and punctuation included), and English runs
+# roughly 1.3 tokens per word. A 120-minute recording is roughly 18,000 *words* (see
+# the transcript-lineage design doc), i.e. 23,000-27,000 of these entries, so the old
+# 20,000 bound permanently rejected a supported two-hour recording. 40,000 keeps
+# headroom over that (about 1.5x the worst realistic case) while still bounding the
+# body: at ~80 canonical bytes per entry that is ~3.2 MB, inside the 4 MiB
+# TRANSCRIPT_BODY_LIMIT with about 1 MB left for segment/model/derivation overhead.
 MAX_SEGMENTS_PER_TRANSCRIPT = 4_000
-MAX_WORDS_PER_TRANSCRIPT = 20_000
+MAX_WORDS_PER_TRANSCRIPT = 40_000
 MAX_TEXT_LENGTH = 4_096
-MAX_TRANSCRIPT_MS = 7_200_000  # two hours, mirrors recordings.MAX_RECORDING_SECONDS
+# Two hours (mirrors recordings.MAX_RECORDING_SECONDS) plus one minute of headroom:
+# ASRAudioDeriver.finish() pads the tail past the last real sample so the final window
+# is complete, so a maximum-length recording's last segment/word end_ms can land past
+# the recording's nominal duration. Exact equality left zero room for that.
+MAX_TRANSCRIPT_MS = 7_260_000
 
 # Source/derivation bounds, mirroring the equivalent recordings.schemas constants.
 MAX_SOURCE_SAMPLE_RATE_HZ = 384_000
 MAX_SOURCE_CHANNEL_COUNT = 32
 MAX_SOURCE_SAMPLE_COUNT = 48_000 * 7_200  # two hours at 48 kHz, mirrors MAX_TRACK_SAMPLES
-MAX_OUTPUT_SAMPLE_COUNT = 16_000 * 7_200  # two hours at the fixed 16 kHz ASR output rate
+# Two hours at the fixed 16 kHz ASR output rate, plus the same one-minute headroom as
+# MAX_TRANSCRIPT_MS and for the same reason: finish()'s tail padding can push the
+# derived output past the exact two-hour sample count.
+MAX_OUTPUT_SAMPLE_COUNT = 16_000 * 7_260
 MAX_DERIVATION_GAPS = 7_200  # at most one zero-filled gap per second of a two-hour recording
 MAX_QUALITY_DIMENSIONS = 16
 

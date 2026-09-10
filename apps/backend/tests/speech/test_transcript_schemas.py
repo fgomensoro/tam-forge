@@ -115,7 +115,7 @@ def test_rejects_a_segment_ending_before_it_starts() -> None:
 
 def test_rejects_a_transcript_whose_total_word_count_exceeds_the_aggregate_bound() -> None:
     # Each segment individually respects the MAX_WORDS_PER_TRANSCRIPT field bound on
-    # `words` (20,000 and 1), but their sum (20,001) exceeds the aggregate bound that
+    # `words` (40,000 and 1), but their sum (40,001) exceeds the aggregate bound that
     # TranscriptSubmitCommand.validate_segments enforces across the whole transcript.
     def word(index: int) -> dict[str, object]:
         return {"text": "w", "start_ms": index, "end_ms": index + 1, "probability": 0.9}
