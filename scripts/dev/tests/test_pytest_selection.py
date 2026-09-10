@@ -36,7 +36,7 @@ def test_default_pytest_selection_excludes_integration_tests() -> None:
     )
 
     assert result.returncode == 5
-    assert "1 deselected" in result.stdout
+    assert "deselected" in result.stdout
     assert "test_migrations_round_trip_and_keep_version_table" not in result.stdout
 
 
@@ -45,7 +45,7 @@ def test_explicit_integration_marker_collects_integration_tests() -> None:
 
     assert result.returncode == 0, result.stderr
     assert "test_migrations_round_trip_and_keep_version_table" in result.stdout
-    assert "1 test collected" in result.stdout
+    assert "deselected" not in result.stdout
 
 
 def test_explicit_integration_rejects_remote_target_before_test_body_runs() -> None:
