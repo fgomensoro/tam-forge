@@ -56,3 +56,26 @@ def test_operational_details_require_owner_authentication() -> None:
     with TestClient(app) as client:
         assert client.get("/ops/status").status_code == 401
         assert client.get("/ops/metrics").status_code == 401
+
+
+def test_the_application_starts_without_object_store_credentials() -> None:
+    """The ingest heartbeat must not become a startup dependency.
+
+    The object store is built on first use, so a deployment configured without its
+    credentials still starts and still serves every path that does not touch it.
+    Building the store eagerly for the heartbeat would have turned a missing optional
+    credential into a failure to boot.
+    """
+    app = create_app(Settings(environment="test", _env_file=None))
+    app.dependency_overrides[get_database_ready] = lambda: True
+    with TestClient(app) as client:
+        assert client.get("/healthz").status_code == 200
+        assert client.get("/readyz").status_code == 503
+
+
+def test_the_ingest_heartbeat_runs_for_the_lifetime_of_the_application() -> None:
+    app = create_app(Settings(environment="test", _env_file=None))
+    with TestClient(app):
+        heartbeat = app.state.ingest_heartbeat
+        assert heartbeat.done() is False
+    assert heartbeat.done() is True

@@ -280,3 +280,41 @@ def test_an_unavailable_store_is_rendered_as_the_recording_503_problem() -> None
     assert response.status_code == 503
     assert response.media_type == "application/problem+json"
     assert b"recording_unavailable" in response.body
+
+
+def test_a_storage_failure_reports_ingest_without_waiting_for_the_heartbeat() -> None:
+    """A durability failure is ingest health news; a rejected request is not."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from tamforge_backend.observability.health import HealthRegistry
+    from tamforge_backend.recordings.routes import recording_exception_handler
+    from tamforge_backend.recordings.service import RecordingConflict
+
+    registry = HealthRegistry()
+    state = SimpleNamespace(operational_health=registry)
+    request = SimpleNamespace(app=SimpleNamespace(state=state))
+
+    asyncio.run(recording_exception_handler(request, RecordingConflict("sequence conflict")))
+    assert registry.snapshot(database_ready=True)["components"]["ingest"] == {
+        "status": "unknown",
+        "reason": "not_observed",
+    }
+
+    asyncio.run(recording_exception_handler(request, RecordingUnavailable()))
+    assert registry.snapshot(database_ready=True)["components"]["ingest"] == {
+        "status": "needs_attention",
+        "reason": "transient_dependency",
+    }
+
+
+def test_reporting_never_turns_a_failed_upload_into_a_second_error() -> None:
+    import asyncio
+    from types import SimpleNamespace
+
+    from tamforge_backend.recordings.routes import recording_exception_handler
+
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))
+    response = asyncio.run(recording_exception_handler(request, RecordingUnavailable()))
+
+    assert response.status_code == 503

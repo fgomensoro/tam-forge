@@ -361,10 +361,28 @@ def recording_problem_response(exc: RecordingError) -> JSONResponse:
     return response
 
 
+def _report_ingest_unavailable(request: Request) -> None:
+    """Surface a storage failure now rather than at the next heartbeat.
+
+    Only a storage failure counts. A rejected manifest or a conflicting sequence is the
+    caller's fault and says nothing about ingest health, so it must not flip the
+    component. Reporting can never fail the response either: the request already failed
+    for its own reason, and an observation is not worth a second error on top of it.
+    """
+    registry = getattr(request.app.state, "operational_health", None)
+    if registry is None:
+        return
+    try:
+        registry.report("ingest", "needs_attention", "transient_dependency")
+    except ValueError:
+        pass
+
+
 async def recording_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    del request
     if not isinstance(exc, RecordingError):
         raise exc
+    if isinstance(exc, RecordingUnavailable):
+        _report_ingest_unavailable(request)
     return recording_problem_response(exc)
 
 
