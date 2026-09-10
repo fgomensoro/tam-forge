@@ -348,6 +348,48 @@ class AttemptComparison(_StrictModel):
         return self
 
 
+class TransferError(ValueError):
+    """This attempt cannot retire the queued correction."""
+
+
+class QueuedRetrieval(_StrictModel):
+    """A correction Attempt B did not resolve, waiting for a different scenario."""
+
+    target_skill: Slug
+    source_scenario_key: Slug
+    source_core_prompt_sha256: Hash
+    queued_from_attempt_b_id: PositiveId
+
+
+class TransferAttempt(_StrictModel):
+    """The later, independent attempt that may retire a queued correction.
+
+    The label is fixed. Transfer is demonstrated by doing the thing again somewhere new
+    and unaided, so it needs a fresh Attempt A rather than another pass at the redo,
+    and Attempt B never creates qualifying evidence of its own.
+    """
+
+    attempt_id: PositiveId
+    attempt_label: Literal["attempt_a"]
+    scenario_key: Slug
+    core_prompt_sha256: Hash
+
+
+def require_material_difference(queued: QueuedRetrieval, attempt: TransferAttempt) -> None:
+    """Raise unless the later attempt is materially different from the one queued it.
+
+    Repeating the original prompt measures recall of one answer, and marking a
+    correction demonstrated on that basis is how a weakness disappears from the record
+    without ever being fixed.
+    """
+    if attempt.core_prompt_sha256 == queued.source_core_prompt_sha256:
+        raise TransferError("a repeat of the original prompt cannot demonstrate transfer")
+    if attempt.scenario_key == queued.source_scenario_key:
+        raise TransferError("a repeat of the original scenario cannot demonstrate transfer")
+    if attempt.attempt_id == queued.queued_from_attempt_b_id:
+        raise TransferError("transfer needs a new attempt, not the one that queued it")
+
+
 def close_correction(comparison: AttemptComparison) -> CorrectionDisposition:
     """Return what happens to the correction. Never a third attempt at the same prompt."""
     if comparison.outcome == "improved":
