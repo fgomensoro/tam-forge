@@ -13,7 +13,7 @@ CONFIG_DIR = Path(__file__).parents[5] / "config"
 
 
 @pytest.fixture
-def test_database_url() -> str:
+def test_database_url(destructive_database_lock: None) -> str:
     from tamforge_backend.database import validate_test_database_url
 
     raw_url = os.getenv("TEST_DATABASE_URL")

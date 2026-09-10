@@ -6,7 +6,7 @@ import pytest
 
 
 @pytest.fixture(scope="session")
-def test_database_url() -> str:
+def test_database_url(destructive_database_lock: None) -> str:
     url = os.getenv("TEST_DATABASE_URL")
     if not url:
         pytest.skip("TEST_DATABASE_URL is required; tests never autostart Docker")
