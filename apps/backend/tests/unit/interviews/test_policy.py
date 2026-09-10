@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import get_args
 
 import pytest
+from tamforge_backend.interviews import timeline as tl
 from tamforge_backend.interviews.policy import (
     DEBRIEF_MAX_MINUTES,
     DEBRIEF_WINDOW_MINUTES,
@@ -14,6 +16,7 @@ from tamforge_backend.interviews.policy import (
     DebriefError,
     require_debrief_before_release,
 )
+from tamforge_backend.speech.metrics.words import RecognizedWord
 from tamforge_protocol.agents import AnalysisObservation
 
 ENDED = datetime(2026, 9, 15, 16, tzinfo=UTC)
@@ -115,3 +118,121 @@ def test_naive_timestamps_are_refused() -> None:
 def test_a_debrief_names_its_interview_and_its_owner(field: str) -> None:
     with pytest.raises(DebriefError, match="names its interview"):
         debrief(**{field: 0})
+
+
+# Issue #84: questions segmented from the two synchronized tracks, a timestamped
+# user/remote timeline, labels kept apart, and no speaker diarization.
+
+def words(*spans: tuple[int, int]) -> tuple[RecognizedWord, ...]:
+    return tuple(
+        RecognizedWord(text=f"w{index}", start_ms=start, end_ms=end)
+        for index, (start, end) in enumerate(spans)
+    )
+
+
+def test_the_track_decides_the_speaker_and_nothing_else() -> None:
+    built = tl.build_timeline(
+        microphone=words((3_000, 3_500)), system_audio=words((0, 900))
+    )
+
+    assert [item.speaker for item in built] == ["remote", "user"]
+    assert get_args(tl.Speaker) == ("user", "remote")
+
+
+def test_the_timeline_runs_in_the_order_things_happened() -> None:
+    built = tl.build_timeline(
+        microphone=words((1_000, 1_400), (5_000, 5_400)),
+        system_audio=words((0, 800), (3_000, 3_800)),
+    )
+
+    assert [item.start_ms for item in built] == [0, 1_000, 3_000, 5_000]
+    assert [item.speaker for item in built] == ["remote", "user", "remote", "user"]
+
+
+def test_a_long_silence_starts_a_new_utterance() -> None:
+    assert tl.QUESTION_GAP_MS == 2_000
+    joined = tl.build_timeline(
+        microphone=words((0, 500), (1_000, 1_500)), system_audio=()
+    )
+    split = tl.build_timeline(
+        microphone=words((0, 500), (3_000, 3_500)), system_audio=()
+    )
+
+    assert len(joined) == 1 and joined[0].end_ms == 1_500
+    assert len(split) == 2
+
+
+def test_each_question_takes_the_answer_that_follows_it() -> None:
+    turns = tl.segment_questions(
+        microphone=words((1_200, 2_000), (6_000, 7_000)),
+        system_audio=words((0, 900), (4_500, 5_200)),
+    )
+
+    assert [turn.index for turn in turns] == [0, 1]
+    assert turns[0].answer is not None and turns[0].answer.start_ms == 1_200
+    assert turns[1].answer is not None and turns[1].answer.start_ms == 6_000
+    assert turns[0].response_latency_ms == 300
+
+
+def test_a_question_nobody_answered_is_recorded_as_unanswered() -> None:
+    turns = tl.segment_questions(microphone=(), system_audio=words((0, 900)))
+
+    assert turns[0].answered is False
+    assert turns[0].answer is None
+    assert turns[0].response_latency_ms is None
+
+
+def test_speech_before_the_question_is_not_its_answer() -> None:
+    turns = tl.segment_questions(
+        microphone=words((0, 400)), system_audio=words((3_000, 3_800))
+    )
+
+    assert turns[0].answered is False
+
+
+def test_there_is_no_place_to_record_which_remote_voice_spoke() -> None:
+    # Guessing which of three remote voices said something is a claim this system has
+    # no evidence for, and it would sit in the record looking like one that does.
+    from dataclasses import fields
+
+    names = {field.name for field in fields(tl.Utterance)}
+    assert names == {"speaker", "start_ms", "end_ms"}
+    for diarization in ("speaker_id", "voice_id", "participant", "diarization"):
+        assert diarization not in names
+
+
+def test_the_four_labels_are_the_analysis_contracts_own() -> None:
+    # A fifth label here would mean a claim labelled one thing on this side and
+    # something else downstream.
+    reviewer = get_args(AnalysisObservation.model_fields["attribution"].annotation)
+
+    assert get_args(tl.ClaimLabel) == reviewer
+    assert set(reviewer) == {"observed_content", "user_stated", "inferred", "unknown"}
+
+
+def test_uncertainty_rides_on_the_claim_rather_than_being_a_fifth_label() -> None:
+    # A thing can be observed and still be hard to hear.
+    claim = tl.Claim(statement="They said the renewal is at risk.", label="observed_content",
+                     confidence=Decimal("0.4"))
+
+    assert claim.label == "observed_content"
+    assert claim.confidence == Decimal("0.4")
+
+    for bad in (Decimal("-0.1"), Decimal("1.1")):
+        with pytest.raises(tl.TimelineError, match="zero to one"):
+            tl.Claim(statement="x", label="inferred", confidence=bad)
+
+
+def test_an_empty_claim_says_nothing_and_is_refused() -> None:
+    with pytest.raises(tl.TimelineError, match="says something"):
+        tl.Claim(statement="   ", label="unknown", confidence=Decimal("0"))
+
+
+def test_an_utterance_cannot_end_before_it_starts() -> None:
+    with pytest.raises(tl.TimelineError, match="before it starts"):
+        tl.Utterance("user", 900, 100)
+
+
+def test_a_zero_gap_is_refused_rather_than_splitting_every_word() -> None:
+    with pytest.raises(tl.TimelineError, match="at least one millisecond"):
+        tl.build_timeline(microphone=words((0, 100)), system_audio=(), gap_ms=0)
