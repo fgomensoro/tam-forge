@@ -19,6 +19,15 @@ class NotificationInvalidRequest(NotificationError):
     """The notification request is outside bounded policy."""
 
 
+class NotificationStorageUnavailable(NotificationError):
+    """The notification store rejected the work and the caller may retry.
+
+    Raised by the repository for a `SQLAlchemyError` and nothing else. It
+    subclasses the base error `api.py` already registers a handler for, which is
+    why no handler registration had to change.
+    """
+
+
 class NotificationStore(Protocol):
     async def list_notifications(
         self,
@@ -99,5 +108,6 @@ __all__ = [
     "NotificationInvalidRequest",
     "NotificationNotFound",
     "NotificationService",
+    "NotificationStorageUnavailable",
     "NotificationStore",
 ]

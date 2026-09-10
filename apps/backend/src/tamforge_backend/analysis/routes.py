@@ -12,7 +12,7 @@ from tamforge_protocol.agents import FeedbackRead
 from ..auth.dependencies import get_authenticated_owner
 from ..auth.schemas import AuthenticatedOwner, ProblemResponse
 from ..database import get_db_session
-from .repository import FeedbackNotFound, FeedbackRepository
+from .repository import FeedbackNotFound, FeedbackRepository, FeedbackStorageUnavailable
 
 router = APIRouter(prefix="/api/v1", tags=["analysis"])
 
@@ -49,6 +49,8 @@ async def read_feedback(
 def feedback_problem_response(exc: Exception) -> JSONResponse:
     if isinstance(exc, FeedbackNotFound):
         status, code, title = 404, "feedback_not_found", "Feedback not found"
+    elif isinstance(exc, FeedbackStorageUnavailable):
+        status, code, title = 503, "feedback_storage_unavailable", "Feedback storage unavailable"
     else:
         status, code, title = 500, "feedback_error", "Feedback read failed"
     problem = ProblemResponse(

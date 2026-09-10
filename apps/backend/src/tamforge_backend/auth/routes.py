@@ -39,6 +39,7 @@ from .service import (
     AuthError,
     AuthMisconfigured,
     AuthService,
+    AuthStorageUnavailable,
     CsrfRejected,
     ExternalIdentityProviderError,
     ForbiddenIdentity,
@@ -152,7 +153,7 @@ def problem_response(exc: Exception) -> JSONResponse:
             "Authentication is temporarily unavailable.",
             "identity_provider_error",
         )
-    elif isinstance(exc, AuthMisconfigured):
+    elif isinstance(exc, (AuthMisconfigured, AuthStorageUnavailable)):
         status, title, detail, code = (
             503,
             "Authentication unavailable",

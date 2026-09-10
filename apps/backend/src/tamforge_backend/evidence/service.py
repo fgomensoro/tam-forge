@@ -51,6 +51,15 @@ class EvidenceInvalidRequest(EvidenceError):
     """Evidence command is structurally invalid."""
 
 
+class EvidenceStorageUnavailable(EvidenceError):
+    """The evidence store rejected the work and the caller may retry.
+
+    Raised by the repository for a `SQLAlchemyError` and nothing else. It
+    subclasses the base error `api.py` already registers a handler for, which is
+    why no handler registration had to change.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class PersistedDimension:
     id: int

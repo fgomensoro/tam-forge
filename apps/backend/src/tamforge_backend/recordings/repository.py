@@ -1,14 +1,42 @@
-"""Transactional owner-scoped persistence for durable recording ingest."""
+"""Transactional owner-scoped persistence for durable recording ingest.
+
+Every public method translates a `SQLAlchemyError` into `RecordingUnavailable`,
+because this is the only layer that can still recognise one for what it is.
+Above it nothing catches a raw one: `api.register_routes` installs a handler per
+domain error type and none for SQLAlchemy's, and `observability.middleware`
+re-raises, so a dropped connection or a statement timeout used to reach
+Starlette's own server-error handling as a plain-text 500 rather than the
+`application/problem+json` 503 the recording routes declare. `RecordingUnavailable`
+already carries that 503 for an unreachable object store, and a client cannot act
+on which store it was, so it carries this too rather than a second public code.
+
+The translation wraps `transaction_scope` from outside rather than sitting inside
+the block, so the commit that scope issues on its way out is covered too -- a
+write can survive every statement and still fail there. `RecordingUnavailable` is
+not a `SQLAlchemyError`, so nesting is harmless: `pending` calls `status`, and an
+inner failure is translated once and passes through the outer wrapper untouched.
+
+`raise ... from None` is deliberate. The `SQLAlchemyError` carries the rejected
+statement and its bound parameters, which are owner data; the problem handler
+renders whatever reaches it, so the chain must not ride along. The failure is
+still logged with its own context by the layer that raised it.
+
+The private helpers stay untranslated on purpose: `_lock_owner`,
+`_locked_recording` and `_locked_track` are only ever called from inside a public
+method that already translates.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Literal, cast
 from uuid import UUID
 
 from sqlalchemy import or_, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.models import Owner
@@ -29,7 +57,7 @@ from .schemas import (
     RecordingTrackStatus,
     TrackKind,
 )
-from .service import RecordingConflict, RecordingNotFound
+from .service import RecordingConflict, RecordingNotFound, RecordingUnavailable
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +114,15 @@ def _same_format(track: RecordingTrack, metadata: RecordingPartUploadMetadata) -
     )
 
 
+@asynccontextmanager
+async def _unavailable_on_database_error() -> AsyncIterator[None]:
+    """Report a failed database call as an outage the caller may retry."""
+    try:
+        yield
+    except SQLAlchemyError:
+        raise RecordingUnavailable("recording storage is unavailable") from None
+
+
 class SqlAlchemyRecordingRepository:
     """Own every write transaction and serialize mutations at the track row."""
 
@@ -100,65 +137,66 @@ class SqlAlchemyRecordingRepository:
         idempotency_key: str,
         request_hash: bytes,
     ) -> RecordingCreateResponse:
-        async with transaction_scope(self._session):
-            await self._lock_owner(owner_id)
-            existing = await self._session.scalar(
-                select(Recording)
-                .where(Recording.owner_id == owner_id)
-                .where(
-                    or_(
-                        Recording.client_recording_id == command.recording_id,
-                        Recording.create_idempotency_key == idempotency_key,
+        async with _unavailable_on_database_error():
+            async with transaction_scope(self._session):
+                await self._lock_owner(owner_id)
+                existing = await self._session.scalar(
+                    select(Recording)
+                    .where(Recording.owner_id == owner_id)
+                    .where(
+                        or_(
+                            Recording.client_recording_id == command.recording_id,
+                            Recording.create_idempotency_key == idempotency_key,
+                        )
                     )
+                    .with_for_update()
                 )
-                .with_for_update()
-            )
-            if existing is not None:
-                if (
-                    existing.client_recording_id != command.recording_id
-                    or existing.create_idempotency_key != idempotency_key
-                    or existing.create_request_hash != request_hash
-                ):
-                    raise RecordingConflict("recording create identity was reused")
-                return RecordingCreateResponse.model_validate(
-                    existing.create_result_json
-                ).model_copy(update={"replayed": True})
+                if existing is not None:
+                    if (
+                        existing.client_recording_id != command.recording_id
+                        or existing.create_idempotency_key != idempotency_key
+                        or existing.create_request_hash != request_hash
+                    ):
+                        raise RecordingConflict("recording create identity was reused")
+                    return RecordingCreateResponse.model_validate(
+                        existing.create_result_json
+                    ).model_copy(update={"replayed": True})
 
-            result = RecordingCreateResponse(
-                recording_id=command.recording_id,
-                state="reserved",
-                replayed=False,
-            )
-            recording = Recording(
-                owner_id=owner_id,
-                client_recording_id=command.recording_id,
-                schema_version=command.schema_version,
-                state="reserved",
-                started_at=command.started_at,
-                create_idempotency_key=idempotency_key,
-                create_request_hash=request_hash,
-                create_result_json=result.model_dump(mode="json"),
-            )
-            self._session.add(recording)
-            await self._session.flush()
-            for declaration in command.tracks:
-                self._session.add(
-                    RecordingTrack(
-                        owner_id=owner_id,
-                        recording_id=recording.id,
-                        client_track_id=declaration.track_id,
-                        schema_version=command.schema_version,
-                        kind=declaration.kind,
-                        sample_encoding=declaration.format.sample_encoding,
-                        sample_rate_hz=declaration.format.sample_rate_hz,
-                        channel_count=declaration.format.channel_count,
-                        interleaved=declaration.format.interleaved,
-                        conversion_version=declaration.conversion_version,
-                        state="reserved",
-                    )
+                result = RecordingCreateResponse(
+                    recording_id=command.recording_id,
+                    state="reserved",
+                    replayed=False,
                 )
-            await self._session.flush()
-            return result
+                recording = Recording(
+                    owner_id=owner_id,
+                    client_recording_id=command.recording_id,
+                    schema_version=command.schema_version,
+                    state="reserved",
+                    started_at=command.started_at,
+                    create_idempotency_key=idempotency_key,
+                    create_request_hash=request_hash,
+                    create_result_json=result.model_dump(mode="json"),
+                )
+                self._session.add(recording)
+                await self._session.flush()
+                for declaration in command.tracks:
+                    self._session.add(
+                        RecordingTrack(
+                            owner_id=owner_id,
+                            recording_id=recording.id,
+                            client_track_id=declaration.track_id,
+                            schema_version=command.schema_version,
+                            kind=declaration.kind,
+                            sample_encoding=declaration.format.sample_encoding,
+                            sample_rate_hz=declaration.format.sample_rate_hz,
+                            channel_count=declaration.format.channel_count,
+                            interleaved=declaration.format.interleaved,
+                            conversion_version=declaration.conversion_version,
+                            state="reserved",
+                        )
+                    )
+                await self._session.flush()
+                return result
 
     async def reserve_part(
         self,
@@ -169,77 +207,82 @@ class SqlAlchemyRecordingRepository:
         idempotency_key: str,
         request_hash: bytes,
     ) -> PartReservation:
-        async with transaction_scope(self._session):
-            recording, track = await self._locked_track(
-                owner_id=owner_id,
-                recording_id=metadata.recording_id,
-                track_id=metadata.track_id,
-            )
-            if recording.state in {"sealing", "stored", "stored_with_gaps"}:
-                raise RecordingConflict("recording no longer accepts parts")
-            if not _same_format(track, metadata):
-                raise RecordingConflict("recording part format does not match its track")
+        async with _unavailable_on_database_error():
+            async with transaction_scope(self._session):
+                recording, track = await self._locked_track(
+                    owner_id=owner_id,
+                    recording_id=metadata.recording_id,
+                    track_id=metadata.track_id,
+                )
+                if recording.state in {"sealing", "stored", "stored_with_gaps"}:
+                    raise RecordingConflict("recording no longer accepts parts")
+                if not _same_format(track, metadata):
+                    raise RecordingConflict("recording part format does not match its track")
 
-            existing = await self._session.scalar(
-                select(RecordingPart)
-                .where(RecordingPart.owner_id == owner_id)
-                .where(RecordingPart.recording_id == recording.id)
-                .where(RecordingPart.track_id == track.id)
-                .where(
-                    or_(
-                        RecordingPart.sequence == metadata.sequence,
-                        RecordingPart.idempotency_key == idempotency_key,
+                existing = await self._session.scalar(
+                    select(RecordingPart)
+                    .where(RecordingPart.owner_id == owner_id)
+                    .where(RecordingPart.recording_id == recording.id)
+                    .where(RecordingPart.track_id == track.id)
+                    .where(
+                        or_(
+                            RecordingPart.sequence == metadata.sequence,
+                            RecordingPart.idempotency_key == idempotency_key,
+                        )
+                    )
+                    .with_for_update()
+                )
+                if existing is not None:
+                    if not self._same_part(
+                        existing,
+                        metadata=metadata,
+                        object_key=object_key,
+                        idempotency_key=idempotency_key,
+                        request_hash=request_hash,
+                    ):
+                        raise RecordingConflict("recording part identity was reused")
+                    return self._reservation(recording, track, existing)
+
+                overlap = await self._session.scalar(
+                    select(RecordingPart.id)
+                    .where(RecordingPart.owner_id == owner_id)
+                    .where(RecordingPart.recording_id == recording.id)
+                    .where(RecordingPart.track_id == track.id)
+                    .where(
+                        RecordingPart.sample_start
+                        < metadata.sample_start + metadata.sample_count
+                    )
+                    .where(
+                        RecordingPart.sample_start + RecordingPart.sample_count
+                        > metadata.sample_start
                     )
                 )
-                .with_for_update()
-            )
-            if existing is not None:
-                if not self._same_part(
-                    existing,
-                    metadata=metadata,
-                    object_key=object_key,
+                if overlap is not None:
+                    raise RecordingConflict("recording part range overlaps existing audio")
+
+                part = RecordingPart(
+                    owner_id=owner_id,
+                    recording_id=recording.id,
+                    track_id=track.id,
+                    schema_version=metadata.schema_version,
+                    sequence=metadata.sequence,
+                    sample_start=metadata.sample_start,
+                    sample_count=metadata.sample_count,
+                    byte_length=metadata.byte_length,
+                    ciphertext_byte_length=metadata.ciphertext_byte_length,
+                    plaintext_sha256=bytes.fromhex(metadata.plaintext_sha256),
+                    ciphertext_sha256=bytes.fromhex(metadata.ciphertext_sha256),
+                    encryption_version=metadata.encryption_version,
                     idempotency_key=idempotency_key,
                     request_hash=request_hash,
-                ):
-                    raise RecordingConflict("recording part identity was reused")
-                return self._reservation(recording, track, existing)
-
-            overlap = await self._session.scalar(
-                select(RecordingPart.id)
-                .where(RecordingPart.owner_id == owner_id)
-                .where(RecordingPart.recording_id == recording.id)
-                .where(RecordingPart.track_id == track.id)
-                .where(RecordingPart.sample_start < metadata.sample_start + metadata.sample_count)
-                .where(
-                    RecordingPart.sample_start + RecordingPart.sample_count > metadata.sample_start
+                    object_key=object_key,
+                    state="reserved",
                 )
-            )
-            if overlap is not None:
-                raise RecordingConflict("recording part range overlaps existing audio")
-
-            part = RecordingPart(
-                owner_id=owner_id,
-                recording_id=recording.id,
-                track_id=track.id,
-                schema_version=metadata.schema_version,
-                sequence=metadata.sequence,
-                sample_start=metadata.sample_start,
-                sample_count=metadata.sample_count,
-                byte_length=metadata.byte_length,
-                ciphertext_byte_length=metadata.ciphertext_byte_length,
-                plaintext_sha256=bytes.fromhex(metadata.plaintext_sha256),
-                ciphertext_sha256=bytes.fromhex(metadata.ciphertext_sha256),
-                encryption_version=metadata.encryption_version,
-                idempotency_key=idempotency_key,
-                request_hash=request_hash,
-                object_key=object_key,
-                state="reserved",
-            )
-            self._session.add(part)
-            recording.state = "uploading"
-            track.state = "uploading"
-            await self._session.flush()
-            return self._reservation(recording, track, part)
+                self._session.add(part)
+                recording.state = "uploading"
+                track.state = "uploading"
+                await self._session.flush()
+                return self._reservation(recording, track, part)
 
     async def finalize_part(
         self,
@@ -249,71 +292,77 @@ class SqlAlchemyRecordingRepository:
         object_key: str,
         idempotency_key: str,
     ) -> RecordingPartReceipt:
-        async with transaction_scope(self._session):
-            recording, track = await self._locked_track(
-                owner_id=owner_id,
-                recording_id=metadata.recording_id,
-                track_id=metadata.track_id,
-            )
-            part = await self._session.scalar(
-                select(RecordingPart)
-                .where(RecordingPart.owner_id == owner_id)
-                .where(RecordingPart.recording_id == recording.id)
-                .where(RecordingPart.track_id == track.id)
-                .where(RecordingPart.sequence == metadata.sequence)
-                .with_for_update()
-            )
-            if part is None:
-                raise RecordingNotFound("recording part reservation was not found")
-            if (
-                part.idempotency_key != idempotency_key
-                or part.object_key != object_key
-                or part.plaintext_sha256.hex() != metadata.plaintext_sha256
-            ):
-                raise RecordingConflict("recording part reservation conflicts")
-            if part.state == "stored":
-                return RecordingPartReceipt.model_validate(part.result_json).model_copy(
-                    update={"replayed": True}
+        async with _unavailable_on_database_error():
+            async with transaction_scope(self._session):
+                recording, track = await self._locked_track(
+                    owner_id=owner_id,
+                    recording_id=metadata.recording_id,
+                    track_id=metadata.track_id,
                 )
-
-            now = utc_now()
-            part.state = "stored"
-            part.stored_at = now
-            stored = tuple(
-                (
-                    await self._session.scalars(
-                        select(RecordingPart)
-                        .where(RecordingPart.owner_id == owner_id)
-                        .where(RecordingPart.recording_id == recording.id)
-                        .where(RecordingPart.track_id == track.id)
-                        .where(or_(RecordingPart.state == "stored", RecordingPart.id == part.id))
-                        .order_by(RecordingPart.sample_start, RecordingPart.sequence)
+                part = await self._session.scalar(
+                    select(RecordingPart)
+                    .where(RecordingPart.owner_id == owner_id)
+                    .where(RecordingPart.recording_id == recording.id)
+                    .where(RecordingPart.track_id == track.id)
+                    .where(RecordingPart.sequence == metadata.sequence)
+                    .with_for_update()
+                )
+                if part is None:
+                    raise RecordingNotFound("recording part reservation was not found")
+                if (
+                    part.idempotency_key != idempotency_key
+                    or part.object_key != object_key
+                    or part.plaintext_sha256.hex() != metadata.plaintext_sha256
+                ):
+                    raise RecordingConflict("recording part reservation conflicts")
+                if part.state == "stored":
+                    return RecordingPartReceipt.model_validate(part.result_json).model_copy(
+                        update={"replayed": True}
                     )
-                ).all()
-            )
-            cursor = 0
-            for item in stored:
-                if item.sample_start != cursor:
-                    break
-                cursor += item.sample_count
-            track.high_water_sample = cursor
-            track.stored_part_count = len(stored)
-            track.stored_byte_length = sum(item.byte_length for item in stored)
-            track.state = "uploading"
-            recording.state = "uploading"
-            receipt = RecordingPartReceipt(
-                recording_id=metadata.recording_id,
-                track_id=metadata.track_id,
-                sequence=metadata.sequence,
-                sample_start=metadata.sample_start,
-                sample_count=metadata.sample_count,
-                plaintext_sha256=metadata.plaintext_sha256,
-                high_water_sample=cursor,
-                replayed=False,
-            )
-            part.result_json = receipt.model_dump(mode="json")
-            await self._session.flush()
-            return receipt
+
+                now = utc_now()
+                part.state = "stored"
+                part.stored_at = now
+                stored = tuple(
+                    (
+                        await self._session.scalars(
+                            select(RecordingPart)
+                            .where(RecordingPart.owner_id == owner_id)
+                            .where(RecordingPart.recording_id == recording.id)
+                            .where(RecordingPart.track_id == track.id)
+                            .where(
+                                or_(
+                                    RecordingPart.state == "stored",
+                                    RecordingPart.id == part.id,
+                                )
+                            )
+                            .order_by(RecordingPart.sample_start, RecordingPart.sequence)
+                        )
+                    ).all()
+                )
+                cursor = 0
+                for item in stored:
+                    if item.sample_start != cursor:
+                        break
+                    cursor += item.sample_count
+                track.high_water_sample = cursor
+                track.stored_part_count = len(stored)
+                track.stored_byte_length = sum(item.byte_length for item in stored)
+                track.state = "uploading"
+                recording.state = "uploading"
+                receipt = RecordingPartReceipt(
+                    recording_id=metadata.recording_id,
+                    track_id=metadata.track_id,
+                    sequence=metadata.sequence,
+                    sample_start=metadata.sample_start,
+                    sample_count=metadata.sample_count,
+                    plaintext_sha256=metadata.plaintext_sha256,
+                    high_water_sample=cursor,
+                    replayed=False,
+                )
+                part.result_json = receipt.model_dump(mode="json")
+                await self._session.flush()
+                return receipt
 
     async def prepare_seal(
         self,
@@ -323,150 +372,152 @@ class SqlAlchemyRecordingRepository:
         idempotency_key: str,
         request_hash: bytes,
     ) -> SealSnapshot:
-        async with transaction_scope(self._session):
-            recording = await self._locked_recording(owner_id, command.recording_id)
-            if recording.state in {"stored", "stored_with_gaps"}:
-                if (
+        async with _unavailable_on_database_error():
+            async with transaction_scope(self._session):
+                recording = await self._locked_recording(owner_id, command.recording_id)
+                if recording.state in {"stored", "stored_with_gaps"}:
+                    if (
+                        recording.seal_idempotency_key != idempotency_key
+                        or recording.seal_request_hash != request_hash
+                        or recording.seal_result_json is None
+                    ):
+                        raise RecordingConflict("recording seal identity was reused")
+                    return SealSnapshot(
+                        stored_part_hashes=MappingProxyType({}),
+                        parts=(),
+                        response=RecordingSealResponse.model_validate(recording.seal_result_json),
+                    )
+                if recording.started_at != command.started_at:
+                    raise RecordingConflict("recording start time does not match")
+                if recording.seal_idempotency_key is not None and (
                     recording.seal_idempotency_key != idempotency_key
                     or recording.seal_request_hash != request_hash
-                    or recording.seal_result_json is None
                 ):
                     raise RecordingConflict("recording seal identity was reused")
-                return SealSnapshot(
-                    stored_part_hashes=MappingProxyType({}),
-                    parts=(),
-                    response=RecordingSealResponse.model_validate(recording.seal_result_json),
-                )
-            if recording.started_at != command.started_at:
-                raise RecordingConflict("recording start time does not match")
-            if recording.seal_idempotency_key is not None and (
-                recording.seal_idempotency_key != idempotency_key
-                or recording.seal_request_hash != request_hash
-            ):
-                raise RecordingConflict("recording seal identity was reused")
 
-            tracks = tuple(
-                (
-                    await self._session.scalars(
-                        select(RecordingTrack)
-                        .where(RecordingTrack.owner_id == owner_id)
-                        .where(RecordingTrack.recording_id == recording.id)
-                        .order_by(RecordingTrack.kind, RecordingTrack.id)
-                        .with_for_update()
-                    )
-                ).all()
-            )
-            declared = {item.track_id: item for item in command.tracks}
-            if len(tracks) != 2 or {item.client_track_id for item in tracks} != declared.keys():
-                raise RecordingConflict("recording seal tracks do not match")
-
-            parts = tuple(
-                (
-                    await self._session.scalars(
-                        select(RecordingPart)
-                        .where(RecordingPart.owner_id == owner_id)
-                        .where(RecordingPart.recording_id == recording.id)
-                        .order_by(RecordingPart.track_id, RecordingPart.sequence)
-                        .with_for_update()
-                    )
-                ).all()
-            )
-            if any(item.state != "stored" for item in parts):
-                raise RecordingConflict("recording still has unpersisted parts")
-            by_track = {item.id: item.client_track_id for item in tracks}
-            stored_hashes = {
-                (str(by_track[item.track_id]), item.sequence): item.plaintext_sha256.hex()
-                for item in parts
-            }
-            stored_descriptors = {
-                (str(by_track[item.track_id]), item.sequence): (
-                    item.sample_start,
-                    item.sample_count,
-                    item.byte_length,
-                    item.plaintext_sha256.hex(),
-                )
-                for item in parts
-            }
-            declared_descriptors = {
-                (str(track.track_id), part.sequence): (
-                    part.sample_start,
-                    part.sample_count,
-                    part.byte_length,
-                    part.plaintext_sha256,
-                )
-                for track in command.tracks
-                for part in track.parts
-            }
-            if stored_descriptors != declared_descriptors:
-                raise RecordingConflict("recording seal parts do not match stored ranges")
-            if any(
-                timeline_sha256(manifest) != manifest.timeline_sha256 for manifest in command.tracks
-            ):
-                raise RecordingConflict("recording seal timeline hash does not match")
-            snapshots = tuple(
-                StoredPartSnapshot(
-                    track_id=by_track[item.track_id],
-                    sequence=item.sequence,
-                    byte_length=item.byte_length,
-                    object_key=item.object_key,
-                )
-                for item in parts
-            )
-
-            existing_gaps = tuple(
-                (
-                    await self._session.scalars(
-                        select(RecordingGap)
-                        .where(RecordingGap.owner_id == owner_id)
-                        .where(RecordingGap.recording_id == recording.id)
-                        .order_by(RecordingGap.track_id, RecordingGap.sample_start)
-                        .with_for_update()
-                    )
-                ).all()
-            )
-            expected_gaps = {
-                (track.id, gap.sample_start): (gap.sample_count, gap.reason)
-                for track in tracks
-                for gap in declared[track.client_track_id].gaps
-            }
-            persisted_gaps = {
-                (gap.track_id, gap.sample_start): (gap.sample_count, gap.reason)
-                for gap in existing_gaps
-            }
-            if persisted_gaps and persisted_gaps != expected_gaps:
-                raise RecordingConflict("recording gaps conflict with prior seal attempt")
-            if not persisted_gaps:
-                for track in tracks:
-                    for gap in declared[track.client_track_id].gaps:
-                        self._session.add(
-                            RecordingGap(
-                                owner_id=owner_id,
-                                recording_id=recording.id,
-                                track_id=track.id,
-                                schema_version=command.schema_version,
-                                sample_start=gap.sample_start,
-                                sample_count=gap.sample_count,
-                                reason=gap.reason,
-                            )
+                tracks = tuple(
+                    (
+                        await self._session.scalars(
+                            select(RecordingTrack)
+                            .where(RecordingTrack.owner_id == owner_id)
+                            .where(RecordingTrack.recording_id == recording.id)
+                            .order_by(RecordingTrack.kind, RecordingTrack.id)
+                            .with_for_update()
                         )
-            recording.state = "sealing"
-            recording.seal_idempotency_key = idempotency_key
-            recording.seal_request_hash = request_hash
-            recording.ended_at = command.ended_at
-            for track in tracks:
-                manifest = declared[track.client_track_id]
-                if (
-                    track.kind != manifest.kind
-                    or track.conversion_version != manifest.conversion_version
-                    or track.channel_count != manifest.format.channel_count
+                    ).all()
+                )
+                declared = {item.track_id: item for item in command.tracks}
+                if len(tracks) != 2 or {item.client_track_id for item in tracks} != declared.keys():
+                    raise RecordingConflict("recording seal tracks do not match")
+
+                parts = tuple(
+                    (
+                        await self._session.scalars(
+                            select(RecordingPart)
+                            .where(RecordingPart.owner_id == owner_id)
+                            .where(RecordingPart.recording_id == recording.id)
+                            .order_by(RecordingPart.track_id, RecordingPart.sequence)
+                            .with_for_update()
+                        )
+                    ).all()
+                )
+                if any(item.state != "stored" for item in parts):
+                    raise RecordingConflict("recording still has unpersisted parts")
+                by_track = {item.id: item.client_track_id for item in tracks}
+                stored_hashes = {
+                    (str(by_track[item.track_id]), item.sequence): item.plaintext_sha256.hex()
+                    for item in parts
+                }
+                stored_descriptors = {
+                    (str(by_track[item.track_id]), item.sequence): (
+                        item.sample_start,
+                        item.sample_count,
+                        item.byte_length,
+                        item.plaintext_sha256.hex(),
+                    )
+                    for item in parts
+                }
+                declared_descriptors = {
+                    (str(track.track_id), part.sequence): (
+                        part.sample_start,
+                        part.sample_count,
+                        part.byte_length,
+                        part.plaintext_sha256,
+                    )
+                    for track in command.tracks
+                    for part in track.parts
+                }
+                if stored_descriptors != declared_descriptors:
+                    raise RecordingConflict("recording seal parts do not match stored ranges")
+                if any(
+                    timeline_sha256(manifest) != manifest.timeline_sha256
+                    for manifest in command.tracks
                 ):
-                    raise RecordingConflict("recording seal track lineage does not match")
-                track.state = "sealing"
-            await self._session.flush()
-            return SealSnapshot(
-                stored_part_hashes=MappingProxyType(stored_hashes),
-                parts=snapshots,
-            )
+                    raise RecordingConflict("recording seal timeline hash does not match")
+                snapshots = tuple(
+                    StoredPartSnapshot(
+                        track_id=by_track[item.track_id],
+                        sequence=item.sequence,
+                        byte_length=item.byte_length,
+                        object_key=item.object_key,
+                    )
+                    for item in parts
+                )
+
+                existing_gaps = tuple(
+                    (
+                        await self._session.scalars(
+                            select(RecordingGap)
+                            .where(RecordingGap.owner_id == owner_id)
+                            .where(RecordingGap.recording_id == recording.id)
+                            .order_by(RecordingGap.track_id, RecordingGap.sample_start)
+                            .with_for_update()
+                        )
+                    ).all()
+                )
+                expected_gaps = {
+                    (track.id, gap.sample_start): (gap.sample_count, gap.reason)
+                    for track in tracks
+                    for gap in declared[track.client_track_id].gaps
+                }
+                persisted_gaps = {
+                    (gap.track_id, gap.sample_start): (gap.sample_count, gap.reason)
+                    for gap in existing_gaps
+                }
+                if persisted_gaps and persisted_gaps != expected_gaps:
+                    raise RecordingConflict("recording gaps conflict with prior seal attempt")
+                if not persisted_gaps:
+                    for track in tracks:
+                        for gap in declared[track.client_track_id].gaps:
+                            self._session.add(
+                                RecordingGap(
+                                    owner_id=owner_id,
+                                    recording_id=recording.id,
+                                    track_id=track.id,
+                                    schema_version=command.schema_version,
+                                    sample_start=gap.sample_start,
+                                    sample_count=gap.sample_count,
+                                    reason=gap.reason,
+                                )
+                            )
+                recording.state = "sealing"
+                recording.seal_idempotency_key = idempotency_key
+                recording.seal_request_hash = request_hash
+                recording.ended_at = command.ended_at
+                for track in tracks:
+                    manifest = declared[track.client_track_id]
+                    if (
+                        track.kind != manifest.kind
+                        or track.conversion_version != manifest.conversion_version
+                        or track.channel_count != manifest.format.channel_count
+                    ):
+                        raise RecordingConflict("recording seal track lineage does not match")
+                    track.state = "sealing"
+                await self._session.flush()
+                return SealSnapshot(
+                    stored_part_hashes=MappingProxyType(stored_hashes),
+                    parts=snapshots,
+                )
 
     async def finalize_seal(
         self,
@@ -478,132 +529,139 @@ class SqlAlchemyRecordingRepository:
         recording_manifest_sha256: str,
         manifests: Sequence[tuple[UUID, str, str, int]],
     ) -> RecordingSealResponse:
-        del recording_manifest_sha256
-        async with transaction_scope(self._session):
-            recording = await self._locked_recording(owner_id, command.recording_id)
-            if recording.state in {"stored", "stored_with_gaps"}:
+        async with _unavailable_on_database_error():
+            del recording_manifest_sha256
+            async with transaction_scope(self._session):
+                recording = await self._locked_recording(owner_id, command.recording_id)
+                if recording.state in {"stored", "stored_with_gaps"}:
+                    if (
+                        recording.seal_idempotency_key != idempotency_key
+                        or recording.seal_request_hash != request_hash
+                        or recording.seal_result_json is None
+                    ):
+                        raise RecordingConflict("recording seal identity was reused")
+                    return RecordingSealResponse.model_validate(
+                        recording.seal_result_json
+                    ).model_copy(update={"replayed": True})
                 if (
-                    recording.seal_idempotency_key != idempotency_key
+                    recording.state != "sealing"
+                    or recording.seal_idempotency_key != idempotency_key
                     or recording.seal_request_hash != request_hash
-                    or recording.seal_result_json is None
                 ):
-                    raise RecordingConflict("recording seal identity was reused")
-                return RecordingSealResponse.model_validate(recording.seal_result_json).model_copy(
-                    update={"replayed": True}
+                    raise RecordingConflict("recording seal was not reserved")
+                tracks = tuple(
+                    (
+                        await self._session.scalars(
+                            select(RecordingTrack)
+                            .where(RecordingTrack.owner_id == owner_id)
+                            .where(RecordingTrack.recording_id == recording.id)
+                            .with_for_update()
+                        )
+                    ).all()
                 )
-            if (
-                recording.state != "sealing"
-                or recording.seal_idempotency_key != idempotency_key
-                or recording.seal_request_hash != request_hash
-            ):
-                raise RecordingConflict("recording seal was not reserved")
+                declared = {item.track_id: item for item in command.tracks}
+                stored_manifests = {
+                    track_id: (key, digest, length) for track_id, key, digest, length in manifests
+                }
+                if {item.client_track_id for item in tracks} != stored_manifests.keys():
+                    raise RecordingConflict("recording track manifests are incomplete")
+                final_state: Literal["stored", "stored_with_gaps"] = (
+                    "stored_with_gaps"
+                    if command.coverage_status == "stored_with_gaps"
+                    else "stored"
+                )
+                now = utc_now()
+                for track in tracks:
+                    manifest = declared[track.client_track_id]
+                    key, digest, length = stored_manifests[track.client_track_id]
+                    track.state = "stored_with_gaps" if manifest.gaps else "stored"
+                    track.high_water_sample = manifest.total_sample_count
+                    track.total_sample_count = manifest.total_sample_count
+                    track.pcm_sha256 = bytes.fromhex(manifest.pcm_sha256)
+                    track.timeline_sha256 = bytes.fromhex(manifest.timeline_sha256)
+                    track.manifest_object_key = key
+                    track.manifest_sha256 = bytes.fromhex(digest)
+                    track.manifest_byte_length = length
+                    track.sealed_at = now
+                first_digest, second_digest = (
+                    stored_manifests[item.track_id][1] for item in command.tracks
+                )
+                result = RecordingSealResponse(
+                    recording_id=command.recording_id,
+                    state=final_state,
+                    coverage_status=command.coverage_status,
+                    track_manifest_sha256=(first_digest, second_digest),
+                    audio_created_on_server=True,
+                    transcript_lineage_accepted=False,
+                    replayed=False,
+                )
+                recording.state = final_state
+                recording.coverage_status = command.coverage_status
+                recording.audio_created_on_server = True
+                recording.seal_result_json = result.model_dump(mode="json")
+                recording.sealed_at = now
+                await self._session.flush()
+                return result
+
+    async def status(self, *, owner_id: int, recording_id: UUID) -> RecordingStatusResponse:
+        async with _unavailable_on_database_error():
+            recording = await self._session.scalar(
+                select(Recording)
+                .where(Recording.owner_id == owner_id)
+                .where(Recording.client_recording_id == recording_id)
+            )
+            if recording is None:
+                raise RecordingNotFound("recording was not found")
             tracks = tuple(
                 (
                     await self._session.scalars(
                         select(RecordingTrack)
                         .where(RecordingTrack.owner_id == owner_id)
                         .where(RecordingTrack.recording_id == recording.id)
-                        .with_for_update()
+                        .order_by(RecordingTrack.kind, RecordingTrack.id)
                     )
                 ).all()
             )
-            declared = {item.track_id: item for item in command.tracks}
-            stored_manifests = {
-                track_id: (key, digest, length) for track_id, key, digest, length in manifests
+            gap_counts = {
+                track.id: len(
+                    tuple(
+                        (
+                            await self._session.scalars(
+                                select(RecordingGap.id)
+                                .where(RecordingGap.owner_id == owner_id)
+                                .where(RecordingGap.recording_id == recording.id)
+                                .where(RecordingGap.track_id == track.id)
+                            )
+                        ).all()
+                    )
+                )
+                for track in tracks
             }
-            if {item.client_track_id for item in tracks} != stored_manifests.keys():
-                raise RecordingConflict("recording track manifests are incomplete")
-            final_state: Literal["stored", "stored_with_gaps"] = (
-                "stored_with_gaps" if command.coverage_status == "stored_with_gaps" else "stored"
-            )
-            now = utc_now()
-            for track in tracks:
-                manifest = declared[track.client_track_id]
-                key, digest, length = stored_manifests[track.client_track_id]
-                track.state = "stored_with_gaps" if manifest.gaps else "stored"
-                track.high_water_sample = manifest.total_sample_count
-                track.total_sample_count = manifest.total_sample_count
-                track.pcm_sha256 = bytes.fromhex(manifest.pcm_sha256)
-                track.timeline_sha256 = bytes.fromhex(manifest.timeline_sha256)
-                track.manifest_object_key = key
-                track.manifest_sha256 = bytes.fromhex(digest)
-                track.manifest_byte_length = length
-                track.sealed_at = now
-            first_digest, second_digest = (
-                stored_manifests[item.track_id][1] for item in command.tracks
-            )
-            result = RecordingSealResponse(
-                recording_id=command.recording_id,
-                state=final_state,
-                coverage_status=command.coverage_status,
-                track_manifest_sha256=(first_digest, second_digest),
-                audio_created_on_server=True,
-                transcript_lineage_accepted=False,
-                replayed=False,
-            )
-            recording.state = final_state
-            recording.coverage_status = command.coverage_status
-            recording.audio_created_on_server = True
-            recording.seal_result_json = result.model_dump(mode="json")
-            recording.sealed_at = now
-            await self._session.flush()
-            return result
-
-    async def status(self, *, owner_id: int, recording_id: UUID) -> RecordingStatusResponse:
-        recording = await self._session.scalar(
-            select(Recording)
-            .where(Recording.owner_id == owner_id)
-            .where(Recording.client_recording_id == recording_id)
-        )
-        if recording is None:
-            raise RecordingNotFound("recording was not found")
-        tracks = tuple(
-            (
-                await self._session.scalars(
-                    select(RecordingTrack)
-                    .where(RecordingTrack.owner_id == owner_id)
-                    .where(RecordingTrack.recording_id == recording.id)
-                    .order_by(RecordingTrack.kind, RecordingTrack.id)
-                )
-            ).all()
-        )
-        gap_counts = {
-            track.id: len(
-                tuple(
-                    (
-                        await self._session.scalars(
-                            select(RecordingGap.id)
-                            .where(RecordingGap.owner_id == owner_id)
-                            .where(RecordingGap.recording_id == recording.id)
-                            .where(RecordingGap.track_id == track.id)
-                        )
-                    ).all()
-                )
-            )
-            for track in tracks
-        }
-        return self._status(recording, tracks, gap_counts)
+            return self._status(recording, tracks, gap_counts)
 
     async def pending(self, *, owner_id: int) -> tuple[RecordingStatusResponse, ...]:
-        recordings = tuple(
-            (
-                await self._session.scalars(
-                    select(Recording)
-                    .where(Recording.owner_id == owner_id)
-                    .where(
-                        Recording.state.in_(("reserved", "uploading", "sealing", "needs_attention"))
+        async with _unavailable_on_database_error():
+            recordings = tuple(
+                (
+                    await self._session.scalars(
+                        select(Recording)
+                        .where(Recording.owner_id == owner_id)
+                        .where(
+                            Recording.state.in_(
+                                ("reserved", "uploading", "sealing", "needs_attention")
+                            )
+                        )
+                        .order_by(Recording.created_at, Recording.id)
+                        .limit(100)
                     )
-                    .order_by(Recording.created_at, Recording.id)
-                    .limit(100)
-                )
-            ).all()
-        )
-        return tuple(
-            [
-                await self.status(owner_id=owner_id, recording_id=item.client_recording_id)
-                for item in recordings
-            ]
-        )
+                ).all()
+            )
+            return tuple(
+                [
+                    await self.status(owner_id=owner_id, recording_id=item.client_recording_id)
+                    for item in recordings
+                ]
+            )
 
     async def _lock_owner(self, owner_id: int) -> None:
         locked = await self._session.scalar(

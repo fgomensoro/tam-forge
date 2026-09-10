@@ -19,6 +19,7 @@ from .service import (
     NotificationInvalidRequest,
     NotificationNotFound,
     NotificationService,
+    NotificationStorageUnavailable,
 )
 from .sse import parse_last_event_id, status_event_stream
 
@@ -110,6 +111,12 @@ def notification_problem_response(exc: Exception) -> JSONResponse:
         status, code, title = 404, "notification_not_found", "Notification not found"
     elif isinstance(exc, NotificationInvalidRequest):
         status, code, title = 422, "invalid_notification_request", "Invalid notification request"
+    elif isinstance(exc, NotificationStorageUnavailable):
+        status, code, title = (
+            503,
+            "notification_storage_unavailable",
+            "Notification storage unavailable",
+        )
     else:
         status, code, title = 500, "notification_error", "Notification operation failed"
     problem = ProblemResponse(

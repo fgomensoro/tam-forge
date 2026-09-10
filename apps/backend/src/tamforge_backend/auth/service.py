@@ -43,6 +43,17 @@ class AuthMisconfigured(AuthError):
     """Required authentication configuration is unavailable."""
 
 
+class AuthStorageUnavailable(AuthError):
+    """The auth store rejected the work and the caller may retry.
+
+    Raised by the repository for a `SQLAlchemyError` and nothing else. It shares
+    the 503 `auth_unavailable` problem with `AuthMisconfigured` on purpose: both
+    say the same thing to a client -- authentication is not answering and the
+    request was not applied -- and which of the two it was is an operator's
+    detail, not a caller's.
+    """
+
+
 class NativeAuthCapacityExceeded(AuthError):
     """The bounded outstanding native OAuth-flow capacity is full."""
 

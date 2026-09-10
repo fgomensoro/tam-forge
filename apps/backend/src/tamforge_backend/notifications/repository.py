@@ -1,12 +1,36 @@
-"""PostgreSQL notification delivery, read receipts, and resumable events."""
+"""PostgreSQL notification delivery, read receipts, and resumable events.
+
+Every public method translates a `SQLAlchemyError` into
+`NotificationStorageUnavailable`, because this is the only layer that can still
+recognise one for what it is. Above it nothing catches a raw one:
+`api.register_routes` installs a handler per domain error type and none for
+SQLAlchemy's, and `observability.middleware` re-raises, so a dropped connection
+or a statement timeout used to reach Starlette's own server-error handling as a
+plain-text 500 rather than the `application/problem+json` the notification routes
+declare.
+
+The translation wraps `transaction_scope` from outside rather than sitting inside
+the block, so the commit that scope issues on its way out is covered too -- a
+write can survive every statement and still fail there.
+
+`raise ... from None` is deliberate. The `SQLAlchemyError` carries the rejected
+statement and its bound parameters, which are owner data; the problem handler
+renders whatever reaches it, so the chain must not ride along. The failure is
+still logged with its own context by the layer that raised it.
+
+`_learner_timezone` stays untranslated on purpose: it is only ever called from
+inside a public method that already translates.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import cast
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import transaction_scope
@@ -20,7 +44,20 @@ from .schemas import (
     NotificationResponse,
     StatusEventResponse,
 )
-from .service import NotificationInvalidRequest, NotificationNotFound
+from .service import (
+    NotificationInvalidRequest,
+    NotificationNotFound,
+    NotificationStorageUnavailable,
+)
+
+
+@asynccontextmanager
+async def _unavailable_on_database_error() -> AsyncIterator[None]:
+    """Report a failed database call as an outage the caller may retry."""
+    try:
+        yield
+    except SQLAlchemyError:
+        raise NotificationStorageUnavailable("notification storage is unavailable") from None
 
 
 class SqlAlchemyNotificationRepository:
@@ -36,58 +73,62 @@ class SqlAlchemyNotificationRepository:
         self._clock = clock
 
     async def deliver_outbox(self, *, limit: int = 100) -> DeliveryBatch:
-        if not 1 <= limit <= 100:
-            raise NotificationInvalidRequest("delivery batch limit is invalid")
-        now = self._now()
-        published: list[int] = []
-        notifications: list[int] = []
-        async with transaction_scope(self._session):
-            events = tuple(
-                (
-                    await self._session.scalars(
-                        select(OutboxEvent)
-                        .where(OutboxEvent.published_at.is_(None))
-                        .order_by(OutboxEvent.occurred_at, OutboxEvent.id)
-                        .limit(limit)
-                        .with_for_update(skip_locked=True)
+        async with _unavailable_on_database_error():
+            if not 1 <= limit <= 100:
+                raise NotificationInvalidRequest("delivery batch limit is invalid")
+            now = self._now()
+            published: list[int] = []
+            notifications: list[int] = []
+            async with transaction_scope(self._session):
+                events = tuple(
+                    (
+                        await self._session.scalars(
+                            select(OutboxEvent)
+                            .where(OutboxEvent.published_at.is_(None))
+                            .order_by(OutboxEvent.occurred_at, OutboxEvent.id)
+                            .limit(limit)
+                            .with_for_update(skip_locked=True)
+                        )
+                    ).all()
+                )
+                timezone_by_owner: dict[int, str] = {}
+                for event in events:
+                    timezone = timezone_by_owner.get(event.owner_id)
+                    if timezone is None:
+                        timezone = await self._learner_timezone(event.owner_id)
+                        timezone_by_owner[event.owner_id] = timezone
+                    candidate = notification_candidate_from_event(
+                        event_type=event.event_type,
+                        aggregate_type=event.aggregate_type,
+                        subject_id=cast(int, event.payload["subject_id"]),
+                        occurred_at=event.occurred_at,
+                        timezone=timezone,
                     )
-                ).all()
+                    if candidate is not None:
+                        notification = Notification(
+                            owner_id=event.owner_id,
+                            notification_type=candidate.notification_type,
+                            subject_kind=candidate.subject_kind,
+                            subject_id=candidate.subject_id,
+                            created_at=max(now, event.occurred_at),
+                            read_at=None,
+                        )
+                        self._session.add(notification)
+                        await self._session.flush()
+                        notifications.append(notification.id)
+                    await self._session.execute(
+                        update(OutboxEvent)
+                        .where(OutboxEvent.id == event.id)
+                        .values(
+                            attempts=event.attempts + 1,
+                            published_at=max(now, event.occurred_at),
+                        )
+                    )
+                    published.append(event.id)
+            return DeliveryBatch(
+                published_event_ids=tuple(published),
+                notification_ids=tuple(notifications),
             )
-            timezone_by_owner: dict[int, str] = {}
-            for event in events:
-                timezone = timezone_by_owner.get(event.owner_id)
-                if timezone is None:
-                    timezone = await self._learner_timezone(event.owner_id)
-                    timezone_by_owner[event.owner_id] = timezone
-                candidate = notification_candidate_from_event(
-                    event_type=event.event_type,
-                    aggregate_type=event.aggregate_type,
-                    subject_id=cast(int, event.payload["subject_id"]),
-                    occurred_at=event.occurred_at,
-                    timezone=timezone,
-                )
-                if candidate is not None:
-                    notification = Notification(
-                        owner_id=event.owner_id,
-                        notification_type=candidate.notification_type,
-                        subject_kind=candidate.subject_kind,
-                        subject_id=candidate.subject_id,
-                        created_at=max(now, event.occurred_at),
-                        read_at=None,
-                    )
-                    self._session.add(notification)
-                    await self._session.flush()
-                    notifications.append(notification.id)
-                await self._session.execute(
-                    update(OutboxEvent)
-                    .where(OutboxEvent.id == event.id)
-                    .values(attempts=event.attempts + 1, published_at=max(now, event.occurred_at))
-                )
-                published.append(event.id)
-        return DeliveryBatch(
-            published_event_ids=tuple(published),
-            notification_ids=tuple(notifications),
-        )
 
     async def list_notifications(
         self,
@@ -96,47 +137,49 @@ class SqlAlchemyNotificationRepository:
         cursor: int | None,
         limit: int,
     ) -> NotificationPage:
-        query = select(Notification).where(Notification.owner_id == owner_id)
-        if cursor is not None:
-            query = query.where(Notification.id < cursor)
-        rows = tuple(
-            (
-                await self._session.scalars(
-                    query.order_by(Notification.id.desc()).limit(limit + 1)
-                )
-            ).all()
-        )
-        has_more = len(rows) > limit
-        selected = rows[:limit]
-        result = NotificationPage(
-            items=tuple(self._notification_response(item) for item in selected),
-            next_cursor=selected[-1].id if has_more and selected else None,
-        )
-        await self._session.rollback()
-        return result
+        async with _unavailable_on_database_error():
+            query = select(Notification).where(Notification.owner_id == owner_id)
+            if cursor is not None:
+                query = query.where(Notification.id < cursor)
+            rows = tuple(
+                (
+                    await self._session.scalars(
+                        query.order_by(Notification.id.desc()).limit(limit + 1)
+                    )
+                ).all()
+            )
+            has_more = len(rows) > limit
+            selected = rows[:limit]
+            result = NotificationPage(
+                items=tuple(self._notification_response(item) for item in selected),
+                next_cursor=selected[-1].id if has_more and selected else None,
+            )
+            await self._session.rollback()
+            return result
 
     async def mark_read(
         self, *, owner_id: int, notification_id: int
     ) -> NotificationResponse:
-        now = self._now()
-        async with transaction_scope(self._session):
-            item = await self._session.scalar(
-                select(Notification)
-                .where(Notification.owner_id == owner_id)
-                .where(Notification.id == notification_id)
-                .with_for_update()
-            )
-            if item is None:
-                raise NotificationNotFound("notification was not found")
-            if item.read_at is None:
-                item_id = item.id
-                await self._session.execute(
-                    update(Notification)
-                    .where(Notification.id == item_id)
-                    .values(read_at=max(now, item.created_at))
+        async with _unavailable_on_database_error():
+            now = self._now()
+            async with transaction_scope(self._session):
+                item = await self._session.scalar(
+                    select(Notification)
+                    .where(Notification.owner_id == owner_id)
+                    .where(Notification.id == notification_id)
+                    .with_for_update()
                 )
-                await self._session.refresh(item)
-            return self._notification_response(item)
+                if item is None:
+                    raise NotificationNotFound("notification was not found")
+                if item.read_at is None:
+                    item_id = item.id
+                    await self._session.execute(
+                        update(Notification)
+                        .where(Notification.id == item_id)
+                        .values(read_at=max(now, item.created_at))
+                    )
+                    await self._session.refresh(item)
+                return self._notification_response(item)
 
     async def list_status_events(
         self,
@@ -145,32 +188,33 @@ class SqlAlchemyNotificationRepository:
         after_event_id: int,
         limit: int,
     ) -> tuple[StatusEventResponse, ...]:
-        rows = tuple(
-            (
-                await self._session.scalars(
-                    select(OutboxEvent)
-                    .where(OutboxEvent.owner_id == owner_id)
-                    .where(OutboxEvent.published_at.is_not(None))
-                    .where(OutboxEvent.id > after_event_id)
-                    .order_by(OutboxEvent.id)
-                    .limit(limit)
-                )
-            ).all()
-        )
-        result = tuple(
-            StatusEventResponse(
-                id=item.id,
-                event_type=item.event_type,
-                aggregate_type=item.aggregate_type,
-                aggregate_id=item.aggregate_id,
-                subject_id=cast(int, item.payload["subject_id"]),
-                related_id=cast(int | None, item.payload.get("related_id")),
-                occurred_at=item.occurred_at,
+        async with _unavailable_on_database_error():
+            rows = tuple(
+                (
+                    await self._session.scalars(
+                        select(OutboxEvent)
+                        .where(OutboxEvent.owner_id == owner_id)
+                        .where(OutboxEvent.published_at.is_not(None))
+                        .where(OutboxEvent.id > after_event_id)
+                        .order_by(OutboxEvent.id)
+                        .limit(limit)
+                    )
+                ).all()
             )
-            for item in rows
-        )
-        await self._session.rollback()
-        return result
+            result = tuple(
+                StatusEventResponse(
+                    id=item.id,
+                    event_type=item.event_type,
+                    aggregate_type=item.aggregate_type,
+                    aggregate_id=item.aggregate_id,
+                    subject_id=cast(int, item.payload["subject_id"]),
+                    related_id=cast(int | None, item.payload.get("related_id")),
+                    occurred_at=item.occurred_at,
+                )
+                for item in rows
+            )
+            await self._session.rollback()
+            return result
 
     async def _learner_timezone(self, owner_id: int) -> str:
         value = await self._session.scalar(

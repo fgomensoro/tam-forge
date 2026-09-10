@@ -1,12 +1,40 @@
-"""Transactional PostgreSQL owner/session repository."""
+"""Transactional PostgreSQL owner/session repository.
+
+Every public method translates a `SQLAlchemyError` into `AuthStorageUnavailable`,
+because this is the only layer that can still recognise one for what it is. Above
+it nothing catches a raw one: `api.register_routes` installs a handler per domain
+error type and none for SQLAlchemy's, and `observability.middleware` re-raises, so
+a dropped connection or a statement timeout used to reach Starlette's own
+server-error handling as a plain-text 500 rather than the
+`application/problem+json` the auth routes declare. The session lookups here back
+every authenticated route in the service, so that outage decided what a learner
+saw on any request, not only on a sign-in.
+
+The translation wraps `transaction_scope` from outside rather than sitting inside
+the block, so the commit that scope issues on its way out is covered too -- a
+write can survive every statement and still fail there.
+
+`raise ... from None` matters more here than anywhere else. The `SQLAlchemyError`
+carries the rejected statement and its bound parameters, and on this repository
+those parameters are session, refresh and CSRF token hashes; the problem handler
+renders whatever reaches it, so the chain must not ride along. The failure is
+still logged with its own context by the layer that raised it.
+
+The private helpers stay untranslated on purpose: `_native_audit_event`,
+`_session_projection` and `_to_persisted` build statements and projections without
+issuing them, and are only ever reached from a public method that translates.
+"""
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 
 from sqlalchemy import Select, delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Row
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import transaction_scope
@@ -21,6 +49,16 @@ from .models import (
     Owner,
 )
 from .schemas import PersistedNativeSession, PersistedSession
+from .service import AuthStorageUnavailable
+
+
+@asynccontextmanager
+async def _unavailable_on_database_error() -> AsyncIterator[None]:
+    """Report a failed database call as an outage the caller may retry."""
+    try:
+        yield
+    except SQLAlchemyError:
+        raise AuthStorageUnavailable("authentication storage is unavailable") from None
 
 
 class SqlAlchemyAuthRepository:
@@ -41,85 +79,90 @@ class SqlAlchemyAuthRepository:
         csrf_hash: bytes,
         session_ttl: timedelta,
     ) -> PersistedSession:
-        async with transaction_scope(self._session):
-            owner_statement = (
-                insert(Owner)
-                .values(github_user_id=github_user_id, github_login=github_login)
-                .on_conflict_do_update(
-                    index_elements=[Owner.github_user_id],
-                    set_={"github_login": github_login, "updated_at": func.now()},
+        async with _unavailable_on_database_error():
+            async with transaction_scope(self._session):
+                owner_statement = (
+                    insert(Owner)
+                    .values(github_user_id=github_user_id, github_login=github_login)
+                    .on_conflict_do_update(
+                        index_elements=[Owner.github_user_id],
+                        set_={"github_login": github_login, "updated_at": func.now()},
+                    )
+                    .returning(Owner.id, Owner.github_user_id, Owner.github_login)
                 )
-                .returning(Owner.id, Owner.github_user_id, Owner.github_login)
+                owner = (await self._session.execute(owner_statement)).one()
+                session_statement = (
+                    insert(AuthSession)
+                    .values(
+                        owner_id=owner.id,
+                        token_hash=token_hash,
+                        csrf_hash=csrf_hash,
+                        created_at=func.current_timestamp(),
+                        expires_at=func.now() + session_ttl,
+                    )
+                    .returning(
+                        AuthSession.id,
+                        AuthSession.owner_id,
+                        AuthSession.token_hash,
+                        AuthSession.csrf_hash,
+                        AuthSession.created_at,
+                        AuthSession.expires_at,
+                        AuthSession.revoked_at,
+                    )
+                )
+                row = (await self._session.execute(session_statement)).one()
+            return PersistedSession(
+                session_id=row.id,
+                owner_id=row.owner_id,
+                github_user_id=owner.github_user_id,
+                github_login=owner.github_login,
+                token_hash=row.token_hash,
+                csrf_hash=row.csrf_hash,
+                created_at=row.created_at,
+                expires_at=row.expires_at,
+                revoked_at=row.revoked_at,
             )
-            owner = (await self._session.execute(owner_statement)).one()
-            session_statement = (
-                insert(AuthSession)
-                .values(
-                    owner_id=owner.id,
-                    token_hash=token_hash,
-                    csrf_hash=csrf_hash,
-                    created_at=func.current_timestamp(),
-                    expires_at=func.now() + session_ttl,
-                )
-                .returning(
-                    AuthSession.id,
-                    AuthSession.owner_id,
-                    AuthSession.token_hash,
-                    AuthSession.csrf_hash,
-                    AuthSession.created_at,
-                    AuthSession.expires_at,
-                    AuthSession.revoked_at,
-                )
-            )
-            row = (await self._session.execute(session_statement)).one()
-        return PersistedSession(
-            session_id=row.id,
-            owner_id=row.owner_id,
-            github_user_id=owner.github_user_id,
-            github_login=owner.github_login,
-            token_hash=row.token_hash,
-            csrf_hash=row.csrf_hash,
-            created_at=row.created_at,
-            expires_at=row.expires_at,
-            revoked_at=row.revoked_at,
-        )
 
     async def find_active_session(self, token_hash: bytes) -> PersistedSession | None:
-        statement = (
-            self._session_projection()
-            .where(AuthSession.token_hash == token_hash)
-            .where(AuthSession.revoked_at.is_(None))
-            .where(AuthSession.expires_at > func.now())
-        )
-        row = (await self._session.execute(statement)).one_or_none()
-        await self._session.rollback()
-        return self._to_persisted(row)
-
-    async def is_session_active(self, session_id: int) -> bool:
-        statement = (
-            select(AuthSession.id)
-            .where(AuthSession.id == session_id)
-            .where(AuthSession.revoked_at.is_(None))
-            .where(AuthSession.expires_at > func.now())
-        )
-        active = (await self._session.execute(statement)).scalar_one_or_none() is not None
-        await self._session.rollback()
-        return active
-
-    async def find_session_for_logout(self, token_hash: bytes) -> PersistedSession | None:
-        statement = self._session_projection().where(AuthSession.token_hash == token_hash)
-        row = (await self._session.execute(statement)).one_or_none()
-        await self._session.rollback()
-        return self._to_persisted(row)
-
-    async def revoke_session(self, token_hash: bytes) -> None:
-        async with transaction_scope(self._session):
-            await self._session.execute(
-                update(AuthSession)
+        async with _unavailable_on_database_error():
+            statement = (
+                self._session_projection()
                 .where(AuthSession.token_hash == token_hash)
                 .where(AuthSession.revoked_at.is_(None))
-                .values(revoked_at=func.now())
+                .where(AuthSession.expires_at > func.now())
             )
+            row = (await self._session.execute(statement)).one_or_none()
+            await self._session.rollback()
+            return self._to_persisted(row)
+
+    async def is_session_active(self, session_id: int) -> bool:
+        async with _unavailable_on_database_error():
+            statement = (
+                select(AuthSession.id)
+                .where(AuthSession.id == session_id)
+                .where(AuthSession.revoked_at.is_(None))
+                .where(AuthSession.expires_at > func.now())
+            )
+            active = (await self._session.execute(statement)).scalar_one_or_none() is not None
+            await self._session.rollback()
+            return active
+
+    async def find_session_for_logout(self, token_hash: bytes) -> PersistedSession | None:
+        async with _unavailable_on_database_error():
+            statement = self._session_projection().where(AuthSession.token_hash == token_hash)
+            row = (await self._session.execute(statement)).one_or_none()
+            await self._session.rollback()
+            return self._to_persisted(row)
+
+    async def revoke_session(self, token_hash: bytes) -> None:
+        async with _unavailable_on_database_error():
+            async with transaction_scope(self._session):
+                await self._session.execute(
+                    update(AuthSession)
+                    .where(AuthSession.token_hash == token_hash)
+                    .where(AuthSession.revoked_at.is_(None))
+                    .values(revoked_at=func.now())
+                )
 
     async def create_native_oauth_flow(
         self,
@@ -128,44 +171,46 @@ class SqlAlchemyAuthRepository:
         pkce_challenge: str,
         flow_ttl: timedelta,
     ) -> bool:
-        async with transaction_scope(self._session):
-            await self._session.execute(
-                select(func.pg_advisory_xact_lock(self._NATIVE_OAUTH_FLOW_LOCK))
-            )
-            await self._session.execute(
-                delete(NativeOAuthFlow).where(NativeOAuthFlow.expires_at <= func.now())
-            )
-            await self._session.execute(
-                delete(NativeExchangeCode).where(NativeExchangeCode.expires_at <= func.now())
-            )
-            outstanding = (
-                await self._session.execute(select(func.count()).select_from(NativeOAuthFlow))
-            ).scalar_one()
-            if outstanding >= self._NATIVE_OAUTH_FLOW_CAPACITY:
-                return False
-            await self._session.execute(
-                insert(NativeOAuthFlow).values(
-                    state_hash=state_hash,
-                    pkce_challenge=pkce_challenge,
-                    created_at=func.now(),
-                    expires_at=func.now() + flow_ttl,
+        async with _unavailable_on_database_error():
+            async with transaction_scope(self._session):
+                await self._session.execute(
+                    select(func.pg_advisory_xact_lock(self._NATIVE_OAUTH_FLOW_LOCK))
                 )
-            )
-        return True
+                await self._session.execute(
+                    delete(NativeOAuthFlow).where(NativeOAuthFlow.expires_at <= func.now())
+                )
+                await self._session.execute(
+                    delete(NativeExchangeCode).where(NativeExchangeCode.expires_at <= func.now())
+                )
+                outstanding = (
+                    await self._session.execute(select(func.count()).select_from(NativeOAuthFlow))
+                ).scalar_one()
+                if outstanding >= self._NATIVE_OAUTH_FLOW_CAPACITY:
+                    return False
+                await self._session.execute(
+                    insert(NativeOAuthFlow).values(
+                        state_hash=state_hash,
+                        pkce_challenge=pkce_challenge,
+                        created_at=func.now(),
+                        expires_at=func.now() + flow_ttl,
+                    )
+                )
+            return True
 
     async def consume_native_oauth_flow(self, state_hash: bytes) -> str | None:
-        async with transaction_scope(self._session):
-            row = (
-                await self._session.execute(
-                    update(NativeOAuthFlow)
-                    .where(NativeOAuthFlow.state_hash == state_hash)
-                    .where(NativeOAuthFlow.consumed_at.is_(None))
-                    .where(NativeOAuthFlow.expires_at > func.now())
-                    .values(consumed_at=func.now())
-                    .returning(NativeOAuthFlow.pkce_challenge)
-                )
-            ).one_or_none()
-        return None if row is None else row[0]
+        async with _unavailable_on_database_error():
+            async with transaction_scope(self._session):
+                row = (
+                    await self._session.execute(
+                        update(NativeOAuthFlow)
+                        .where(NativeOAuthFlow.state_hash == state_hash)
+                        .where(NativeOAuthFlow.consumed_at.is_(None))
+                        .where(NativeOAuthFlow.expires_at > func.now())
+                        .values(consumed_at=func.now())
+                        .returning(NativeOAuthFlow.pkce_challenge)
+                    )
+                ).one_or_none()
+            return None if row is None else row[0]
 
     async def create_native_exchange(
         self,
@@ -176,27 +221,28 @@ class SqlAlchemyAuthRepository:
         pkce_challenge: str,
         exchange_ttl: timedelta,
     ) -> None:
-        async with transaction_scope(self._session):
-            owner = (
-                await self._session.execute(
-                    insert(Owner)
-                    .values(github_user_id=github_user_id, github_login=github_login)
-                    .on_conflict_do_update(
-                        index_elements=[Owner.github_user_id],
-                        set_={"github_login": github_login, "updated_at": func.now()},
+        async with _unavailable_on_database_error():
+            async with transaction_scope(self._session):
+                owner = (
+                    await self._session.execute(
+                        insert(Owner)
+                        .values(github_user_id=github_user_id, github_login=github_login)
+                        .on_conflict_do_update(
+                            index_elements=[Owner.github_user_id],
+                            set_={"github_login": github_login, "updated_at": func.now()},
+                        )
+                        .returning(Owner.id)
                     )
-                    .returning(Owner.id)
+                ).one()
+                await self._session.execute(
+                    insert(NativeExchangeCode).values(
+                        owner_id=owner.id,
+                        code_hash=code_hash,
+                        pkce_challenge=pkce_challenge,
+                        created_at=func.now(),
+                        expires_at=func.now() + exchange_ttl,
+                    )
                 )
-            ).one()
-            await self._session.execute(
-                insert(NativeExchangeCode).values(
-                    owner_id=owner.id,
-                    code_hash=code_hash,
-                    pkce_challenge=pkce_challenge,
-                    created_at=func.now(),
-                    expires_at=func.now() + exchange_ttl,
-                )
-            )
 
     async def consume_native_exchange_and_create_session(
         self,
@@ -208,106 +254,107 @@ class SqlAlchemyAuthRepository:
         access_ttl: timedelta,
         refresh_ttl: timedelta,
     ) -> PersistedNativeSession | None:
-        result: PersistedNativeSession | None = None
-        async with transaction_scope(self._session):
-            exchange = (
-                await self._session.execute(
-                    update(NativeExchangeCode)
-                    .where(NativeExchangeCode.code_hash == code_hash)
-                    .where(NativeExchangeCode.pkce_challenge == pkce_challenge)
-                    .where(NativeExchangeCode.consumed_at.is_(None))
-                    .where(NativeExchangeCode.expires_at > func.now())
-                    .values(consumed_at=func.now())
-                    .returning(NativeExchangeCode.id, NativeExchangeCode.owner_id)
-                )
-            ).one_or_none()
-            if exchange is None:
-                denied = (
+        async with _unavailable_on_database_error():
+            result: PersistedNativeSession | None = None
+            async with transaction_scope(self._session):
+                exchange = (
                     await self._session.execute(
-                        select(
-                            NativeExchangeCode.id,
-                            NativeExchangeCode.owner_id,
-                            NativeExchangeCode.consumed_at,
-                            (NativeExchangeCode.expires_at <= func.now()).label("expired"),
-                        ).where(NativeExchangeCode.code_hash == code_hash)
+                        update(NativeExchangeCode)
+                        .where(NativeExchangeCode.code_hash == code_hash)
+                        .where(NativeExchangeCode.pkce_challenge == pkce_challenge)
+                        .where(NativeExchangeCode.consumed_at.is_(None))
+                        .where(NativeExchangeCode.expires_at > func.now())
+                        .values(consumed_at=func.now())
+                        .returning(NativeExchangeCode.id, NativeExchangeCode.owner_id)
                     )
                 ).one_or_none()
-                if denied is not None:
+                if exchange is None:
+                    denied = (
+                        await self._session.execute(
+                            select(
+                                NativeExchangeCode.id,
+                                NativeExchangeCode.owner_id,
+                                NativeExchangeCode.consumed_at,
+                                (NativeExchangeCode.expires_at <= func.now()).label("expired"),
+                            ).where(NativeExchangeCode.code_hash == code_hash)
+                        )
+                    ).one_or_none()
+                    if denied is not None:
+                        self._session.add(
+                            self._native_audit_event(
+                                owner_id=denied.owner_id,
+                                subject_hash=code_hash,
+                                action="auth.native_exchange.denied",
+                                aggregate_id=str(denied.id),
+                                outcome=AuditOutcome.DENIED,
+                                reason=(
+                                    AuditReasonCode.EXPIRED
+                                    if denied.expired
+                                    else AuditReasonCode.CONFLICT
+                                ),
+                                authenticated=False,
+                                replayed=denied.consumed_at is not None,
+                            )
+                        )
+                else:
+                    owner = (
+                        await self._session.execute(
+                            select(Owner.github_user_id, Owner.github_login).where(
+                                Owner.id == exchange.owner_id
+                            )
+                        )
+                    ).one()
+                    native_session = (
+                        await self._session.execute(
+                            insert(NativeAuthSession)
+                            .values(
+                                owner_id=exchange.owner_id,
+                                access_token_hash=access_token_hash,
+                                created_at=func.now(),
+                                access_expires_at=func.now() + access_ttl,
+                            )
+                            .returning(
+                                NativeAuthSession.id,
+                                NativeAuthSession.access_expires_at,
+                                NativeAuthSession.revoked_at,
+                            )
+                        )
+                    ).one()
+                    refresh = (
+                        await self._session.execute(
+                            insert(NativeRefreshToken)
+                            .values(
+                                session_id=native_session.id,
+                                token_hash=refresh_token_hash,
+                                created_at=func.now(),
+                                expires_at=func.now() + refresh_ttl,
+                            )
+                            .returning(NativeRefreshToken.expires_at)
+                        )
+                    ).one()
                     self._session.add(
                         self._native_audit_event(
-                            owner_id=denied.owner_id,
-                            subject_hash=code_hash,
-                            action="auth.native_exchange.denied",
-                            aggregate_id=str(denied.id),
-                            outcome=AuditOutcome.DENIED,
-                            reason=(
-                                AuditReasonCode.EXPIRED
-                                if denied.expired
-                                else AuditReasonCode.CONFLICT
-                            ),
-                            authenticated=False,
-                            replayed=denied.consumed_at is not None,
-                        )
-                    )
-            else:
-                owner = (
-                    await self._session.execute(
-                        select(Owner.github_user_id, Owner.github_login).where(
-                            Owner.id == exchange.owner_id
-                        )
-                    )
-                ).one()
-                native_session = (
-                    await self._session.execute(
-                        insert(NativeAuthSession)
-                        .values(
                             owner_id=exchange.owner_id,
-                            access_token_hash=access_token_hash,
-                            created_at=func.now(),
-                            access_expires_at=func.now() + access_ttl,
-                        )
-                        .returning(
-                            NativeAuthSession.id,
-                            NativeAuthSession.access_expires_at,
-                            NativeAuthSession.revoked_at,
+                            subject_hash=code_hash,
+                            action="auth.native_exchange.succeeded",
+                            aggregate_id=str(native_session.id),
+                            outcome=AuditOutcome.SUCCEEDED,
+                            reason=AuditReasonCode.NONE,
+                            authenticated=True,
                         )
                     )
-                ).one()
-                refresh = (
-                    await self._session.execute(
-                        insert(NativeRefreshToken)
-                        .values(
-                            session_id=native_session.id,
-                            token_hash=refresh_token_hash,
-                            created_at=func.now(),
-                            expires_at=func.now() + refresh_ttl,
-                        )
-                        .returning(NativeRefreshToken.expires_at)
-                    )
-                ).one()
-                self._session.add(
-                    self._native_audit_event(
+                    result = PersistedNativeSession(
+                        session_id=native_session.id,
                         owner_id=exchange.owner_id,
-                        subject_hash=code_hash,
-                        action="auth.native_exchange.succeeded",
-                        aggregate_id=str(native_session.id),
-                        outcome=AuditOutcome.SUCCEEDED,
-                        reason=AuditReasonCode.NONE,
-                        authenticated=True,
+                        github_user_id=owner.github_user_id,
+                        github_login=owner.github_login,
+                        access_token_hash=access_token_hash,
+                        access_expires_at=native_session.access_expires_at,
+                        refresh_token_hash=refresh_token_hash,
+                        refresh_expires_at=refresh.expires_at,
+                        revoked_at=native_session.revoked_at,
                     )
-                )
-                result = PersistedNativeSession(
-                    session_id=native_session.id,
-                    owner_id=exchange.owner_id,
-                    github_user_id=owner.github_user_id,
-                    github_login=owner.github_login,
-                    access_token_hash=access_token_hash,
-                    access_expires_at=native_session.access_expires_at,
-                    refresh_token_hash=refresh_token_hash,
-                    refresh_expires_at=refresh.expires_at,
-                    revoked_at=native_session.revoked_at,
-                )
-        return result
+            return result
 
     async def rotate_native_refresh_token(
         self,
@@ -318,43 +365,214 @@ class SqlAlchemyAuthRepository:
         access_ttl: timedelta,
         refresh_ttl: timedelta,
     ) -> PersistedNativeSession | None:
-        result: PersistedNativeSession | None = None
-        async with transaction_scope(self._session):
+        async with _unavailable_on_database_error():
+            result: PersistedNativeSession | None = None
+            async with transaction_scope(self._session):
+                row = (
+                    await self._session.execute(
+                        select(
+                            NativeRefreshToken.id.label("refresh_id"),
+                            NativeRefreshToken.session_id,
+                            NativeRefreshToken.consumed_at,
+                            NativeRefreshToken.revoked_at.label("refresh_revoked_at"),
+                            (NativeRefreshToken.expires_at <= func.now()).label("expired"),
+                            NativeAuthSession.owner_id,
+                            NativeAuthSession.revoked_at.label("session_revoked_at"),
+                            Owner.github_user_id,
+                            Owner.github_login,
+                        )
+                        .join(
+                            NativeAuthSession,
+                            NativeAuthSession.id == NativeRefreshToken.session_id,
+                        )
+                        .join(Owner, Owner.id == NativeAuthSession.owner_id)
+                        .where(NativeRefreshToken.token_hash == refresh_token_hash)
+                        .with_for_update()
+                    )
+                ).one_or_none()
+                denied = (
+                    row is None
+                    or row.consumed_at is not None
+                    or row.refresh_revoked_at is not None
+                    or row.expired
+                    or row.session_revoked_at is not None
+                )
+                if denied:
+                    if (
+                        row is not None
+                        and row.consumed_at is not None
+                        and row.session_revoked_at is None
+                    ):
+                        await self._session.execute(
+                            update(NativeAuthSession)
+                            .where(NativeAuthSession.id == row.session_id)
+                            .where(NativeAuthSession.revoked_at.is_(None))
+                            .values(revoked_at=func.now())
+                        )
+                        await self._session.execute(
+                            update(NativeRefreshToken)
+                            .where(NativeRefreshToken.session_id == row.session_id)
+                            .where(NativeRefreshToken.revoked_at.is_(None))
+                            .values(revoked_at=func.now())
+                        )
+                    if row is not None:
+                        self._session.add(
+                            self._native_audit_event(
+                                owner_id=row.owner_id,
+                                subject_hash=refresh_token_hash,
+                                action="auth.native_refresh.denied",
+                                aggregate_id=str(row.session_id),
+                                outcome=AuditOutcome.DENIED,
+                                reason=(
+                                    AuditReasonCode.CONFLICT
+                                    if row.consumed_at is not None
+                                    else AuditReasonCode.EXPIRED
+                                    if row.expired
+                                    else AuditReasonCode.REVOKED
+                                ),
+                                authenticated=False,
+                                replayed=row.consumed_at is not None,
+                            )
+                        )
+                else:
+                    assert row is not None
+                    new_refresh = (
+                        await self._session.execute(
+                            insert(NativeRefreshToken)
+                            .values(
+                                session_id=row.session_id,
+                                token_hash=new_refresh_token_hash,
+                                created_at=func.now(),
+                                expires_at=func.now() + refresh_ttl,
+                            )
+                            .returning(NativeRefreshToken.id, NativeRefreshToken.expires_at)
+                        )
+                    ).one()
+                    await self._session.execute(
+                        update(NativeRefreshToken)
+                        .where(NativeRefreshToken.id == row.refresh_id)
+                        .values(consumed_at=func.now(), replaced_by_id=new_refresh.id)
+                    )
+                    native_session = (
+                        await self._session.execute(
+                            update(NativeAuthSession)
+                            .where(NativeAuthSession.id == row.session_id)
+                            .values(
+                                access_token_hash=new_access_token_hash,
+                                access_expires_at=func.now() + access_ttl,
+                            )
+                            .returning(
+                                NativeAuthSession.access_expires_at,
+                                NativeAuthSession.revoked_at,
+                            )
+                        )
+                    ).one()
+                    self._session.add(
+                        self._native_audit_event(
+                            owner_id=row.owner_id,
+                            subject_hash=refresh_token_hash,
+                            action="auth.native_refresh.succeeded",
+                            aggregate_id=str(row.session_id),
+                            outcome=AuditOutcome.SUCCEEDED,
+                            reason=AuditReasonCode.NONE,
+                            authenticated=True,
+                        )
+                    )
+                    result = PersistedNativeSession(
+                        session_id=row.session_id,
+                        owner_id=row.owner_id,
+                        github_user_id=row.github_user_id,
+                        github_login=row.github_login,
+                        access_token_hash=new_access_token_hash,
+                        access_expires_at=native_session.access_expires_at,
+                        refresh_token_hash=new_refresh_token_hash,
+                        refresh_expires_at=new_refresh.expires_at,
+                        revoked_at=native_session.revoked_at,
+                    )
+            return result
+
+    async def find_active_native_session(
+        self, access_token_hash: bytes
+    ) -> PersistedNativeSession | None:
+        async with _unavailable_on_database_error():
             row = (
                 await self._session.execute(
                     select(
-                        NativeRefreshToken.id.label("refresh_id"),
-                        NativeRefreshToken.session_id,
-                        NativeRefreshToken.consumed_at,
-                        NativeRefreshToken.revoked_at.label("refresh_revoked_at"),
-                        (NativeRefreshToken.expires_at <= func.now()).label("expired"),
+                        NativeAuthSession.id.label("session_id"),
                         NativeAuthSession.owner_id,
-                        NativeAuthSession.revoked_at.label("session_revoked_at"),
                         Owner.github_user_id,
                         Owner.github_login,
-                    )
-                    .join(
-                        NativeAuthSession,
-                        NativeAuthSession.id == NativeRefreshToken.session_id,
+                        NativeAuthSession.access_token_hash,
+                        NativeAuthSession.access_expires_at,
+                        NativeAuthSession.revoked_at,
+                        NativeRefreshToken.token_hash.label("refresh_token_hash"),
+                        NativeRefreshToken.expires_at.label("refresh_expires_at"),
                     )
                     .join(Owner, Owner.id == NativeAuthSession.owner_id)
-                    .where(NativeRefreshToken.token_hash == refresh_token_hash)
-                    .with_for_update()
+                    .join(
+                        NativeRefreshToken,
+                        NativeRefreshToken.session_id == NativeAuthSession.id,
+                    )
+                    .where(NativeAuthSession.access_token_hash == access_token_hash)
+                    .where(NativeAuthSession.revoked_at.is_(None))
+                    .where(NativeAuthSession.access_expires_at > func.now())
+                    .where(NativeRefreshToken.consumed_at.is_(None))
+                    .where(NativeRefreshToken.revoked_at.is_(None))
+                    .where(NativeRefreshToken.expires_at > func.now())
                 )
             ).one_or_none()
-            denied = (
-                row is None
-                or row.consumed_at is not None
-                or row.refresh_revoked_at is not None
-                or row.expired
-                or row.session_revoked_at is not None
+            await self._session.rollback()
+            if row is None:
+                return None
+            return PersistedNativeSession(
+                session_id=row.session_id,
+                owner_id=row.owner_id,
+                github_user_id=row.github_user_id,
+                github_login=row.github_login,
+                access_token_hash=row.access_token_hash,
+                access_expires_at=row.access_expires_at,
+                refresh_token_hash=row.refresh_token_hash,
+                refresh_expires_at=row.refresh_expires_at,
+                revoked_at=row.revoked_at,
             )
-            if denied:
-                if (
-                    row is not None
-                    and row.consumed_at is not None
-                    and row.session_revoked_at is None
-                ):
+
+    async def is_native_session_active(self, session_id: int) -> bool:
+        async with _unavailable_on_database_error():
+            statement = (
+                select(NativeAuthSession.id)
+                .join(NativeRefreshToken, NativeRefreshToken.session_id == NativeAuthSession.id)
+                .where(NativeAuthSession.id == session_id)
+                .where(NativeAuthSession.revoked_at.is_(None))
+                .where(NativeAuthSession.access_expires_at > func.now())
+                .where(NativeRefreshToken.consumed_at.is_(None))
+                .where(NativeRefreshToken.revoked_at.is_(None))
+                .where(NativeRefreshToken.expires_at > func.now())
+            )
+            active = (await self._session.execute(statement)).scalar_one_or_none() is not None
+            await self._session.rollback()
+            return active
+
+    async def revoke_native_session(self, refresh_token_hash: bytes) -> bool:
+        async with _unavailable_on_database_error():
+            found = False
+            async with transaction_scope(self._session):
+                row = (
+                    await self._session.execute(
+                        select(
+                            NativeRefreshToken.session_id,
+                            NativeAuthSession.owner_id,
+                            NativeAuthSession.revoked_at,
+                        )
+                        .join(
+                            NativeAuthSession,
+                            NativeAuthSession.id == NativeRefreshToken.session_id,
+                        )
+                        .where(NativeRefreshToken.token_hash == refresh_token_hash)
+                        .with_for_update()
+                    )
+                ).one_or_none()
+                if row is not None:
+                    found = True
                     await self._session.execute(
                         update(NativeAuthSession)
                         .where(NativeAuthSession.id == row.session_id)
@@ -367,193 +585,26 @@ class SqlAlchemyAuthRepository:
                         .where(NativeRefreshToken.revoked_at.is_(None))
                         .values(revoked_at=func.now())
                     )
-                if row is not None:
                     self._session.add(
                         self._native_audit_event(
                             owner_id=row.owner_id,
                             subject_hash=refresh_token_hash,
-                            action="auth.native_refresh.denied",
+                            action="auth.native_revoke.succeeded",
                             aggregate_id=str(row.session_id),
-                            outcome=AuditOutcome.DENIED,
-                            reason=(
-                                AuditReasonCode.CONFLICT
-                                if row.consumed_at is not None
-                                else AuditReasonCode.EXPIRED
-                                if row.expired
-                                else AuditReasonCode.REVOKED
+                            outcome=(
+                                AuditOutcome.NOOP
+                                if row.revoked_at is not None
+                                else AuditOutcome.SUCCEEDED
                             ),
-                            authenticated=False,
-                            replayed=row.consumed_at is not None,
+                            reason=(
+                                AuditReasonCode.REVOKED
+                                if row.revoked_at is not None
+                                else AuditReasonCode.NONE
+                            ),
+                            authenticated=row.revoked_at is None,
                         )
                     )
-            else:
-                assert row is not None
-                new_refresh = (
-                    await self._session.execute(
-                        insert(NativeRefreshToken)
-                        .values(
-                            session_id=row.session_id,
-                            token_hash=new_refresh_token_hash,
-                            created_at=func.now(),
-                            expires_at=func.now() + refresh_ttl,
-                        )
-                        .returning(NativeRefreshToken.id, NativeRefreshToken.expires_at)
-                    )
-                ).one()
-                await self._session.execute(
-                    update(NativeRefreshToken)
-                    .where(NativeRefreshToken.id == row.refresh_id)
-                    .values(consumed_at=func.now(), replaced_by_id=new_refresh.id)
-                )
-                native_session = (
-                    await self._session.execute(
-                        update(NativeAuthSession)
-                        .where(NativeAuthSession.id == row.session_id)
-                        .values(
-                            access_token_hash=new_access_token_hash,
-                            access_expires_at=func.now() + access_ttl,
-                        )
-                        .returning(
-                            NativeAuthSession.access_expires_at,
-                            NativeAuthSession.revoked_at,
-                        )
-                    )
-                ).one()
-                self._session.add(
-                    self._native_audit_event(
-                        owner_id=row.owner_id,
-                        subject_hash=refresh_token_hash,
-                        action="auth.native_refresh.succeeded",
-                        aggregate_id=str(row.session_id),
-                        outcome=AuditOutcome.SUCCEEDED,
-                        reason=AuditReasonCode.NONE,
-                        authenticated=True,
-                    )
-                )
-                result = PersistedNativeSession(
-                    session_id=row.session_id,
-                    owner_id=row.owner_id,
-                    github_user_id=row.github_user_id,
-                    github_login=row.github_login,
-                    access_token_hash=new_access_token_hash,
-                    access_expires_at=native_session.access_expires_at,
-                    refresh_token_hash=new_refresh_token_hash,
-                    refresh_expires_at=new_refresh.expires_at,
-                    revoked_at=native_session.revoked_at,
-                )
-        return result
-
-    async def find_active_native_session(
-        self, access_token_hash: bytes
-    ) -> PersistedNativeSession | None:
-        row = (
-            await self._session.execute(
-                select(
-                    NativeAuthSession.id.label("session_id"),
-                    NativeAuthSession.owner_id,
-                    Owner.github_user_id,
-                    Owner.github_login,
-                    NativeAuthSession.access_token_hash,
-                    NativeAuthSession.access_expires_at,
-                    NativeAuthSession.revoked_at,
-                    NativeRefreshToken.token_hash.label("refresh_token_hash"),
-                    NativeRefreshToken.expires_at.label("refresh_expires_at"),
-                )
-                .join(Owner, Owner.id == NativeAuthSession.owner_id)
-                .join(
-                    NativeRefreshToken,
-                    NativeRefreshToken.session_id == NativeAuthSession.id,
-                )
-                .where(NativeAuthSession.access_token_hash == access_token_hash)
-                .where(NativeAuthSession.revoked_at.is_(None))
-                .where(NativeAuthSession.access_expires_at > func.now())
-                .where(NativeRefreshToken.consumed_at.is_(None))
-                .where(NativeRefreshToken.revoked_at.is_(None))
-                .where(NativeRefreshToken.expires_at > func.now())
-            )
-        ).one_or_none()
-        await self._session.rollback()
-        if row is None:
-            return None
-        return PersistedNativeSession(
-            session_id=row.session_id,
-            owner_id=row.owner_id,
-            github_user_id=row.github_user_id,
-            github_login=row.github_login,
-            access_token_hash=row.access_token_hash,
-            access_expires_at=row.access_expires_at,
-            refresh_token_hash=row.refresh_token_hash,
-            refresh_expires_at=row.refresh_expires_at,
-            revoked_at=row.revoked_at,
-        )
-
-    async def is_native_session_active(self, session_id: int) -> bool:
-        statement = (
-            select(NativeAuthSession.id)
-            .join(NativeRefreshToken, NativeRefreshToken.session_id == NativeAuthSession.id)
-            .where(NativeAuthSession.id == session_id)
-            .where(NativeAuthSession.revoked_at.is_(None))
-            .where(NativeAuthSession.access_expires_at > func.now())
-            .where(NativeRefreshToken.consumed_at.is_(None))
-            .where(NativeRefreshToken.revoked_at.is_(None))
-            .where(NativeRefreshToken.expires_at > func.now())
-        )
-        active = (await self._session.execute(statement)).scalar_one_or_none() is not None
-        await self._session.rollback()
-        return active
-
-    async def revoke_native_session(self, refresh_token_hash: bytes) -> bool:
-        found = False
-        async with transaction_scope(self._session):
-            row = (
-                await self._session.execute(
-                    select(
-                        NativeRefreshToken.session_id,
-                        NativeAuthSession.owner_id,
-                        NativeAuthSession.revoked_at,
-                    )
-                    .join(
-                        NativeAuthSession,
-                        NativeAuthSession.id == NativeRefreshToken.session_id,
-                    )
-                    .where(NativeRefreshToken.token_hash == refresh_token_hash)
-                    .with_for_update()
-                )
-            ).one_or_none()
-            if row is not None:
-                found = True
-                await self._session.execute(
-                    update(NativeAuthSession)
-                    .where(NativeAuthSession.id == row.session_id)
-                    .where(NativeAuthSession.revoked_at.is_(None))
-                    .values(revoked_at=func.now())
-                )
-                await self._session.execute(
-                    update(NativeRefreshToken)
-                    .where(NativeRefreshToken.session_id == row.session_id)
-                    .where(NativeRefreshToken.revoked_at.is_(None))
-                    .values(revoked_at=func.now())
-                )
-                self._session.add(
-                    self._native_audit_event(
-                        owner_id=row.owner_id,
-                        subject_hash=refresh_token_hash,
-                        action="auth.native_revoke.succeeded",
-                        aggregate_id=str(row.session_id),
-                        outcome=(
-                            AuditOutcome.NOOP
-                            if row.revoked_at is not None
-                            else AuditOutcome.SUCCEEDED
-                        ),
-                        reason=(
-                            AuditReasonCode.REVOKED
-                            if row.revoked_at is not None
-                            else AuditReasonCode.NONE
-                        ),
-                        authenticated=row.revoked_at is None,
-                    )
-                )
-        return found
+            return found
 
     @staticmethod
     def _native_audit_event(
