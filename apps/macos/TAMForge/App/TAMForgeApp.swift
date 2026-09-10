@@ -259,8 +259,11 @@ private final class NativeShellComposition: ObservableObject {
         // Shared by the coordinator (which populates it once a local
         // transcript is ready) and the upload pipeline (which retries a
         // failed or premature submission from it on a later pass). Created
-        // once, here, since neither of those two depends on the other.
-        let transcriptCache = RecordingTranscriptCache()
+        // once, here, since neither of those two depends on the other, and
+        // handed the spool factory so each entry also survives inside the
+        // recording's own encrypted spool directory: a transcript computed
+        // in this launch is still submittable in the next one.
+        let transcriptCache = RecordingTranscriptCache(spoolFactory: recordingSpool)
         recording = RecordingCoordinator(
             preflight: LiveRecordingPreflight(spoolRootURL: recordingSpool.rootURL),
             spoolFactory: recordingSpool,
