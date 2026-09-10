@@ -29,18 +29,25 @@ extension RecordingUploadError {
         return "\(type(of: error))"
     }
 
-    // A permanent rejection is a 4xx the server will never accept on retry --
-    // the submitted body itself is invalid (its schema, its bounds), not a
-    // transient condition, so resubmitting the identical payload forever
-    // (Important 3) only wastes a full-body POST every upload-worker pass
-    // with no chance of success. 409 arrives as `.conflict`, not `.server`,
-    // and means "audio is not stored yet," which the next upload pass
-    // resolves on its own once the audio upload catches up -- deliberately
-    // excluded here. A 5xx `.server` case (`TranscriptUnavailable`, or an
-    // unexpected server error) is the backend's own distinctly-retryable
-    // error and must keep retrying.
+    // A permanent rejection is a 4xx that means the submitted body itself is
+    // invalid and resubmitting the identical payload can never succeed: 400
+    // (malformed request), 413 (body too large), and 422 (schema/bounds
+    // validation failure -- see `TranscriptTooLarge`/FastAPI validation in
+    // `speech/routes.py`). Every other 4xx this call site can see is a
+    // timing artifact, not a body problem, and must stay retryable. 404
+    // means the recording row does not exist *yet*: `submitTranscript` races
+    // the create/upload/seal pass the same `stop()` call started, so a 404
+    // here is ordinary and self-heals once that pass catches up on a later
+    // worker pass -- treating it as permanent would drop the cached payload
+    // with no way to recompute it (`beginTranscription` only runs from
+    // `stop()`), reintroducing the never-released spool this feature exists
+    // to fix. 409 arrives as `.conflict`, not `.server`, and means "audio is
+    // not stored yet," resolved the same way -- already excluded here. A 5xx
+    // `.server` case (`TranscriptUnavailable`, or an unexpected server
+    // error) is the backend's own distinctly-retryable error and must keep
+    // retrying.
     var isPermanentTranscriptRejection: Bool {
-        if case let .server(statusCode) = self { return (400...499).contains(statusCode) }
+        if case let .server(statusCode) = self { return [400, 413, 422].contains(statusCode) }
         return false
     }
 }

@@ -631,6 +631,57 @@ final class RecordingUploadTests: XCTestCase {
         XCTAssertEqual(await server.submissionAttempts, 1)
     }
 
+    // Regression coverage for the fix that narrowed isPermanentTranscriptRejection:
+    // it used to treat every `.server(400...499)` as permanent, which put 404 in
+    // range alongside 422. A 404 here means the recording row does not exist yet
+    // from the submission's point of view -- exactly the race
+    // RecordingCoordinator.submitTranscript's own doc comment names, since it fires
+    // as soon as transcription finishes, in parallel with the create/upload/seal
+    // pass the same stop() call started. Misclassifying it as permanent drops the
+    // only copy of the cached payload (memory-only, and beginTranscription is
+    // reachable only from stop()) with no way to recompute it, so the encrypted
+    // spool would never release -- the exact defect this whole feature exists to
+    // fix, reintroduced on a path that used to self-heal.
+    func testRecordingNotFoundTranscriptRejectionKeepsRetryingInsteadOfDroppingTheCache() async throws {
+        let fixture = try await sealedSpool()
+        let server = FakeRecordingServer(failSubmissionWithRecordingNotFound: true)
+        let cache = RecordingTranscriptCache()
+        let payload = TranscriptSubmitPayload.fixture(recordingID: fixture.recordingID)
+        await cache.store(payload, recordingID: fixture.recordingID)
+        let pipeline = RecordingUploadPipeline(
+            spoolFactory: fixture.factory, server: server, transcriptCache: cache
+        )
+
+        // First pass creates + seals; audio now exists. Nothing is
+        // submitted yet (the retry branch has not run).
+        let firstPass = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
+        XCTAssertTrue(firstPass.audioCreatedOnServer)
+        XCTAssertEqual(await server.submissionAttempts, 0)
+
+        // Second pass: the retry branch submits the cached payload and the
+        // server returns 404. Unlike the real permanent-rejection test
+        // above, this must be swallowed exactly like a transient failure
+        // (no throw here, unlike that test's XCTAssertAsyncThrowsError),
+        // and -- the crux of this regression test -- the cached payload
+        // must survive so a later pass still has something to resubmit.
+        let secondPass = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
+        XCTAssertFalse(secondPass.transcriptLineageAccepted)
+        XCTAssertFalse(secondPass.mayDeleteLocalSpool)
+        XCTAssertEqual(await server.submissionAttempts, 1)
+        let cachedAfterRejection = await cache.payload(for: fixture.recordingID)
+        XCTAssertNotNil(cachedAfterRejection)
+
+        // Third pass: the payload is still cached, so the retry branch
+        // resubmits it again on the worker's ordinary cadence --
+        // submissionAttempts climbs to 2, proving this keeps retrying
+        // rather than being dropped after one failure.
+        let thirdPass = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
+        XCTAssertFalse(thirdPass.transcriptLineageAccepted)
+        XCTAssertEqual(await server.submissionAttempts, 2)
+        let cachedAfterThirdPass = await cache.payload(for: fixture.recordingID)
+        XCTAssertNotNil(cachedAfterThirdPass)
+    }
+
     func testRelaunchAfterAudio201WithoutTranscriptKeepsSpoolAndNeverResubmitsParts() async throws {
         let fixture = try await sealedSpool()
         let server = FakeRecordingServer()
@@ -975,6 +1026,7 @@ actor FakeRecordingServer: RecordingServerServicing {
     private let blockUploads: Bool
     private var failSubmission: Bool
     private let failSubmissionPermanently: Bool
+    private let failSubmissionWithRecordingNotFound: Bool
     private let requireAudioBeforeTranscript: Bool
     private var statusByRecording: [UUID: RecordingServerStatus] = [:]
 
@@ -984,6 +1036,7 @@ actor FakeRecordingServer: RecordingServerServicing {
         blockUploads: Bool = false,
         failSubmission: Bool = false,
         failSubmissionPermanently: Bool = false,
+        failSubmissionWithRecordingNotFound: Bool = false,
         requireAudioBeforeTranscript: Bool = false
     ) {
         self.failureOnUploadAttempt = failureOnUploadAttempt
@@ -991,6 +1044,7 @@ actor FakeRecordingServer: RecordingServerServicing {
         self.blockUploads = blockUploads
         self.failSubmission = failSubmission
         self.failSubmissionPermanently = failSubmissionPermanently
+        self.failSubmissionWithRecordingNotFound = failSubmissionWithRecordingNotFound
         self.requireAudioBeforeTranscript = requireAudioBeforeTranscript
     }
 
@@ -1060,7 +1114,12 @@ actor FakeRecordingServer: RecordingServerServicing {
         // 422: the shape isPermanentTranscriptRejection matches (a 4xx that
         // is not the 409-before-audio case above). 500 (failSubmission)
         // stays a distinct, transient case a later pass can still resolve.
+        // 404 mirrors the backend rejecting a submission that raced ahead
+        // of this same recording's create (service.py's `_resolve_recording`
+        // finding no row yet): isPermanentTranscriptRejection excludes it,
+        // so it must stay retryable exactly like failSubmission's 500.
         if failSubmissionPermanently { throw RecordingUploadError.server(statusCode: 422) }
+        if failSubmissionWithRecordingNotFound { throw RecordingUploadError.server(statusCode: 404) }
         if failSubmission { throw RecordingUploadError.server(statusCode: 500) }
         submittedTranscripts.append(command)
         // Mirrors LiveRecordingServerClient.submitTranscript: a successful
