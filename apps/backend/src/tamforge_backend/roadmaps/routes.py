@@ -34,6 +34,7 @@ from .ports import (
     ImportConflict,
     RoadmapImportRecord,
     RoadmapNotFound,
+    RoadmapStorageUnavailable,
     RoadmapVersionRecord,
 )
 from .repository import SqlAlchemyRoadmapRepository
@@ -263,7 +264,7 @@ def roadmap_problem_response(exc: Exception) -> JSONResponse:
         (ImportConflict, ImportNotApprovable, ActivationNotEligible, MirrorNotRetryable),
     ):
         status, code, title = 409, "roadmap_state_conflict", "Roadmap state conflict"
-    elif isinstance(exc, ObjectStoreError):
+    elif isinstance(exc, (ObjectStoreError, RoadmapStorageUnavailable)):
         status, code, title = 503, "roadmap_storage_unavailable", "Roadmap storage unavailable"
     else:
         status, code, title = 500, "roadmap_error", "Roadmap operation failed"
