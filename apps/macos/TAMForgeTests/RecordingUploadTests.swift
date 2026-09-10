@@ -515,6 +515,84 @@ final class RecordingUploadTests: XCTestCase {
         }
     }
 
+    func testSubmissionRejectedBeforeAudioReadyIsRetriedAndEventuallySucceeds() async throws {
+        let fixture = try await sealedSpool()
+        let server = FakeRecordingServer(requireAudioBeforeTranscript: true)
+        let cache = RecordingTranscriptCache()
+        let payload = TranscriptSubmitPayload.fixture(recordingID: fixture.recordingID)
+        await cache.store(payload, recordingID: fixture.recordingID)
+
+        // Represents the coordinator's opportunistic attempt firing the
+        // instant local transcription finishes, which can easily race
+        // ahead of the audio pipeline's create/seal for a recording of any
+        // meaningful length. The backend's transcript_lineage_requires_audio
+        // constraint (modeled here by requireAudioBeforeTranscript) rejects
+        // it, exactly like the 409 described in issue #44's own trace.
+        await XCTAssertAsyncThrowsError {
+            _ = try await server.submitTranscript(payload, idempotencyKey: payload.idempotencyKey)
+        }
+        XCTAssertTrue(await server.submittedTranscripts.isEmpty)
+
+        let pipeline = RecordingUploadPipeline(
+            spoolFactory: fixture.factory, server: server, transcriptCache: cache
+        )
+
+        // First worker pass: creates + seals the audio (this recording's
+        // gates start with audioCreatedOnServer false, so this is the
+        // create/upload/seal branch, not the retry branch). A submission
+        // attempt only ever happens after create/seal complete, never
+        // during them, so nothing is (re)submitted on this same pass.
+        let firstPass = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
+        XCTAssertTrue(firstPass.audioCreatedOnServer)
+        XCTAssertFalse(firstPass.transcriptLineageAccepted)
+
+        // Next worker pass: audio now exists, so the status-recheck branch
+        // retries the same cached, still-unaccepted submission using the
+        // same idempotency key. This time the server accepts it, and the
+        // spool releases.
+        let secondPass = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
+        XCTAssertTrue(secondPass.mayDeleteLocalSpool)
+        XCTAssertEqual(await server.submissionAttempts, 2)
+        XCTAssertEqual(await server.submittedTranscripts.count, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.directory.path))
+    }
+
+    func testTransientSubmissionFailureIsRetriedRatherThanAbandoned() async throws {
+        let fixture = try await sealedSpool()
+        let server = FakeRecordingServer(failSubmission: true)
+        let cache = RecordingTranscriptCache()
+        let payload = TranscriptSubmitPayload.fixture(recordingID: fixture.recordingID)
+        await cache.store(payload, recordingID: fixture.recordingID)
+        let pipeline = RecordingUploadPipeline(
+            spoolFactory: fixture.factory, server: server, transcriptCache: cache
+        )
+
+        // First pass creates + seals; audio now exists. Nothing is
+        // submitted yet (the retry branch has not run).
+        let firstPass = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
+        XCTAssertTrue(firstPass.audioCreatedOnServer)
+        XCTAssertEqual(await server.submissionAttempts, 0)
+
+        // Second pass: the retry branch resubmits the cached payload, but
+        // the configured transient failure rejects it. The pass must still
+        // complete with accurate, unaccepted gates rather than abandon the
+        // recording, and the spool must survive.
+        let secondPass = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
+        XCTAssertFalse(secondPass.transcriptLineageAccepted)
+        XCTAssertFalse(secondPass.mayDeleteLocalSpool)
+        XCTAssertEqual(await server.submissionAttempts, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.directory.path))
+
+        // The transient condition clears. A later pass retries the exact
+        // same cached payload -- never abandoned -- and this time succeeds.
+        await server.setFailSubmission(false)
+        let thirdPass = try await pipeline.upload(recordingID: fixture.recordingID, progress: { _ in })
+        XCTAssertTrue(thirdPass.mayDeleteLocalSpool)
+        XCTAssertEqual(await server.submissionAttempts, 2)
+        XCTAssertEqual(await server.submittedTranscripts.count, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.directory.path))
+    }
+
     func testOfflineFailureLeavesSpoolAndDeterministicRetryConverges() async throws {
         let fixture = try await sealedSpool()
         let server = FakeRecordingServer(failureOnUploadAttempt: 2)
@@ -731,6 +809,70 @@ private struct GoldenManifestFixture: Decodable {
     let tracks: [RecordingTrackManifestPayload]
 }
 
+private extension TranscriptSubmitPayload {
+    // A minimal, valid wire-shape payload for tests that only care about
+    // the retry mechanism, not about any specific transcript content.
+    static func fixture(
+        recordingID: UUID,
+        track: RecordingTrackKind = .microphone
+    ) -> TranscriptSubmitPayload {
+        .init(
+            recordingID: recordingID.uuidString.lowercased(),
+            track: track.rawValue,
+            segments: [
+                .init(
+                    text: "fixture transcript",
+                    startMilliseconds: 0,
+                    endMilliseconds: 500,
+                    words: [
+                        .init(
+                            text: "fixture", startMilliseconds: 0, endMilliseconds: 250,
+                            probability: 0.9
+                        ),
+                        .init(
+                            text: "transcript", startMilliseconds: 250, endMilliseconds: 500,
+                            probability: 0.9
+                        ),
+                    ]
+                )
+            ],
+            modelIdentity: .init(
+                runtimeVersion: "fixture",
+                modelFilename: "fixture-model.bin",
+                modelSHA256: String(repeating: "0", count: 64),
+                metalRequested: false,
+                usedBuiltInVAD: false,
+                language: "en"
+            ),
+            derivation: .init(
+                derivationVersion: "tamforge-asr-derivation-v1",
+                sourceSampleRate: 48_000,
+                sourceChannelCount: 1,
+                sourceSampleCount: 48,
+                outputSampleRate: 16_000,
+                outputSampleCount: 16,
+                zeroFilledGaps: [],
+                sourcePCMSHA256: String(repeating: "a", count: 64),
+                derivedPCMSHA256: String(repeating: "b", count: 64),
+                quality: .init(
+                    version: "1",
+                    sampleRate: 16_000,
+                    channelCount: 1,
+                    sourceSampleCount: 48,
+                    durationSeconds: 0.001,
+                    peakAbsolute: 100,
+                    allSilence: false,
+                    clippedRatio: 0,
+                    dcOffset: 0,
+                    channelImbalanceDecibels: nil,
+                    discontinuityCount: 0,
+                    unavailableDimensions: []
+                )
+            )
+        )
+    }
+}
+
 private struct UploadFixture {
     let recordingID: UUID
     let directory: URL
@@ -768,19 +910,28 @@ actor FakeRecordingServer: RecordingServerServicing {
     private let failureOnUploadAttempt: Int?
     private let uploadFailure: RecordingUploadError
     private let blockUploads: Bool
-    private let failSubmission: Bool
+    private var failSubmission: Bool
+    private let requireAudioBeforeTranscript: Bool
     private var statusByRecording: [UUID: RecordingServerStatus] = [:]
 
     init(
         failureOnUploadAttempt: Int? = nil,
         uploadFailure: RecordingUploadError = .offline,
         blockUploads: Bool = false,
-        failSubmission: Bool = false
+        failSubmission: Bool = false,
+        requireAudioBeforeTranscript: Bool = false
     ) {
         self.failureOnUploadAttempt = failureOnUploadAttempt
         self.uploadFailure = uploadFailure
         self.blockUploads = blockUploads
         self.failSubmission = failSubmission
+        self.requireAudioBeforeTranscript = requireAudioBeforeTranscript
+    }
+
+    // Lets a test simulate a transient failure clearing between one pass
+    // and the next, unlike the permanent failure a `let` would model.
+    func setFailSubmission(_ value: Bool) {
+        failSubmission = value
     }
 
     func create(_ command: RecordingCreatePayload, idempotencyKey: String) async throws {
@@ -831,6 +982,14 @@ actor FakeRecordingServer: RecordingServerServicing {
         submissionAttempts += 1
         guard let id = UUID(uuidString: command.recordingID) else {
             throw RecordingUploadError.invalidResponse
+        }
+        // Mirrors the backend's transcript_lineage_requires_audio
+        // constraint (opt-in so every other test, which does not care
+        // about this ordering, is unaffected): a transcript for a
+        // recording whose audio is not yet on the server is a 409
+        // conflict, not an accepted submission.
+        if requireAudioBeforeTranscript, statusByRecording[id]?.audioCreatedOnServer != true {
+            throw RecordingUploadError.conflict
         }
         if failSubmission { throw RecordingUploadError.server(statusCode: 500) }
         submittedTranscripts.append(command)

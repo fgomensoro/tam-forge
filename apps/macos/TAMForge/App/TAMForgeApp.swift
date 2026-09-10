@@ -256,14 +256,21 @@ private final class NativeShellComposition: ObservableObject {
             speechModelCatalog.transcriptionModelURL != nil
             ? try? WhisperTranscriber(catalog: speechModelCatalog)
             : nil
+        // Shared by the coordinator (which populates it once a local
+        // transcript is ready) and the upload pipeline (which retries a
+        // failed or premature submission from it on a later pass). Created
+        // once, here, since neither of those two depends on the other.
+        let transcriptCache = RecordingTranscriptCache()
         recording = RecordingCoordinator(
             preflight: LiveRecordingPreflight(spoolRootURL: recordingSpool.rootURL),
             spoolFactory: recordingSpool,
             uploader: RecordingUploadPipeline(
                 spoolFactory: recordingSpool,
-                server: recordingServer
+                server: recordingServer,
+                transcriptCache: transcriptCache
             ),
             server: recordingServer,
+            transcriptCache: transcriptCache,
             audioReader: recordingSpool,
             transcriber: transcriber
         )

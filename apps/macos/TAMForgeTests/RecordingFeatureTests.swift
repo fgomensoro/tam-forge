@@ -1570,6 +1570,7 @@ final class RecordingFeatureTests: XCTestCase {
             rootURL: root, keyStore: keyStore, reservationBytes: 0
         )
         let server = FakeRecordingServer(failSubmission: true)
+        let cache = RecordingTranscriptCache()
         let source = FakeRecordingCaptureSource()
         let transcriber = FakeSealTranscriber(text: "throws on submit")
         let coordinator = await MainActor.run {
@@ -1577,8 +1578,11 @@ final class RecordingFeatureTests: XCTestCase {
                 preflight: FakeRecordingPreflight(),
                 source: source,
                 spoolFactory: factory,
-                uploader: RecordingUploadPipeline(spoolFactory: factory, server: server),
+                uploader: RecordingUploadPipeline(
+                    spoolFactory: factory, server: server, transcriptCache: cache
+                ),
                 server: server,
+                transcriptCache: cache,
                 audioReader: factory,
                 transcriber: transcriber
             )
@@ -1597,7 +1601,7 @@ final class RecordingFeatureTests: XCTestCase {
         guard case let .ready(recordingID, _) = state else {
             return XCTFail("expected .ready, got \(state)")
         }
-        _ = await waitUntilSubmissionAttempt(server, atLeast: 1)
+        let attemptsAfterFirstTry = await waitUntilSubmissionAttempt(server, atLeast: 1)
 
         let spoolPath = root.appendingPathComponent(recordingID.uuidString).path
         XCTAssertTrue(FileManager.default.fileExists(atPath: spoolPath))
@@ -1607,14 +1611,22 @@ final class RecordingFeatureTests: XCTestCase {
         )
         XCTAssertTrue(FileManager.default.fileExists(atPath: spoolPath))
 
-        // The next upload worker pass only re-checks status; a submission
-        // that threw must never cause it to delete.
-        let pipeline = RecordingUploadPipeline(spoolFactory: factory, server: server)
+        // The next upload worker pass now retries the cached submission
+        // instead of only re-checking status. This fake server always
+        // fails, so the retry fails too -- proving a persistently failing
+        // submission still never deletes the spool -- but unlike before
+        // this fix, the attempt itself must actually happen.
+        let pipeline = RecordingUploadPipeline(
+            spoolFactory: factory, server: server, transcriptCache: cache
+        )
         let gates = try await pipeline.upload(recordingID: recordingID, progress: { _ in })
         XCTAssertTrue(gates.audioCreatedOnServer)
         XCTAssertFalse(gates.transcriptLineageAccepted)
         XCTAssertFalse(gates.mayDeleteLocalSpool)
         XCTAssertTrue(FileManager.default.fileExists(atPath: spoolPath))
+
+        let attemptsAfterRetryPass = await server.submissionAttempts
+        XCTAssertGreaterThan(attemptsAfterRetryPass, attemptsAfterFirstTry)
     }
 
     func testSpoolReleasesOnceServerReportsBothGatesTrueAfterSubmission() async throws {

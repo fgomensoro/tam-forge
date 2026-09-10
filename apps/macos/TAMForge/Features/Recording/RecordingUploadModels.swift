@@ -15,6 +15,21 @@ enum RecordingUploadError: Error, Equatable {
     case server(statusCode: Int)
 }
 
+extension RecordingUploadError {
+    // The only safe representation of a transcript-submission failure to
+    // log: every case here is either content-free or, for `.server`, an
+    // Int status code, so this description can never carry transcript
+    // text. Any other error type (URLError, a decoding error, ...) logs
+    // only its Swift type name, never a message, since this call site
+    // cannot audit every error type the network stack might throw.
+    static func safeLogDescription(for error: Error) -> String {
+        if let uploadError = error as? RecordingUploadError {
+            return String(describing: uploadError)
+        }
+        return "\(type(of: error))"
+    }
+}
+
 enum RecordingConversionIdentifier {
     // Unknown local conversion versions can never be declared as v1; upload
     // fails closed instead of guessing lineage.
@@ -512,6 +527,34 @@ extension TranscriptSubmitPayload {
                 )
             )
         )
+    }
+
+    // Stable across retries: recordingID and track never change for a
+    // given submission, so resubmitting after a failed or premature
+    // attempt is a replay of the same command, not a new one, no matter
+    // how many upload-worker passes it takes.
+    var idempotencyKey: String { "recording.transcript.\(recordingID).\(track)" }
+}
+
+// Bridges a recording's just-computed local transcript from the
+// coordinator (the only place transcription happens, and the only place
+// that can rebuild this payload) to the upload pipeline's retry pass (a
+// separate actor with no visibility into transcription state). An entry
+// is removed once its recording's spool is released or discarded, so this
+// never grows unbounded across a long-running session.
+actor RecordingTranscriptCache {
+    private var payloads: [UUID: TranscriptSubmitPayload] = [:]
+
+    func store(_ payload: TranscriptSubmitPayload, recordingID: UUID) {
+        payloads[recordingID] = payload
+    }
+
+    func payload(for recordingID: UUID) -> TranscriptSubmitPayload? {
+        payloads[recordingID]
+    }
+
+    func remove(recordingID: UUID) {
+        payloads.removeValue(forKey: recordingID)
     }
 }
 

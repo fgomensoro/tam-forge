@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import os
 
 private enum PendingGapWriteError: Error {
     case nonContiguousGap
@@ -137,6 +138,10 @@ enum RecordingTranscriptState: Equatable, Sendable {
 
 @MainActor
 final class RecordingCoordinator: ObservableObject {
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "TAMForge", category: "RecordingUpload"
+    )
+
     @Published private(set) var phase: RecordingPhase = .idle
     @Published private(set) var preflightSnapshot: RecordingPreflightSnapshot?
     @Published private(set) var health = RecordingHealth()
@@ -150,6 +155,7 @@ final class RecordingCoordinator: ObservableObject {
     private let spoolFactory: any RecordingSpoolCreating
     private let uploader: (any RecordingUploading)?
     private let server: (any RecordingServerServicing)?
+    private let transcriptCache: RecordingTranscriptCache
     private let audioReader: (any RecordingAudioReading)?
     private let transcriber: (any SpeechTranscribing)?
     private var uploadQueue: [UUID] = []
@@ -173,6 +179,7 @@ final class RecordingCoordinator: ObservableObject {
         spoolFactory: any RecordingSpoolCreating = EncryptedRecordingSpoolFactory(),
         uploader: (any RecordingUploading)? = nil,
         server: (any RecordingServerServicing)? = nil,
+        transcriptCache: RecordingTranscriptCache = .init(),
         audioReader: (any RecordingAudioReading)? = nil,
         transcriber: (any SpeechTranscribing)? = nil
     ) {
@@ -181,6 +188,7 @@ final class RecordingCoordinator: ObservableObject {
         self.spoolFactory = spoolFactory
         self.uploader = uploader
         self.server = server
+        self.transcriptCache = transcriptCache
         self.audioReader = audioReader
         self.transcriber = transcriber
         lifecycleTask = Task { [weak self] in
@@ -390,19 +398,30 @@ final class RecordingCoordinator: ObservableObject {
         }
     }
 
-    // Submission failure is silent by design: transcriptState stays .ready
-    // (the transcript is still valid locally) and the upload state stays
-    // whatever the audio pipeline already made it, typically
-    // waitingForTranscript. The next status check the upload worker already
-    // performs finds the lineage flag still false and simply leaves the
-    // spool retained; nothing here deletes on failure, and no transcript
-    // text ever reaches an error path.
+    // transcriptState stays .ready either way (the transcript is still
+    // valid locally) and the upload state stays whatever the audio
+    // pipeline already made it, typically waitingForTranscript. The
+    // payload is cached before this opportunistic attempt so that a later
+    // upload-worker pass (via RecordingUploadPipeline's own status-recheck
+    // branch) can retry it if this attempt fails or arrives before the
+    // audio pipeline's create/seal has finished; nothing here deletes on
+    // failure, and no transcript text ever reaches an error path or a log
+    // line.
     private func submitTranscript(recordingID: UUID, result: SpeechTranscriptionResult) async {
-        guard let server, !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return }
         let payload = TranscriptSubmitPayload.make(recordingID: recordingID, result: result)
-        let idempotencyKey =
-            "recording.transcript.\(recordingID.uuidString.lowercased()).\(payload.track)"
-        _ = try? await server.submitTranscript(payload, idempotencyKey: idempotencyKey)
+        await transcriptCache.store(payload, recordingID: recordingID)
+        guard let server else { return }
+        do {
+            _ = try await server.submitTranscript(payload, idempotencyKey: payload.idempotencyKey)
+        } catch {
+            guard !(error is CancellationError) else { return }
+            let recordingIDText = recordingID.uuidString
+            let failureText = RecordingUploadError.safeLogDescription(for: error)
+            Self.logger.error(
+                "Transcript submission failed for recording \(recordingIDText, privacy: .public): \(failureText, privacy: .public)"
+            )
+        }
     }
 
     // A transcript is derived audio, so it cannot outlive the recording it came
@@ -432,6 +451,7 @@ final class RecordingCoordinator: ObservableObject {
             uploadQueue.removeAll { $0 == recordingID }
             uploadStates.removeValue(forKey: recordingID)
             clearTranscript(forRecording: recordingID)
+            await transcriptCache.remove(recordingID: recordingID)
             await refreshPendingRecordings()
         } catch {
             phase = .needsAttention(recordingID, "Encrypted spool could not be discarded")

@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import os
 
 typealias RecordingBearerTokenProvider = @Sendable () async throws -> NativeAccessTokenLease
 typealias RecordingBearerRefresh =
@@ -303,18 +304,25 @@ struct LiveRecordingServerClient: RecordingServerServicing, @unchecked Sendable 
 }
 
 actor RecordingUploadPipeline: RecordingUploading {
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "TAMForge", category: "RecordingUpload"
+    )
+
     private let spoolFactory: EncryptedRecordingSpoolFactory
     private let server: any RecordingServerServicing
     private let partBuilder: RecordingUploadPartBuilder
+    private let transcriptCache: RecordingTranscriptCache
 
     init(
         spoolFactory: EncryptedRecordingSpoolFactory,
         server: any RecordingServerServicing,
-        partBuilder: RecordingUploadPartBuilder = .init()
+        partBuilder: RecordingUploadPartBuilder = .init(),
+        transcriptCache: RecordingTranscriptCache = .init()
     ) {
         self.spoolFactory = spoolFactory
         self.server = server
         self.partBuilder = partBuilder
+        self.transcriptCache = transcriptCache
     }
 
     func upload(
@@ -335,14 +343,7 @@ actor RecordingUploadPipeline: RecordingUploading {
         else { throw RecordingUploadError.unsealedSpool }
 
         if metadata.releaseGates.audioCreatedOnServer {
-            let status = try await server.status(recordingID: recordingID)
-            let gates = RecordingReleaseGates(
-                audioCreatedOnServer: status.audioCreatedOnServer,
-                transcriptLineageAccepted: status.transcriptLineageAccepted
-            )
-            try await spoolFactory.markReleaseGates(recordingID: recordingID, gates: gates)
-            _ = try await spoolFactory.releaseIfEligible(recordingID: recordingID)
-            return gates
+            return try await recheckStatusRetryingTranscriptIfNeeded(recordingID: recordingID)
         }
 
         // Opening the reader verifies the complete sealed spool (authenticated
@@ -458,7 +459,57 @@ actor RecordingUploadPipeline: RecordingUploading {
         )
         guard gates.audioCreatedOnServer else { throw RecordingUploadError.invalidResponse }
         try await spoolFactory.markReleaseGates(recordingID: recordingID, gates: gates)
-        _ = try await spoolFactory.releaseIfEligible(recordingID: recordingID)
+        if try await spoolFactory.releaseIfEligible(recordingID: recordingID) {
+            await transcriptCache.remove(recordingID: recordingID)
+        }
+        return gates
+    }
+
+    // The status-recheck pass for a recording whose audio the server
+    // already has. Previously this only re-read status; now, if the
+    // lineage flag is still false and a locally computed transcript is
+    // waiting in the cache, it retries the submission before recomputing
+    // gates. This is what makes a submission that arrived before this same
+    // recording's create/seal completed (rejected with a 409 by the
+    // backend's transcript_lineage_requires_audio constraint), or one that
+    // failed for a transient reason, self-heal on a later pass instead of
+    // being abandoned. Idempotent by the stable
+    // "recording.transcript.<id>.<track>" key: retrying an
+    // already-accepted submission is a harmless replay, and retrying a
+    // still-rejected one just leaves the gates unchanged for the pass
+    // after this one. A failure here is swallowed (logged, never thrown)
+    // so a still-failing submission never turns an otherwise-normal
+    // "waiting for transcript" pass into an error state; only
+    // cancellation propagates, matching every other cancellable operation
+    // in this actor.
+    private func recheckStatusRetryingTranscriptIfNeeded(
+        recordingID: UUID
+    ) async throws -> RecordingReleaseGates {
+        var status = try await server.status(recordingID: recordingID)
+        if !status.transcriptLineageAccepted,
+            let payload = await transcriptCache.payload(for: recordingID)
+        {
+            do {
+                status = try await server.submitTranscript(
+                    payload, idempotencyKey: payload.idempotencyKey
+                )
+            } catch {
+                guard !(error is CancellationError) else { throw error }
+                let recordingIDText = recordingID.uuidString
+                let failureText = RecordingUploadError.safeLogDescription(for: error)
+                Self.logger.error(
+                    "Transcript resubmission failed for recording \(recordingIDText, privacy: .public): \(failureText, privacy: .public)"
+                )
+            }
+        }
+        let gates = RecordingReleaseGates(
+            audioCreatedOnServer: status.audioCreatedOnServer,
+            transcriptLineageAccepted: status.transcriptLineageAccepted
+        )
+        try await spoolFactory.markReleaseGates(recordingID: recordingID, gates: gates)
+        if try await spoolFactory.releaseIfEligible(recordingID: recordingID) {
+            await transcriptCache.remove(recordingID: recordingID)
+        }
         return gates
     }
 
