@@ -10,6 +10,14 @@ own server-error handling as a plain-text 500. Each guard sits outside
 `transaction_scope`, so a failing commit is translated the same way a failing
 statement is, and raises `from None` because the chained error carries the
 rejected statement and its bound parameters.
+
+`load_today` also materializes the current study day through
+`StudyDayService.ensure_current_day`, which raises the learning domain's
+`ActivityUnavailable` when its own session call fails. That error is registered
+app-wide through `ActivityCommandError`, so it already produced a 503, but with
+`activity_dependency_unavailable` -- another domain's problem code on a Today
+response. Translating it here keeps every failure of a Today request inside the
+Today domain's codes.
 """
 
 from __future__ import annotations
@@ -36,6 +44,7 @@ from ..learning.models import (
     StudyDay,
 )
 from ..learning.repository import StudyDayNotReady, StudyDayService
+from ..learning.service import ActivityUnavailable
 from ..models.base import utc_now
 from ..notifications.models import OutboxEvent
 from ..roadmaps.models import CurriculumNode, RoadmapVersion, TaskDefinition
@@ -90,6 +99,8 @@ class SqlAlchemyTodayRepository:
                     )
                 except StudyDayNotReady as exc:
                     raise TodayNotReady(str(exc)) from exc
+                except ActivityUnavailable:
+                    raise TodayUnavailable("today storage is unavailable") from None
 
             day = await self._session.scalar(
                 select(StudyDay)

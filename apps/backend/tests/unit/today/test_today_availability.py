@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
@@ -50,10 +51,12 @@ class _StubSession:
         *,
         statement_error: BaseException | None = None,
         commit_error: BaseException | None = None,
+        materialize_error: BaseException | None = None,
         rows: tuple[object, ...] = (),
     ) -> None:
         self._statement_error = statement_error
         self._commit_error = commit_error
+        self._materialize_error = materialize_error
         self._rows = list(rows)
 
     def begin(self) -> _Transaction:
@@ -63,6 +66,17 @@ class _StubSession:
         del statement
         if self._statement_error is not None:
             raise self._statement_error
+        return self._rows.pop(0)
+
+    async def execute(self, statement: object) -> object:
+        """`StudyDayService` reads through `execute`, `load_today` through `scalar`.
+
+        Separating the two lets one session serve the learner settings the read
+        needs and still fail the study-day materialization that follows it.
+        """
+        del statement
+        if self._materialize_error is not None:
+            raise self._materialize_error
         return self._rows.pop(0)
 
     async def rollback(self) -> None:
@@ -144,3 +158,45 @@ async def test_a_failing_close_commit_is_translated_the_same_way_a_failing_state
             command=COMMAND,
             idempotency_key="close-2026-08-24",
         )
+
+
+@pytest.mark.anyio
+async def test_a_failing_study_day_materialization_answers_with_a_today_problem_code() -> None:
+    """A Today request owes the caller a Today code, even from a learning dependency.
+
+    `load_today` materializes the current study day through
+    `StudyDayService.ensure_current_day`, which translates its own failed session
+    call into the learning domain's `ActivityUnavailable`. That error is
+    registered app-wide through `ActivityCommandError`, so it already produced a
+    503 rather than a plain-text 500, but it carried
+    `activity_dependency_unavailable`: another domain's problem code on a Today
+    response. `except StudyDayNotReady` did not name it, so it travelled past
+    Today untouched.
+    """
+    from tamforge_backend.today.repository import SqlAlchemyTodayRepository
+    from tamforge_backend.today.routes import today_problem_response
+    from tamforge_backend.today.service import TodayUnavailable
+
+    session = _StubSession(
+        materialize_error=_dropped_connection(),
+        rows=(
+            SimpleNamespace(
+                active_roadmap_version_id=3,
+                timezone="America/Los_Angeles",
+                study_start_date=date(2026, 8, 17),
+            ),
+        ),
+    )
+    repository = SqlAlchemyTodayRepository(session)  # type: ignore[arg-type]
+
+    with pytest.raises(TodayUnavailable) as caught:
+        await repository.load_today(owner_id=7, local_date=date(2026, 8, 24))
+
+    # Content-free chain: the rejected statement and its bound parameters never
+    # ride along on the error the owner is allowed to see.
+    assert caught.value.__cause__ is None
+    assert caught.value.__suppress_context__ is True
+
+    response = today_problem_response(caught.value)
+    assert response.status_code == 503
+    assert json.loads(response.body)["code"] == "today_unavailable"
