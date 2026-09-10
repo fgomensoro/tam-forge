@@ -343,29 +343,107 @@ def versions():
     }
 
 
+def cited(statement):
+    return {
+        "statement": statement,
+        "attribution": "observed_content",
+        "availability": "available",
+        "confidence": "0.75",
+        "references": [
+            {
+                "kind": "attempt_text",
+                "attempt_id": 2,
+                "commitment_sha256": "a" * 64,
+                "json_pointer": "/output/draft_markdown",
+                "start_codepoint": 0,
+                "end_codepoint": 12,
+            }
+        ],
+    }
+
+
+def released(**overrides):
+    """A ready read carries the verdict, the four findings, and the redo as well."""
+    data = feedback(
+        status="ready",
+        versions=versions(),
+        english=payload(),
+        tam=payload("tam"),
+        verdict="Clear on impact, thin on the trade-off.",
+        strengths=[
+            {"statement": "Named the customer impact first.", "evidence": cited("Impact first.")},
+            {"statement": "Closed on a decision.", "evidence": cited("Ends on a recommendation.")},
+        ],
+        corrections=[
+            {
+                "statement": "The trade-off was never stated.",
+                "instruction": "State the cost of the chosen option in one sentence.",
+                "target_skill": "trade_offs",
+                "evidence": cited("No cost is named."),
+            },
+            {
+                "statement": "The timeline had no basis.",
+                "instruction": "Give the timeline a source or mark it an estimate.",
+                "target_skill": "business_framing",
+                "evidence": cited("A date with no basis."),
+            },
+        ],
+        attempt_b={"instruction": "Rewrite the recommendation with its cost.", "minutes": 10},
+    )
+    data.update(overrides)
+    return data
+
+
 def test_ready_feedback_requires_both_analyses_and_versions():
     from tamforge_protocol.agents import FeedbackRead
 
     for missing in ("english", "tam", "versions"):
-        data = feedback(
-            status="ready",
-            versions=versions(),
-            english=payload(),
-            tam=payload("tam"),
-        )
-        data[missing] = None
         with pytest.raises(ValidationError):
-            FeedbackRead.model_validate(data)
+            FeedbackRead.model_validate(released(**{missing: None}))
+
+
+def test_ready_feedback_requires_the_verdict_the_findings_and_the_redo():
+    from tamforge_protocol.agents import FeedbackRead
+
+    for missing in ("verdict", "attempt_b"):
+        with pytest.raises(ValidationError):
+            FeedbackRead.model_validate(released(**{missing: None}))
+    for field in ("strengths", "corrections"):
+        full = released()[field]
+        for supply in ([], full[:1], full + full[:1]):
+            with pytest.raises(ValidationError):
+                FeedbackRead.model_validate(released(**{field: supply}))
+
+
+def test_a_finding_without_attributed_evidence_is_refused():
+    from tamforge_protocol.agents import FeedbackRead
+
+    for field in ("strengths", "corrections"):
+        broken = released()
+        first = dict(broken[field][0])
+        first["evidence"] = {**first["evidence"], "references": []}
+        broken[field] = [first, broken[field][1]]
+        with pytest.raises(ValidationError):
+            FeedbackRead.model_validate(broken)
+
+
+def test_an_attempt_b_longer_than_the_next_lesson_is_refused():
+    from tamforge_protocol.agents import ATTEMPT_B_MAX_MINUTES, FeedbackRead
+
+    for minutes in (0, ATTEMPT_B_MAX_MINUTES + 1):
+        with pytest.raises(ValidationError):
+            FeedbackRead.model_validate(
+                released(attempt_b={"instruction": "Redo it.", "minutes": minutes})
+            )
 
 
 def test_ready_feedback_accepts_the_matching_release():
     from tamforge_protocol.agents import FeedbackRead
 
-    read = FeedbackRead.model_validate(
-        feedback(status="ready", versions=versions(), english=payload(), tam=payload("tam"))
-    )
+    read = FeedbackRead.model_validate(released())
     assert read.withheld_reason is None
     assert read.english is not None and read.tam is not None
+    assert read.verdict and len(read.strengths) == 2 and len(read.corrections) == 2
 
 
 @pytest.mark.parametrize("status", ["processing", "needs_attention"])
