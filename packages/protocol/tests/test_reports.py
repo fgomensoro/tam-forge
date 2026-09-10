@@ -7,6 +7,13 @@ from decimal import Decimal
 
 import pytest
 from pydantic import ValidationError
+from tamforge_protocol.assessments import (
+    ASSESSMENT_MAX_MINUTES,
+    SATURDAY,
+    AssessmentError,
+    SaturdayAssessment,
+    demonstrated_from,
+)
 from tamforge_protocol.reports import (
     FORBIDDEN_PROGRESS_SIGNALS,
     MAX_OPEN_CORRECTIONS,
@@ -165,3 +172,106 @@ def test_a_weekly_report_covers_exactly_seven_days() -> None:
     ):
         with pytest.raises(ValidationError):
             WeeklyReport.model_validate({"owner_id": 1, "week_start": start, "week_end": end})
+
+
+# Issue #97: Saturday assessments disable all AI assistance, enforce the 120-minute cap,
+# and update demonstrated progress only from the saved independent evidence.
+
+SATURDAY_DATE = date(2026, 9, 12)
+
+
+def assessment(**overrides: object) -> SaturdayAssessment:
+    data: dict[str, object] = {
+        "assessment_id": 1,
+        "owner_id": 1,
+        "competency": "trade_offs",
+        "held_on": SATURDAY_DATE,
+        "minutes": 90,
+        "saved_evidence_ids": (41,),
+    }
+    data.update(overrides)
+    return SaturdayAssessment.model_validate(data)
+
+
+def test_an_assessment_carries_no_assistance_and_no_redo() -> None:
+    sat = assessment()
+
+    assert sat.assistance == "no_ai"
+    assert sat.attempt_kind == "attempt_a"
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"assistance": "ai_after_committed_attempt"},
+        {"assistance": "ai_hints_during_attempt"},
+        {"assistance": "ai_generated"},
+        {"attempt_kind": "attempt_b"},
+    ],
+)
+def test_an_assisted_assessment_cannot_be_constructed_at_all(changes) -> None:
+    # The literals are single-valued, so the wrong shape never exists to be reported.
+    with pytest.raises(ValidationError):
+        assessment(**changes)
+
+
+def test_the_cap_is_two_hours() -> None:
+    assert ASSESSMENT_MAX_MINUTES == 120
+    assert assessment(minutes=ASSESSMENT_MAX_MINUTES).minutes == 120
+
+    for minutes in (0, ASSESSMENT_MAX_MINUTES + 1):
+        with pytest.raises(ValidationError):
+            assessment(minutes=minutes)
+
+
+def test_a_saturday_assessment_is_held_on_a_saturday() -> None:
+    assert SATURDAY_DATE.weekday() == SATURDAY
+
+    for other in (date(2026, 9, 11), date(2026, 9, 13)):
+        with pytest.raises(ValidationError, match="held on a Saturday"):
+            assessment(held_on=other)
+
+
+def test_only_saved_work_advances_a_competency() -> None:
+    saved = assessment(saved_evidence_ids=(41, 42))
+    abandoned = assessment(assessment_id=2, saved_evidence_ids=())
+
+    assert saved.saved is True
+    assert abandoned.saved is False
+    assert demonstrated_from([saved, abandoned], competency="trade_offs", owner_id=1) == (41, 42)
+
+
+def test_an_abandoned_assessment_contributes_nothing() -> None:
+    # It says nothing about what the learner can do, so it says nothing about what they
+    # have demonstrated.
+    abandoned = assessment(saved_evidence_ids=())
+
+    assert demonstrated_from([abandoned], competency="trade_offs", owner_id=1) == ()
+
+
+def test_evidence_from_another_owner_or_competency_is_not_collected() -> None:
+    mine = assessment(saved_evidence_ids=(41,))
+    theirs = assessment(assessment_id=2, owner_id=2, saved_evidence_ids=(42,))
+    elsewhere = assessment(assessment_id=3, competency="structure", saved_evidence_ids=(43,))
+
+    assert demonstrated_from(
+        [mine, theirs, elsewhere], competency="trade_offs", owner_id=1
+    ) == (41,)
+
+
+def test_two_assessments_cannot_claim_the_same_evidence() -> None:
+    first = assessment(saved_evidence_ids=(41,))
+    second = assessment(assessment_id=2, saved_evidence_ids=(41,))
+
+    with pytest.raises(AssessmentError, match="same evidence"):
+        demonstrated_from([first, second], competency="trade_offs", owner_id=1)
+
+
+def test_an_evidence_id_counts_once_inside_one_assessment() -> None:
+    with pytest.raises(ValidationError, match="counts once"):
+        assessment(saved_evidence_ids=(41, 41))
+
+
+def test_collecting_without_an_owner_is_refused() -> None:
+    with pytest.raises(AssessmentError, match="owner id"):
+        demonstrated_from([assessment()], competency="trade_offs", owner_id=0)
