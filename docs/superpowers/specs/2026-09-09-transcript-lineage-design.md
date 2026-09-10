@@ -139,7 +139,7 @@ and the `no-store` response headers from `_prevent_storage`.
 | Method | Path | Result |
 |---|---|---|
 | POST | `/recordings/{id}/transcripts` | 201 with the stored transcript summary |
-| GET | `/recordings/{id}/transcripts` | 200 with transcripts and their corrections |
+| GET | `/recordings/{id}/transcripts` | 200 with each transcript's metadata and lineage, and its corrections -- not the transcript body |
 | POST | `/recordings/{id}/transcripts/{track}/corrections` | 201 with the correction |
 
 Accepting a transcript is what sets `Recording.transcript_lineage_accepted`. The
@@ -159,7 +159,21 @@ correction, not a conflict, so that route has no 409 at all.
 
 Response bodies never include the transcript text in a summary field, and no
 identifier derived from transcript text ever reaches an object key or a log line. The
-GET returns the body only to its owner.
+GET's `TranscriptResponse` is a summary, deliberately: `transcript_id`, `recording_id`,
+`track`, `content_hash`, `created_at`, `replayed`, and `corrections` -- metadata and
+lineage, never `segments`, `words`, or any other piece of the transcript body itself.
+Nothing reads the body back over this API today, by either client: the analysis work
+this data exists for (issue #45, see Out of scope above) reads `canonical_json`
+directly from `speech_transcripts` in the database, not through this route, so a body
+field here would be surface with no consumer. Corrections are the one deliberate
+exception to "never include transcript text": a correction is a small annotation the
+owner wrote, not the transcript whisper produced, so `TranscriptCorrectionResponse`'s
+`original_text`/`corrected_text` are returned on both the POST and this GET. If a real
+HTTP consumer for the transcript body appears, add it as a separate, explicitly
+opted-into detail response so the summary a routine status check pulls stays
+text-free; until then, returning the body here would be an unused, privacy-sensitive
+surface for hypothetical future use, which is the opposite of this design's stance
+elsewhere.
 
 ## Client flow
 
