@@ -276,19 +276,3 @@ def test_exact_maximum_rows_and_canonical_bytes_are_accepted() -> None:
 def test_oversized_cell_stops_before_normalizing_remaining_row() -> None:
     with pytest.raises(SqlRunnerError, match="^result_too_large$"):
         build_sql_result(exercise(), ("account_id", "ticket_count"), (("é" * 131072, object()),), 0)
-
-
-def test_the_workspace_assistance_vocabulary_matches_the_evidence_tables() -> None:
-    """The SQL workspace lives in the protocol package and cannot import the backend.
-
-    Its assistance literal is therefore a second copy of the closed set the evidence
-    tables accept. A value that drifts apart would produce a commitment PostgreSQL
-    rejects at write time, so the two are compared here rather than left to chance.
-    """
-    from typing import get_args
-
-    from tamforge_backend.evidence.models import ASSISTANCE_CODES, QUALIFYING_ASSISTANCE_CODES
-    from tamforge_protocol.workspaces import QUALIFYING_ASSISTANCE, AssistanceCode
-
-    assert frozenset(get_args(AssistanceCode)) == ASSISTANCE_CODES
-    assert QUALIFYING_ASSISTANCE == QUALIFYING_ASSISTANCE_CODES

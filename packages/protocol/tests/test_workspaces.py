@@ -1,4 +1,4 @@
-"""SQL workspace session rules: phase timing, the AI lock, the hint ladder, mistakes."""
+"""Workspace session rules: SQL timing, lock, hints and mistakes; reading timeboxes."""
 
 from __future__ import annotations
 
@@ -11,15 +11,23 @@ from tamforge_protocol.workspaces import (
     PHASE_SECONDS,
     PRIMARY_WORK_DEADLINE_SECONDS,
     QUALIFYING_ASSISTANCE,
+    READING_NOTE_FIELDS,
+    READING_PHASE_ORDER,
+    READING_PHASE_SECONDS,
+    READING_SESSION_SECONDS,
     SESSION_SECONDS,
     SOLUTION_HINT_LEVEL,
+    ReadingRecallNote,
     SqlAttemptCommitment,
     WorkspaceRuleError,
     ai_lock_reason,
     assistance_code,
     phase_at,
     qualifies_as_evidence,
+    reading_ai_lock_reason,
+    reading_phase_at,
     reveal_hint,
+    source_visible,
 )
 
 
@@ -232,3 +240,97 @@ def test_a_commitment_cannot_outlast_the_session() -> None:
     assert commitment(elapsed_seconds=SESSION_SECONDS)
     with pytest.raises(ValidationError):
         commitment(elapsed_seconds=SESSION_SECONDS + 1)
+
+
+# Technical-reading workspace: timeboxes, source visibility, and the recall note.
+
+
+def note(**overrides: object) -> ReadingRecallNote:
+    data: dict[str, object] = {
+        "key_ideas": (
+            "Backpressure protects the slowest consumer.",
+            "Retries need a budget or they amplify an outage.",
+            "Idempotency is what makes a retry safe.",
+        ),
+        "boundary_or_failure": "It breaks once the queue outlives the retry budget.",
+        "tam_customer_example": "A customer whose webhook retries doubled their own outage.",
+        "unresolved_question": "How is the retry budget chosen in practice?",
+    }
+    data.update(overrides)
+    return ReadingRecallNote.model_validate(data)
+
+
+def test_the_five_reading_phases_are_ordered_and_fill_forty_five_minutes() -> None:
+    assert READING_PHASE_ORDER == ("preview", "reading", "recall", "application", "teach_back")
+    assert [READING_PHASE_SECONDS[phase] for phase in READING_PHASE_ORDER] == [
+        120,
+        1_200,
+        480,
+        600,
+        300,
+    ]
+    assert READING_SESSION_SECONDS == 2_700
+
+
+@pytest.mark.parametrize(
+    "elapsed,expected",
+    [
+        (0, "preview"),
+        (119, "preview"),
+        (120, "reading"),
+        (1_319, "reading"),
+        (1_320, "recall"),
+        (1_799, "recall"),
+        (1_800, "application"),
+        (2_399, "application"),
+        (2_400, "teach_back"),
+        (2_699, "teach_back"),
+        (2_700, None),
+    ],
+)
+def test_reading_phase_boundaries(elapsed: int, expected: str | None) -> None:
+    assert reading_phase_at(elapsed) == expected
+
+
+def test_the_source_disappears_when_recall_starts() -> None:
+    assert source_visible("preview") is True
+    assert source_visible("reading") is True
+    for phase in ("recall", "application", "teach_back"):
+        assert source_visible(phase) is False
+
+
+def test_a_finished_session_shows_no_source() -> None:
+    assert source_visible(reading_phase_at(READING_SESSION_SECONDS)) is False
+
+
+def test_the_tutor_waits_for_the_committed_note_and_no_clock_lets_it_in() -> None:
+    assert reading_ai_lock_reason(note_committed=False) == "awaiting_commitment"
+    assert reading_ai_lock_reason(note_committed=True) == "unlocked"
+
+
+def test_the_recall_note_needs_all_four_fields() -> None:
+    assert READING_NOTE_FIELDS == frozenset(
+        {"key_ideas", "boundary_or_failure", "tam_customer_example", "unresolved_question"}
+    )
+    assert set(ReadingRecallNote.model_fields) == READING_NOTE_FIELDS
+
+    for field in ("boundary_or_failure", "tam_customer_example", "unresolved_question"):
+        with pytest.raises(ValidationError):
+            note(**{field: "   "})
+
+
+def test_the_note_needs_exactly_three_key_ideas() -> None:
+    ideas = note().key_ideas
+    for count in (0, 1, 2, 4):
+        with pytest.raises(ValidationError):
+            note(key_ideas=tuple(f"Idea {index}." for index in range(count)))
+    assert len(ideas) == 3
+
+    with pytest.raises(ValidationError):
+        note(key_ideas=(ideas[0], ideas[1], "  "))
+
+
+def test_the_same_idea_three_times_is_one_idea() -> None:
+    idea = "Backpressure protects the slowest consumer."
+    with pytest.raises(ValidationError):
+        note(key_ideas=(idea, idea, "Retries need a budget."))
