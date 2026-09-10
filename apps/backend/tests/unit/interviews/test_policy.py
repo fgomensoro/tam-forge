@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import get_args
 
 import pytest
+from tamforge_backend.interviews import recovery as rc
 from tamforge_backend.interviews import timeline as tl
 from tamforge_backend.interviews.policy import (
     DEBRIEF_MAX_MINUTES,
@@ -236,3 +237,111 @@ def test_an_utterance_cannot_end_before_it_starts() -> None:
 def test_a_zero_gap_is_refused_rather_than_splitting_every_word() -> None:
     with pytest.raises(tl.TimelineError, match="at least one millisecond"):
         tl.build_timeline(microphone=words((0, 100)), system_audio=(), gap_ms=0)
+
+
+# Issue #85: recovery selects exactly two corrections, one coached replay and one saved
+# response, and schedules what it does not resolve into a different later scenario.
+
+
+def step(skill: str = "trade_offs", coached: bool = True) -> rc.RecoveryStep:
+    return rc.RecoveryStep(
+        target_skill=skill, instruction="State the cost of the option you chose.", coached=coached
+    )
+
+
+def plan(**overrides: object) -> rc.RecoveryPlan:
+    data: dict[str, object] = {
+        "interview_id": 11,
+        "owner_id": 1,
+        "steps": (step(), step("business_framing", coached=False)),
+    }
+    data.update(overrides)
+    return rc.RecoveryPlan(**data)  # type: ignore[arg-type]
+
+
+def test_recovery_works_on_exactly_two_corrections() -> None:
+    from tamforge_protocol.agents import REQUIRED_CORRECTIONS
+
+    assert REQUIRED_CORRECTIONS == 2
+    assert len(plan().steps) == 2
+
+    for steps in ((), (step(),), (step(), step("a", False), step("b", False))):
+        with pytest.raises(rc.RecoveryError, match="exactly two corrections"):
+            plan(steps=steps)
+
+
+def test_one_pass_is_coached_and_the_other_is_not() -> None:
+    # Talking through the fix with help and then producing one unaided is the whole
+    # shape of the exercise.
+    built = plan()
+
+    assert rc.MAX_COACHED_REPLAYS == rc.MAX_SAVED_RESPONSES == 1
+    assert built.coached_replay.coached is True
+    assert built.saved_response.coached is False
+
+
+def test_two_coached_passes_replace_the_unaided_one_and_are_refused() -> None:
+    with pytest.raises(rc.RecoveryError, match="one coached replay"):
+        plan(steps=(step("trade_offs"), step("business_framing")))
+
+
+def test_two_unaided_passes_skip_the_coaching_and_are_refused() -> None:
+    with pytest.raises(rc.RecoveryError, match="one coached replay"):
+        plan(steps=(step("trade_offs", False), step("business_framing", False)))
+
+
+def test_two_steps_on_one_skill_is_one_step() -> None:
+    with pytest.raises(rc.RecoveryError, match="one step"):
+        plan(steps=(step("trade_offs"), step("trade_offs", coached=False)))
+
+
+def test_a_step_names_its_skill_and_what_to_do() -> None:
+    with pytest.raises(rc.RecoveryError, match="names its skill"):
+        rc.RecoveryStep(target_skill="   ", instruction="Do the thing.", coached=True)
+    with pytest.raises(rc.RecoveryError, match="names its skill"):
+        rc.RecoveryStep(target_skill="trade_offs", instruction="  ", coached=False)
+
+
+def test_what_recovery_does_not_resolve_returns_in_a_different_scenario() -> None:
+    from tamforge_protocol.agents import (
+        QueuedRetrieval,
+        TransferAttempt,
+        TransferError,
+    )
+
+    queued = QueuedRetrieval.model_validate(
+        {
+            "target_skill": "trade_offs",
+            "source_scenario_key": "renewal_at_risk",
+            "source_core_prompt_sha256": "a" * 64,
+            "queued_from_attempt_b_id": 11,
+        }
+    )
+    later = TransferAttempt.model_validate(
+        {
+            "attempt_id": 41,
+            "attempt_label": "attempt_a",
+            "scenario_key": "migration_slipped",
+            "core_prompt_sha256": "c" * 64,
+        }
+    )
+
+    assert rc.schedule_unresolved(queued, later) is later
+
+    # Repeating the interview question is the most tempting wrong thing to do here.
+    repeat = TransferAttempt.model_validate(
+        {
+            "attempt_id": 42,
+            "attempt_label": "attempt_a",
+            "scenario_key": "renewal_at_risk",
+            "core_prompt_sha256": "c" * 64,
+        }
+    )
+    with pytest.raises(TransferError, match="scenario"):
+        rc.schedule_unresolved(queued, repeat)
+
+
+def test_a_plan_names_its_interview_and_its_owner() -> None:
+    for field in ("interview_id", "owner_id"):
+        with pytest.raises(rc.RecoveryError, match="names its interview"):
+            plan(**{field: 0})
