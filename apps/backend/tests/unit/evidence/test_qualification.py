@@ -153,3 +153,101 @@ def test_attempt_b_never_transfers_but_later_attempt_a_in_new_scenario_does() ->
     )
     assert qualifies_as_transfer(prior=prior, candidate=attempt_b, formula=formula) is False
     assert qualifies_as_transfer(prior=prior, candidate=transfer, formula=formula) is True
+
+
+# Issue #61: competency and readiness advance only from qualifying evidence, and the
+# advanced state retains the link to the evidence that moved it.
+
+
+def formula():
+    return load_config_bundle(CONFIG_DIR).formula
+
+
+def advance(current="not_started", kept=(), **changes):
+    from tamforge_backend.evidence.qualification import advance_competency
+
+    return advance_competency(
+        current=current,
+        candidate=candidate(**changes),
+        formula=formula(),
+        qualifying_event_ids=kept,
+    )
+
+
+@pytest.mark.parametrize(
+    "practice_mode",
+    ["independent_practice", "timed_assessment", "mock_interview", "real_interview"],
+)
+def test_each_approved_kind_of_evidence_advances_the_level(practice_mode: str) -> None:
+    result = advance(practice_mode=practice_mode)
+
+    assert result.level == "practicing"
+    assert result.qualifying_event_ids == (1,)
+    assert result.reason == "qualifies"
+
+
+@pytest.mark.parametrize(
+    "changes,reason",
+    [
+        ({"practice_mode": "guided_practice"}, "nonqualifying_mode"),
+        ({"practice_mode": "exposure_only"}, "nonqualifying_mode"),
+        ({"practice_mode": "pipeline_only"}, "nonqualifying_mode"),
+        ({"assistance": "ai_hints_during_attempt"}, "nonqualifying_assistance"),
+        ({"assistance": "ai_generated"}, "nonqualifying_assistance"),
+        ({"attempt_kind": "attempt_b"}, "attempt_b"),
+        ({"rubric_scored": False}, "missing_rubric_score"),
+    ],
+)
+def test_evidence_that_does_not_qualify_changes_nothing(changes, reason) -> None:
+    result = advance(current="practicing", kept=(7,), **changes)
+
+    assert result.level == "practicing"
+    assert result.qualifying_event_ids == (7,)
+    assert result.reason == reason
+
+
+def test_a_level_above_not_started_cannot_exist_without_its_evidence() -> None:
+    from tamforge_backend.evidence.qualification import (
+        CompetencyAdvance,
+        CompetencyAdvanceError,
+    )
+
+    assert CompetencyAdvance("not_started", (), "qualifies")
+    for level in ("practicing", "demonstrated"):
+        with pytest.raises(CompetencyAdvanceError):
+            CompetencyAdvance(level, (), "qualifies")
+
+
+def test_the_ladder_stops_at_demonstrated_and_keeps_collecting_evidence() -> None:
+    result = advance(current="demonstrated", kept=(7,), event_id=9)
+
+    assert result.level == "demonstrated"
+    assert result.qualifying_event_ids == (7, 9)
+
+
+def test_the_same_event_never_advances_a_level_twice() -> None:
+    result = advance(current="practicing", kept=(1,), event_id=1)
+
+    assert result.level == "practicing"
+    assert result.reason == "already_counted"
+    assert result.qualifying_event_ids == (1,)
+
+
+def test_an_event_counted_twice_is_not_a_state() -> None:
+    from tamforge_backend.evidence.qualification import (
+        CompetencyAdvance,
+        CompetencyAdvanceError,
+    )
+
+    with pytest.raises(CompetencyAdvanceError):
+        CompetencyAdvance("practicing", (3, 3), "qualifies")
+
+
+def test_readiness_is_read_from_the_levels_and_stored_nowhere() -> None:
+    from tamforge_backend.evidence.qualification import readiness_from
+
+    assert readiness_from({}) == "not_ready"
+    assert readiness_from({"a": "not_started", "b": "not_started"}) == "not_ready"
+    assert readiness_from({"a": "practicing", "b": "not_started"}) == "partially_ready"
+    assert readiness_from({"a": "demonstrated", "b": "not_started"}) == "partially_ready"
+    assert readiness_from({"a": "demonstrated", "b": "demonstrated"}) == "ready"

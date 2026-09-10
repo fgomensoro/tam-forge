@@ -1,9 +1,21 @@
-"""Fail-closed qualification rules for demonstrated evidence."""
+"""Fail-closed qualification rules for demonstrated evidence.
+
+A competency level moves only on evidence that qualifies, and it carries the events it
+moved on. Both halves matter: a level that advances on unqualifying evidence is a claim
+nobody can check, and a level that advances without keeping the link is a claim nobody
+can audit later. `CompetencyAdvance` refuses to exist in either shape.
+
+Readiness is derived from the levels rather than stored beside them, so there is no
+second place it could advance from. The only way readiness moves is that a competency
+did, and the only way a competency did is qualifying evidence.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 
 from .config_models import FormulaConfig
 
@@ -88,3 +100,70 @@ def qualifies_as_transfer(
         and candidate.occurred_at > prior.occurred_at
         and candidate.scenario_key != prior.scenario_key
     )
+
+
+CompetencyLevel = Literal["not_started", "practicing", "demonstrated"]
+Readiness = Literal["not_ready", "partially_ready", "ready"]
+
+# Three levels and no more: never shown it, working on it, shown it. Finer grades would
+# be policy this rule does not have and cannot check.
+COMPETENCY_LADDER: tuple[CompetencyLevel, ...] = ("not_started", "practicing", "demonstrated")
+
+
+class CompetencyAdvanceError(ValueError):
+    """A competency state that cannot be justified by the evidence it names."""
+
+
+@dataclass(frozen=True, slots=True)
+class CompetencyAdvance:
+    """A level and every qualifying event that put it there."""
+
+    level: CompetencyLevel
+    qualifying_event_ids: tuple[int | str, ...]
+    reason: str
+
+    def __post_init__(self) -> None:
+        if self.level not in COMPETENCY_LADDER:
+            raise CompetencyAdvanceError("unknown competency level")
+        if self.level != "not_started" and not self.qualifying_event_ids:
+            raise CompetencyAdvanceError("a level above not_started must cite its evidence")
+        if len(set(self.qualifying_event_ids)) != len(self.qualifying_event_ids):
+            raise CompetencyAdvanceError("an event counts once")
+
+
+def advance_competency(
+    *,
+    current: CompetencyLevel,
+    candidate: EvidenceCandidate,
+    formula: FormulaConfig,
+    qualifying_event_ids: Sequence[int | str] = (),
+) -> CompetencyAdvance:
+    """Advance one step on qualifying evidence, or hold and say why it did not.
+
+    Evidence that does not qualify changes nothing at all: not the level, and not the
+    link. That is the whole rule. Evidence at the top of the ladder still joins the
+    link, because more evidence for a demonstrated competency is still evidence.
+    """
+    if current not in COMPETENCY_LADDER:
+        raise CompetencyAdvanceError("unknown competency level")
+    kept = tuple(qualifying_event_ids)
+    qualification = qualify_evidence(candidate, formula=formula)
+    if not qualification.qualifying_for_level:
+        return CompetencyAdvance(current, kept, qualification.reason)
+    if candidate.event_id in kept:
+        return CompetencyAdvance(current, kept, "already_counted")
+    linked = (*kept, candidate.event_id)
+    index = min(COMPETENCY_LADDER.index(current) + 1, len(COMPETENCY_LADDER) - 1)
+    return CompetencyAdvance(COMPETENCY_LADDER[index], linked, "qualifies")
+
+
+def readiness_from(levels: Mapping[str, CompetencyLevel]) -> Readiness:
+    """Readiness is a reading of the levels, never a state of its own."""
+    if not levels:
+        return "not_ready"
+    demonstrated = sum(1 for level in levels.values() if level == "demonstrated")
+    if demonstrated == len(levels):
+        return "ready"
+    if demonstrated or any(level == "practicing" for level in levels.values()):
+        return "partially_ready"
+    return "not_ready"
