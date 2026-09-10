@@ -151,6 +151,12 @@ Idempotency follows the seal endpoint: an identical resubmission returns the sto
 result, and a submission that differs on the same track is a conflict. This matters
 because the client retries on a timer and must not create a second lineage.
 
+Corrections carry `Idempotency-Key` for the same reason, resolved on their own
+identity: the correction body's content hash, which already includes the transcript it
+belongs to. An identical correction replays the one on file rather than appending a
+second annotation to an append-only table. A correction whose body differs is a new
+correction, not a conflict, so that route has no 409 at all.
+
 Response bodies never include the transcript text in a summary field, and no
 identifier derived from transcript text ever reaches an object key or a log line. The
 GET returns the body only to its owner.

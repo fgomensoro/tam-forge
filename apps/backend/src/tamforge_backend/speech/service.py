@@ -49,7 +49,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import transaction_scope
 from ..recordings.models import Recording
 from .contracts import TranscriptConflict, TranscriptNotFound, TranscriptUnavailable
-from .models import SpeechTranscript, SpeechTranscriptCorrection
+from .models import (
+    MAX_CORRECTIONS_PER_TRANSCRIPT,
+    SpeechTranscript,
+    SpeechTranscriptCorrection,
+)
 from .repository import SqlAlchemyTranscriptRepository
 from .schemas import (
     Track,
@@ -96,10 +100,7 @@ class TranscriptService:
         recording_pk = recording.id
         if recording.state not in {"stored", "stored_with_gaps"}:
             raise TranscriptConflict()
-        prior = await self._repository.by_recording(owner_id=owner_id, recording_id=recording_pk)
-        prior_id = next((row.id for row in prior if row.track == command.track), None)
-
-        transcript = await self._repository.store(
+        stored = await self._repository.store(
             owner_id=owner_id,
             recording=recording,
             track=command.track,
@@ -109,8 +110,8 @@ class TranscriptService:
         return await self._to_response(
             owner_id=owner_id,
             recording_id=recording_id,
-            transcript=transcript,
-            replayed=prior_id == transcript.id,
+            transcript=stored.row,
+            replayed=stored.replayed,
         )
 
     async def list_for_recording(self, *, owner_id: int, recording_id: UUID) -> TranscriptPage:
@@ -140,17 +141,38 @@ class TranscriptService:
         track: str,
         command: TranscriptCorrectionCommand,
     ) -> TranscriptCorrectionResponse:
+        """Append a correction, reporting whether the repository replayed one.
+
+        `replayed` comes straight from `repository.append_correction`, which
+        knows it without being asked: the branch it takes is the answer. A
+        retry of a correction the server already stored comes back with
+        `replayed` true and the original correction's id, never a second row.
+
+        Deriving it here instead -- by reading the correction ids on file and
+        checking whether the appended row is among them -- is what this used
+        to do, and it cost a full read of every correction body on the
+        transcript, up to `MAX_CORRECTIONS_PER_TRANSCRIPT` of them, on every
+        single append.
+
+        Resolving which transcript the correction belongs to is the same
+        story a level up. `track` is part of a transcript's stored identity,
+        so `repository.by_recording_track` answers it in one filtered SELECT.
+        Reading `by_recording` and picking the matching track in Python --
+        what this used to do -- loaded a body of up to
+        `TRANSCRIPT_BODY_LIMIT` bytes for each of the recording's tracks, to
+        end up using nothing off the row but the `id` and `owner_id`
+        `append_correction` reads from it.
+        """
         recording = await self._resolve_recording(owner_id=owner_id, recording_id=recording_id)
-        transcripts = await self._repository.by_recording(
-            owner_id=owner_id, recording_id=recording.id
+        transcript = await self._repository.by_recording_track(
+            owner_id=owner_id, recording_id=recording.id, track=track
         )
-        transcript = next((row for row in transcripts if row.track == track), None)
         if transcript is None:
             raise TranscriptNotFound()
-        correction = await self._repository.append_correction(
+        appended = await self._repository.append_correction(
             owner_id=owner_id, transcript=transcript, body=command.model_dump(mode="json")
         )
-        return _correction_response(correction, replayed=False)
+        return _correction_response(appended.row, replayed=appended.replayed)
 
     async def _to_response(
         self, *, owner_id: int, recording_id: UUID, transcript: SpeechTranscript, replayed: bool
@@ -158,6 +180,15 @@ class TranscriptService:
         corrections = await self._repository.corrections(
             owner_id=owner_id, transcript_id=transcript.id
         )
+        # Bounded here, not only at write time. `repository.append_correction`
+        # refuses the correction past the cap, but its count-then-insert guard
+        # is not a lock: two appends racing at the boundary can both read the
+        # same under-cap count and both insert. That overshoot must not cost
+        # the owner the transcript -- every read *and* every resubmission of it
+        # builds a `TranscriptResponse` here, and the model's declared
+        # `max_length` would turn a handful of extra rows into a permanent
+        # `ValidationError` on all of them. The rows themselves are still on
+        # file; this only bounds how many of them one response renders.
         return TranscriptResponse(
             transcript_id=transcript.id,
             recording_id=recording_id,
@@ -166,7 +197,8 @@ class TranscriptService:
             created_at=transcript.created_at,
             replayed=replayed,
             corrections=tuple(
-                _correction_response(correction, replayed=False) for correction in corrections
+                _correction_response(correction, replayed=False)
+                for correction in corrections[:MAX_CORRECTIONS_PER_TRANSCRIPT]
             ),
         )
 

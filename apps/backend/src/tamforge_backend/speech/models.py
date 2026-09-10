@@ -17,6 +17,12 @@ from ..models.provenance import Record, provenance_checks
 
 TRANSCRIPT_BODY_LIMIT = 4194304
 CORRECTION_BODY_LIMIT = 8192
+# Corrections are append-only rows, so nothing but this cap bounds how many one
+# transcript can accumulate. `repository.append_correction` enforces it at write
+# time and `schemas.TranscriptResponse` declares the same number as the maximum
+# length of its `corrections` tuple. It lives here rather than in `schemas`
+# because both of those layers need it, exactly like the body limits above.
+MAX_CORRECTIONS_PER_TRANSCRIPT = 1_000
 
 
 class SpeechTranscript(Record):
@@ -52,6 +58,17 @@ class SpeechTranscriptCorrection(Record):
     __table_args__ = provenance_checks(
         "speech_transcript_corrections", limit=CORRECTION_BODY_LIMIT
     ) + (
+        # A correction's identity is its own content: the canonical body already
+        # carries `transcript_id`, so two rows with the same content hash under
+        # the same transcript are the same annotation submitted twice. This is
+        # what makes a client's retry-on-timeout replay instead of appending a
+        # duplicate -- see `repository.append_correction`.
+        UniqueConstraint(
+            "owner_id",
+            "transcript_id",
+            "content_hash",
+            name="uq_speech_transcript_corrections_content",
+        ),
         ForeignKeyConstraint(
             ["owner_id", "transcript_id"],
             ["speech_transcripts.owner_id", "speech_transcripts.id"],

@@ -15,10 +15,12 @@ commits, not one. Both operations are individually idempotent (a replayed store
 returns the same row; setting an already-true flag is a no-op), so that ordering
 is safe to retry, just not atomic in the single-transaction sense.
 
-`store` additionally has an identity two callers can race on: the client's own
-retry-on-timeout, not just theoretical concurrency, per the design doc. Both may
-run their existing-row SELECT before either commits and both see nothing, so both
-attempt to insert; the database's `uq_speech_transcripts_recording_track`
+Both writes additionally have an identity two callers can race on: the client's
+own retry-on-timeout, not just theoretical concurrency, per the design doc.
+`store`'s identity is `(owner, recording, track)`; `append_correction`'s is the
+correction body's own content hash. Taking `store` as the example, both callers
+may run their existing-row SELECT before either commits and both see nothing, so
+both attempt to insert; the database's `uq_speech_transcripts_recording_track`
 constraint lets only one through. Rather than prevent that race with a lock,
 `store` lets it happen and recovers from it: the loser's `IntegrityError` --
 specifically that type, not `SQLAlchemyError` in general -- is caught and
@@ -31,6 +33,11 @@ as `TranscriptUnavailable`, a distinct, retryable error, so a transient
 infrastructure failure is never mislabeled as the 409-shaped `TranscriptConflict`
 a well-behaved client would not retry. No `SQLAlchemyError`, from either the
 first attempt or the recovery read, ever reaches the caller untranslated.
+`append_correction` recovers its own race the same way, minus the conflict
+branch, which content-hash identity makes unreachable there. It has a conflict
+of a different kind -- a transcript already holding
+`MAX_CORRECTIONS_PER_TRANSCRIPT` corrections has no room for another -- which is
+decided before the insert rather than recovered from after it. See its docstring.
 
 `store`'s `recording.id` is read exactly once, into a local, before either
 transaction attempt begins. `recording` is the caller's already-loaded ORM
@@ -47,9 +54,10 @@ touching the expired attribute at all.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from hashlib import sha256
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import make_transient_to_detached
@@ -66,6 +74,7 @@ from .contracts import (
 )
 from .models import (
     CORRECTION_BODY_LIMIT,
+    MAX_CORRECTIONS_PER_TRANSCRIPT,
     TRANSCRIPT_BODY_LIMIT,
     SpeechTranscript,
     SpeechTranscriptCorrection,
@@ -84,6 +93,24 @@ def _snapshot[R: Record](row: R) -> R:
     )
     make_transient_to_detached(snapshot)
     return snapshot
+
+
+@dataclass(frozen=True, slots=True)
+class Written[R: Record]:
+    """A written row, plus whether this call replayed it rather than inserting it.
+
+    `store` and `append_correction` each answer two questions at once: which
+    row is on file now, and whether this call is the one that put it there.
+    Both already know -- an existing-row hit, or either lost-race recovery,
+    replays a row an earlier call wrote; a fresh insert does not -- so both
+    report it here rather than leaving the caller to re-derive it by reading
+    the rows on file before every write. On the correction side that prefetch
+    meant pulling up to `MAX_CORRECTIONS_PER_TRANSCRIPT` bodies of
+    `CORRECTION_BODY_LIMIT` bytes each out of the database for one boolean.
+    """
+
+    row: R
+    replayed: bool
 
 
 def _canonicalize(body: Mapping[str, object], *, limit: int) -> tuple[bytes, bytes]:
@@ -112,7 +139,7 @@ class SqlAlchemyTranscriptRepository:
         recording: Recording,
         track: str,
         body: Mapping[str, object],
-    ) -> SpeechTranscript:
+    ) -> Written[SpeechTranscript]:
         """Insert once per (owner, recording, track); replay by content hash.
 
         `body` is the client's submitted command already dumped to a plain
@@ -122,6 +149,10 @@ class SqlAlchemyTranscriptRepository:
         repository's) and `track` are merged in first, so the byte-size guard
         below runs against the body that will actually be written, which is
         slightly larger than what the submission schema validated.
+
+        The returned `Written` carries which of the two branches ran, so the
+        caller never has to read the transcripts already on file to work out
+        whether this submission was a replay.
 
         See the module docstring for how a race on this identity (two callers
         both seeing no existing row) is resolved without ever surfacing a raw
@@ -135,17 +166,13 @@ class SqlAlchemyTranscriptRepository:
 
         try:
             async with transaction_scope(self.session):
-                existing = await self.session.scalar(
-                    select(SpeechTranscript).where(
-                        SpeechTranscript.owner_id == owner_id,
-                        SpeechTranscript.recording_id == recording_id,
-                        SpeechTranscript.track == track,
-                    )
+                existing = await self.by_recording_track(
+                    owner_id=owner_id, recording_id=recording_id, track=track
                 )
                 if existing is not None:
                     if existing.content_hash != content_hash:
                         raise TranscriptConflict()
-                    return _snapshot(existing)
+                    return Written(existing, replayed=True)
                 row = SpeechTranscript(
                     owner_id=owner_id,
                     canonical_json=canonical.decode("utf-8"),
@@ -153,13 +180,16 @@ class SqlAlchemyTranscriptRepository:
                 )
                 self.session.add(row)
                 await self.session.flush()
-                return _snapshot(row)
+                return Written(_snapshot(row), replayed=False)
         except IntegrityError:
-            return await self._reconcile_lost_race(
-                owner_id=owner_id,
-                recording_id=recording_id,
-                track=track,
-                content_hash=content_hash,
+            return Written(
+                await self._reconcile_lost_race(
+                    owner_id=owner_id,
+                    recording_id=recording_id,
+                    track=track,
+                    content_hash=content_hash,
+                ),
+                replayed=True,
             )
         except SQLAlchemyError:
             raise TranscriptUnavailable() from None
@@ -180,28 +210,61 @@ class SqlAlchemyTranscriptRepository:
         the failed attempt by the time this runs, so it reads fresh, in a
         transaction of its own, and answers the same replay-vs-conflict
         question the original SELECT would have answered had it run a moment
-        later: identical content replays the winner's row, anything else
-        (different content, or the identity still missing for some other
-        reason) is `TranscriptConflict` -- never a raw database error. A
-        failure of this re-read itself is not that collision either -- it is
-        the same kind of unrelated infrastructure failure `store` guards
-        against -- so it also surfaces as `TranscriptUnavailable`, not
-        `TranscriptConflict`.
+        later: identical content replays the winner's row -- which is why a
+        row returned from here is always a replay, and why `store` labels it
+        as one -- and anything else (different content, or the identity still
+        missing for some other reason) is `TranscriptConflict`, never a raw
+        database error. A failure of this re-read itself is not that collision
+        either -- it is the same kind of unrelated infrastructure failure
+        `store` guards against -- so it also surfaces as
+        `TranscriptUnavailable`, not `TranscriptConflict`.
         """
         try:
             async with transaction_scope(self.session):
-                existing = await self.session.scalar(
-                    select(SpeechTranscript).where(
-                        SpeechTranscript.owner_id == owner_id,
-                        SpeechTranscript.recording_id == recording_id,
-                        SpeechTranscript.track == track,
-                    )
+                existing = await self.by_recording_track(
+                    owner_id=owner_id, recording_id=recording_id, track=track
                 )
         except SQLAlchemyError:
             raise TranscriptUnavailable() from None
         if existing is None or existing.content_hash != content_hash:
             raise TranscriptConflict() from None
-        return _snapshot(existing)
+        return existing
+
+    async def by_recording_track(
+        self, *, owner_id: int, recording_id: int, track: str
+    ) -> SpeechTranscript | None:
+        """Read the one transcript a (owner, recording, track) identity can hold.
+
+        That identity is `uq_speech_transcripts_recording_track`, so this is a
+        single-row lookup by definition, and `track` is a persisted computed
+        column under a `track_allowed` check constraint -- a cheap equality
+        filter, not an expression evaluated per row.
+
+        This is the lookup `store` and `_reconcile_lost_race` were already
+        doing inline, hoisted so `TranscriptService.add_correction` can share
+        it. That caller used to resolve its track by reading `by_recording`
+        and picking the match in Python, which meant loading a transcript
+        body -- up to `TRANSCRIPT_BODY_LIMIT` bytes -- for each of the
+        recording's tracks in order to use nothing off the row but its `id`
+        and `owner_id`. Filtering in SQL leaves one row instead of all of
+        them; the row is still whole because `store` needs its
+        `content_hash` and hands it back to its own caller.
+
+        Owner scoping is part of the identity here, exactly as in
+        `by_recording`: another owner's transcript reads as missing rather
+        than forbidden, so a correction request cannot be used to confirm one
+        exists. Like every other read method on this repository, this one
+        opens no transaction of its own, so `store` can call it from inside
+        the one it already holds.
+        """
+        existing: SpeechTranscript | None = await self.session.scalar(
+            select(SpeechTranscript).where(
+                SpeechTranscript.owner_id == owner_id,
+                SpeechTranscript.recording_id == recording_id,
+                SpeechTranscript.track == track,
+            )
+        )
+        return None if existing is None else _snapshot(existing)
 
     async def by_recording(
         self, *, owner_id: int, recording_id: int
@@ -222,37 +285,77 @@ class SqlAlchemyTranscriptRepository:
         owner_id: int,
         transcript: SpeechTranscript,
         body: Mapping[str, object],
-    ) -> SpeechTranscriptCorrection:
-        """Append a correction to `transcript`; corrections are never deduplicated.
+    ) -> Written[SpeechTranscriptCorrection]:
+        """Insert once per correction body; replay an identical one by content hash.
 
         `transcript` must already belong to `owner_id` -- the caller is expected
-        to have obtained it from `store` or `by_recording` under that same owner.
+        to have obtained it from `store`, `by_recording_track`, or
+        `by_recording` under that same owner.
         A mismatch reads as not-found rather than forbidden, so a correction
         request cannot be used to confirm another owner's transcript exists.
 
-        Unlike `store`, there is no identity to race on here -- corrections
-        are always inserted, never deduplicated -- so there is nothing to
-        retry, and no conflict outcome is reachable at all:
-        `SpeechTranscriptCorrection`'s only constraints are the provenance
-        base's own `(owner_id, id)` uniqueness -- trivially satisfied, since
-        `id` is sequence-assigned and never reused -- and a foreign key to
-        `transcript`, which is immutable and never deleted (the ORM rejects
-        `UPDATE`/`DELETE` on it directly, and nothing in this repository
-        issues either), so the referenced row cannot vanish between the
-        owner check above and this insert. With no genuine integrity
-        violation possible, every `SQLAlchemyError` below is the same kind
-        of unrelated infrastructure failure `store` guards against, and
-        surfaces the same way: as `TranscriptUnavailable`, not
-        `TranscriptConflict`.
+        Deduplication is the same content-hash mechanism `store` uses, for the
+        same reason: the client retries a write on a timer, so a response lost
+        to a timeout must replay the row already written rather than append a
+        second, identical annotation to an append-only provenance table. The
+        canonical body already carries `transcript_id`, so a correction's
+        content hash is its whole identity, and
+        `uq_speech_transcript_corrections_content` enforces it.
+
+        That makes this an identity two callers race on exactly as `store`'s is:
+        a retry whose predecessor is still in flight runs its SELECT before the
+        other commits, both attempt to insert, and only one gets through. The
+        loser's `IntegrityError` is recovered the same way -- by re-reading the
+        identity in a fresh transaction -- and, because content equality *is*
+        the identity here, that re-read can only find the row it collided with.
+        The collision itself is therefore never a conflict: a correction whose
+        body differs is a different identity, not a collision. An
+        `IntegrityError` whose re-read finds nothing was some other violation
+        entirely, and surfaces like every other `SQLAlchemyError` below: as
+        `TranscriptUnavailable`, never `TranscriptConflict`.
+
+        The one conflict this method does raise is capacity.
+        `TranscriptResponse` declares room for `MAX_CORRECTIONS_PER_TRANSCRIPT`
+        corrections, and nothing else bounds an append-only table, so the
+        correction past that cap is refused here -- as `TranscriptConflict`,
+        the 409 the corrections route declares, because the request is well
+        formed and within every size limit and it is the transcript's durable
+        state that has no room left. The check sits *after* the content-hash
+        lookup on purpose: a client retries a correction POST on a timer, so the
+        retry of the correction that filled the transcript has to replay the row
+        already written rather than be told its stored write failed.
+
+        Counting and inserting is not a lock, so two appends racing at the
+        boundary can both read the same under-cap count and both insert. That is
+        deliberate, matching this repository's approach to every other race here:
+        the overshoot is a handful of rows, it costs no correctness on the write
+        side, and `TranscriptService._to_response` bounds what it renders so the
+        response model cannot overflow either way.
+
+        The returned `Written` carries whether the row was replayed or freshly
+        inserted. That is the whole reason it exists: the caller's only other
+        way to learn it is to read every correction already on file before
+        each append, which at the cap is megabytes of bodies for one boolean.
         """
         if transcript.owner_id != owner_id:
             raise TranscriptNotFound()
+        transcript_id = transcript.id
         canonical, content_hash = _canonicalize(
-            {**body, "transcript_id": transcript.id}, limit=CORRECTION_BODY_LIMIT
+            {**body, "transcript_id": transcript_id}, limit=CORRECTION_BODY_LIMIT
         )
 
         try:
             async with transaction_scope(self.session):
+                existing = await self._correction_by_content(
+                    owner_id=owner_id, transcript_id=transcript_id, content_hash=content_hash
+                )
+                if existing is not None:
+                    return Written(_snapshot(existing), replayed=True)
+                on_file = await self._correction_count(
+                    owner_id=owner_id, transcript_id=transcript_id
+                )
+                if on_file >= MAX_CORRECTIONS_PER_TRANSCRIPT:
+                    raise TranscriptConflict()
                 row = SpeechTranscriptCorrection(
                     owner_id=owner_id,
                     canonical_json=canonical.decode("utf-8"),
@@ -260,9 +363,64 @@ class SqlAlchemyTranscriptRepository:
                 )
                 self.session.add(row)
                 await self.session.flush()
-                return _snapshot(row)
+                return Written(_snapshot(row), replayed=False)
+        except IntegrityError:
+            return Written(
+                await self._replay_lost_correction(
+                    owner_id=owner_id, transcript_id=transcript_id, content_hash=content_hash
+                ),
+                replayed=True,
+            )
         except SQLAlchemyError:
             raise TranscriptUnavailable() from None
+
+    async def _correction_count(self, *, owner_id: int, transcript_id: int) -> int:
+        total: int | None = await self.session.scalar(
+            select(func.count(SpeechTranscriptCorrection.id)).where(
+                SpeechTranscriptCorrection.owner_id == owner_id,
+                SpeechTranscriptCorrection.transcript_id == transcript_id,
+            )
+        )
+        return total or 0
+
+    async def _correction_by_content(
+        self, *, owner_id: int, transcript_id: int, content_hash: bytes
+    ) -> SpeechTranscriptCorrection | None:
+        existing: SpeechTranscriptCorrection | None = await self.session.scalar(
+            select(SpeechTranscriptCorrection).where(
+                SpeechTranscriptCorrection.owner_id == owner_id,
+                SpeechTranscriptCorrection.transcript_id == transcript_id,
+                SpeechTranscriptCorrection.content_hash == content_hash,
+            )
+        )
+        return existing
+
+    async def _replay_lost_correction(
+        self, *, owner_id: int, transcript_id: int, content_hash: bytes
+    ) -> SpeechTranscriptCorrection:
+        """Resolve an `append_correction` insert lost to a concurrent retry.
+
+        `store`'s `_reconcile_lost_race` in miniature, and reached the same
+        way: only on a genuine `IntegrityError`. `transaction_scope` has
+        already rolled the failed attempt back, so this reads fresh, in a
+        transaction of its own, and replays whichever row won -- so a row
+        returned from here is always a replay, and `append_correction` labels
+        it as one. A re-read that finds nothing means the `IntegrityError` was
+        not the uniqueness collision this recovers from, and a re-read that
+        fails is the same kind of unrelated infrastructure failure `store`
+        guards against; both surface as `TranscriptUnavailable`, never a raw
+        database error.
+        """
+        try:
+            async with transaction_scope(self.session):
+                existing = await self._correction_by_content(
+                    owner_id=owner_id, transcript_id=transcript_id, content_hash=content_hash
+                )
+        except SQLAlchemyError:
+            raise TranscriptUnavailable() from None
+        if existing is None:
+            raise TranscriptUnavailable() from None
+        return _snapshot(existing)
 
     async def corrections(
         self, *, owner_id: int, transcript_id: int
@@ -278,4 +436,4 @@ class SqlAlchemyTranscriptRepository:
         return tuple(_snapshot(row) for row in rows.all())
 
 
-__all__ = ["SqlAlchemyTranscriptRepository"]
+__all__ = ["SqlAlchemyTranscriptRepository", "Written"]
