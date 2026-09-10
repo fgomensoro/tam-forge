@@ -249,8 +249,13 @@ class ClaudeRuntime(Protocol):
     async def probe(self, *, requested_model: str) -> ProbeObservation: ...
 
 
-def _version_tuple(version: str) -> tuple[int, ...]:
-    """Leading numeric components of a version string; suffixes such as -beta are ignored."""
+def _version_tuple(version: str) -> tuple[int, int, int]:
+    """Version as exactly three numbers; suffixes such as -beta are ignored.
+
+    Padding to a fixed width matters: Python compares a shorter tuple as less than a
+    longer one that starts with it, so an unpadded "1" would have sorted below
+    (1, 0, 0) and reported a supported SDK as too old.
+    """
     parts: list[int] = []
     for piece in version.split("."):
         digits = ""
@@ -261,7 +266,8 @@ def _version_tuple(version: str) -> tuple[int, ...]:
         if not digits:
             break
         parts.append(int(digits))
-    return tuple(parts)
+    padded = (parts + [0, 0, 0])[:3]
+    return (padded[0], padded[1], padded[2])
 
 
 def _classify(observation: ProbeObservation) -> str:
