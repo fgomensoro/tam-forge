@@ -164,7 +164,7 @@ Microphone speech is always transcribed. System audio is transcribed only when a
 | Idle after settling | p95 RSS at or below 180 MiB |
 | Two-track recording | p95 RSS at or below 300 MiB and no duration-linked growth |
 | Transcription | total app peak at or below 1.5 GiB, one job, no recording |
-| Cleanup | owned model context and buffers released; RSS returns to within 100 MiB of pre-job baseline within 30 seconds unless an OS-managed cache is documented |
+| Cleanup | owned model context and buffers released; RSS returns to within 100 MiB of pre-job baseline within 30 seconds unless an OS-managed cache is documented. Documented cache: the first transcription in a process leaves 77 to 135 MiB resident after `release()` (Apple M5, whisper.cpp b4938, small.en q5_1, Metal). `whisper_free` returns the model buffers, state, and Metal backend; what stays is the Metal driver's compiled pipelines and heaps plus the ggml runtime, and it is flat across further jobs (`testResidualStaysFlatAcrossReleasedJobs`). The pre-job baseline is taken after that warm-up. |
 | Pressure | warning defers new work; critical aborts safely, releases owned memory, and leaves a resumable spool |
 | Thermal | serious/critical defers a new inference job |
 

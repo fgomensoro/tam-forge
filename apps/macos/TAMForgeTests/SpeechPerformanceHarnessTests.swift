@@ -11,6 +11,9 @@ import XCTest
 // job at a time, releases, and writes the evidence artifact to
 // TAMFORGE_PERF_OUTPUT. No `@testable import TAMForge`: this target
 // compiles the Speech and Recording sources directly.
+//
+// The artifact's cleanup.runtimeResidualBytes is a fixed cost, not a leak:
+// see testResidualStaysFlatAcrossReleasedJobs (TAMFORGE_RESIDUAL_LOOP=8).
 final class SpeechPerformanceHarnessTests: XCTestCase {
     private let mib = SpeechPerformanceGates.mebibyte
 
@@ -178,14 +181,22 @@ final class SpeechPerformanceHarnessTests: XCTestCase {
         try await spool.seal(gaps: [], startedAt: startedAt, endedAt: Date())
         let recording = MemoryGrowthAnalysis(baselineBytes: baseline, samples: samples)
         // Phase 2: one warm-up job, released. The first transcription in a
-        // process pays a one-time runtime cost (Metal library and pipelines,
-        // ggml's device context) that whisper_free does not return and that
-        // is not the job's to free. The cleanup gate is measured against the
-        // footprint after that warm-up, and the warm-up's residual is
-        // recorded so the reader can see the fixed cost separately.
+        // process pays a one-time runtime cost that whisper_free does not
+        // return and that is not the job's to free: whisper_free releases the
+        // model buffers, the state, and the Metal backend (and ggml drops its
+        // MTLDevice and library once the last reference goes), but the Metal
+        // driver keeps its compiled pipelines and heaps resident for the
+        // process. testResidualStaysFlatAcrossReleasedJobs shows it is flat
+        // across jobs, 77 to 135 MiB on Apple M5. The cleanup gate is measured
+        // against the footprint after that warm-up, and the warm-up's
+        // residual is recorded so the reader can see the fixed cost separately.
         let transcriber = try WhisperTranscriber()
-        let coldBaseline = ProcessMemory.physicalFootprintBytes()
         let warmUp = try await deriveRequest(reader: factory, recordingID: recordingID, seconds: 30)
+        // Derive first and let it settle: reading the sealed spool has its
+        // own first-use cost, and it must not be booked against the runtime.
+        try await Task.sleep(nanoseconds: 2_000_000_000)
+        ProcessMemory.returnFreedPages()
+        let coldBaseline = ProcessMemory.physicalFootprintBytes()
         _ = try await transcriber.transcribe(warmUp)
         await transcriber.release()
         try await Task.sleep(nanoseconds: 2_000_000_000)
@@ -253,6 +264,54 @@ final class SpeechPerformanceHarnessTests: XCTestCase {
             "delta \(cleanup.deltaFromBaselineBytes / Int64(mib)) MiB after \(cleanup.settledAfterSeconds)s,"
                 + " \(cleanup.deltaAfterReturningFreedPagesBytes / Int64(mib)) MiB once freed pages returned"
         )
+    }
+
+    // Opt-in: is the runtime residual a fixed cost or per-job growth? Runs
+    // TAMFORGE_RESIDUAL_LOOP jobs of 30 s, each on a fresh transcriber that
+    // is released afterwards, and prints the footprint left behind after
+    // every release. Measured on Apple M5 24 GB, macOS 26.5.1, whisper.cpp
+    // b4938, small.en q5_1 with Metal: 110 MiB after the first job, then
+    // flat for eight jobs, jittering between 77 and 135 MiB with no trend. The same
+    // loop through whisper.h directly gives the same numbers; init+free of a
+    // Metal context alone leaves 30 to 90 MiB, and use_gpu = false leaves a
+    // flat 68 MiB. So the cost is the Metal driver and ggml runtime the
+    // process keeps warm, not anything WhisperTranscriber owns.
+    func testResidualStaysFlatAcrossReleasedJobs() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let jobs = Int(environment["TAMFORGE_RESIDUAL_LOOP"] ?? ""), jobs > 0 else {
+            throw XCTSkip("Set TAMFORGE_RESIDUAL_LOOP to run the residual loop.")
+        }
+        guard SpeechModelCatalog().transcriptionModelURL != nil else {
+            throw XCTSkip("Transcription model is not installed; run `make whisper-models` to enable this test.")
+        }
+        guard SpokenAudio.shared.isAvailable else {
+            throw XCTSkip("The system speech synthesizer produced no audio; the harness needs spoken input.")
+        }
+        let recordingID = UUID()
+        let factory = EncryptedRecordingSpoolFactory(rootURL: try temporaryDirectory(), keyStore: HarnessKeyStore(), reservationBytes: 0)
+        let spool = try await factory.create(recordingID: recordingID)
+        let startedAt = Date()
+        for second in 0..<30 { try await spool.append(SpokenAudio.shared.chunk(track: .microphone, second: second)) }
+        try await spool.seal(gaps: [], startedAt: startedAt, endedAt: Date())
+        let request = try await deriveRequest(reader: factory, recordingID: recordingID, seconds: 30)
+        try await Task.sleep(nanoseconds: 2_000_000_000)
+        ProcessMemory.returnFreedPages()
+        let baseline = ProcessMemory.physicalFootprintBytes()
+
+        var residuals: [Int64] = []
+        for _ in 0..<jobs {
+            let transcriber = try WhisperTranscriber()
+            _ = try await transcriber.transcribe(request)
+            await transcriber.release()
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+            ProcessMemory.returnFreedPages()
+            residuals.append(Int64(ProcessMemory.physicalFootprintBytes()) - Int64(baseline))
+        }
+        try await factory.discard(recordingID: recordingID)
+        print("residual after each released job (MiB): \(residuals.map { $0 / Int64(mib) })")
+        // A leak grows with every job; a fixed cache jitters around one level.
+        let first = residuals.first ?? 0
+        XCTAssertLessThanOrEqual(residuals.last ?? 0, first + Int64(50 * mib), "residual grew across jobs")
     }
 
     // MARK: - Helpers
