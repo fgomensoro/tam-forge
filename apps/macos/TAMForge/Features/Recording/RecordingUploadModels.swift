@@ -1136,7 +1136,7 @@ struct RecordingUploadFileIdentity: Codable, Equatable, Sendable {
     private static func sha256(handle: FileHandle) throws -> String {
         var hasher = SHA256()
         while true {
-            let chunk = try handle.read(upToCount: 1_048_576) ?? Data()
+            let chunk = try handle.readOwnedBytes(upTo: 1_048_576)
             guard !chunk.isEmpty else { break }
             hasher.update(data: chunk)
         }

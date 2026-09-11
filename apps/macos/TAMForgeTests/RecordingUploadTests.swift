@@ -1279,3 +1279,28 @@ private func XCTAssertAsyncThrowsError(
         XCTFail("Expected async expression to throw", file: file, line: line)
     } catch {}
 }
+
+final class RecordingUploadReadingFootprintTests: XCTestCase {
+    func testHashingASealedSpoolLeavesNoCiphertextResident() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tamforge-upload-footprint-\(UUID().uuidString).spool")
+        // 64 MiB: a mid-sized sealed spool, and far above the bound below if
+        // the reader keeps what it hashes resident.
+        let byteCount = 64 * 1_048_576
+        FileManager.default.createFile(
+            atPath: url.path, contents: Data(count: byteCount),
+            attributes: [.posixPermissions: 0o444]
+        )
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+
+        ProcessMemory.returnFreedPages()
+        let baseline = ProcessMemory.physicalFootprintBytes()
+        let identity = try RecordingUploadFileIdentity.read(from: url)
+        XCTAssertEqual(identity.byteCount, Int64(byteCount))
+        ProcessMemory.returnFreedPages()
+        let after = ProcessMemory.physicalFootprintBytes()
+
+        let delta = Int64(after) - Int64(baseline)
+        XCTAssertLessThan(delta, 8 * 1_048_576, "upload reader kept \(delta / 1_048_576) MiB resident")
+    }
+}

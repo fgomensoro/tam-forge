@@ -598,7 +598,7 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
         }
 
         mutating func next() throws -> TrackScanStep {
-            let lengthData = try handle.readSpoolBytes(upTo: 4)
+            let lengthData = try handle.readOwnedBytes(upTo: 4)
             if lengthData.isEmpty { return .end }
             guard lengthData.count == 4,
                   let length = lengthData.fixedWidth(at: 0, as: UInt32.self)
@@ -610,7 +610,7 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
                     track: expectedTrack, byteOffset: byteOffset, reason: .malformedLength
                 ))
             }
-            let body = try handle.readSpoolBytes(upTo: Int(length))
+            let body = try handle.readOwnedBytes(upTo: Int(length))
             guard body.count == Int(length) else { return .incompleteTail }
             let headerData = body.prefix(EncryptedRecordingSpool.headerBytes)
             guard EncryptedRecordingSpool.authenticateRecoverableMetadata(
@@ -1065,7 +1065,7 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
             var expectedSequence = 0
             var ignoredIncompleteTail = false
             while true {
-                let lengthData = try handle.readSpoolBytes(upTo: 4)
+                let lengthData = try handle.readOwnedBytes(upTo: 4)
                 if lengthData.isEmpty { break }
                 guard lengthData.count == 4,
                       let length = lengthData.fixedWidth(at: 0, as: UInt32.self),
@@ -1084,7 +1084,7 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
                     }
                     break
                 }
-                let body = try handle.readSpoolBytes(upTo: Int(length))
+                let body = try handle.readOwnedBytes(upTo: Int(length))
                 guard body.count == Int(length) else {
                     ignoredIncompleteTail = true
                     break
@@ -1588,28 +1588,5 @@ private extension Data {
         let bytes = self[offset..<(offset + 16)]
         let tuple: uuid_t = bytes.withUnsafeBytes { $0.loadUnaligned(as: uuid_t.self) }
         return UUID(uuid: tuple)
-    }
-}
-
-// FileHandle.read(upToCount:) leaves every buffer it returns resident after
-// the caller releases it (measured on macOS 26.5: a 240-second track read
-// that way kept its full decrypted size in the physical footprint, and a
-// second pass doubled it). A plain read(2) into a Data the caller owns does
-// not, so every spool record is read this way.
-private extension FileHandle {
-    func readSpoolBytes(upTo count: Int) throws -> Data {
-        guard count > 0 else { return Data() }
-        var data = Data(count: count)
-        var filled = 0
-        while filled < count {
-            let got = data.withUnsafeMutableBytes { buffer in
-                Darwin.read(fileDescriptor, buffer.baseAddress! + filled, count - filled)
-            }
-            if got < 0 { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-            if got == 0 { break }
-            filled += got
-        }
-        data.count = filled
-        return data
     }
 }

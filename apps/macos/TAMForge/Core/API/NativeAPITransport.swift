@@ -482,8 +482,8 @@ private struct FileChunkSequence: AsyncSequence, Sendable {
                     return nil
                 }
                 let count = Int(Swift.min(Int64(chunkSize), remainingBytes))
-                guard let data = try handle.read(upToCount: count),
-                      !data.isEmpty,
+                let data = try handle.readOwnedBytes(upTo: count)
+                guard !data.isEmpty,
                       Int64(data.count) <= remainingBytes
                 else {
                     throw NativeMultipartFileError.fileChanged

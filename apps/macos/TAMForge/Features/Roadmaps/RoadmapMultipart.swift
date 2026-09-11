@@ -53,7 +53,7 @@ struct RoadmapMultipartBody: Sendable {
         let input = try FileHandle(forReadingFrom: file.url)
         defer { try? input.close() }
         var copied: Int64 = 0
-        while let chunk = try input.read(upToCount: 64 * 1024), !chunk.isEmpty {
+        while case let chunk = try input.readOwnedBytes(upTo: 64 * 1024), !chunk.isEmpty {
             try Task.checkCancellation()
             copied += Int64(chunk.count)
             guard copied <= file.byteCount else { throw RoadmapPackageError.sourceChanged }

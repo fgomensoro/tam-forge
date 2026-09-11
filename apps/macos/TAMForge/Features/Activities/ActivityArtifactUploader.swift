@@ -142,7 +142,8 @@ struct ActivityStagedFileStore: Sendable {
         var byteLength = 0
         while true {
             try Task.checkCancellation()
-            guard let chunk = try input.read(upToCount: Self.chunkSize), !chunk.isEmpty else { break }
+            let chunk = try input.readOwnedBytes(upTo: Self.chunkSize)
+            guard !chunk.isEmpty else { break }
             try Task.checkCancellation()
             byteLength += chunk.count
             guard byteLength <= Self.maximumBytes else { throw ActivityAPIError.invalidResponse }
