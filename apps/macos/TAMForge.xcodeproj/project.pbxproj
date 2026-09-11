@@ -136,6 +136,9 @@
 		E20000000000000000000048 /* ActivityWorkspaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000078 /* ActivityWorkspaceTests.swift */; };
 		F70000000000000000000001 /* WhisperTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000001001 /* WhisperTranscriber.swift */; };
 		F70000000000000000000002 /* WhisperTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70000000000000000001001 /* WhisperTranscriber.swift */; };
+		F80000000000000000000001 /* InterviewerTurn.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80000000000000000001001 /* InterviewerTurn.swift */; };
+		F80000000000000000000002 /* InterviewerTurn.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80000000000000000001001 /* InterviewerTurn.swift */; };
+		F80000000000000000000003 /* InterviewerTurnTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80000000000000000001002 /* InterviewerTurnTests.swift */; };
 		F70000000000000000000003 /* whisper.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = F70000000000000000001002 /* whisper.xcframework */; };
 		F70000000000000000000004 /* whisper.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F70000000000000000001002 /* whisper.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		F70000000000000000000005 /* whisper.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = F70000000000000000001002 /* whisper.xcframework */; };
@@ -255,6 +258,8 @@
 		A10000000000000000000062 /* TAMForgeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TAMForgeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000063 /* TAMForgeUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TAMForgeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F70000000000000000001001 /* WhisperTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperTranscriber.swift; sourceTree = "<group>"; };
+		F80000000000000000001001 /* InterviewerTurn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterviewerTurn.swift; sourceTree = "<group>"; };
+		F80000000000000000001002 /* InterviewerTurnTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterviewerTurnTests.swift; sourceTree = "<group>"; };
 		F70000000000000000001002 /* whisper.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = whisper.xcframework; path = Vendor/whisper.xcframework; sourceTree = "<group>"; };
 		F70000000000000000001003 /* WhisperRuntimeSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperRuntimeSmokeTests.swift; sourceTree = "<group>"; };
 		F60000000000000000001008 /* RecordingAudioReading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingAudioReading.swift; sourceTree = "<group>"; };
@@ -346,6 +351,7 @@
 				E20000000000000000000075 /* RoadmapViewModelTests.swift */,
 				E20000000000000000000076 /* ActivityArtifactUploadTests.swift */,
 				E20000000000000000000077 /* ActivityTimerTests.swift */,
+				F80000000000000000001002 /* InterviewerTurnTests.swift */,
 				E20000000000000000000078 /* ActivityWorkspaceTests.swift */,
 			);
 			path = TAMForgeTests;
@@ -430,6 +436,7 @@
 				C10000000000000000000018 /* Notifications */,
 				E20000000000000000000092 /* Roadmaps */,
 				E20000000000000000000093 /* Activities */,
+				F80000000000000000002001 /* Interviewer */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -449,6 +456,14 @@
 				F3000000000000000000010A /* RecordingEnvironmentMonitor.swift */,
 			);
 			path = Recording;
+			sourceTree = "<group>";
+		};
+		F80000000000000000002001 /* Interviewer */ = {
+			isa = PBXGroup;
+			children = (
+				F80000000000000000001001 /* InterviewerTurn.swift */,
+			);
+			path = Interviewer;
 			sourceTree = "<group>";
 		};
 		F60000000000000000002001 /* Speech */ = {
@@ -688,6 +703,7 @@
 				F60000000000000000000007 /* SpeechTranscription.swift in Sources */,
 				F60000000000000000000009 /* SpeechModelCatalog.swift in Sources */,
 				F70000000000000000000001 /* WhisperTranscriber.swift in Sources */,
+				F80000000000000000000001 /* InterviewerTurn.swift in Sources */,
 				F6000000000000000000000C /* RecordingAudioReading.swift in Sources */,
 				E30000000000000000000001 /* EvidenceModels.swift in Sources */,
 				F40000000000000000000005 /* NativeParityUIFixture.swift in Sources */,
@@ -746,6 +762,7 @@
 				F60000000000000000000008 /* SpeechTranscription.swift in Sources */,
 				F6000000000000000000000A /* SpeechModelCatalog.swift in Sources */,
 				F70000000000000000000002 /* WhisperTranscriber.swift in Sources */,
+				F80000000000000000000002 /* InterviewerTurn.swift in Sources */,
 				F6000000000000000000000D /* RecordingAudioReading.swift in Sources */,
 				F30000000000000000000021 /* RecordingFeatureTests.swift in Sources */,
 				F30000000000000000000022 /* RecordingUploadTests.swift in Sources */,
@@ -802,6 +819,7 @@
 				E20000000000000000000045 /* RoadmapViewModelTests.swift in Sources */,
 				E20000000000000000000046 /* ActivityArtifactUploadTests.swift in Sources */,
 				E20000000000000000000047 /* ActivityTimerTests.swift in Sources */,
+				F80000000000000000000003 /* InterviewerTurnTests.swift in Sources */,
 				E20000000000000000000048 /* ActivityWorkspaceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
