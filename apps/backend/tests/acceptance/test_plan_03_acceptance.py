@@ -48,9 +48,7 @@ def test_routine_feedback_passes_at_the_boundary_and_misses_just_past_it() -> No
 
 def test_assessment_feedback_passes_at_the_hour_and_misses_just_past_it() -> None:
     at = run(kind="mock", feedback_ready_at=SEALED + ASSESSMENT_SLO)
-    past = run(
-        kind="mock", feedback_ready_at=SEALED + ASSESSMENT_SLO + timedelta(milliseconds=1)
-    )
+    past = run(kind="mock", feedback_ready_at=SEALED + ASSESSMENT_SLO + timedelta(milliseconds=1))
 
     assert at.on_time is True
     assert past.on_time is False
@@ -193,3 +191,95 @@ def test_the_acceptance_run_reports_every_outcome_and_hides_none() -> None:
         "speech_stage_missed": 1,
         "claude_unavailable": 1,
     }
+
+
+# --- the release checklist (issue #114) ------------------------------------------------------
+
+
+import json  # noqa: E402
+import shutil  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from tamforge_backend.operations.release_checklist import (  # noqa: E402
+    CHECKLIST,
+    ReleaseRefused,
+    evaluate,
+    require_releasable,
+)
+
+REPO = Path(__file__).resolve().parents[4]
+
+
+def test_the_checklist_links_every_required_area() -> None:
+    areas = {item.area for item in CHECKLIST}
+    assert areas == {
+        "signing",
+        "permissions",
+        "recording",
+        "learning",
+        "privacy",
+        "recovery",
+        "version",
+    }
+    assert all(item.required for item in CHECKLIST)
+    assert all((REPO / item.evidence).exists() or item.area in {"version"} for item in CHECKLIST), [
+        item.evidence for item in CHECKLIST if not (REPO / item.evidence).exists()
+    ]
+
+
+def test_the_repository_today_is_refused_and_says_exactly_why() -> None:
+    decision = evaluate(REPO)
+    unresolved = {v.key: v.reason for v in decision.unresolved}
+    # Two items are open by design: no 60-minute runtime window has been recorded on
+    # this head, and no release is tagged. Everything else resolves from committed evidence.
+    assert set(unresolved) == {"recording.runtime_window", "version.tagged_exact_commit"}, (
+        unresolved
+    )
+    assert "blocked template" in unresolved["recording.runtime_window"]
+    assert "no release tag" in unresolved["version.tagged_exact_commit"]
+    with pytest.raises(ReleaseRefused, match="recording.runtime_window"):
+        require_releasable(decision)
+
+
+def test_a_fully_resolved_tree_is_releasable(tmp_path: Path) -> None:
+    for item in CHECKLIST:
+        target = tmp_path / item.evidence
+        target.parent.mkdir(parents=True, exist_ok=True)
+        source = REPO / item.evidence
+        if source.exists():
+            shutil.copy(source, target)
+    # Resolve the three open items the way they would be resolved for real.
+    verification = tmp_path / "docs/project/recording-verification-v1.json"
+    body = json.loads(verification.read_text())
+    body["commit_sha"] = "a" * 40
+    for result in body["results"]:
+        result["status"] = "pass"
+    verification.write_text(json.dumps(body))
+    perf = tmp_path / "docs/project/speech-performance-60m-apple-m5-24gb.json"
+    perf_body = json.loads(perf.read_text())
+    perf_body["verdicts"]["transcriptionPeakWithinGate"] = True
+    perf.write_text(json.dumps(perf_body))
+    (tmp_path / "apps/macos/.release-tag").write_text("v0.1.0+6a7ca76\n")
+
+    decision = evaluate(tmp_path)
+    assert decision.releasable, decision.render()
+    require_releasable(decision)
+
+
+def test_a_tag_that_does_not_match_the_marketing_version_is_unresolved(tmp_path: Path) -> None:
+    pbx = tmp_path / "apps/macos/TAMForge.xcodeproj/project.pbxproj"
+    pbx.parent.mkdir(parents=True)
+    pbx.write_text("MARKETING_VERSION = 0.1.0;\n")
+    (tmp_path / "apps/macos/.release-tag").write_text("v0.2.0+abcdef1\n")
+    decision = evaluate(tmp_path, tuple(item for item in CHECKLIST if item.area == "version"))
+    assert not decision.releasable and "tag 'v0.2.0+abcdef1'" in decision.unresolved[0].reason
+
+
+def test_the_decision_has_no_override() -> None:
+    import inspect
+
+    from tamforge_backend.operations import release_checklist
+
+    source = inspect.getsource(release_checklist)
+    assert "override" not in source.lower().replace("no override flag", "")
+    assert "force" not in source.lower()
