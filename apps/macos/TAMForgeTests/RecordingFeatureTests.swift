@@ -2995,10 +2995,16 @@ private actor FakeRecordingAudioReader: RecordingAudioReading {
         self.failure = failure
     }
 
-    func sealedChunks(recordingID: UUID, track: RecordingTrackKind) async throws -> [RecordingPCMChunk] {
+    func sealedChunks(
+        recordingID: UUID, track: RecordingTrackKind
+    ) async throws -> AsyncThrowingStream<RecordingPCMChunk, any Error> {
         requestedTracks.append(track)
         if let failure { throw failure }
-        return chunks
+        let chunks = chunks
+        return AsyncThrowingStream { continuation in
+            for chunk in chunks { continuation.yield(chunk) }
+            continuation.finish()
+        }
     }
 }
 

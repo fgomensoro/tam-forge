@@ -466,6 +466,47 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
         )
     }
 
+    // Streams one track's chunks in file order with a single record resident
+    // at a time, so reading an hour of audio never holds the decrypted track
+    // in memory. Mirrors what recover(...) yields for that track: corrupt
+    // records are skipped and the stream ends at the first unrecoverable one.
+    static func streamTrack(
+        recordingID: UUID,
+        rootURL: URL,
+        keyStore: any RecordingKeyStoring,
+        track: RecordingTrackKind
+    ) async throws -> AsyncThrowingStream<RecordingPCMChunk, any Error> {
+        let directory = rootURL.appendingPathComponent(recordingID.uuidString, isDirectory: true)
+        let key = try await keyStore.load(recordingID: recordingID)
+        let url = directory.appendingPathComponent(track.fileName)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return AsyncThrowingStream { $0.finish() }
+        }
+        let cursor = try TrackScanCursorBox(TrackScanCursor(
+            url: url, expectedRecordingID: recordingID, expectedTrack: track, key: key
+        ))
+        return AsyncThrowingStream(unfolding: {
+            while true {
+                switch try cursor.value.next() {
+                case let .record(record):
+                    return record.chunk
+                case .corrupt:
+                    continue
+                case .unrecoverable, .incompleteTail, .end:
+                    cursor.value.close()
+                    return nil
+                }
+            }
+        })
+    }
+
+    // The unfolding closure must be Sendable; the stream pulls from it one
+    // element at a time, so the cursor is never touched concurrently.
+    private final class TrackScanCursorBox: @unchecked Sendable {
+        var value: TrackScanCursor
+        init(_ value: TrackScanCursor) { self.value = value }
+    }
+
     private static func recoverTrack(
         url: URL,
         expectedRecordingID: UUID,
@@ -557,7 +598,7 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
         }
 
         mutating func next() throws -> TrackScanStep {
-            let lengthData = try handle.read(upToCount: 4) ?? Data()
+            let lengthData = try handle.readSpoolBytes(upTo: 4)
             if lengthData.isEmpty { return .end }
             guard lengthData.count == 4,
                   let length = lengthData.fixedWidth(at: 0, as: UInt32.self)
@@ -569,7 +610,7 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
                     track: expectedTrack, byteOffset: byteOffset, reason: .malformedLength
                 ))
             }
-            let body = try handle.read(upToCount: Int(length)) ?? Data()
+            let body = try handle.readSpoolBytes(upTo: Int(length))
             guard body.count == Int(length) else { return .incompleteTail }
             let headerData = body.prefix(EncryptedRecordingSpool.headerBytes)
             guard EncryptedRecordingSpool.authenticateRecoverableMetadata(
@@ -1024,7 +1065,7 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
             var expectedSequence = 0
             var ignoredIncompleteTail = false
             while true {
-                let lengthData = try handle.read(upToCount: 4) ?? Data()
+                let lengthData = try handle.readSpoolBytes(upTo: 4)
                 if lengthData.isEmpty { break }
                 guard lengthData.count == 4,
                       let length = lengthData.fixedWidth(at: 0, as: UInt32.self),
@@ -1043,7 +1084,7 @@ actor EncryptedRecordingSpool: RecordingSpoolWriting {
                     }
                     break
                 }
-                let body = try handle.read(upToCount: Int(length)) ?? Data()
+                let body = try handle.readSpoolBytes(upTo: Int(length))
                 guard body.count == Int(length) else {
                     ignoredIncompleteTail = true
                     break
@@ -1547,5 +1588,28 @@ private extension Data {
         let bytes = self[offset..<(offset + 16)]
         let tuple: uuid_t = bytes.withUnsafeBytes { $0.loadUnaligned(as: uuid_t.self) }
         return UUID(uuid: tuple)
+    }
+}
+
+// FileHandle.read(upToCount:) leaves every buffer it returns resident after
+// the caller releases it (measured on macOS 26.5: a 240-second track read
+// that way kept its full decrypted size in the physical footprint, and a
+// second pass doubled it). A plain read(2) into a Data the caller owns does
+// not, so every spool record is read this way.
+private extension FileHandle {
+    func readSpoolBytes(upTo count: Int) throws -> Data {
+        guard count > 0 else { return Data() }
+        var data = Data(count: count)
+        var filled = 0
+        while filled < count {
+            let got = data.withUnsafeMutableBytes { buffer in
+                Darwin.read(fileDescriptor, buffer.baseAddress! + filled, count - filled)
+            }
+            if got < 0 { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+            if got == 0 { break }
+            filled += got
+        }
+        data.count = filled
+        return data
     }
 }

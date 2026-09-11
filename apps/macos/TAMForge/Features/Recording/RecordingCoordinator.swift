@@ -413,7 +413,7 @@ final class RecordingCoordinator: ObservableObject {
                 )
                 let deriver = ASRAudioDeriver(recordingID: recordingID, track: .microphone)
                 var derived: [Int16] = []
-                for chunk in chunks {
+                for try await chunk in chunks {
                     if let block = try deriver.append(chunk) {
                         derived.append(contentsOf: block.samples)
                     }

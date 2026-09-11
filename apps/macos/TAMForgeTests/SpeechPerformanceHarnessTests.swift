@@ -363,11 +363,13 @@ final class SpeechPerformanceHarnessTests: XCTestCase {
     private func deriveRequest(
         reader: any RecordingAudioReading, recordingID: UUID, seconds: Int?
     ) async throws -> SpeechTranscriptionRequest {
-        var chunks = try await reader.sealedChunks(recordingID: recordingID, track: .microphone)
-        if let seconds { chunks = Array(chunks.prefix(seconds)) }
+        let chunks = try await reader.sealedChunks(recordingID: recordingID, track: .microphone)
         let deriver = ASRAudioDeriver(recordingID: recordingID, track: .microphone)
         var samples: [Int16] = []
-        for chunk in chunks {
+        var taken = 0
+        for try await chunk in chunks {
+            if let seconds, taken == seconds { break }
+            taken += 1
             if let block = try deriver.append(chunk) { samples += block.samples }
         }
         let (last, lineage) = deriver.finish()
