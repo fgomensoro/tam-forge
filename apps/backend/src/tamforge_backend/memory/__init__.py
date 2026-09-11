@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+from .context import (
+    HIERARCHY,
+    ContextError,
+    ContextPacket,
+    ContextRequest,
+    ContextSource,
+    build_context,
+)
 from .embeddings import (
     EMBEDDING_CONTRACT_VERSION,
     EmbeddingError,
@@ -31,6 +39,12 @@ from .retrieval import (
 from .service import MemoryReview, ProposalRecord, ReviewError
 
 __all__ = [
+    "HIERARCHY",
+    "ContextError",
+    "ContextPacket",
+    "ContextRequest",
+    "ContextSource",
+    "build_context",
     "EMBEDDING_CONTRACT_VERSION",
     "EmbeddingError",
     "EmbeddingModelPin",
