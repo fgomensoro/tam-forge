@@ -23,17 +23,11 @@ pytestmark = pytest.mark.integration
 
 ROOT = Path(__file__).parents[5]
 FIXTURE = ROOT / "apps" / "backend" / "tests" / "fixtures" / "roadmaps" / "month-v1.zip"
-PARITY_FIXTURE = (
-    ROOT / "tests" / "fixtures" / "native-parity" / "foundation-journey-v1.json"
-)
-TODAY_VOLATILE_FIELDS = frozenset(
-    {"source_updated_at", "read_model_version", "etag"}
-)
+PARITY_FIXTURE = ROOT / "tests" / "fixtures" / "native-parity" / "foundation-journey-v1.json"
+TODAY_VOLATILE_FIELDS = frozenset({"source_updated_at", "read_model_version", "etag"})
 
 
-def _without_fields(
-    payload: dict[str, object], fields: frozenset[str]
-) -> dict[str, object]:
+def _without_fields(payload: dict[str, object], fields: frozenset[str]) -> dict[str, object]:
     missing = fields.difference(payload)
     assert not missing, f"volatile response fields disappeared: {sorted(missing)}"
     return {key: value for key, value in payload.items() if key not in fields}
@@ -54,8 +48,7 @@ def _isolated_object_store() -> dict[str, str]:
     ]
     if mismatched:
         pytest.fail(
-            "isolated MinIO settings must match the locked parity target: "
-            + ", ".join(mismatched),
+            "isolated MinIO settings must match the locked parity target: " + ", ".join(mismatched),
             pytrace=False,
         )
     return expected
@@ -202,12 +195,8 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                 roadmap_config_dir=ROOT / "config",
                 object_store_endpoint=object_store["TAMFORGE_OBJECT_STORE_ENDPOINT"],
                 object_store_bucket=object_store["TAMFORGE_OBJECT_STORE_BUCKET"],
-                object_store_access_key=object_store[
-                    "TAMFORGE_OBJECT_STORE_ACCESS_KEY"
-                ],
-                object_store_secret_key=object_store[
-                    "TAMFORGE_OBJECT_STORE_SECRET_KEY"
-                ],
+                object_store_access_key=object_store["TAMFORGE_OBJECT_STORE_ACCESS_KEY"],
+                object_store_secret_key=object_store["TAMFORGE_OBJECT_STORE_SECRET_KEY"],
                 object_store_region="us-east-1",
                 object_store_addressing_style="path",
                 github_roadmap_mirror_token="",
@@ -321,20 +310,18 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                             json={"code_challenge": challenge},
                         )
                         assert started_auth.status_code == 200
-                        state = parse_qs(
-                            urlsplit(
-                                started_auth.json()["authorization_url"]
-                            ).query
-                        )["state"][0]
+                        state = parse_qs(urlsplit(started_auth.json()["authorization_url"]).query)[
+                            "state"
+                        ][0]
                         callback = await auth_client.get(
                             "/api/v1/auth/callback",
                             params={"code": "provider-code", "state": state},
                             follow_redirects=False,
                         )
                         assert callback.status_code == 303
-                        exchange_code = parse_qs(
-                            urlsplit(callback.headers["location"]).query
-                        )["code"][0]
+                        exchange_code = parse_qs(urlsplit(callback.headers["location"]).query)[
+                            "code"
+                        ][0]
                         exchanged = await auth_client.post(
                             "/api/v1/auth/native/exchange",
                             json={
@@ -344,9 +331,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                         )
                         assert exchanged.status_code == 200
                         native_headers = {
-                            "Authorization": (
-                                f"Bearer {exchanged.json()['access_token']}"
-                            )
+                            "Authorization": (f"Bearer {exchanged.json()['access_token']}")
                         }
                         authenticated = await auth_client.get(
                             "/api/v1/auth/native/session",
@@ -357,9 +342,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
 
                     with sync_engine.begin() as connection:
                         owner_id = connection.execute(
-                            text(
-                                "SELECT id FROM owners WHERE github_user_id = :github_id"
-                            ),
+                            text("SELECT id FROM owners WHERE github_user_id = :github_id"),
                             {"github_id": APPROVED_GITHUB_USER_ID},
                         ).scalar_one()
                         connection.execute(
@@ -395,9 +378,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                         assert isinstance(staged_payload["id"], int)
                         assert staged_payload["id"] > 0
                         assert {
-                            key: value
-                            for key, value in staged_payload.items()
-                            if key != "id"
+                            key: value for key, value in staged_payload.items() if key != "id"
                         } == expected_import_response
                         assert {
                             **staged_payload,
@@ -437,6 +418,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                         activated = await first_native_client.post(
                             f"/api/v1/roadmap-versions/{approved_payload['id']}/activate",
                             headers=native_headers,
+                            json={"timezone": "America/Los_Angeles"},
                         )
                         assert activated.status_code == 200, activated.text
                         activated_payload = activated.json()
@@ -466,9 +448,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                         }
                         expected_tasks = [
                             {
-                                "activity_id": activity_ids_by_stable_id[
-                                    expected_task.stable_id
-                                ],
+                                "activity_id": activity_ids_by_stable_id[expected_task.stable_id],
                                 "roadmap_order": expected_task.order,
                                 "stable_id": expected_task.stable_id,
                                 "block": expected_task.block,
@@ -484,9 +464,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                                 "required_output": list(expected_task.required_output),
                                 "pass_criteria": list(expected_task.pass_criteria),
                                 "allowed_ai_role": expected_task.allowed_ai_role,
-                                "evidence_requirements": list(
-                                    expected_task.evidence_requirements
-                                ),
+                                "evidence_requirements": list(expected_task.evidence_requirements),
                                 "required": expected_task.required,
                                 "optimistic_version": 1,
                             }
@@ -496,9 +474,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                             {
                                 "name": task.block,
                                 "planned_minutes": task.timebox_minutes,
-                                "activity_ids": [
-                                    activity_ids_by_stable_id[task.stable_id]
-                                ],
+                                "activity_ids": [activity_ids_by_stable_id[task.stable_id]],
                             }
                             for task in expected_day_tasks
                             if task.required
@@ -519,9 +495,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                                 "week": 1,
                                 "day": 1,
                             },
-                            "total_planned_minutes": expected_today[
-                                "total_planned_minutes"
-                            ],
+                            "total_planned_minutes": expected_today["total_planned_minutes"],
                             "time_policy": expected_today["time_policy"],
                             "required_blocks": required_blocks,
                             "tasks": expected_tasks,
@@ -543,9 +517,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                         datetime.fromisoformat(today_payload["source_updated_at"])
                         assert len(today_payload["read_model_version"]) == 64
                         int(today_payload["read_model_version"], 16)
-                        assert today_payload["etag"] == (
-                            f'"{today_payload["read_model_version"]}"'
-                        )
+                        assert today_payload["etag"] == (f'"{today_payload["read_model_version"]}"')
                         assert today.headers["ETag"] == today_payload["etag"]
                         reading = next(
                             item
@@ -590,9 +562,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                                         "anchor": expected_reading.source_heading,
                                     }
                                 ],
-                                "required_output": list(
-                                    expected_reading.required_output
-                                ),
+                                "required_output": list(expected_reading.required_output),
                                 "pass_criteria": list(expected_reading.pass_criteria),
                                 "evidence_requirements": list(
                                     expected_reading.evidence_requirements
@@ -611,9 +581,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                         assert {
                             **detail_payload,
                             "id": parity["responses"]["activity"]["id"],
-                            "study_day_id": parity["responses"]["activity"][
-                                "study_day_id"
-                            ],
+                            "study_day_id": parity["responses"]["activity"]["study_day_id"],
                         } == parity["responses"]["activity"]
                         activity_states = [detail_payload["state"]]
                         started = await mutate(
@@ -680,9 +648,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                             expected_source_hidden=True,
                             timer_open=True,
                             expected_detail_extra={
-                                "task_contract": parity["responses"]["activity"][
-                                    "task_contract"
-                                ],
+                                "task_contract": parity["responses"]["activity"]["task_contract"],
                                 "committed_output": None,
                                 "self_review": None,
                             },
@@ -711,9 +677,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                             "state": "output_committed",
                             "optimistic_version": 6,
                             "attempt_id": committed_payload["attempt_id"],
-                            "commitment_sha256": committed_payload[
-                                "commitment_sha256"
-                            ],
+                            "commitment_sha256": committed_payload["commitment_sha256"],
                             "artifact_ids": [],
                         }
                         activity_states.append(committed_payload["state"])
@@ -759,26 +723,21 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                         assert final_detail_payload["source_hidden"] is True
                         assert final_detail_payload["open_timer"] is None
                         committed_summary = final_detail_payload["committed_output"]
-                        assert committed_summary["attempt_id"] == committed_payload[
-                            "attempt_id"
-                        ]
+                        assert committed_summary["attempt_id"] == committed_payload["attempt_id"]
                         assert committed_summary["attempt_kind"] == "attempt_a"
-                        assert committed_summary["commitment_sha256"] == (
-                            committed_payload["commitment_sha256"]
+                        assert (
+                            committed_summary["commitment_sha256"]
+                            == (committed_payload["commitment_sha256"])
                         )
                         assert committed_summary["artifact_ids"] == []
                         datetime.fromisoformat(committed_summary["committed_at"])
-                        task_context = committed_summary["contract_payload"][
-                            "task_context"
-                        ]
+                        task_context = committed_summary["contract_payload"]["task_context"]
                         assert isinstance(task_context["task_definition_id"], int)
                         assert task_context["task_definition_id"] > 0
                         assert committed_summary["contract_payload"] == {
                             "contract_version": output["contract_version"],
                             "task_context": {
-                                "task_definition_id": task_context[
-                                    "task_definition_id"
-                                ],
+                                "task_definition_id": task_context["task_definition_id"],
                                 "task_stable_id": expected_reading.stable_id,
                                 "exercise_type": expected_reading.exercise_type,
                                 "mapping_version": expected_reading.mapping_version,
@@ -820,8 +779,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                                 (
                                     await session.scalars(
                                         select(ActivityTimerSession).where(
-                                            ActivityTimerSession.activity_instance_id
-                                            == activity_id
+                                            ActivityTimerSession.activity_instance_id == activity_id
                                         )
                                     )
                                 ).all()
@@ -836,9 +794,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                             state="self_review_complete",
                             optimistic_version=7,
                             classification=persisted_activity.classification,
-                            stronger_evidence_id=(
-                                persisted_activity.stronger_evidence_activity_id
-                            ),
+                            stronger_evidence_id=(persisted_activity.stronger_evidence_activity_id),
                             activity_focused_seconds=sum(
                                 item.counted_seconds for item in persisted_timers
                             ),
@@ -850,12 +806,8 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                             committed_output=CommittedOutputSummary(
                                 attempt_id=persisted_attempt.id,
                                 attempt_kind=persisted_attempt.attempt_kind,
-                                commitment_sha256=(
-                                    persisted_attempt.commitment_hash.hex()
-                                ),
-                                contract_payload=json.loads(
-                                    persisted_attempt.original_text or ""
-                                ),
+                                commitment_sha256=(persisted_attempt.commitment_hash.hex()),
+                                contract_payload=json.loads(persisted_attempt.original_text or ""),
                                 artifact_ids=(),
                                 committed_at=persisted_attempt.committed_at,
                             ),
@@ -865,9 +817,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                                 self_score=persisted_review.self_score,
                                 main_answer=persisted_review.main_answer,
                                 did_well=persisted_review.did_well,
-                                structure_weakness=(
-                                    persisted_review.structure_weakness
-                                ),
+                                structure_weakness=(persisted_review.structure_weakness),
                                 vague_points=persisted_review.vague_points,
                                 hesitation_points=persisted_review.hesitation_points,
                                 change_next=persisted_review.change_next,
@@ -886,14 +836,10 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                                 session=session,
                                 apply=True,
                             )
-                    exercise_config = bundle.exercise(
-                        "integration_diagram_and_explanation"
-                    )
+                    exercise_config = bundle.exercise("integration_diagram_and_explanation")
                     rubric = bundle.portfolio
                     applicable = tuple(
-                        impact
-                        for impact in exercise_config.impacts
-                        if impact.condition == "always"
+                        impact for impact in exercise_config.impacts if impact.condition == "always"
                     )
                     evidence_command = EvidenceEvaluationCommand(
                         activity_id=activity_id,
@@ -952,29 +898,22 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                         reader = SqlAlchemyEvidenceRepository(session)
                         first_projection = await reader.list_skills(owner_id=owner_id)
                     async with factory() as session:
-                        second_projection = await SqlAlchemyEvidenceRepository(
-                            session
-                        ).list_skills(owner_id=owner_id)
+                        second_projection = await SqlAlchemyEvidenceRepository(session).list_skills(
+                            owner_id=owner_id
+                        )
                     assert first_projection == second_projection
                     measured = tuple(
-                        item
-                        for item in first_projection.items
-                        if item.latest_snapshot is not None
+                        item for item in first_projection.items if item.latest_snapshot is not None
                     )
                     assert len(measured) == len(applicable)
                     assert {item.slug for item in measured} == {
                         item.skill_slug for item in applicable
                     }
                     manifest_ids_by_skill = {
-                        skill.slug: tuple(
-                            item.event_id for item in skill.latest_snapshot.manifest
-                        )
+                        skill.slug: tuple(item.event_id for item in skill.latest_snapshot.manifest)
                         for skill in measured
                     }
-                    assert all(
-                        len(event_ids) == 1
-                        for event_ids in manifest_ids_by_skill.values()
-                    )
+                    assert all(len(event_ids) == 1 for event_ids in manifest_ids_by_skill.values())
                     manifested_event_ids = tuple(
                         event_id
                         for event_ids in manifest_ids_by_skill.values()
@@ -982,13 +921,11 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                     )
                     assert len(set(manifested_event_ids)) == len(manifested_event_ids)
                     assert set(manifested_event_ids) == set(evidence.evidence_event_ids)
-                    assert {
-                        skill.latest_snapshot.id for skill in measured
-                    } == set(evidence.snapshot_ids)
+                    assert {skill.latest_snapshot.id for skill in measured} == set(
+                        evidence.snapshot_ids
+                    )
 
-                    expected_notification = parity["responses"]["notifications"][
-                        "items"
-                    ][0]
+                    expected_notification = parity["responses"]["notifications"]["items"][0]
                     now = datetime.fromisoformat(expected_notification["created_at"])
                     async with factory() as session:
                         async with transaction_scope(session):
@@ -1051,14 +988,14 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                             assert evidence_page.status_code == 200, evidence_page.text
                             evidence_page_payload = evidence_page.json()
                             assert evidence_page_payload["next_cursor"] is None
-                            assert tuple(
-                                item["id"] for item in evidence_page_payload["items"]
-                            ) == manifest_ids
+                            assert (
+                                tuple(item["id"] for item in evidence_page_payload["items"])
+                                == manifest_ids
+                            )
                             assert all(
                                 item["skill_slug"] == skill_slug
                                 and item["activity_id"] == activity_id
-                                and item["attempt_id"]
-                                == committed_payload["attempt_id"]
+                                and item["attempt_id"] == committed_payload["attempt_id"]
                                 for item in evidence_page_payload["items"]
                             )
                         expected_unassessed = next(
@@ -1116,11 +1053,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                             key: value
                             for key, value in first_read_payload.items()
                             if key != "read_at"
-                        } == {
-                            key: value
-                            for key, value in notification.items()
-                            if key != "read_at"
-                        }
+                        } == {key: value for key, value in notification.items() if key != "read_at"}
                         refreshed_today = await final_native_client.get(
                             "/api/v1/today?date=2026-08-24", headers=native_headers
                         )
@@ -1142,39 +1075,33 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
                         )
 
                 async with factory() as session:
-                    assert await session.scalar(
-                        select(func.count()).select_from(RoadmapImport)
-                    ) == 1
-                    assert await session.scalar(
-                        select(func.count()).select_from(Attempt)
-                    ) == 1
-                    assert await session.scalar(
-                        select(func.count()).select_from(SelfReview)
-                    ) == 1
-                    assert await session.scalar(
-                        select(func.count()).select_from(RubricEvaluation)
-                    ) == 1
+                    assert (
+                        await session.scalar(select(func.count()).select_from(RoadmapImport)) == 1
+                    )
+                    assert await session.scalar(select(func.count()).select_from(Attempt)) == 1
+                    assert await session.scalar(select(func.count()).select_from(SelfReview)) == 1
+                    assert (
+                        await session.scalar(select(func.count()).select_from(RubricEvaluation))
+                        == 1
+                    )
                     assert await session.scalar(
                         select(func.count()).select_from(SkillEvidenceEvent)
                     ) == len(applicable)
-                    assert await session.scalar(
-                        select(func.count()).select_from(Notification)
-                    ) == 1
-                    assert await session.scalar(
-                        select(func.count())
-                        .select_from(CommandReceipt)
-                        .where(CommandReceipt.command_scope == "activity.commit-output")
-                    ) == 1
+                    assert await session.scalar(select(func.count()).select_from(Notification)) == 1
+                    assert (
+                        await session.scalar(
+                            select(func.count())
+                            .select_from(CommandReceipt)
+                            .where(CommandReceipt.command_scope == "activity.commit-output")
+                        )
+                        == 1
+                    )
                     activity = await session.get(ActivityInstance, activity_id)
                     assert activity is not None
                     assert activity.state == "self_review_complete"
-                    persisted_import = (
-                        await session.scalars(select(RoadmapImport))
-                    ).one()
+                    persisted_import = (await session.scalars(select(RoadmapImport))).one()
                     object_key = persisted_import.object_key
-                    assert persisted_import.package_hash.hex() == parity[
-                        "source_package"
-                    ]["sha256"]
+                    assert persisted_import.package_hash.hex() == parity["source_package"]["sha256"]
 
                 fresh_store = S3ObjectStore(
                     endpoint_url=object_store["TAMFORGE_OBJECT_STORE_ENDPOINT"],

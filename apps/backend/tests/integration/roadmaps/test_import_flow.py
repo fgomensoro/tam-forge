@@ -14,6 +14,9 @@ FIXTURE = ROOT / "apps" / "backend" / "tests" / "fixtures" / "roadmaps" / "month
 def test_import_approval_and_activation_are_durable_and_separate(
     test_database_url: str,
 ) -> None:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
     from alembic import command
     from alembic.config import Config
     from sqlalchemy import create_engine, func, select, text
@@ -21,6 +24,7 @@ def test_import_approval_and_activation_are_durable_and_separate(
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from tamforge_backend.database import database_url_to_sync
     from tamforge_backend.evidence.config_loader import load_config_bundle
+    from tamforge_backend.learning.models import LearnerSetting
     from tamforge_backend.notifications.models import OutboxEvent
     from tamforge_backend.roadmaps.models import (
         CurriculumNode,
@@ -29,6 +33,7 @@ def test_import_approval_and_activation_are_durable_and_separate(
         TaskDefinition,
     )
     from tamforge_backend.roadmaps.package import inspect_zip_stream
+    from tamforge_backend.roadmaps.ports import ActivationNotEligible
     from tamforge_backend.roadmaps.repository import SqlAlchemyRoadmapRepository
     from tamforge_backend.roadmaps.service import RoadmapService
     from tamforge_backend.storage.fake import InMemoryObjectStore
@@ -79,22 +84,33 @@ def test_import_approval_and_activation_are_durable_and_separate(
                     assert approved.state == "approved"
                     assert approved.mirror_status == "not_required"
                     assert (
-                        await session.scalar(
-                            select(func.count()).select_from(TaskDefinition)
-                        )
+                        await session.scalar(select(func.count()).select_from(TaskDefinition))
                     ) == 158
                     assert (
-                        await session.scalar(
-                            select(func.count()).select_from(CurriculumNode)
-                        )
+                        await session.scalar(select(func.count()).select_from(CurriculumNode))
                     ) > 158
                     await session.rollback()
 
+                    with pytest.raises(ActivationNotEligible):
+                        # Nothing else creates learner settings, so the first
+                        # activation must carry the learner's timezone.
+                        await service.activate_version(owner_id=owner_id, version_id=approved.id)
                     activated = await service.activate_version(
                         owner_id=owner_id,
                         version_id=approved.id,
+                        timezone="America/Montevideo",
                     )
                     assert activated.state == "active"
+                    setting = await session.scalar(
+                        select(LearnerSetting).where(LearnerSetting.owner_id == owner_id)
+                    )
+                    assert setting is not None
+                    assert setting.timezone == "America/Montevideo"
+                    assert setting.active_roadmap_version_id == approved.id
+                    assert (
+                        setting.study_start_date
+                        == datetime.now(ZoneInfo("America/Montevideo")).date()
+                    )
                     persisted_import = await session.get(RoadmapImport, staged.id)
                     persisted_version = await session.get(RoadmapVersion, approved.id)
                     assert persisted_import is not None
@@ -102,9 +118,7 @@ def test_import_approval_and_activation_are_durable_and_separate(
                     assert persisted_version is not None
                     assert persisted_version.state == "active"
                     assert (
-                        await session.scalar(
-                            select(func.count()).select_from(OutboxEvent)
-                        )
+                        await session.scalar(select(func.count()).select_from(OutboxEvent))
                     ) == 2
                     await session.rollback()
 

@@ -179,9 +179,7 @@ class FakeRoadmapRepository(RoadmapRepository):
         self._next_version += 1
         return version
 
-    async def get_version(
-        self, *, owner_id: int, version_id: int
-    ) -> RoadmapVersionRecord | None:
+    async def get_version(self, *, owner_id: int, version_id: int) -> RoadmapVersionRecord | None:
         item = self.versions.get(version_id)
         return item if item is not None and item.owner_id == owner_id else None
 
@@ -214,7 +212,7 @@ class FakeRoadmapRepository(RoadmapRepository):
         return item
 
     async def activate_version(
-        self, *, owner_id: int, version_id: int
+        self, *, owner_id: int, version_id: int, timezone: str | None = None
     ) -> RoadmapVersionRecord:
         target = self.versions[version_id]
         assert target.owner_id == owner_id

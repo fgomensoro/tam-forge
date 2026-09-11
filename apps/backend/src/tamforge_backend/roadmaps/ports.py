@@ -139,9 +139,7 @@ class RoadmapRepository(Protocol):
         idempotency_key: str,
     ) -> CreateImportResult: ...
 
-    async def begin_validation(
-        self, *, owner_id: int, import_id: int
-    ) -> RoadmapImportRecord: ...
+    async def begin_validation(self, *, owner_id: int, import_id: int) -> RoadmapImportRecord: ...
 
     async def finish_validation(
         self,
@@ -161,9 +159,7 @@ class RoadmapRepository(Protocol):
         failure_code: str,
     ) -> RoadmapImportRecord: ...
 
-    async def get_import(
-        self, *, owner_id: int, import_id: int
-    ) -> RoadmapImportRecord | None: ...
+    async def get_import(self, *, owner_id: int, import_id: int) -> RoadmapImportRecord | None: ...
 
     async def latest_normalized_payload(
         self, *, owner_id: int, source_id: int
@@ -177,9 +173,7 @@ class RoadmapRepository(Protocol):
 
     async def list_versions(self, *, owner_id: int) -> tuple[RoadmapVersionRecord, ...]: ...
 
-    async def begin_mirror(
-        self, *, owner_id: int, version_id: int
-    ) -> RoadmapVersionRecord: ...
+    async def begin_mirror(self, *, owner_id: int, version_id: int) -> RoadmapVersionRecord: ...
 
     async def finish_mirror(
         self, *, owner_id: int, version_id: int, mirror_ref: str
@@ -190,7 +184,7 @@ class RoadmapRepository(Protocol):
     ) -> RoadmapVersionRecord: ...
 
     async def activate_version(
-        self, *, owner_id: int, version_id: int
+        self, *, owner_id: int, version_id: int, timezone: str | None = None
     ) -> RoadmapVersionRecord: ...
 
 
