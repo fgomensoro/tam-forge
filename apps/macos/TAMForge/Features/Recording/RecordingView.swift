@@ -158,6 +158,10 @@ struct RecordingView: View {
                     Label(reason, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
                         .accessibilityIdentifier("recordingTranscriptStatus")
+                case .deferred(_, let reason):
+                    Label(reason, systemImage: "hourglass")
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("recordingTranscriptStatus")
                 }
             }
             .accessibilityIdentifier("recordingTranscriptSection")

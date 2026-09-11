@@ -127,11 +127,14 @@ enum RecordingTranscriptState: Equatable, Sendable {
     case running(UUID)
     case ready(UUID, SpeechTranscriptionResult)
     case failed(UUID, String)      // human-readable, no paths
+    // Queued behind another job or held back by memory or thermal pressure;
+    // the spool is untouched and the job starts when the pressure clears.
+    case deferred(UUID, String)
 
     var recordingID: UUID? {
         switch self {
         case .idle: nil
-        case let .running(id), let .ready(id, _), let .failed(id, _): id
+        case let .running(id), let .ready(id, _), let .failed(id, _), let .deferred(id, _): id
         }
     }
 }
@@ -159,6 +162,12 @@ final class RecordingCoordinator: ObservableObject {
     private let environmentMonitor: any RecordingEnvironmentMonitoring
     private let audioReader: (any RecordingAudioReading)?
     private let transcriber: (any SpeechTranscribing)?
+    private let resourceMonitor: any ResourcePressureMonitoring
+    // One local transcription at a time (issue #51). The scheduler holds the
+    // queue and the single slot; the coordinator turns its decisions into tasks.
+    private var speechScheduler = LocalSpeechScheduler()
+    private var abortedForPressure: Set<UUID> = []
+    private var resourceTask: Task<Void, Never>?
     private var uploadQueue: [UUID] = []
     private var uploadWorkerTask: Task<Void, Never>?
     private var spool: (any RecordingSpoolWriting)?
@@ -186,7 +195,8 @@ final class RecordingCoordinator: ObservableObject {
         transcriptCache: RecordingTranscriptCache = .init(),
         environmentMonitor: any RecordingEnvironmentMonitoring = LiveRecordingEnvironmentMonitor(),
         audioReader: (any RecordingAudioReading)? = nil,
-        transcriber: (any SpeechTranscribing)? = nil
+        transcriber: (any SpeechTranscribing)? = nil,
+        resourceMonitor: any ResourcePressureMonitoring = LiveResourcePressureMonitor()
     ) {
         self.preflight = preflight
         self.source = source
@@ -197,6 +207,13 @@ final class RecordingCoordinator: ObservableObject {
         self.environmentMonitor = environmentMonitor
         self.audioReader = audioReader
         self.transcriber = transcriber
+        self.resourceMonitor = resourceMonitor
+        resourceTask = Task { [weak self] in
+            guard let events = self?.resourceMonitor.events() else { return }
+            for await state in events {
+                await self?.handleResource(state)
+            }
+        }
         // Every environment event enters the same ordered coordinator path as
         // capture events; notification callbacks never write state directly.
         environmentTask = Task { [weak self] in
@@ -217,6 +234,7 @@ final class RecordingCoordinator: ObservableObject {
         writerTask?.cancel()
         uploadWorkerTask?.cancel()
         for task in transcriptionTasks.values { task.cancel() }
+        resourceTask?.cancel()
         eventContinuation?.finish()
     }
 
@@ -400,11 +418,57 @@ final class RecordingCoordinator: ObservableObject {
     // cancellable. Each entry removes itself once its task returns, so the
     // map holds only what is actually running.
     private func beginTranscription(recordingID: UUID) {
-        guard let audioReader, let transcriber else { return }
+        guard audioReader != nil, transcriber != nil else { return }
         transcriptState = .running(recordingID)
+        speechScheduler.enqueue(recordingID)
+        drainSpeechQueue()
+    }
+
+    // Admits at most one job, and only when the Mac can afford it. A deferred
+    // job keeps its place in the queue and its spool on disk; the next
+    // resource event or the end of the running job drains the queue again.
+    private func drainSpeechQueue() {
+        switch speechScheduler.admit(under: resourceMonitor.current()) {
+        case let .run(recordingID):
+            runTranscription(recordingID: recordingID)
+        case let .deferred(reason):
+            if let next = speechScheduler.queue.first {
+                publishTranscript(.deferred(next, reason), for: next)
+            }
+        case .busy, .nothingQueued:
+            break
+        }
+    }
+
+    // Memory or thermal pressure. Warning and serious defer new work; a
+    // critical memory event stops the running job and releases the model
+    // and audio buffers, then the job goes back to the front of the queue.
+    private func handleResource(_ state: ResourceState) async {
+        if LocalSpeechScheduler.mustAbort(under: state), let running = speechScheduler.running {
+            abortedForPressure.insert(running)
+            transcriptionTasks[running]?.cancel()
+            if let releasing = transcriber as? SpeechMemoryReleasing {
+                await releasing.releaseOwnedMemory()
+            }
+            publishTranscript(.deferred(running, "Stopped to free memory; will retry"), for: running)
+            return
+        }
+        if LocalSpeechScheduler.deferralReason(for: state) == nil {
+            drainSpeechQueue()
+        }
+    }
+
+    private func runTranscription(recordingID: UUID) {
+        guard let audioReader, let transcriber else { return }
+        publishTranscript(.running(recordingID), for: recordingID)
         transcriptionTasks[recordingID] = Task { [weak self] in
             guard let self else { return }
-            defer { self.transcriptionTasks[recordingID] = nil }
+            defer {
+                self.transcriptionTasks[recordingID] = nil
+                let aborted = self.abortedForPressure.remove(recordingID) != nil
+                self.speechScheduler.finish(recordingID, requeue: aborted)
+                self.drainSpeechQueue()
+            }
             let samples: [Int16]
             let lineage: ASRDerivationLineage
             do {
@@ -479,7 +543,10 @@ final class RecordingCoordinator: ObservableObject {
         // is what keeps a resumed pass from starting a second, duplicate run
         // over the same audio. Checked after the cache read so no suspension
         // can invalidate it.
-        guard transcriptionTasks[recordingID] == nil else { return }
+        guard transcriptionTasks[recordingID] == nil,
+              !speechScheduler.queue.contains(recordingID),
+              speechScheduler.running != recordingID
+        else { return }
         // A settled .ready or .failed belongs to a recording whose result this
         // pass must not overwrite, and beginTranscription claims the slot
         // unconditionally. Anything but .idle recovers on a later pass.
@@ -562,6 +629,8 @@ final class RecordingCoordinator: ObservableObject {
             // confirmation says so. A transcript derived from that same audio
             // must neither finish on screen nor reach the server afterwards.
             transcriptionTasks.removeValue(forKey: recordingID)?.cancel()
+            speechScheduler.cancel(recordingID)
+            abortedForPressure.remove(recordingID)
             clearTranscript(forRecording: recordingID)
             await transcriptCache.remove(recordingID: recordingID)
             await refreshPendingRecordings()

@@ -3073,3 +3073,187 @@ private actor FakeSealTranscriber: SpeechTranscribing {
         )
     }
 }
+
+// MARK: - One local speech job at a time (issue #51)
+
+private final class FakeResourceMonitor: ResourcePressureMonitoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var state: ResourceState
+    private var continuations: [AsyncStream<ResourceState>.Continuation] = []
+
+    init(_ state: ResourceState = .nominal) { self.state = state }
+
+    func current() -> ResourceState {
+        lock.lock(); defer { lock.unlock() }
+        return state
+    }
+
+    func events() -> AsyncStream<ResourceState> {
+        AsyncStream { continuation in
+            lock.lock(); continuations.append(continuation); lock.unlock()
+        }
+    }
+
+    func push(_ next: ResourceState) {
+        lock.lock(); state = next; let targets = continuations; lock.unlock()
+        for continuation in targets { continuation.yield(next) }
+    }
+}
+
+private actor ReleasingGatedTranscriber: SpeechTranscribing, SpeechMemoryReleasing {
+    private let gate: TranscriptionGate
+    private(set) var releases = 0
+    private(set) var requests = 0
+
+    init(gate: TranscriptionGate) { self.gate = gate }
+
+    func transcribe(_ request: SpeechTranscriptionRequest) async throws -> SpeechTranscriptionResult {
+        requests += 1
+        await gate.holdUntilOpen()
+        try Task.checkCancellation()
+        return SpeechTranscriptionResult(
+            segments: [.init(text: "done", startMilliseconds: 0, endMilliseconds: 500, words: [])],
+            identity: .init(
+                runtimeVersion: "test", modelFilename: "fake.bin", modelSHA256: String(repeating: "0", count: 64),
+                metalRequested: false, usedBuiltInVAD: false, language: "en"
+            ),
+            lineage: request.lineage
+        )
+    }
+
+    func releaseOwnedMemory() { releases += 1 }
+}
+
+extension RecordingFeatureTests {
+    private func sealedTwice(
+        transcriber: any SpeechTranscribing, monitor: FakeResourceMonitor
+    ) async -> (RecordingCoordinator, RecoveryTrackingSpoolFactory) {
+        let micChunk = RecordingPCMChunk.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 16_000
+        )
+        let reader = FakeRecordingAudioReader(microphoneChunks: [micChunk])
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: OrderedFakeRecordingSpool())
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: spoolFactory,
+                audioReader: reader,
+                transcriber: transcriber,
+                resourceMonitor: monitor
+            )
+        }
+        await coordinator.start()
+        await coordinator.stop()
+        await MainActor.run { coordinator.resetSealedState() }
+        await coordinator.start()
+        await coordinator.stop()
+        return (coordinator, spoolFactory)
+    }
+
+    private func waitUntil(_ condition: @escaping () async -> Bool) async -> Bool {
+        for _ in 0..<500 {
+            if await condition() { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return false
+    }
+
+    func testOnlyOneLocalTranscriptionRunsAtATime() async throws {
+        let gate = TranscriptionGate()
+        let transcriber = ReleasingGatedTranscriber(gate: gate)
+        let (coordinator, _) = await sealedTwice(transcriber: transcriber, monitor: FakeResourceMonitor())
+
+        // Two sealed recordings, one gate held closed: exactly one job reached the engine.
+        let reached1 = await waitUntil { await transcriber.requests == 1 }
+        XCTAssertTrue(reached1)
+        try? await Task.sleep(for: .milliseconds(50))
+        let requestsWhileHeld = await transcriber.requests
+        XCTAssertEqual(requestsWhileHeld, 1)
+        let state = await MainActor.run { coordinator.transcriptState }
+        if case .deferred = state {} else if case .running = state {} else {
+            XCTFail("second recording should be running or queued, got \(state)")
+        }
+
+        await gate.open()
+        let reached2 = await waitUntil { await transcriber.requests == 2 }
+        XCTAssertTrue(reached2)
+        let settled = await waitUntilTranscriptSettles(coordinator)
+        guard case .ready = settled else { return XCTFail("expected .ready, got \(settled)") }
+    }
+
+    func testMemoryWarningDefersTranscriptionUntilThePressureClears() async throws {
+        let gate = TranscriptionGate()
+        await gate.open()
+        let transcriber = ReleasingGatedTranscriber(gate: gate)
+        let monitor = FakeResourceMonitor(ResourceState(memory: .warning))
+        let micChunk = RecordingPCMChunk.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 16_000
+        )
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: RecoveryTrackingSpoolFactory(spool: OrderedFakeRecordingSpool()),
+                audioReader: FakeRecordingAudioReader(microphoneChunks: [micChunk]),
+                transcriber: transcriber,
+                resourceMonitor: monitor
+            )
+        }
+        await coordinator.start()
+        await coordinator.stop()
+
+        let deferred = await waitUntilTranscriptSettles(coordinator)
+        guard case let .deferred(_, reason) = deferred else { return XCTFail("expected .deferred, got \(deferred)") }
+        XCTAssertEqual(reason, "Waiting for memory pressure to clear")
+        let requestsWhileDeferred = await transcriber.requests
+        XCTAssertEqual(requestsWhileDeferred, 0)
+
+        monitor.push(.nominal)
+        let reached3 = await waitUntil { await transcriber.requests == 1 }
+        XCTAssertTrue(reached3)
+        let settled = await waitUntilTranscriptSettles(coordinator)
+        guard case .ready = settled else { return XCTFail("expected .ready, got \(settled)") }
+    }
+
+    func testCriticalMemoryAbortsTheRunningJobReleasesMemoryKeepsTheSpoolAndRetries() async throws {
+        let gate = TranscriptionGate()
+        let transcriber = ReleasingGatedTranscriber(gate: gate)
+        let monitor = FakeResourceMonitor()
+        let micChunk = RecordingPCMChunk.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 16_000
+        )
+        let spoolFactory = RecoveryTrackingSpoolFactory(spool: OrderedFakeRecordingSpool())
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: spoolFactory,
+                audioReader: FakeRecordingAudioReader(microphoneChunks: [micChunk]),
+                transcriber: transcriber,
+                resourceMonitor: monitor
+            )
+        }
+        await coordinator.start()
+        await coordinator.stop()
+        let reached4 = await waitUntil { await transcriber.requests == 1 }
+        XCTAssertTrue(reached4)
+
+        monitor.push(ResourceState(memory: .critical))
+        let reached5 = await waitUntil { await transcriber.releases == 1 }
+        XCTAssertTrue(reached5)
+        let aborted = await waitUntilTranscriptSettles(coordinator)
+        guard case .deferred = aborted else { return XCTFail("expected .deferred after abort, got \(aborted)") }
+        let pendingIDs = await MainActor.run { coordinator.pendingRecordingIDs }
+        let createdIDs = await spoolFactory.createdRecordingIDs
+        XCTAssertEqual(pendingIDs, createdIDs, "the spool stays on disk after an abort")
+
+        await gate.open()
+        monitor.push(.nominal)
+        let reached6 = await waitUntil { await transcriber.requests == 2 }
+        XCTAssertTrue(reached6)
+        let settled = await waitUntilTranscriptSettles(coordinator)
+        guard case .ready = settled else { return XCTFail("expected .ready after retry, got \(settled)") }
+    }
+}
+
