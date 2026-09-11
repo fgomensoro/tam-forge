@@ -1,0 +1,8 @@
+{
+  "fixture_version": "speech-gates-v1",
+  "cases": [
+    {"case_id": "timed-answer", "duration_ms": 1300, "words": [[0, 200], [250, 700], [800, 1200]], "expect_timing": "decision_grade"},
+    {"case_id": "fragment", "duration_ms": 10000, "words": [[0, 200]], "expect_timing": "unavailable"},
+    {"case_id": "overlapping", "duration_ms": 1000, "words": [[0, 500], [400, 900]], "expect_timing": "unavailable"}
+  ]
+}

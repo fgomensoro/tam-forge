@@ -1,0 +1,11 @@
+{
+  "fixture_version": "agent-invariants-v1",
+  "prompt_version": "roles-v1",
+  "cases": [
+    {"case_id": "planner-ready", "role": "planner", "strengths": ["names the buyer", "sizes the market bottom-up"], "corrections": ["state the churn assumption", "quantify the payback"], "evidence_timestamps_ms": [1200, 8400], "contains_answer": false, "unsupported_claims_high": 0},
+    {"case_id": "tutor-ready", "role": "tutor", "strengths": ["clear structure", "uses TAM terms correctly"], "corrections": ["shorten the opening", "cite the cohort"], "evidence_timestamps_ms": [300, 5100], "contains_answer": false, "unsupported_claims_high": 0},
+    {"case_id": "reviewer-ready", "role": "reviewer", "strengths": ["direct answer first", "handles the objection"], "corrections": ["name the trade-off", "close with a decision"], "evidence_timestamps_ms": [2000, 9000], "contains_answer": false, "unsupported_claims_high": 0},
+    {"case_id": "coach-ready", "role": "coach", "strengths": ["recovers from a restart", "keeps pace under 160 wpm"], "corrections": ["drop the filler at the start", "answer the second question"], "evidence_timestamps_ms": [400, 7600], "contains_answer": false, "unsupported_claims_high": 0},
+    {"case_id": "analyst-ready", "role": "analyst", "strengths": ["links evidence to the rubric", "flags uncertainty"], "corrections": ["separate English from TAM judgment", "cite the attempt text"], "evidence_timestamps_ms": [900, 6100], "contains_answer": false, "unsupported_claims_high": 0}
+  ]
+}

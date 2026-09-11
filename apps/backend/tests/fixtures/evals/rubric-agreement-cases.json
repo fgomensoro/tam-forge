@@ -1,0 +1,28 @@
+{
+  "fixture_version": "rubric-agreement-v1",
+  "rubric_slug": "tam-core",
+  "rubric_version": "seed-v1",
+  "scale": [0, 4],
+  "cases": [
+    {"case_id": "c01", "dimension": "correctness", "human": 3, "model": 3},
+    {"case_id": "c02", "dimension": "structure", "human": 2, "model": 3},
+    {"case_id": "c03", "dimension": "relevance", "human": 4, "model": 4},
+    {"case_id": "c04", "dimension": "customer_judgment", "human": 1, "model": 1},
+    {"case_id": "c05", "dimension": "technical_reasoning", "human": 2, "model": 2},
+    {"case_id": "c06", "dimension": "business_framing", "human": 3, "model": 2},
+    {"case_id": "c07", "dimension": "trade_offs", "human": 0, "model": 1},
+    {"case_id": "c08", "dimension": "audience_adaptation", "human": 4, "model": 3},
+    {"case_id": "c09", "dimension": "decision_quality", "human": 2, "model": 2},
+    {"case_id": "c10", "dimension": "correctness", "human": 1, "model": 3},
+    {"case_id": "c11", "dimension": "structure", "human": 3, "model": 3},
+    {"case_id": "c12", "dimension": "relevance", "human": 2, "model": 1},
+    {"case_id": "c13", "dimension": "customer_judgment", "human": 4, "model": 4},
+    {"case_id": "c14", "dimension": "technical_reasoning", "human": 0, "model": 0},
+    {"case_id": "c15", "dimension": "business_framing", "human": 3, "model": 4},
+    {"case_id": "c16", "dimension": "trade_offs", "human": 2, "model": 2},
+    {"case_id": "c17", "dimension": "audience_adaptation", "human": 1, "model": 2},
+    {"case_id": "c18", "dimension": "decision_quality", "human": 3, "model": 3},
+    {"case_id": "c19", "dimension": "correctness", "human": 4, "model": 4},
+    {"case_id": "c20", "dimension": "structure", "human": 1, "model": 1}
+  ]
+}
