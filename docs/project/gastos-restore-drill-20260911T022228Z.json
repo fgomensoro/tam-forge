@@ -1,0 +1,75 @@
+{
+  "archive_captured_at": "20260911T013332Z",
+  "archive_manifest_sha256": "af5d2401165948e91024f0ced9b9af606666844ffb196d7134818e4e52057b6b",
+  "caddyfile_valid": true,
+  "caddyfile_validator": "local caddy",
+  "commands": [
+    "docker run -d --network none --name gastos-restore-pg-20260911T022228Z -e POSTGRES_PASSWORD=<redacted> -v <workdir>/plain/postgres:/restore:ro postgres:16",
+    "docker exec gastos-restore-pg-20260911T022228Z pg_isready -U postgres",
+    "docker exec gastos-restore-pg-20260911T022228Z pg_isready -U postgres",
+    "docker exec gastos-restore-pg-20260911T022228Z psql -U postgres -d postgres -At -c show server_version",
+    "docker exec gastos-restore-pg-20260911T022228Z psql -U postgres -q -f /restore/globals.sql",
+    "docker exec gastos-restore-pg-20260911T022228Z psql -U postgres -d postgres -At -c select count(*) from pg_roles where rolname not like 'pg_%'",
+    "docker exec gastos-restore-pg-20260911T022228Z createdb -U postgres n8n",
+    "docker exec gastos-restore-pg-20260911T022228Z pg_restore -U postgres -d n8n --no-owner /restore/n8n.dump",
+    "docker exec gastos-restore-pg-20260911T022228Z psql -U postgres -d n8n -At -c select count(*) from information_schema.tables where table_schema='public'",
+    "docker exec gastos-restore-pg-20260911T022228Z psql -U postgres -d n8n -At -c select count(*) from \"workflow_entity\"",
+    "docker exec gastos-restore-pg-20260911T022228Z psql -U postgres -d n8n -At -c select count(*) from \"credentials_entity\"",
+    "docker exec gastos-restore-pg-20260911T022228Z psql -U postgres -d n8n -At -c select count(*) from \"execution_entity\"",
+    "docker exec gastos-restore-pg-20260911T022228Z psql -U postgres -d n8n -At -c select count(*) from \"user\"",
+    "docker exec gastos-restore-pg-20260911T022228Z createdb -U postgres leadgen",
+    "docker exec gastos-restore-pg-20260911T022228Z pg_restore -U postgres -d leadgen --no-owner /restore/leadgen.dump",
+    "docker exec gastos-restore-pg-20260911T022228Z psql -U postgres -d leadgen -At -c select count(*) from information_schema.tables where table_schema='public'",
+    "docker exec gastos-restore-pg-20260911T022228Z psql -U postgres -d leadgen -At -c select count(*) from \"leads\"",
+    "docker exec gastos-restore-pg-20260911T022228Z psql -U postgres -d leadgen -At -c select count(*) from \"searches\"",
+    "docker exec gastos-restore-pg-20260911T022228Z psql -U postgres -d n8n -At -c select count(*) from workflow_entity",
+    "docker exec gastos-restore-pg-20260911T022228Z psql -U postgres -d n8n -At -c select count(*) from workflow_entity where active",
+    "docker rm -f gastos-restore-pg-20260911T022228Z",
+    "docker image inspect caddy:2"
+  ],
+  "container": "gastos-restore-pg-20260911T022228Z",
+  "databases": [
+    {
+      "name": "n8n",
+      "row_counts": {
+        "credentials_entity": 9,
+        "execution_entity": 36,
+        "user": 1,
+        "workflow_entity": 8
+      },
+      "table_count": 51
+    },
+    {
+      "name": "leadgen",
+      "row_counts": {
+        "leads": 770,
+        "searches": 8
+      },
+      "table_count": 2
+    }
+  ],
+  "drilled_at": "20260911T022228Z",
+  "environment": {
+    "keys_missing": [],
+    "keys_referenced": 6
+  },
+  "files": {
+    "gapfiller_source_entries": 954,
+    "n8n_data_entries": 12
+  },
+  "host_contacted": false,
+  "isolated": true,
+  "lamas_untouched": true,
+  "n8n": {
+    "workflows_active": 0,
+    "workflows_total": 8
+  },
+  "network": "none",
+  "nocodb": {
+    "integrity": "ok",
+    "table_count": 132
+  },
+  "postgres_version": "16.15 (Debian 16.15-1.pgdg13+2)",
+  "roles_restored": 3,
+  "schema_version": 1
+}
