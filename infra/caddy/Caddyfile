@@ -1,0 +1,68 @@
+# TAM Forge edge. TLS terminates here; everything behind it is loopback.
+# Rendered for the hostname in infra/config/host-layout.env; validate with
+# `caddy validate --adapter caddyfile --config infra/caddy/Caddyfile` before reload.
+{
+	admin off
+	servers {
+		max_header_size 16KB
+		timeouts {
+			read_body 60s
+			read_header 10s
+			idle 300s
+		}
+	}
+}
+
+app.tamforge.example {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		-Server
+	}
+
+	# Owner-authenticated API, WebSocket ingest and SSE share one upstream.
+	@stream path /api/v1/recordings/* /api/v1/events/*
+	reverse_proxy @stream 127.0.0.1:8000 {
+		flush_interval -1
+		transport http {
+			read_timeout 0
+			write_timeout 0
+		}
+	}
+
+	# Operational routes never leave the host.
+	@operational path /metrics /internal/*
+	respond @operational 404
+
+	request_body {
+		max_size 64MB
+	}
+
+	reverse_proxy 127.0.0.1:8000 {
+		header_up -Cookie
+		header_up X-Forwarded-Proto https
+	}
+
+	log {
+		output file /var/log/caddy/tamforge.log {
+			roll_size 50MiB
+			roll_keep 5
+		}
+		format filter {
+			wrap json
+			fields {
+				request>headers>Authorization delete
+				request>headers>Cookie delete
+				request>uri query {
+					delete token
+					delete signature
+					delete X-Amz-Signature
+				}
+			}
+		}
+	}
+}

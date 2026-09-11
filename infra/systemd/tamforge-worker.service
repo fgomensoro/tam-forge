@@ -1,0 +1,52 @@
+# TAM Forge worker. Budgets come from infra/config/host-layout.env; do not edit on the host.
+[Unit]
+Description=TAM Forge worker
+After=network-online.target postgresql.service
+Wants=network-online.target
+# Ingest and study stay up when Claude or transcription is degraded: no Requires= on them.
+
+[Service]
+Type=simple
+User=tamforge-worker
+Group=tamforge
+WorkingDirectory=/opt/tamforge/current
+ExecStart=/opt/tamforge/current/.venv/bin/python -m tamforge_backend.workers.general
+EnvironmentFile=/etc/tamforge/worker.env
+LoadCredential=export-signing-private.json:/etc/tamforge/secrets/export-signing-private.json
+LoadCredential=export-signing-public.json:/etc/tamforge/trust/export-signing-public.json
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=300
+StartLimitBurst=5
+SyslogIdentifier=tamforge-worker
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=1000
+
+# Resource budget (MB from the host contract)
+MemoryMax=512M
+MemoryHigh=460M
+CPUQuota=100%
+TasksMax=256
+LimitNOFILE=4096
+
+# Hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RuntimeDirectory=tamforge/worker
+RuntimeDirectoryMode=0750
+StateDirectory=tamforge/worker
+CacheDirectory=tamforge/worker
+ReadWritePaths=/var/lib/tamforge/shared
+
+[Install]
+WantedBy=multi-user.target
