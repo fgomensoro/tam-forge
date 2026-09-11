@@ -10,7 +10,7 @@ from yaml.events import AliasEvent
 from yaml.loader import SafeLoader
 from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 
-APPROVED_MINIO_IMAGE = "minio/minio:RELEASE.2024-06-13T22-53-53Z"
+APPROVED_MINIO_IMAGE = "quay.io/minio/minio:RELEASE.2024-06-13T22-53-53Z"
 MAX_COMPOSE_BYTES = 64 * 1024
 MAX_COMPOSE_NESTING_DEPTH = 32
 MAX_COMPOSE_NODES = 500
