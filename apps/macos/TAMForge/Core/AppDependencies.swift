@@ -20,7 +20,7 @@ enum AppEnvironment: Equatable, Sendable {
     var apiBaseURL: URL {
         switch self {
         case .production:
-            URL(string: "https://api.tamforge.invalid")!
+            URL(string: "https://app.homegastos.xyz")!
         case .preview:
             URL(string: "https://api-preview.tamforge.invalid")!
         }
