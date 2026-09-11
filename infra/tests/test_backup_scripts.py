@@ -150,3 +150,123 @@ def test_thresholds_are_positive(changes) -> None:
 def test_an_environment_has_a_name() -> None:
     with pytest.raises(DrillError, match="has a name"):
         Environment("   ", is_production=False)
+
+
+# --- the encrypted daily backup (issue #12) ------------------------------------------------
+
+
+from pathlib import Path  # noqa: E402
+
+from infra.backup.encrypted import (  # noqa: E402
+    BackupError,
+    BackupManifest,
+    assert_no_secret,
+    backup,
+    decrypt_dump,
+    restore_drill,
+    verify,
+)
+
+KEY = bytes(range(32))
+CAPTURED = datetime(2026, 9, 15, 3, tzinfo=UTC)
+
+
+def make_backup(tmp_path: Path, **overrides: object) -> Path:
+    destination = tmp_path / "backup" / CAPTURED.strftime("%Y%m%dT%H%M%SZ")
+    kwargs: dict[str, object] = {
+        "key": KEY,
+        "dump": lambda: b"PGDMP fake custom-format dump bytes",
+        "config": {"DATABASE_URL": "postgresql://x", "OBJECT_STORE_SECRET_KEY": "hunter2"},
+        "tool_versions": {"pg_dump": "16.15", "python-cryptography": "46.0.7"},
+        "schema_head": "abc123def456",
+        "now": lambda: CAPTURED,
+    }
+    kwargs.update(overrides)
+    backup(destination, **kwargs)  # type: ignore[arg-type]
+    return destination
+
+
+def test_a_backup_is_encrypted_hash_covered_and_its_manifest_names_no_value(tmp_path: Path) -> None:
+    destination = make_backup(tmp_path)
+    manifest = verify(destination, key=KEY)
+    assert isinstance(manifest, BackupManifest) and manifest.cipher == "AES-256-GCM"
+    assert [p.name for p in manifest.payloads] == ["db/tamforge.dump", "config/inventory.json"]
+    ciphertext = (destination / "payloads" / "db" / "tamforge.dump.enc").read_bytes()
+    assert b"PGDMP" not in ciphertext
+    text = (destination / "manifest.json").read_text()
+    assert "hunter2" not in text and "postgresql://x" not in text and KEY.hex() not in text
+    assert '"OBJECT_STORE_SECRET_KEY"' in text  # the key name is inventory; the value never is
+    assert decrypt_dump(destination, key=KEY) == b"PGDMP fake custom-format dump bytes"
+
+
+def test_the_manifest_is_published_last_and_a_directory_is_written_once(tmp_path: Path) -> None:
+    destination = make_backup(tmp_path)
+    assert not list(destination.glob("*.tmp")) and not list(destination.glob("payloads/**/*.tmp"))
+    with pytest.raises(BackupError, match="written once"):
+        make_backup(tmp_path)
+
+
+def test_an_empty_dump_or_a_bad_key_never_produces_a_backup(tmp_path: Path) -> None:
+    with pytest.raises(BackupError, match="empty dump"):
+        make_backup(tmp_path, dump=lambda: b"")
+    with pytest.raises(BackupError, match="32 bytes"):
+        make_backup(tmp_path / "other", key=b"short")
+
+
+def test_a_manifest_that_would_carry_a_credential_is_refused() -> None:
+    for text in ("password=hunter2", "api_key: abc", "-----BEGIN RSA PRIVATE KEY-----"):
+        with pytest.raises(BackupError, match="credential"):
+            assert_no_secret(text)
+    assert_no_secret('{"config_keys": ["POSTGRES_PASSWORD"]}')
+
+
+def test_a_changed_byte_or_a_missing_payload_fails_verification(tmp_path: Path) -> None:
+    destination = make_backup(tmp_path)
+    path = destination / "payloads" / "db" / "tamforge.dump.enc"
+    data = bytearray(path.read_bytes())
+    data[3] ^= 0xFF
+    path.write_bytes(bytes(data))
+    with pytest.raises(BackupError, match="does not match"):
+        verify(destination)
+    path.unlink()
+    with pytest.raises(BackupError, match="partial backup"):
+        verify(destination, key=KEY)
+
+
+def test_the_wrong_key_cannot_read_the_backup(tmp_path: Path) -> None:
+    destination = make_backup(tmp_path)
+    with pytest.raises(BackupError, match="decryption failed"):
+        verify(destination, key=bytes(32))
+
+
+def test_the_restore_drill_restores_through_the_injected_step_and_measures_both_numbers(
+    tmp_path: Path,
+) -> None:
+    destination = make_backup(tmp_path)
+    restored: list[bytes] = []
+    ticks = iter([CAPTURED + timedelta(hours=20), CAPTURED + timedelta(hours=20, minutes=7)])
+    result = restore_drill(
+        destination,
+        key=KEY,
+        environment=Environment("restore-drill", is_production=False),
+        restore=restored.append,
+        thresholds=Thresholds(max_rpo_minutes=1500, max_rto_minutes=60),
+        clock=lambda: next(ticks),
+    )
+    assert restored == [b"PGDMP fake custom-format dump bytes"]
+    assert (result.verified, result.rpo_minutes, result.rto_minutes) == (2, 20 * 60 + 7, 7)
+    assert result.met
+
+
+def test_the_restore_drill_refuses_production_before_decrypting_anything(tmp_path: Path) -> None:
+    destination = make_backup(tmp_path)
+    restored: list[bytes] = []
+    with pytest.raises(ProductionRefused):
+        restore_drill(
+            destination,
+            key=KEY,
+            environment=Environment("production", is_production=True),
+            restore=restored.append,
+            thresholds=Thresholds(max_rpo_minutes=1500, max_rto_minutes=60),
+        )
+    assert restored == []

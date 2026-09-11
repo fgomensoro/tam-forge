@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-09-11T16:33:31.322374+00:00",
+  "drill_container": "backup-drill-pg-20260911T163331Z",
+  "drilled_at": "20260911T163331Z",
+  "encrypted_with": "AES-256-GCM",
+  "environment": "restore-drill",
+  "is_production": false,
+  "manifest_sha256": "14d57973e06e2fc5c4b16a8ef5f3fc9d185f1758e2c707d301899393aab9b83a",
+  "met": true,
+  "network": "none",
+  "restored_tables": 62,
+  "rpo_minutes": 0,
+  "rto_minutes": 0,
+  "schema_version": 1,
+  "source_container": "tfsuite-pg",
+  "thresholds": {
+    "max_rpo_minutes": 1500,
+    "max_rto_minutes": 60
+  },
+  "verified_artifacts": 2
+}
