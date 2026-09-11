@@ -365,7 +365,11 @@ final class SystemOAuthSession: NSObject, NativeOAuthSession,
             let session = ASWebAuthenticationSession(
                 url: url,
                 callbackURLScheme: callbackScheme
-            ) { [weak self] callbackURL, error in
+            ) { @Sendable [weak self] callbackURL, error in
+                // AuthenticationServices calls this on a private queue. Without an
+                // explicit @Sendable the closure inherits this class's main-actor
+                // isolation and the runtime traps on the isolation check before the
+                // hop below can run.
                 Task { @MainActor in
                     self?.session = nil
                     self?.anchor = nil
