@@ -112,8 +112,41 @@ Requirements: Docker, the archive directory, the key file. No network access to 
 5. Check: `n8n` lists the expected workflows, NocoDB opens its bases, and the row counts of
    the restored databases match the sizes in the inventory artifact for the same date.
 
-## What this does not do
+## Retiring the stack (the decommission gate)
 
-It does not stop, rename, or remove anything on the host. Decommissioning Gastos is a
-separate, explicitly gated step (issue #10) that requires this archive's manifest hash, a
-recorded isolated restore, and a fresh approval.
+`infra/gastos/decommission.py` is a plan by default. Without `--execute` it prints the
+fixed target list (the two compose projects, five containers, five volumes, two
+directories and the DNS name), the commands it would run, and exits having run nothing
+on the host. The list lives in the file; nothing is discovered on the host at run time
+and no glob is accepted.
+
+```bash
+uv run python -m infra.gastos.decommission --archive ~/tamforge-gastos-archive/<archive> --key ~/.tamforge/<key> --drill-evidence docs/project/gastos-restore-drill-<stamp>.json
+```
+
+Execution needs all of the following, checked in order, and any one missing is a
+refusal with the reason printed:
+
+1. The resolved hostname is `n8n-prod-gastos`; `lamas-prod` is refused by name.
+2. The archive verifies with its key.
+3. The restore drill evidence names the same manifest hash and shows a successful,
+   host-untouched restore.
+4. A separately written approval artifact names that manifest hash and the exact
+   target digest printed by the plan, was written after the drill, has not expired, and
+   lasts at most 24 hours:
+
+   ```json
+   {
+     "archive_manifest_sha256": "<from the plan>",
+     "target_digest": "<from the plan>",
+     "approved_at": "2026-09-12T10:00:00+00:00",
+     "expires_at": "2026-09-12T18:00:00+00:00",
+     "approved_by": "frank"
+   }
+   ```
+
+5. `--execute` on the command line.
+
+Even then, the plan runs `docker compose down` for each project and `docker volume rm`
+for each named volume, in order, stopping at the first failure. It does not rename the
+server, change DNS, or rebuild anything; those are later, separately gated steps.
