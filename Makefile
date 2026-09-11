@@ -1,4 +1,4 @@
-.PHONY: install test check check-openapi check-policy integration e2e macos-check macos-release-dmg whisper-framework whisper-models whisper-benchmark
+.PHONY: install test check check-openapi check-policy integration e2e macos-check macos-release-dmg whisper-framework whisper-models whisper-benchmark speech-perf
 
 # Keep local verification comfortable on the 8 GB development Mac. Callers can
 # also supply -derivedDataPath here to reuse an existing task-specific cache.
@@ -58,3 +58,13 @@ whisper-models:
 # docs/project/voice-benchmark-script-v1.md.
 whisper-benchmark:
 	scripts/dev/benchmark_whisper_models.sh
+
+# Opt-in memory and scheduling evidence (issue #46): records MINUTES of two-track
+# audio through the real spool, transcribes it with the real engine, and writes
+# the gate verdicts to docs/project/. Needs the pinned models in the test
+# runner's Application Support directory, not the app container.
+SPEECH_PERF_MINUTES ?= 10
+speech-perf:
+	TEST_RUNNER_TAMFORGE_PERF_MINUTES=$(SPEECH_PERF_MINUTES) \
+	TEST_RUNNER_TAMFORGE_PERF_OUTPUT=$(CURDIR)/docs/project/speech-performance-$(SPEECH_PERF_MINUTES)m.json \
+	xcodebuild $(MACOS_BUILD_ARGUMENTS) -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination 'platform=macOS' -only-testing:TAMForgeTests/SpeechPerformanceHarnessTests/testMeasuredRunWritesEvidenceArtifact test
