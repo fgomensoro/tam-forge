@@ -1,0 +1,51 @@
+# TAM Forge api. Budgets come from infra/config/host-layout.env; do not edit on the host.
+[Unit]
+Description=TAM Forge api
+After=network-online.target postgresql.service
+Wants=network-online.target
+# Ingest and study stay up when Claude or transcription is degraded: no Requires= on them.
+
+[Service]
+Type=simple
+User=tamforge-api
+Group=tamforge
+WorkingDirectory=/opt/tamforge/current
+ExecStart=/opt/tamforge/current/.venv/bin/uvicorn tamforge_backend.main:app --host 127.0.0.1 --port 8000
+EnvironmentFile=/etc/tamforge/api.env
+LoadCredential=export-signing-public.json:/etc/tamforge/trust/export-signing-public.json
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=300
+StartLimitBurst=5
+SyslogIdentifier=tamforge-api
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=1000
+
+# Resource budget (MB from the host contract)
+MemoryMax=512M
+MemoryHigh=460M
+CPUQuota=100%
+TasksMax=256
+LimitNOFILE=4096
+
+# Hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RuntimeDirectory=tamforge/api
+RuntimeDirectoryMode=0750
+StateDirectory=tamforge/api
+CacheDirectory=tamforge/api
+ReadWritePaths=/var/lib/tamforge/shared
+
+[Install]
+WantedBy=multi-user.target

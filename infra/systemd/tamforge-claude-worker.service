@@ -1,0 +1,51 @@
+# TAM Forge claude-worker. Budgets come from infra/config/host-layout.env; do not edit on the host.
+[Unit]
+Description=TAM Forge claude-worker
+After=network-online.target postgresql.service
+Wants=network-online.target
+# Ingest and study stay up when Claude or transcription is degraded: no Requires= on them.
+
+[Service]
+Type=simple
+User=tamforge-claude
+Group=tamforge
+WorkingDirectory=/opt/tamforge/current
+ExecStart=/opt/tamforge/current/.venv/bin/python -m tamforge_backend.workers.claude
+EnvironmentFile=/etc/tamforge/claude-worker.env
+LoadCredential=claude-token:/etc/tamforge/secrets/claude-token
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=300
+StartLimitBurst=5
+SyslogIdentifier=tamforge-claude-worker
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=1000
+
+# Resource budget (MB from the host contract)
+MemoryMax=256M
+MemoryHigh=230M
+CPUQuota=100%
+TasksMax=256
+LimitNOFILE=4096
+
+# Hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RuntimeDirectory=tamforge/claude
+RuntimeDirectoryMode=0750
+StateDirectory=tamforge/claude
+CacheDirectory=tamforge/claude
+ReadWritePaths=/var/lib/tamforge/shared
+
+[Install]
+WantedBy=multi-user.target
