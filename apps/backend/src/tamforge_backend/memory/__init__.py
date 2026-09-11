@@ -13,6 +13,14 @@ from .embeddings import (
     content_hash,
     embeddable,
 )
+from .policy import (
+    MIN_EVENTS_FOR_TRAIT,
+    Decision,
+    MemoryProposal,
+    PolicyError,
+    PolicyOutcome,
+    decide,
+)
 from .retrieval import (
     RetrievalError,
     RetrievalQuery,
@@ -20,6 +28,7 @@ from .retrieval import (
     SelectedMemory,
     retrieve,
 )
+from .service import MemoryReview, ProposalRecord, ReviewError
 
 __all__ = [
     "EMBEDDING_CONTRACT_VERSION",
@@ -28,6 +37,15 @@ __all__ = [
     "EmbeddingRecord",
     "EmbeddingStore",
     "LocalEmbedder",
+    "MIN_EVENTS_FOR_TRAIT",
+    "Decision",
+    "MemoryProposal",
+    "MemoryReview",
+    "PolicyError",
+    "PolicyOutcome",
+    "ProposalRecord",
+    "ReviewError",
+    "decide",
     "LocalEmbeddingAdapter",
     "RetrievalError",
     "RetrievalQuery",
