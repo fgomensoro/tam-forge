@@ -1,0 +1,41 @@
+{
+  "captured_at": "2026-09-11T00:44:53.417117+00:00",
+  "commands": {
+    "caddy_container_config": "docker inspect n8n-caddy-1 --format '{{json .Mounts}}' 2>/dev/null || echo '[]'",
+    "compose_projects": "docker compose ls --all",
+    "containers": "docker ps -a --format '{{.Names}}\t{{.Image}}\t{{.Status}}'",
+    "disk": "df -h /",
+    "docker_version": "docker version --format '{{.Server.Version}}'",
+    "hostname": "hostname",
+    "images": "docker images --digests --format '{{.Repository}}:{{.Tag}}\t{{.Digest}}'",
+    "listening_ports": "ss -tlnp",
+    "memory": "free -m",
+    "networks": "docker network ls --format '{{.Name}}\t{{.Driver}}'",
+    "os_release": "cat /etc/os-release",
+    "postgres_databases": "docker exec n8n-postgres-1 sh -c 'psql -U \"$POSTGRES_USER\" -At -c \"select datname, pg_size_pretty(pg_database_size(datname)) from pg_database where datistemplate = false\"' 2>/dev/null || echo 'psql unavailable'",
+    "uptime": "uptime",
+    "volumes": "docker volume ls --format '{{.Name}}\t{{.Driver}}'"
+  },
+  "host": "hetzner-server-2",
+  "no_mutation_confirmed": true,
+  "read_only": true,
+  "results": {
+    "caddy_container_config": "[{\"Type\":\"volume\",\"Name\":\"n8n_caddy_config\",\"Source\":\"/var/lib/docker/volumes/n8n_caddy_config/_data\",\"Destination\":\"/config\",\"Driver\":\"local\",\"Mode\":\"rw\",\"RW\":true,\"Propagation\":\"\"},{\"Type\":\"volume\",\"Name\":\"n8n_caddy_data\",\"Source\":\"/var/lib/docker/volumes/n8n_caddy_data/_data\",\"Destination\":\"/data\",\"Driver\":\"local\",\"Mode\":\"rw\",\"RW\":true,\"Propagation\":\"\"},{\"Type\":\"bind\",\"Source\":\"/root/n8n/Caddyfile\",\"Destination\":\"/etc/caddy/Caddyfile\",\"Mode\":\"ro\",\"RW\":false,\"Propagation\":\"rprivate\"}]",
+    "compose_projects": "NAME                STATUS              CONFIG FILES\ngapfiller-bridge    running(1)          /root/gapfiller-bridge/docker-compose.yml\nn8n                 running(4)          /root/n8n/docker-compose.yml",
+    "containers": "gapfiller-bridge\tgapfiller-bridge-bridge\tUp 2 days (healthy)\nn8n-nocodb-1\tnocodb/nocodb:latest\tUp 2 days\nn8n-n8n-1\tn8nio/n8n:1.121.0\tUp 2 days\nn8n-caddy-1\tcaddy:2\tUp 2 days\nn8n-postgres-1\tpostgres:16\tUp 2 days",
+    "disk": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda1        38G   18G   19G  49% /",
+    "docker_version": "29.2.0",
+    "hostname": "n8n-prod-gastos",
+    "images": "gapfiller-bridge-bridge:latest\tsha256:ccb231a0734df1701fad5b4e1072e7444bb0233fec1ea3d55867cc048b5e81f5\nnocodb/nocodb:latest\tsha256:fb359673c42fb69058e880710e446f8039afeb64632ca8d8dfcfdcc407ebb058\nalpine:latest\tsha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b\ncaddy:2\tsha256:2adb640cdc0ce1d8870887c30af1e21edfb3cdfd8433431b2a15f40119a7d654\npostgres:16\tsha256:f992505e18f114c1e5102ac4dcf00f791b44462f6a423d899320f0bbf80e386f\nn8nio/n8n:1.121.0\tsha256:94097cedd4c9ffcc32645ad887ec6f96a1345840bf40985384963e70e965200b\nn8nio/n8n:1.100.0\tsha256:c6eb44cb25f116661b275739e7ec3e8b830aa6df522b084bd28479d64be475c8",
+    "listening_ports": "State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess                                               \nLISTEN 0      4096   127.0.0.53%lo:53        0.0.0.0:*    users:((\"systemd-resolve\",pid=671,fd=15))            \nLISTEN 0      4096       127.0.0.1:8099      0.0.0.0:*    users:((\"docker-proxy\",pid=1468,fd=8))               \nLISTEN 0      4096         0.0.0.0:443       0.0.0.0:*    users:((\"docker-proxy\",pid=1420,fd=8))               \nLISTEN 0      4096         0.0.0.0:22        0.0.0.0:*    users:((\"sshd\",pid=771,fd=3),(\"systemd\",pid=1,fd=97))\nLISTEN 0      4096         0.0.0.0:80        0.0.0.0:*    users:((\"docker-proxy\",pid=1400,fd=8))               \nLISTEN 0      4096      127.0.0.54:53        0.0.0.0:*    users:((\"systemd-resolve\",pid=671,fd=17))            \nLISTEN 0      4096            [::]:443          [::]:*    users:((\"docker-proxy\",pid=1426,fd=8))               \nLISTEN 0      4096            [::]:22           [::]:*    users:((\"sshd\",pid=771,fd=4),(\"systemd\",pid=1,fd=98))\nLISTEN 0      4096            [::]:80           [::]:*    users:((\"docker-proxy\",pid=1406,fd=8))               ",
+    "memory": "               total        used        free      shared  buff/cache   available\nMem:            3819        1511         732          31        1879        2308\nSwap:              0           0           0",
+    "networks": "bridge\tbridge\nhost\thost\nn8n_default\tbridge\nnone\tnull",
+    "os_release": "PRETTY_NAME=\"Ubuntu 24.04.3 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.3 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo",
+    "postgres_databases": "postgres|7516 kB\nn8n|15 MB\nleadgen|8124 kB",
+    "uptime": " 00:44:51 up 2 days, 19:30,  3 users,  load average: 0.01, 0.03, 0.00",
+    "volumes": "n8n_caddy_config\tlocal\nn8n_caddy_data\tlocal\nn8n_n8n_data\tlocal\nn8n_nocodb_data\tlocal\nn8n_pgdata\tlocal"
+  },
+  "schema_version": 1,
+  "state_after_sha256": "216afc1eece2a0636f0fe8809c21a52af5e27c913d8c122e1f1d1ab6b4e1c2eb",
+  "state_before_sha256": "216afc1eece2a0636f0fe8809c21a52af5e27c913d8c122e1f1d1ab6b4e1c2eb"
+}
