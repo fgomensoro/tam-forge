@@ -232,14 +232,25 @@ def test_production_object_store_endpoint_must_be_an_exact_https_origin(
         Settings()
 
 
-def test_production_object_store_requires_virtual_host_addressing(
+def test_production_object_store_accepts_path_addressing_for_the_self_hosted_store(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     set_production_environment(monkeypatch)
     monkeypatch.setenv("TAMFORGE_OBJECT_STORE_ADDRESSING_STYLE", "path")
 
-    with pytest.raises(ValidationError):
-        Settings()
+    assert Settings().object_store_addressing_style == "path"
+
+
+def test_production_accepts_a_loopback_database_because_the_host_contract_binds_it_there(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_production_environment(monkeypatch)
+    monkeypatch.setenv(
+        "TAMFORGE_DATABASE_URL",
+        "postgresql+asyncpg://tamforge_app:secret@127.0.0.1:5432/tamforge",
+    )
+
+    assert Settings().database_url.get_secret_value().endswith("@127.0.0.1:5432/tamforge")
 
 
 def test_invalid_secret_input_is_redacted_from_validation_error(
@@ -389,14 +400,13 @@ def test_settings_instances_are_isolated_and_not_cached(monkeypatch: pytest.Monk
 @pytest.mark.parametrize(
     ("name", "value"),
     [
-        (
-            "TAMFORGE_DATABASE_URL",
-            "postgresql+asyncpg://tamforge:secret@127.0.0.1:54329/tamforge",
-        ),
+        ("TAMFORGE_DATABASE_URL", "postgresql+asyncpg://127.0.0.1:5432/tamforge"),
+        ("TAMFORGE_DATABASE_URL", "postgresql://tamforge:secret@127.0.0.1:5432/tamforge"),
         ("TAMFORGE_OBJECT_STORE_ENDPOINT", "http://objects.example.test"),
+        ("TAMFORGE_OBJECT_STORE_ENDPOINT", "https://127.0.0.1:9000"),
     ],
 )
-def test_production_rejects_local_or_insecure_endpoints(
+def test_production_rejects_uncredentialed_or_insecure_endpoints(
     monkeypatch: pytest.MonkeyPatch,
     name: str,
     value: str,

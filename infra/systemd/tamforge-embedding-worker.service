@@ -3,6 +3,8 @@
 Description=TAM Forge embedding-worker
 After=network-online.target postgresql.service
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 # Ingest and study stay up when Claude or transcription is degraded: no Requires= on them.
 
 [Service]
@@ -14,8 +16,6 @@ ExecStart=/opt/tamforge/current/.venv/bin/python -m tamforge_backend.workers.emb
 EnvironmentFile=/etc/tamforge/embedding-worker.env
 Restart=on-failure
 RestartSec=5s
-StartLimitIntervalSec=300
-StartLimitBurst=5
 SyslogIdentifier=tamforge-embedding-worker
 LogRateLimitIntervalSec=30s
 LogRateLimitBurst=1000

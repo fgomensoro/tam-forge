@@ -375,16 +375,25 @@ class Settings(BaseSettings):
             port = parsed.port
         except ValueError as exc:
             raise ValueError("production database URL is malformed") from exc
+        # The production host runs PostgreSQL on loopback by contract
+        # (infra/config/host-layout.env): the database is never exposed on a
+        # public interface, so a loopback URL is the expected shape, not a
+        # development leftover. Credentials and a named database stay required.
         if (
             parsed.scheme != "postgresql+asyncpg"
             or not parsed.hostname
-            or parsed.hostname.lower() in _LOCAL_HOSTS
             or not parsed.username
             or not parsed.password
             or not parsed.path.lstrip("/")
             or port is None
         ):
-            raise ValueError("production requires a nonlocal PostgreSQL async database URL")
+            raise ValueError("production requires a credentialed PostgreSQL async database URL")
+        if "database_url" not in self.model_fields_set or (
+            parsed.username == "tamforge" and parsed.password == "tamforge"
+        ):
+            raise ValueError(
+                "production requires an explicit database URL, not the development one"
+            )
 
     def _validate_production_object_store(self) -> None:
         try:
@@ -407,8 +416,11 @@ class Settings(BaseSettings):
             raise ValueError("production object store bucket name is invalid")
         if self.object_store_bucket.endswith("-local"):
             raise ValueError("production object store bucket cannot use a local placeholder")
-        if self.object_store_addressing_style != "virtual":
-            raise ValueError("production object store requires virtual-host addressing")
+        # Path addressing is the shape of the self-hosted store behind Caddy on
+        # the same host (one TLS name, no wildcard DNS); virtual-host addressing
+        # remains valid for a managed store. Either is explicit, never inferred.
+        if "object_store_addressing_style" not in self.model_fields_set:
+            raise ValueError("production requires an explicit object store addressing style")
 
 
 def get_settings() -> Settings:
