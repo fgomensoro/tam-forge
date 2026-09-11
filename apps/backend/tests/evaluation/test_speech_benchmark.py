@@ -232,3 +232,108 @@ def test_the_summary_is_a_strict_shape_a_reader_cannot_widen() -> None:
         GoldSetSummary.model_validate(
             {**summarize(manifest()).model_dump(), "transcript": "the total"}
         )
+
+
+# --- decision-grade gates (issue #50) ------------------------------------------------------
+
+
+from decimal import Decimal  # noqa: E402
+from uuid import UUID  # noqa: E402
+
+from tamforge_backend.speech.evaluation.gates import (  # noqa: E402
+    decision_grade,
+    pause_gate,
+    pronunciation_gate,
+    timing_gate,
+)
+from tamforge_backend.speech.metrics import (  # noqa: E402
+    MeasuredMetric,
+    MetricEvidence,
+    SpeechMetricsReport,
+    UnavailableMetric,
+)
+from tamforge_backend.speech.pronunciation.pipeline import assess  # noqa: E402
+from tamforge_backend.speech.schemas import TranscriptWord  # noqa: E402
+
+
+def _words(*spans: tuple[int, int]) -> tuple[TranscriptWord, ...]:
+    return tuple(
+        TranscriptWord(text=f" w{i}", start_ms=s, end_ms=e, probability=0.9)
+        for i, (s, e) in enumerate(spans)
+    )
+
+
+def _report(*, pauses_measured: bool) -> SpeechMetricsReport:
+    def measured(name: str) -> MeasuredMetric:
+        return MeasuredMetric(name=name, unit="count", value=Decimal(1))
+
+    def unavailable(name: str) -> UnavailableMetric:
+        return UnavailableMetric(name=name, unit="count", reason_code="response_too_short")
+
+    pause = measured if pauses_measured else unavailable
+    evidence = MetricEvidence(
+        metrics_version="speech-metrics-v1",
+        filler_lexicon_version="fillers-v1",
+        recording_id=UUID("11111111-2222-3333-4444-555555555555"),
+        microphone_transcript_id=7,
+        microphone_content_hash="a" * 64,
+        derivation_version="asr-derivation-v1",
+        model_sha256="b" * 64,
+        used_builtin_vad=True,
+        token_count=40,
+        recognized_word_count=30,
+    )
+    return SpeechMetricsReport(
+        evidence=evidence,
+        response_duration_seconds=measured("response_duration_seconds"),
+        speech_rate_wpm=measured("speech_rate_wpm"),
+        articulation_rate_wpm=measured("articulation_rate_wpm"),
+        phonation_time_ratio=measured("phonation_time_ratio"),
+        mean_length_of_run=measured("mean_length_of_run"),
+        pause_count_250_499_ms=pause("pause_count_250_499_ms"),
+        pause_count_500_999_ms=pause("pause_count_500_999_ms"),
+        pause_count_1000_ms_plus=pause("pause_count_1000_ms_plus"),
+        pause_seconds_total=pause("pause_seconds_total"),
+        filler_count=measured("filler_count"),
+        restart_count=measured("restart_count"),
+        response_latency_ms=measured("response_latency_ms"),
+    )
+
+
+def test_timing_is_decision_grade_only_when_spans_are_ordered_inside_and_cover_the_recording() -> (
+    None
+):
+    assert (
+        timing_gate(_words((0, 200), (250, 700), (800, 1200)), duration_ms=1300).status
+        == "decision_grade"
+    )
+    assert timing_gate((), duration_ms=1000).reason == "no words"
+    assert "overlap" in (timing_gate(_words((0, 500), (400, 900)), duration_ms=1000).reason or "")
+    assert "after the recording" in (timing_gate(_words((0, 1500)), duration_ms=1000).reason or "")
+    assert "too little" in (timing_gate(_words((0, 200)), duration_ms=10_000).reason or "")
+
+
+def test_pauses_are_decision_grade_only_when_every_pause_metric_was_measured() -> None:
+    assert pause_gate(_report(pauses_measured=True)).status == "decision_grade"
+    short = pause_gate(_report(pauses_measured=False))
+    assert short.status == "unavailable" and "response_too_short" in (short.reason or "")
+
+
+def test_pronunciation_is_decision_grade_only_when_calibrated_and_measured() -> None:
+    words = _words((0, 200), (250, 700))
+    uncalibrated = assess(words, calibration=None, aligner_key="mfa")
+    verdict = pronunciation_gate(uncalibrated)
+    assert verdict.status == "unavailable" and verdict.reason == "pronunciation_not_measured"
+
+
+def test_unsupported_evidence_stays_unavailable_and_is_named_never_zeroed() -> None:
+    words = _words((0, 200), (250, 700), (800, 1200))
+    grade = decision_grade(
+        words=words,
+        duration_ms=1300,
+        report=_report(pauses_measured=False),
+        pronunciation=assess(words, calibration=None, aligner_key="mfa"),
+    )
+    assert grade.available == {"timing"}
+    assert set(grade.unavailable) == {"pauses", "pronunciation"}
+    assert grade.unavailable["pronunciation"] == "pronunciation_not_measured"
