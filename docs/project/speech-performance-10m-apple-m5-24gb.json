@@ -2,11 +2,11 @@
   "audioMinutes" : 10,
   "audioSource" : "system speech synthesizer passage tiled to length, 48 kHz PCM16, two tracks",
   "cleanup" : {
-    "afterReturningFreedPagesBytes" : 353191136,
-    "baselineBytes" : 297141352,
-    "runtimeResidualBytes" : 80642264,
-    "settledAfterSeconds" : 7.987022399902344e-06,
-    "settledBytes" : 353191136
+    "afterReturningFreedPagesBytes" : 199427008,
+    "baselineBytes" : 96469880,
+    "runtimeResidualBytes" : 79331544,
+    "settledAfterSeconds" : 1.1920928955078125e-05,
+    "settledBytes" : 199427008
   },
   "gates" : {
     "cleanupReturnWithinBytes" : 104857600,
@@ -22,106 +22,106 @@
     "profile" : "apple-m5-24gb-macos-26-5-1"
   },
   "oneJob" : {
-    "concurrentPairSeconds" : 1.9526029825210571,
-    "soloSeconds" : 0.9430530071258545
+    "concurrentPairSeconds" : 1.7011439800262451,
+    "soloSeconds" : 0.81324303150177
   },
-  "recordedAt" : "2026-09-11T02:42:44Z",
+  "recordedAt" : "2026-09-11T16:06:01Z",
   "recording" : {
-    "baselineBytes" : 14451360,
-    "p95Bytes" : 15631008,
-    "peakBytes" : 15680160,
+    "baselineBytes" : 14287520,
+    "p95Bytes" : 15925920,
+    "peakBytes" : 16138912,
     "sampleCount" : 21,
-    "slopeBytesPerAudioMinute" : -1489.454545454546
+    "slopeBytesPerAudioMinute" : -65536
   },
   "recordingSamples" : [
     {
       "audioSeconds" : 0,
-      "footprintBytes" : 15631008
+      "footprintBytes" : 15598240
     },
     {
       "audioSeconds" : 30,
-      "footprintBytes" : 15680160
+      "footprintBytes" : 15647392
     },
     {
       "audioSeconds" : 60,
-      "footprintBytes" : 15565472
+      "footprintBytes" : 16138912
     },
     {
       "audioSeconds" : 90,
-      "footprintBytes" : 15565472
+      "footprintBytes" : 14746272
     },
     {
       "audioSeconds" : 120,
-      "footprintBytes" : 15565472
+      "footprintBytes" : 14156448
     },
     {
       "audioSeconds" : 150,
-      "footprintBytes" : 15565472
+      "footprintBytes" : 14156448
     },
     {
       "audioSeconds" : 180,
-      "footprintBytes" : 15565472
+      "footprintBytes" : 14172832
     },
     {
       "audioSeconds" : 210,
-      "footprintBytes" : 15581856
+      "footprintBytes" : 14172832
     },
     {
       "audioSeconds" : 240,
-      "footprintBytes" : 15581856
+      "footprintBytes" : 14172832
     },
     {
       "audioSeconds" : 270,
-      "footprintBytes" : 15581856
+      "footprintBytes" : 14172832
     },
     {
       "audioSeconds" : 300,
-      "footprintBytes" : 15581856
+      "footprintBytes" : 14418592
     },
     {
       "audioSeconds" : 330,
-      "footprintBytes" : 15581856
+      "footprintBytes" : 14418592
     },
     {
       "audioSeconds" : 360,
-      "footprintBytes" : 15581856
+      "footprintBytes" : 14172832
     },
     {
       "audioSeconds" : 390,
-      "footprintBytes" : 15581856
+      "footprintBytes" : 14172832
     },
     {
       "audioSeconds" : 420,
-      "footprintBytes" : 15581856
+      "footprintBytes" : 14172832
     },
     {
       "audioSeconds" : 450,
-      "footprintBytes" : 15581856
+      "footprintBytes" : 14172832
     },
     {
       "audioSeconds" : 480,
-      "footprintBytes" : 15581856
+      "footprintBytes" : 14172832
     },
     {
       "audioSeconds" : 510,
-      "footprintBytes" : 15581856
+      "footprintBytes" : 15925920
     },
     {
       "audioSeconds" : 540,
-      "footprintBytes" : 15581856
+      "footprintBytes" : 15106720
     },
     {
       "audioSeconds" : 570,
-      "footprintBytes" : 15598240
+      "footprintBytes" : 14271136
     },
     {
       "audioSeconds" : 600,
-      "footprintBytes" : 15598240
+      "footprintBytes" : 14271136
     }
   ],
   "schemaVersion" : 1,
-  "transcriptionPeakBytes" : 783419000,
-  "transcriptionSeconds" : 106.38399195671082,
+  "transcriptionPeakBytes" : 583894312,
+  "transcriptionSeconds" : 93.65821301937103,
   "verdicts" : {
     "cleanupReturnedToBaseline" : true,
     "noDurationLinkedGrowth" : true,
