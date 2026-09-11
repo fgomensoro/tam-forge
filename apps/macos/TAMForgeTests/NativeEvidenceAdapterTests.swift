@@ -307,7 +307,7 @@ final class NativeEvidenceAdapterTests: XCTestCase {
 
     func testDebugFixtureRequiresTheSelectedHTTPSOrigin() {
         XCTAssertTrue(NativeUIFixtureRequestValidator.hasExpectedOrigin(
-            URL(string: "https://api.tamforge.invalid/api/v1/skills")!,
+            URL(string: "https://app.homegastos.xyz/api/v1/skills")!,
             environment: .production
         ))
         XCTAssertTrue(NativeUIFixtureRequestValidator.hasExpectedOrigin(
@@ -315,9 +315,9 @@ final class NativeEvidenceAdapterTests: XCTestCase {
             environment: .preview
         ))
         for value in [
-            "http://api.tamforge.invalid/api/v1/skills",
+            "http://app.homegastos.xyz/api/v1/skills",
             "https://api-preview.tamforge.invalid/api/v1/skills",
-            "https://api.tamforge.invalid:443/api/v1/skills",
+            "https://app.homegastos.xyz:443/api/v1/skills",
             "https://attacker.invalid/api/v1/skills",
         ] {
             XCTAssertFalse(NativeUIFixtureRequestValidator.hasExpectedOrigin(

@@ -3,6 +3,8 @@
 Description=TAM Forge claude-worker
 After=network-online.target postgresql.service
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 # Ingest and study stay up when Claude or transcription is degraded: no Requires= on them.
 
 [Service]
@@ -12,11 +14,12 @@ Group=tamforge
 WorkingDirectory=/opt/tamforge/current
 ExecStart=/opt/tamforge/current/.venv/bin/python -m tamforge_backend.workers.claude
 EnvironmentFile=/etc/tamforge/claude-worker.env
+# ProtectHome makes /home unreadable, and asyncpg probes ~/.postgresql before every
+# connection; a readable HOME keeps that probe a clean miss.
+Environment=HOME=%S/tamforge/claude-worker
 LoadCredential=claude-token:/etc/tamforge/secrets/claude-token
 Restart=on-failure
 RestartSec=5s
-StartLimitIntervalSec=300
-StartLimitBurst=5
 SyslogIdentifier=tamforge-claude-worker
 LogRateLimitIntervalSec=30s
 LogRateLimitBurst=1000

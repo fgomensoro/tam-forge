@@ -162,7 +162,7 @@ def test_the_plan_is_ordered_pinned_rootless_and_never_opens_a_loopback_port(
     assert users == list(contract.service_users) and "root" not in users
     assert all("/usr/sbin/nologin" in s.command for s in steps if s.command[:1] == ("useradd",))
     joined = " ".join(" ".join(s.command) for s in steps)
-    assert "listen_addresses 127.0.0.1" in joined
+    assert "listen_addresses '127.0.0.1'" in joined
     assert "allow 5432/tcp" not in joined and "deny 5432/tcp" in joined
     assert "systemd-analyze verify" in joined
 

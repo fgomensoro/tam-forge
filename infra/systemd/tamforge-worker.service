@@ -3,6 +3,8 @@
 Description=TAM Forge worker
 After=network-online.target postgresql.service
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 # Ingest and study stay up when Claude or transcription is degraded: no Requires= on them.
 
 [Service]
@@ -12,12 +14,13 @@ Group=tamforge
 WorkingDirectory=/opt/tamforge/current
 ExecStart=/opt/tamforge/current/.venv/bin/python -m tamforge_backend.workers.general
 EnvironmentFile=/etc/tamforge/worker.env
+# ProtectHome makes /home unreadable, and asyncpg probes ~/.postgresql before every
+# connection; a readable HOME keeps that probe a clean miss.
+Environment=HOME=%S/tamforge/worker
 LoadCredential=export-signing-private.json:/etc/tamforge/secrets/export-signing-private.json
 LoadCredential=export-signing-public.json:/etc/tamforge/trust/export-signing-public.json
 Restart=on-failure
 RestartSec=5s
-StartLimitIntervalSec=300
-StartLimitBurst=5
 SyslogIdentifier=tamforge-worker
 LogRateLimitIntervalSec=30s
 LogRateLimitBurst=1000

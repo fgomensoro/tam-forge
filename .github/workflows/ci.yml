@@ -162,7 +162,7 @@ jobs:
           --publish 127.0.0.1:9000:9000
           --env MINIO_ROOT_USER=tamforge
           --env MINIO_ROOT_PASSWORD=tamforge-local
-          minio/minio:RELEASE.2024-06-13T22-53-53Z
+          quay.io/minio/minio:RELEASE.2024-06-13T22-53-53Z
           server /data
       - name: Wait for isolated MinIO
         run: |
@@ -217,7 +217,7 @@ jobs:
           --publish 127.0.0.1:9000:9000
           --env MINIO_ROOT_USER=tamforge
           --env MINIO_ROOT_PASSWORD=tamforge-local
-          minio/minio:RELEASE.2024-06-13T22-53-53Z
+          quay.io/minio/minio:RELEASE.2024-06-13T22-53-53Z
           server /data
       - name: Wait for isolated MinIO
         run: |

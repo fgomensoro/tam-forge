@@ -171,7 +171,9 @@ def plan(contract: HostContract) -> tuple[Step, ...]:
         Step(
             "postgresql",
             "bind PostgreSQL to loopback only",
-            ("pg_conftool", "16", "main", "set", "listen_addresses", "127.0.0.1"),
+            # pg_conftool writes the value verbatim, so the quotes must be part of it or
+            # PostgreSQL rejects the bare IP and refuses to start.
+            ("pg_conftool", "16", "main", "set", "listen_addresses", "'127.0.0.1'"),
             already=(
                 "grep",
                 "-q",
