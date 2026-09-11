@@ -66,6 +66,8 @@
 		A10000000000000000000003 /* AppDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000015 /* AppDependencies.swift */; };
 		A10000000000000000000004 /* AppDependenciesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000016 /* AppDependenciesTests.swift */; };
 		A10000000000000000000005 /* AppDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000015 /* AppDependencies.swift */; };
+		A1000000000000000000FA01 /* FileHandleReading.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000FA00 /* FileHandleReading.swift */; };
+		A1000000000000000000FA02 /* FileHandleReading.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000FA00 /* FileHandleReading.swift */; };
 		A100000000000000000000E1 /* NativeAPITransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000E2 /* NativeAPITransportTests.swift */; };
 		A100000000000000000000E3 /* OpenAPIRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000F3 /* OpenAPIRuntime */; };
 		A100000000000000000000E4 /* OpenAPIURLSession in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000F4 /* OpenAPIURLSession */; };
@@ -218,6 +220,7 @@
 		A10000000000000000000013 /* TAMForge.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TAMForge.entitlements; sourceTree = "<group>"; };
 		A10000000000000000000014 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A10000000000000000000015 /* AppDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependencies.swift; sourceTree = "<group>"; };
+		A1000000000000000000FA00 /* FileHandleReading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileHandleReading.swift; sourceTree = "<group>"; };
 		A10000000000000000000016 /* AppDependenciesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependenciesTests.swift; sourceTree = "<group>"; };
 		A100000000000000000000E2 /* NativeAPITransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAPITransportTests.swift; sourceTree = "<group>"; };
 		A100000000000000000000E6 /* openapi-generator-config.yaml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = openapi-generator-config.yaml; sourceTree = "<group>"; };
@@ -404,6 +407,7 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000015 /* AppDependencies.swift */,
+				A1000000000000000000FA00 /* FileHandleReading.swift */,
 				A100000000000000000000EC /* API */,
 				B10000000000000000000020 /* Auth */,
 				C10000000000000000000016 /* Diagnostics */,
@@ -730,6 +734,7 @@
 				A10000000000000000000001 /* TAMForgeApp.swift in Sources */,
 				E20000000000000000000049 /* NativeUIFixtures.swift in Sources */,
 				A10000000000000000000003 /* AppDependencies.swift in Sources */,
+				A1000000000000000000FA01 /* FileHandleReading.swift in Sources */,
 				A100000000000000000000E9 /* NativeAPITransport.swift in Sources */,
 				B10000000000000000000011 /* NativeAuthentication.swift in Sources */,
 				B10000000000000000000012 /* KeychainCredentialStore.swift in Sources */,
@@ -801,6 +806,7 @@
 				F50000000000000000000021 /* SqlExecutionTests.swift in Sources */,
 				A10000000000000000000004 /* AppDependenciesTests.swift in Sources */,
 				A10000000000000000000005 /* AppDependencies.swift in Sources */,
+				A1000000000000000000FA02 /* FileHandleReading.swift in Sources */,
 				A100000000000000000000EA /* NativeAPITransport.swift in Sources */,
 				A100000000000000000000E1 /* NativeAPITransportTests.swift in Sources */,
 				B10000000000000000000013 /* NativeAuthentication.swift in Sources */,
