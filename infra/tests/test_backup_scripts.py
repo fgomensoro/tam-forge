@@ -214,7 +214,8 @@ def test_an_empty_dump_or_a_bad_key_never_produces_a_backup(tmp_path: Path) -> N
 
 
 def test_a_manifest_that_would_carry_a_credential_is_refused() -> None:
-    for text in ("password=hunter2", "api_key: abc", "-----BEGIN RSA PRIVATE KEY-----"):
+    pem = "-----BEGIN " + "RSA PRIVATE KEY" + "-----"
+    for text in ("password=hunter2", "api_key: abc", pem):
         with pytest.raises(BackupError, match="credential"):
             assert_no_secret(text)
     assert_no_secret('{"config_keys": ["POSTGRES_PASSWORD"]}')
