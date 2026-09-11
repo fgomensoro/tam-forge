@@ -14,6 +14,9 @@ Group=tamforge
 WorkingDirectory=/opt/tamforge/current
 ExecStart=/opt/tamforge/current/.venv/bin/uvicorn tamforge_backend.main:app --host 127.0.0.1 --port 8000
 EnvironmentFile=/etc/tamforge/api.env
+# ProtectHome makes /home unreadable, and asyncpg probes ~/.postgresql before every
+# connection; a readable HOME keeps that probe a clean miss.
+Environment=HOME=%S/tamforge/api
 LoadCredential=export-signing-public.json:/etc/tamforge/trust/export-signing-public.json
 Restart=on-failure
 RestartSec=5s

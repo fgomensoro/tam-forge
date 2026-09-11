@@ -14,6 +14,9 @@ Group=tamforge
 WorkingDirectory=/opt/tamforge/current
 ExecStart=/opt/tamforge/current/.venv/bin/python -m tamforge_backend.workers.claude
 EnvironmentFile=/etc/tamforge/claude-worker.env
+# ProtectHome makes /home unreadable, and asyncpg probes ~/.postgresql before every
+# connection; a readable HOME keeps that probe a clean miss.
+Environment=HOME=%S/tamforge/claude-worker
 LoadCredential=claude-token:/etc/tamforge/secrets/claude-token
 Restart=on-failure
 RestartSec=5s
