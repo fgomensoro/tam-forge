@@ -5,18 +5,19 @@ import Foundation
 // encrypted spool. EncryptedRecordingSpoolFactory is the only production
 // conformance; tests fake the whole protocol.
 protocol RecordingAudioReading: Sendable {
-    /// Ordered canonical chunks of one track from a sealed recording.
-    func sealedChunks(recordingID: UUID, track: RecordingTrackKind) async throws -> [RecordingPCMChunk]
+    /// Canonical chunks of one track from a sealed recording, in spool
+    /// order, streamed so the caller never holds the whole track at once.
+    func sealedChunks(
+        recordingID: UUID, track: RecordingTrackKind
+    ) async throws -> AsyncThrowingStream<RecordingPCMChunk, any Error>
 }
 
 extension EncryptedRecordingSpoolFactory: RecordingAudioReading {
-    func sealedChunks(recordingID: UUID, track: RecordingTrackKind) async throws -> [RecordingPCMChunk] {
-        let recovery = try await EncryptedRecordingSpool.recover(
-            recordingID: recordingID, rootURL: rootURL, keyStore: keyStore
+    func sealedChunks(
+        recordingID: UUID, track: RecordingTrackKind
+    ) async throws -> AsyncThrowingStream<RecordingPCMChunk, any Error> {
+        try await EncryptedRecordingSpool.streamTrack(
+            recordingID: recordingID, rootURL: rootURL, keyStore: keyStore, track: track
         )
-        return recovery.records
-            .map(\.chunk)
-            .filter { $0.track == track }
-            .sorted { $0.sampleStart < $1.sampleStart }
     }
 }

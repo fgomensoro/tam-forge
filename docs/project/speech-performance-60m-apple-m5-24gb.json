@@ -2,11 +2,11 @@
   "audioMinutes" : 60,
   "audioSource" : "system speech synthesizer passage tiled to length, 48 kHz PCM16, two tracks",
   "cleanup" : {
-    "afterReturningFreedPagesBytes" : 1289095712,
-    "baselineBytes" : 1192642936,
-    "runtimeResidualBytes" : 1178224344,
-    "settledAfterSeconds" : 5.017643094062805,
-    "settledBytes" : 1289095712
+    "afterReturningFreedPagesBytes" : 348029984,
+    "baselineBytes" : 97272672,
+    "runtimeResidualBytes" : 81019072,
+    "settledAfterSeconds" : 29.196234941482544,
+    "settledBytes" : 348029984
   },
   "gates" : {
     "cleanupReturnWithinBytes" : 104857600,
@@ -22,277 +22,277 @@
     "profile" : "apple-m5-24gb-macos-26-5-1"
   },
   "oneJob" : {
-    "concurrentPairSeconds" : 1.6284350156784058,
-    "soloSeconds" : 0.7129169702529907
+    "concurrentPairSeconds" : 1.5903199911117554,
+    "soloSeconds" : 0.7869889736175537
   },
-  "recordedAt" : "2026-09-11T02:16:02Z",
+  "recordedAt" : "2026-09-11T16:08:20Z",
   "recording" : {
-    "baselineBytes" : 14418592,
-    "p95Bytes" : 15106720,
-    "peakBytes" : 15778464,
+    "baselineBytes" : 13861536,
+    "p95Bytes" : 15172256,
+    "peakBytes" : 15581856,
     "sampleCount" : 121,
-    "slopeBytesPerAudioMinute" : -4904.989134263649
+    "slopeBytesPerAudioMinute" : -2479.6865465384094
   },
   "recordingSamples" : [
     {
       "audioSeconds" : 0,
-      "footprintBytes" : 15729312
+      "footprintBytes" : 15172256
     },
     {
       "audioSeconds" : 30,
-      "footprintBytes" : 15778464
+      "footprintBytes" : 15581856
     },
     {
       "audioSeconds" : 60,
-      "footprintBytes" : 15663776
+      "footprintBytes" : 14713504
     },
     {
       "audioSeconds" : 90,
-      "footprintBytes" : 15106720
+      "footprintBytes" : 14254752
     },
     {
       "audioSeconds" : 120,
-      "footprintBytes" : 15106720
+      "footprintBytes" : 14254752
     },
     {
       "audioSeconds" : 150,
-      "footprintBytes" : 15598240
+      "footprintBytes" : 14254752
     },
     {
       "audioSeconds" : 180,
-      "footprintBytes" : 15598240
+      "footprintBytes" : 14271136
     },
     {
       "audioSeconds" : 210,
-      "footprintBytes" : 14795424
+      "footprintBytes" : 14271136
     },
     {
       "audioSeconds" : 240,
-      "footprintBytes" : 14303904
+      "footprintBytes" : 14271136
     },
     {
       "audioSeconds" : 270,
-      "footprintBytes" : 14320288
+      "footprintBytes" : 14271136
     },
     {
       "audioSeconds" : 300,
-      "footprintBytes" : 14320288
+      "footprintBytes" : 14271136
     },
     {
       "audioSeconds" : 330,
-      "footprintBytes" : 14320288
+      "footprintBytes" : 14647968
     },
     {
       "audioSeconds" : 360,
-      "footprintBytes" : 14320288
+      "footprintBytes" : 14549664
     },
     {
       "audioSeconds" : 390,
-      "footprintBytes" : 14320288
+      "footprintBytes" : 14172832
     },
     {
       "audioSeconds" : 420,
-      "footprintBytes" : 14320288
+      "footprintBytes" : 14221984
     },
     {
       "audioSeconds" : 450,
-      "footprintBytes" : 14320288
+      "footprintBytes" : 14172832
     },
     {
       "audioSeconds" : 480,
-      "footprintBytes" : 14320288
+      "footprintBytes" : 14172832
     },
     {
       "audioSeconds" : 510,
-      "footprintBytes" : 14320288
+      "footprintBytes" : 14172832
     },
     {
       "audioSeconds" : 540,
-      "footprintBytes" : 14320288
+      "footprintBytes" : 14172832
     },
     {
       "audioSeconds" : 570,
-      "footprintBytes" : 14320288
+      "footprintBytes" : 14172832
     },
     {
       "audioSeconds" : 600,
-      "footprintBytes" : 14320288
+      "footprintBytes" : 14189216
     },
     {
       "audioSeconds" : 630,
-      "footprintBytes" : 14320288
+      "footprintBytes" : 14189216
     },
     {
       "audioSeconds" : 660,
-      "footprintBytes" : 14320288
+      "footprintBytes" : 14189216
     },
     {
       "audioSeconds" : 690,
-      "footprintBytes" : 14336672
+      "footprintBytes" : 14221984
     },
     {
       "audioSeconds" : 720,
-      "footprintBytes" : 14336672
+      "footprintBytes" : 14467744
     },
     {
       "audioSeconds" : 750,
-      "footprintBytes" : 14336672
+      "footprintBytes" : 14467744
     },
     {
       "audioSeconds" : 780,
-      "footprintBytes" : 14336672
+      "footprintBytes" : 14467744
     },
     {
       "audioSeconds" : 810,
-      "footprintBytes" : 14336672
+      "footprintBytes" : 14221984
     },
     {
       "audioSeconds" : 840,
-      "footprintBytes" : 14336672
+      "footprintBytes" : 15155872
     },
     {
       "audioSeconds" : 870,
-      "footprintBytes" : 14336672
+      "footprintBytes" : 15155872
     },
     {
       "audioSeconds" : 900,
-      "footprintBytes" : 14336672
+      "footprintBytes" : 15565472
     },
     {
       "audioSeconds" : 930,
-      "footprintBytes" : 14336672
+      "footprintBytes" : 15565472
     },
     {
       "audioSeconds" : 960,
-      "footprintBytes" : 14336672
+      "footprintBytes" : 14811808
     },
     {
       "audioSeconds" : 990,
-      "footprintBytes" : 14336672
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 1020,
-      "footprintBytes" : 14336672
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 1050,
-      "footprintBytes" : 14336672
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 1080,
-      "footprintBytes" : 14336672
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 1110,
-      "footprintBytes" : 14353056
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 1140,
-      "footprintBytes" : 14353056
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 1170,
-      "footprintBytes" : 14353056
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 1200,
-      "footprintBytes" : 14353056
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 1230,
-      "footprintBytes" : 14353056
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 1260,
-      "footprintBytes" : 14353056
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 1290,
-      "footprintBytes" : 14353056
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 1320,
-      "footprintBytes" : 14353056
+      "footprintBytes" : 15205024
     },
     {
       "audioSeconds" : 1350,
-      "footprintBytes" : 14353056
+      "footprintBytes" : 15073952
     },
     {
       "audioSeconds" : 1380,
-      "footprintBytes" : 14353056
+      "footprintBytes" : 14238368
     },
     {
       "audioSeconds" : 1410,
-      "footprintBytes" : 14353056
+      "footprintBytes" : 14451360
     },
     {
       "audioSeconds" : 1440,
-      "footprintBytes" : 14353056
+      "footprintBytes" : 14254752
     },
     {
       "audioSeconds" : 1470,
-      "footprintBytes" : 14353056
+      "footprintBytes" : 14254752
     },
     {
       "audioSeconds" : 1500,
-      "footprintBytes" : 14598816
+      "footprintBytes" : 14254752
     },
     {
       "audioSeconds" : 1530,
-      "footprintBytes" : 14615200
+      "footprintBytes" : 14254752
     },
     {
       "audioSeconds" : 1560,
-      "footprintBytes" : 14615200
+      "footprintBytes" : 14254752
     },
     {
       "audioSeconds" : 1590,
-      "footprintBytes" : 14369440
+      "footprintBytes" : 14254752
     },
     {
       "audioSeconds" : 1620,
-      "footprintBytes" : 14369440
+      "footprintBytes" : 14254752
     },
     {
       "audioSeconds" : 1650,
-      "footprintBytes" : 14369440
+      "footprintBytes" : 14254752
     },
     {
       "audioSeconds" : 1680,
-      "footprintBytes" : 14369440
+      "footprintBytes" : 14451360
     },
     {
       "audioSeconds" : 1710,
-      "footprintBytes" : 14369440
+      "footprintBytes" : 14549664
     },
     {
       "audioSeconds" : 1740,
-      "footprintBytes" : 14369440
+      "footprintBytes" : 14353056
     },
     {
       "audioSeconds" : 1770,
-      "footprintBytes" : 14369440
+      "footprintBytes" : 14566048
     },
     {
       "audioSeconds" : 1800,
-      "footprintBytes" : 14369440
+      "footprintBytes" : 14385824
     },
     {
       "audioSeconds" : 1830,
-      "footprintBytes" : 14369440
+      "footprintBytes" : 14385824
     },
     {
       "audioSeconds" : 1860,
-      "footprintBytes" : 14369440
+      "footprintBytes" : 14385824
     },
     {
       "audioSeconds" : 1890,
-      "footprintBytes" : 14369440
+      "footprintBytes" : 14385824
     },
     {
       "audioSeconds" : 1920,
-      "footprintBytes" : 14369440
+      "footprintBytes" : 14385824
     },
     {
       "audioSeconds" : 1950,
@@ -304,31 +304,31 @@
     },
     {
       "audioSeconds" : 2010,
-      "footprintBytes" : 14385824
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 2040,
-      "footprintBytes" : 14385824
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 2070,
-      "footprintBytes" : 14385824
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 2100,
-      "footprintBytes" : 14385824
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 2130,
-      "footprintBytes" : 14385824
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 2160,
-      "footprintBytes" : 14385824
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 2190,
-      "footprintBytes" : 14385824
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 2220,
@@ -352,35 +352,35 @@
     },
     {
       "audioSeconds" : 2370,
-      "footprintBytes" : 14402208
+      "footprintBytes" : 14385824
     },
     {
       "audioSeconds" : 2400,
-      "footprintBytes" : 14402208
+      "footprintBytes" : 14385824
     },
     {
       "audioSeconds" : 2430,
-      "footprintBytes" : 14402208
+      "footprintBytes" : 14385824
     },
     {
       "audioSeconds" : 2460,
-      "footprintBytes" : 14402208
+      "footprintBytes" : 14385824
     },
     {
       "audioSeconds" : 2490,
-      "footprintBytes" : 14402208
+      "footprintBytes" : 14385824
     },
     {
       "audioSeconds" : 2520,
-      "footprintBytes" : 14402208
+      "footprintBytes" : 14385824
     },
     {
       "audioSeconds" : 2550,
-      "footprintBytes" : 14402208
+      "footprintBytes" : 14385824
     },
     {
       "audioSeconds" : 2580,
-      "footprintBytes" : 14402208
+      "footprintBytes" : 14385824
     },
     {
       "audioSeconds" : 2610,
@@ -396,7 +396,7 @@
     },
     {
       "audioSeconds" : 2700,
-      "footprintBytes" : 14402208
+      "footprintBytes" : 15188640
     },
     {
       "audioSeconds" : 2730,
@@ -408,125 +408,125 @@
     },
     {
       "audioSeconds" : 2790,
-      "footprintBytes" : 14418592
+      "footprintBytes" : 15336096
     },
     {
       "audioSeconds" : 2820,
-      "footprintBytes" : 14418592
+      "footprintBytes" : 14451360
     },
     {
       "audioSeconds" : 2850,
-      "footprintBytes" : 14418592
+      "footprintBytes" : 14549664
     },
     {
       "audioSeconds" : 2880,
-      "footprintBytes" : 14418592
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 2910,
-      "footprintBytes" : 14418592
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 2940,
-      "footprintBytes" : 14418592
+      "footprintBytes" : 14369440
     },
     {
       "audioSeconds" : 2970,
-      "footprintBytes" : 14418592
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3000,
-      "footprintBytes" : 14418592
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3030,
-      "footprintBytes" : 14418592
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3060,
-      "footprintBytes" : 14418592
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3090,
-      "footprintBytes" : 14418592
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3120,
-      "footprintBytes" : 14418592
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3150,
-      "footprintBytes" : 14418592
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3180,
-      "footprintBytes" : 14418592
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3210,
-      "footprintBytes" : 14434976
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3240,
-      "footprintBytes" : 14434976
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3270,
-      "footprintBytes" : 14434976
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3300,
-      "footprintBytes" : 14434976
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3330,
-      "footprintBytes" : 14402208
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3360,
-      "footprintBytes" : 14402208
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3390,
-      "footprintBytes" : 14402208
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3420,
-      "footprintBytes" : 14402208
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3450,
-      "footprintBytes" : 14402208
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3480,
-      "footprintBytes" : 14402208
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3510,
-      "footprintBytes" : 14402208
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3540,
-      "footprintBytes" : 14402208
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3570,
-      "footprintBytes" : 14402208
+      "footprintBytes" : 14303904
     },
     {
       "audioSeconds" : 3600,
-      "footprintBytes" : 14402208
+      "footprintBytes" : 14303904
     }
   ],
   "schemaVersion" : 1,
-  "transcriptionPeakBytes" : 2541751560,
-  "transcriptionSeconds" : 549.9700260162354,
+  "transcriptionPeakBytes" : 1375504184,
+  "transcriptionSeconds" : 558.9764930009842,
   "verdicts" : {
-    "cleanupReturnedToBaseline" : true,
+    "cleanupReturnedToBaseline" : false,
     "noDurationLinkedGrowth" : true,
     "oneJobAtATime" : true,
     "recordingP95WithinGate" : true,
-    "transcriptionPeakWithinGate" : false
+    "transcriptionPeakWithinGate" : true
   }
 }
