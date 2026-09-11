@@ -134,9 +134,10 @@ struct CleanupObservation: Codable, Equatable, Sendable {
     /// not memory the job still owned.
     let afterReturningFreedPagesBytes: UInt64
     /// What the first job in the process left behind after its own release:
-    /// the runtime's one-time cost (Metal library, pipelines, ggml device
-    /// context), measured by a warm-up job so it is reported, not hidden in
-    /// the gate.
+    /// the runtime's one-time cost (Metal driver pipelines and heaps, ggml
+    /// runtime), measured by a warm-up job so it is reported, not hidden in
+    /// the gate. Fixed per process, 77 to 135 MiB on Apple M5; it does not
+    /// grow with further jobs (see testResidualStaysFlatAcrossReleasedJobs).
     let runtimeResidualBytes: Int64
 
     var deltaFromBaselineBytes: Int64 { Int64(settledBytes) - Int64(baselineBytes) }
