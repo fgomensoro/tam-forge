@@ -1,0 +1,126 @@
+{
+  "captured_at": "20260911T013332Z",
+  "cipher": "AES-256-GCM, payload name as associated data",
+  "host": "hetzner-server-2",
+  "hostname": "n8n-prod-gastos",
+  "manifest_version": 1,
+  "payloads": [
+    {
+      "ciphertext_bytes": 1172481,
+      "ciphertext_sha256": "bdb12aaacc4853d02262ced1c063890614964d2c5507a0798887f0243356d0b9",
+      "command": "docker exec n8n-postgres-1 sh -c 'pg_dump -U \"$POSTGRES_USER\" -Fc n8n'",
+      "name": "postgres/n8n.dump",
+      "nonce_hex": "35994cf03e92cb5a769fcf9e",
+      "plaintext_bytes": 1172465,
+      "plaintext_sha256": "e1d4c54dae7182995adcb9751ac152a54cea901b30e30d942c8c23a23569dc78"
+    },
+    {
+      "ciphertext_bytes": 52162,
+      "ciphertext_sha256": "d6cf2d62d96c57cebdccf30e001cd72b7a4112ca07979927723e924bdb5e582a",
+      "command": "docker exec n8n-postgres-1 sh -c 'pg_dump -U \"$POSTGRES_USER\" -Fc leadgen'",
+      "name": "postgres/leadgen.dump",
+      "nonce_hex": "edd677d834d7bd7cd3846a37",
+      "plaintext_bytes": 52146,
+      "plaintext_sha256": "2f34bae30c7751c554134b31649ae3ce31d42bd2ba2aae82f94a448939e45183"
+    },
+    {
+      "ciphertext_bytes": 1090,
+      "ciphertext_sha256": "06535330effec958451375998e730ddf6f09bdd3f74c5cbee5b7cc9952e0206b",
+      "command": "docker exec n8n-postgres-1 sh -c 'pg_dump -U \"$POSTGRES_USER\" -Fc postgres'",
+      "name": "postgres/postgres.dump",
+      "nonce_hex": "89e2b683cdc710512fab859a",
+      "plaintext_bytes": 1074,
+      "plaintext_sha256": "edfa1fe81a4c5f7e5e1de9526967764ba7361283cb6288bd11e63367c79a5b19"
+    },
+    {
+      "ciphertext_bytes": 940,
+      "ciphertext_sha256": "678aa66182a6a54ba6cf7157b1673b0cfb8bea3c7f0b24547fa69b5931e54bb9",
+      "command": "docker exec n8n-postgres-1 sh -c 'pg_dumpall -U \"$POSTGRES_USER\" --globals-only'",
+      "name": "postgres/globals.sql",
+      "nonce_hex": "7dcb724a906f3e1ce8aeeb53",
+      "plaintext_bytes": 924,
+      "plaintext_sha256": "5608d6dc930848a58b1bf365b0e56a3f9053756f1a631946dc8b6540c1ab8df1"
+    },
+    {
+      "ciphertext_bytes": 7459344,
+      "ciphertext_sha256": "da86ecfb6943a76e0a79d3e54611fe7fb0f55ee8ad57a641b76320c6bce08a16",
+      "command": "docker exec n8n-n8n-1 tar -C /home/node/.n8n -cf - .",
+      "name": "volumes/n8n_n8n_data.tar",
+      "nonce_hex": "efe1c24a55a21c68893db343",
+      "plaintext_bytes": 7459328,
+      "plaintext_sha256": "16f80dda68f6a75e1f52a294489f8ea4bda960e5292194c8fc513ad4cfdd753f"
+    },
+    {
+      "ciphertext_bytes": 2979856,
+      "ciphertext_sha256": "d95e559f8676a04005319790eeb0e3ba99e5b1c8de6e76f3e59195682f218e11",
+      "command": "docker exec n8n-nocodb-1 tar -C /usr/app/data -cf - .",
+      "name": "volumes/n8n_nocodb_data.tar",
+      "nonce_hex": "3b10c9126889fc99746a8ff1",
+      "plaintext_bytes": 2979840,
+      "plaintext_sha256": "d487d515412b1dd9c8f20074cbca3bc9673ce12be2e797ad3eeb29616a990530"
+    },
+    {
+      "ciphertext_bytes": 49680,
+      "ciphertext_sha256": "65fc0b060064cedf4491426be9cbe3982abdbae4e713a727208efac927c7d920",
+      "command": "docker exec n8n-caddy-1 tar -C /data -cf - .",
+      "name": "volumes/n8n_caddy_data.tar",
+      "nonce_hex": "7cb5e462128521ddaf239554",
+      "plaintext_bytes": 49664,
+      "plaintext_sha256": "392de91aa3393d37e47510873b6037e36f8044a777b394ecec9d96f79c189684"
+    },
+    {
+      "ciphertext_bytes": 3600,
+      "ciphertext_sha256": "88c14305d6f8ff54fc207ee9b225c52e87da49aaed21ea1964363134e1e58c3c",
+      "command": "docker exec n8n-caddy-1 tar -C /config -cf - .",
+      "name": "volumes/n8n_caddy_config.tar",
+      "nonce_hex": "3094599b85e7e51704cb309b",
+      "plaintext_bytes": 3584,
+      "plaintext_sha256": "b1170ec11029285c058acfc278963d7f2275067334071d9728e87e5c90aeb9c8"
+    },
+    {
+      "ciphertext_bytes": 2073,
+      "ciphertext_sha256": "3a043992cc80dd6e740b0eac53ccf986c881903c9da251139595de1e20444afa",
+      "command": "cat /root/n8n/docker-compose.yml",
+      "name": "config/n8n/docker-compose.yml",
+      "nonce_hex": "5d639ed51164aa85d024e5df",
+      "plaintext_bytes": 2057,
+      "plaintext_sha256": "9b27426bf6439765f91c28f66bef64701fdff375589c67c11f1cf22c159580a9"
+    },
+    {
+      "ciphertext_bytes": 374,
+      "ciphertext_sha256": "fcbfee7e1879f9361354ae5f945fd56aec6c162ac192611041bb60b6c379793e",
+      "command": "cat /root/n8n/Caddyfile",
+      "name": "config/n8n/Caddyfile",
+      "nonce_hex": "11cc15db6ee64ff376b394de",
+      "plaintext_bytes": 358,
+      "plaintext_sha256": "d20147a6aaf6fa3013abbadcd27d4aa7a8c6423a06e93222c7aa0545c2904a7a"
+    },
+    {
+      "ciphertext_bytes": 325,
+      "ciphertext_sha256": "2f91090e4f71be36c432eb0920e0a00f8ff4ef2454a87b2577eff55182829d30",
+      "command": "cat /root/n8n/.env",
+      "name": "config/n8n/.env",
+      "nonce_hex": "5b5890e3097c76578c65461a",
+      "plaintext_bytes": 309,
+      "plaintext_sha256": "60429dd9b7730e79a9a1cfdb962b768929c9de0be20001a2467493f01e19c375"
+    },
+    {
+      "ciphertext_bytes": 8232976,
+      "ciphertext_sha256": "3d0aefce551e0fb5f1c3f3d586d6b2c32700917f46fd98b05aebaf01b7d4fcb2",
+      "command": "tar -C /root/gapfiller-bridge -cf - .",
+      "name": "config/gapfiller-bridge/source.tar",
+      "nonce_hex": "6d0381967b0a185aec1b662c",
+      "plaintext_bytes": 8232960,
+      "plaintext_sha256": "a5c2c15415bf9fb8689fe9189043761e068a3318cba916ca5e31ba2921233451"
+    },
+    {
+      "ciphertext_bytes": 50817,
+      "ciphertext_sha256": "fc7dbd69484f6bff84de6bcad5ae99c496f022e418ea915e912acf6f88d82175",
+      "command": "docker inspect n8n-n8n-1 n8n-nocodb-1 n8n-caddy-1 n8n-postgres-1 gapfiller-bridge",
+      "name": "config/containers.json",
+      "nonce_hex": "75558fa7aed8303e9e13f531",
+      "plaintext_bytes": 50801,
+      "plaintext_sha256": "9ac9ac8ac507c9b9db6cf184165ec7b9d42bdc0357c970a8910c8c4d91aa00e9"
+    }
+  ]
+}
