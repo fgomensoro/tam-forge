@@ -15,7 +15,7 @@ from tamforge_backend.observability.attention import (
 from tamforge_backend.observability.health import COMPONENTS, HealthRegistry
 
 NOW = datetime(2026, 9, 12, 15, tzinfo=UTC)  # a Saturday in UTC, a Friday in LA
-SECRET = "sk-ant-oauth-0123456789abcdef the learner said something private"
+SECRET = "oauth token CANARY-TOKEN-0123 the learner said something private"
 
 
 def failed(failure: str, **overrides: object) -> AttentionTransition:
