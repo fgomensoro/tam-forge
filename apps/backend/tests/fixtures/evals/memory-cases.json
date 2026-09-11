@@ -1,0 +1,68 @@
+{
+  "fixture_version": "memory-cases-v1",
+  "recorded_at": "2026-09-01T12:00:00+00:00",
+  "seed": [
+    {"memory_id": 1, "revision_id": 100, "owner_id": 1, "claim": "Prefers a worked example before the abstract rule when learning window functions."},
+    {"memory_id": 2, "revision_id": 200, "owner_id": 1, "claim": "Restarts sentences when pace goes above 170 words per minute."},
+    {"memory_id": 3, "revision_id": 300, "owner_id": 1, "claim": "Reviewer judgment: the second correction was applied inconsistently.", "visible_to": ["reviewer"]},
+    {"memory_id": 4, "revision_id": 400, "owner_id": 1, "claim": "Coach note: opens answers with the conclusion when reminded.", "visible_to": ["coach"]},
+    {"memory_id": 5, "revision_id": 500, "owner_id": 1, "claim": "Real interview: the Northwind panel asked about churn cohorts twice.", "sensitivity": "real_interview", "visible_to": ["analyst", "coach"], "scope": "opportunity", "scope_reference_id": 7},
+    {"memory_id": 6, "revision_id": 600, "owner_id": 1, "claim": "Hypothesis: pauses lengthen on pricing questions.", "kind": "hypothesis", "approval": "proposed"},
+    {"memory_id": 7, "revision_id": 700, "owner_id": 1, "claim": "Old fact about pace that was later corrected."},
+    {"memory_id": 7, "revision_id": 701, "owner_id": 1, "claim": "Pace settles near 150 words per minute after the first minute.", "revision_number": 2, "supersedes_revision_id": 700},
+    {"memory_id": 8, "revision_id": 800, "owner_id": 2, "claim": "Another learner prefers worked examples for window functions."},
+    {"memory_id": 9, "revision_id": 900, "owner_id": 1, "claim": "Contoso opportunity: the hiring manager values brevity.", "scope": "opportunity", "scope_reference_id": 8, "sensitivity": "personal"},
+    {"memory_id": 10, "revision_id": 1000, "owner_id": 1, "claim": "Temporary: travelling this week, shorter sessions.", "expires_at": "2026-09-03T12:00:00+00:00"}
+  ],
+  "cases": [
+    {
+      "case_id": "tutor-window-functions",
+      "query": {"owner_id": 1, "role": "tutor", "ceiling": "routine", "text": "how to teach window functions to this learner", "limit": 3},
+      "required_revision_ids": [100],
+      "relevant_revision_ids": [200, 701],
+      "forbidden_revision_ids": [300, 400, 500, 600, 700, 800, 900, 1000]
+    },
+    {
+      "case_id": "coach-pace",
+      "query": {"owner_id": 1, "role": "coach", "ceiling": "routine", "text": "pace words per minute restarts", "limit": 3},
+      "required_revision_ids": [200, 701],
+      "relevant_revision_ids": [400],
+      "forbidden_revision_ids": [300, 500, 600, 700, 800, 900, 1000]
+    },
+    {
+      "case_id": "reviewer-corrections",
+      "query": {"owner_id": 1, "role": "reviewer", "ceiling": "routine", "text": "second correction applied", "limit": 2},
+      "required_revision_ids": [300],
+      "relevant_revision_ids": [100, 200, 701],
+      "forbidden_revision_ids": [400, 500, 600, 700, 800, 900, 1000]
+    },
+    {
+      "case_id": "analyst-real-interview-scoped",
+      "query": {"owner_id": 1, "role": "analyst", "ceiling": "real_interview", "text": "what did the panel ask", "limit": 3, "scope": "opportunity", "scope_reference_id": 7},
+      "required_revision_ids": [500],
+      "relevant_revision_ids": [],
+      "forbidden_revision_ids": [900, 800, 300, 400]
+    },
+    {
+      "case_id": "coach-other-company-never",
+      "query": {"owner_id": 1, "role": "coach", "ceiling": "personal", "text": "hiring manager values", "limit": 3, "scope": "opportunity", "scope_reference_id": 7},
+      "required_revision_ids": [],
+      "relevant_revision_ids": [],
+      "forbidden_revision_ids": [900, 500]
+    },
+    {
+      "case_id": "interviewer-gets-nothing",
+      "query": {"owner_id": 1, "role": "interviewer", "ceiling": "real_interview", "text": "everything about this learner", "limit": 32},
+      "required_revision_ids": [],
+      "relevant_revision_ids": [],
+      "forbidden_revision_ids": [100, 200, 300, 400, 500, 600, 700, 701, 800, 900, 1000]
+    },
+    {
+      "case_id": "other-owner-never",
+      "query": {"owner_id": 2, "role": "tutor", "ceiling": "routine", "text": "worked examples window functions", "limit": 3},
+      "required_revision_ids": [800],
+      "relevant_revision_ids": [],
+      "forbidden_revision_ids": [100, 200, 300, 400, 500, 600, 700, 701, 900, 1000]
+    }
+  ]
+}
