@@ -144,6 +144,9 @@
 		FA000000000000000000000001 /* LocalSpeechScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000000000000000000001001 /* LocalSpeechScheduler.swift */; };
 		FA000000000000000000000002 /* LocalSpeechScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000000000000000000001001 /* LocalSpeechScheduler.swift */; };
 		FA000000000000000000000003 /* LocalSpeechSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA000000000000000000001002 /* LocalSpeechSchedulerTests.swift */; };
+		FB000000000000000000000001 /* PronunciationDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB000000000000000000001001 /* PronunciationDiagnostic.swift */; };
+		FB000000000000000000000002 /* PronunciationDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB000000000000000000001001 /* PronunciationDiagnostic.swift */; };
+		FB000000000000000000000003 /* PronunciationDiagnosticTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB000000000000000000001002 /* PronunciationDiagnosticTests.swift */; };
 		F80000000000000000000001 /* InterviewerTurn.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80000000000000000001001 /* InterviewerTurn.swift */; };
 		F80000000000000000000002 /* InterviewerTurn.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80000000000000000001001 /* InterviewerTurn.swift */; };
 		F80000000000000000000003 /* InterviewerTurnTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80000000000000000001002 /* InterviewerTurnTests.swift */; };
@@ -271,6 +274,8 @@
 		F90000000000000000001002 /* SpeechPerformanceHarnessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechPerformanceHarnessTests.swift; sourceTree = "<group>"; };
 		FA000000000000000000001001 /* LocalSpeechScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSpeechScheduler.swift; sourceTree = "<group>"; };
 		FA000000000000000000001002 /* LocalSpeechSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSpeechSchedulerTests.swift; sourceTree = "<group>"; };
+		FB000000000000000000001001 /* PronunciationDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PronunciationDiagnostic.swift; sourceTree = "<group>"; };
+		FB000000000000000000001002 /* PronunciationDiagnosticTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PronunciationDiagnosticTests.swift; sourceTree = "<group>"; };
 		F80000000000000000001001 /* InterviewerTurn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterviewerTurn.swift; sourceTree = "<group>"; };
 		F80000000000000000001002 /* InterviewerTurnTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterviewerTurnTests.swift; sourceTree = "<group>"; };
 		F70000000000000000001002 /* whisper.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = whisper.xcframework; path = Vendor/whisper.xcframework; sourceTree = "<group>"; };
@@ -366,6 +371,7 @@
 				E20000000000000000000077 /* ActivityTimerTests.swift */,
 				F90000000000000000001002 /* SpeechPerformanceHarnessTests.swift */,
 				FA000000000000000000001002 /* LocalSpeechSchedulerTests.swift */,
+				FB000000000000000000001002 /* PronunciationDiagnosticTests.swift */,
 				F80000000000000000001002 /* InterviewerTurnTests.swift */,
 				E20000000000000000000078 /* ActivityWorkspaceTests.swift */,
 			);
@@ -492,6 +498,7 @@
 				F70000000000000000001001 /* WhisperTranscriber.swift */,
 				F90000000000000000001001 /* SpeechPerformanceHarness.swift */,
 				FA000000000000000000001001 /* LocalSpeechScheduler.swift */,
+				FB000000000000000000001001 /* PronunciationDiagnostic.swift */,
 				F60000000000000000001008 /* RecordingAudioReading.swift */,
 			);
 			path = Speech;
@@ -723,6 +730,7 @@
 				F70000000000000000000001 /* WhisperTranscriber.swift in Sources */,
 				F90000000000000000000001 /* SpeechPerformanceHarness.swift in Sources */,
 				FA000000000000000000000001 /* LocalSpeechScheduler.swift in Sources */,
+				FB000000000000000000000001 /* PronunciationDiagnostic.swift in Sources */,
 				F80000000000000000000001 /* InterviewerTurn.swift in Sources */,
 				F6000000000000000000000C /* RecordingAudioReading.swift in Sources */,
 				E30000000000000000000001 /* EvidenceModels.swift in Sources */,
@@ -785,6 +793,7 @@
 				F70000000000000000000002 /* WhisperTranscriber.swift in Sources */,
 				F90000000000000000000002 /* SpeechPerformanceHarness.swift in Sources */,
 				FA000000000000000000000002 /* LocalSpeechScheduler.swift in Sources */,
+				FB000000000000000000000002 /* PronunciationDiagnostic.swift in Sources */,
 				F80000000000000000000002 /* InterviewerTurn.swift in Sources */,
 				F6000000000000000000000D /* RecordingAudioReading.swift in Sources */,
 				F30000000000000000000021 /* RecordingFeatureTests.swift in Sources */,
@@ -845,6 +854,7 @@
 				E20000000000000000000047 /* ActivityTimerTests.swift in Sources */,
 				F90000000000000000000003 /* SpeechPerformanceHarnessTests.swift in Sources */,
 				FA000000000000000000000003 /* LocalSpeechSchedulerTests.swift in Sources */,
+				FB000000000000000000000003 /* PronunciationDiagnosticTests.swift in Sources */,
 				F80000000000000000000003 /* InterviewerTurnTests.swift in Sources */,
 				E20000000000000000000048 /* ActivityWorkspaceTests.swift in Sources */,
 			);
