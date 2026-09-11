@@ -42,6 +42,34 @@ One Bitwarden SSH approval covers the whole run (the connection is multiplexed).
 3. Commit a copy of `manifest.json` under `docs/project/gastos-archive-<stamp>.manifest.json`.
    It holds names, sizes, hashes, nonces and commands, and no payload content.
 
+## Proving the archive restores (the drill)
+
+`infra/gastos/restore_drill.py` is the automated version of the section below, and the
+evidence the decommission gate asks for. It verifies the archive with the key, decrypts
+into a private temporary directory, starts a throwaway PostgreSQL 16 container with
+`--network none`, loads the roles and both databases from the dumps, reads back table and
+row counts and the n8n workflow inventory, integrity-checks the NocoDB SQLite file, lets
+Caddy validate the Caddyfile (in a network-less container when the `caddy:2` image is
+present, otherwise with a local `caddy` binary), checks every variable the compose file
+references exists in the restored `.env` by name, then removes the container and the
+plaintext directory.
+
+```bash
+uv run python -m infra.gastos.restore_drill ~/tamforge-gastos-archive/<archive> --key ~/.tamforge/<key> --evidence-out docs/project/gastos-restore-drill-$(date -u +%Y%m%dT%H%M%SZ).json
+```
+
+Every Docker command passes through one gate that refuses anything not addressed to a
+`gastos-restore-*` container, any network or published port, the Docker socket, and any
+mention of the production containers, the Hetzner host, or Lamas. The drill has no SSH
+runner: it cannot reach the host even by mistake. The evidence names the archive by the
+SHA-256 of its manifest, records counts only (never rows), and redacts the throwaway
+database password and the working directory from the command log.
+
+First drill, 2026-09-11: `docs/project/gastos-restore-drill-20260911T022228Z.json`, archive
+`20260911T013332Z`, PostgreSQL 16.15, 3 roles, `n8n` 51 tables (8 workflows, 9 credentials,
+36 executions), `leadgen` 2 tables (770 leads, 8 searches), NocoDB SQLite integrity ok with
+132 tables, Caddyfile valid, all 6 referenced environment keys present.
+
 ## Restoring without the source host
 
 Requirements: Docker, the archive directory, the key file. No network access to Hetzner.
