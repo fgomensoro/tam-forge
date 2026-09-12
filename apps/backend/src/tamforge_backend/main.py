@@ -13,7 +13,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api import register_routes
 from .config import Settings
 from .database import create_database_resources
-from .observability.health import HealthRegistry, run_health_heartbeat
+from .models.base import utc_now
+from .observability.health import (
+    HEARTBEAT_INTERVAL_SECONDS,
+    HealthRegistry,
+    run_health_heartbeat,
+    run_probe_loop,
+)
+from .observability.heartbeats import WorkerHeartbeatStore, report_worker_heartbeats
 from .observability.logging import AccessLogFilter, ServerErrorFilter
 from .observability.metrics import Metrics
 from .observability.middleware import OperationalMiddleware
@@ -52,6 +59,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         error_logger.addFilter(error_log_filter)
         database = None
         heartbeat = None
+        worker_reader = None
         try:
             database = create_database_resources(configured)
             app.state.settings = configured
@@ -77,8 +85,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
             )
             app.state.ingest_heartbeat = heartbeat
+            heartbeat_store = WorkerHeartbeatStore(database.session_factory)
+
+            async def read_worker_heartbeats() -> None:
+                await report_worker_heartbeats(
+                    app.state.operational_health, heartbeat_store, now=utc_now()
+                )
+
+            worker_reader = asyncio.create_task(
+                run_probe_loop(read_worker_heartbeats, interval_seconds=HEARTBEAT_INTERVAL_SECONDS)
+            )
+            app.state.worker_heartbeat_reader = worker_reader
             yield
         finally:
+            if worker_reader is not None:
+                worker_reader.cancel()
+                with suppress(asyncio.CancelledError, Exception):
+                    await worker_reader
             if heartbeat is not None:
                 heartbeat.cancel()
                 # A heartbeat that already died carries its own exception, and awaiting

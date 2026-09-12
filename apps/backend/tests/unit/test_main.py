@@ -8,6 +8,9 @@ from tamforge_backend.main import create_app
 class FakeDatabaseResources:
     def __init__(self) -> None:
         self.disposed = False
+        # The worker heartbeat reader binds its store at startup; it never queries
+        # before its first interval, so a stand-in factory is enough here.
+        self.session_factory = object()
 
     async def dispose(self) -> None:
         self.disposed = True
