@@ -246,6 +246,26 @@ class DailyCloseCommand(StrictModel):
         return _CONSEQUENCE_BY_CLASSIFICATION[self.unfinished_classification]
 
 
+class HandoffBlockResponse(StrictModel):
+    activity_id: PositiveId
+    stable_id: Annotated[str, Field(min_length=1, max_length=192)]
+    outcome: Literal["completed", "deferred", "unfinished"]
+    assistance: Literal["independent", "coached"]
+    focused_minutes: Annotated[int, Field(ge=0)]
+    state: ActivityState
+
+
+class DailyHandoffResponse(StrictModel):
+    """What the most recent closed day left behind; empty fields mean no day has closed."""
+
+    local_date: date
+    day_status: Literal["closed", "incomplete"]
+    focused_minutes: Annotated[int, Field(ge=0)]
+    next_action: Annotated[str, Field(min_length=1, max_length=2048)]
+    blocks: tuple[HandoffBlockResponse, ...]
+    gaps: tuple[str, ...]
+
+
 class DailyCloseResponse(StrictModel):
     daily_close_id: PositiveId
     study_day_id: PositiveId
@@ -259,7 +279,9 @@ __all__ = [
     "ContinueAction",
     "DailyCloseCommand",
     "DailyCloseResponse",
+    "DailyHandoffResponse",
     "EvidenceManifest",
+    "HandoffBlockResponse",
     "TodayAnalysis",
     "TodayBlock",
     "TodayCorrection",

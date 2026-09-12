@@ -88,6 +88,7 @@ class CoachRequest:
     self_review: str | None = None
     prior_messages: tuple[tuple[Literal["learner", "coach"], str], ...] = ()
     repair_errors: tuple[str, ...] = ()
+    handoff: str | None = None
 
 
 class CoachTransport(Protocol):
@@ -133,6 +134,7 @@ class _RuntimeAdapter:
             self_review=self.request.self_review,
             prior_messages=self.request.prior_messages,
             repair_errors=repair_errors,
+            handoff=self.request.handoff,
         )
         payload = await self.transport.respond(request)
         self.last_payload = payload
@@ -198,6 +200,11 @@ def render_coach_prompt(request: CoachRequest) -> str:
     ]
     if request.self_review:
         lines.append("Self-review:\n" + request.self_review)
+    if request.handoff:
+        lines.append(
+            "Where the previous study day left off (the plan's words; a coached block is "
+            "not a demonstrated one):\n" + request.handoff
+        )
     for speaker, text in request.prior_messages:
         lines.append(f"{speaker}: {text}")
     lines.append(f"learner: {request.learner_message}")

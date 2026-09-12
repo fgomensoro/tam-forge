@@ -13,7 +13,7 @@ from ..auth.dependencies import get_authenticated_owner, require_csrf_owner
 from ..auth.schemas import AuthenticatedOwner, ProblemResponse
 from ..database import get_db_session
 from .repository import SqlAlchemyTodayRepository
-from .schemas import DailyCloseCommand, DailyCloseResponse, TodayResponse
+from .schemas import DailyCloseCommand, DailyCloseResponse, DailyHandoffResponse, TodayResponse
 from .service import (
     TodayConflict,
     TodayInvalidRequest,
@@ -47,6 +47,19 @@ async def get_today(
     result = await service.get_today(owner_id=owner.owner_id, local_date=local_date)
     _prevent_storage(response)
     response.headers["ETag"] = result.etag
+    return result
+
+
+@router.get("/handoff", response_model=DailyHandoffResponse)
+async def get_handoff(
+    response: Response,
+    service: Annotated[TodayService, Depends(get_today_service)],
+    owner: Annotated[AuthenticatedOwner, Depends(get_authenticated_owner)],
+    local_date: Annotated[date, Query(alias="date")],
+) -> DailyHandoffResponse:
+    """The handoff the next day opens with: the last close strictly before `date`."""
+    result = await service.get_handoff(owner_id=owner.owner_id, before=local_date)
+    _prevent_storage(response)
     return result
 
 

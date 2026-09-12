@@ -27,11 +27,12 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from ..coaching.models import CoachMessage, CoachThread
 from ..database import transaction_scope
 from ..learning.models import (
     ActivityArtifactLink,
@@ -49,10 +50,13 @@ from ..learning.service import ActivityUnavailable
 from ..models.base import utc_now
 from ..notifications.models import OutboxEvent
 from ..roadmaps.models import CurriculumNode, RoadmapVersion, TaskDefinition
-from .models import ActivityProcessingStatus, Correction, Interview
+from .handoff import HandoffActivityInput, build_handoff
+from .models import ActivityProcessingStatus, Correction, DailyHandoff, Interview
 from .schemas import (
     DailyCloseCommand,
     DailyCloseResponse,
+    DailyHandoffResponse,
+    HandoffBlockResponse,
     TodayAnalysis,
     TodayBudget,
     TodayCorrection,
@@ -427,6 +431,11 @@ class SqlAlchemyTodayRepository:
                 self._session.add(close)
                 await self._session.flush()
                 self._session.add(
+                    await self._handoff(
+                        owner_id=owner_id, day=day, close=close, command=command
+                    )
+                )
+                self._session.add(
                     OutboxEvent(
                         owner_id=owner_id,
                         aggregate_type="study_day",
@@ -448,6 +457,115 @@ class SqlAlchemyTodayRepository:
                 return self._close_response(close, day.status, command, replayed=False)
         except SQLAlchemyError:
             raise TodayUnavailable("the today workspace is unavailable") from None
+
+    async def _handoff(
+        self, *, owner_id: int, day: StudyDay, close: DailyClose, command: DailyCloseCommand
+    ) -> DailyHandoff:
+        """Derive the handoff from recorded state; the plan's words, nothing inferred."""
+        rows = (
+            await self._session.execute(
+                select(ActivityInstance, TaskDefinition.required)
+                .join(
+                    TaskDefinition,
+                    (TaskDefinition.owner_id == ActivityInstance.owner_id)
+                    & (TaskDefinition.roadmap_version_id == ActivityInstance.roadmap_version_id)
+                    & (TaskDefinition.id == ActivityInstance.task_definition_id),
+                )
+                .where(ActivityInstance.owner_id == owner_id)
+                .where(ActivityInstance.study_day_id == day.id)
+                .where(ActivityInstance.state != "superseded")
+                .order_by(ActivityInstance.id)
+            )
+        ).all()
+        activity_ids = [activity.id for activity, _ in rows]
+        seconds: dict[int, int] = {}
+        if activity_ids:
+            for activity_id, total in (
+                await self._session.execute(
+                    select(
+                        ActivityTimerSession.activity_instance_id,
+                        func.coalesce(func.sum(ActivityTimerSession.counted_seconds), 0),
+                    )
+                    .where(ActivityTimerSession.owner_id == owner_id)
+                    .where(ActivityTimerSession.activity_instance_id.in_(activity_ids))
+                    .group_by(ActivityTimerSession.activity_instance_id)
+                )
+            ).all():
+                seconds[int(activity_id)] = int(total or 0)
+        coached: set[int] = set()
+        if activity_ids:
+            coached = {
+                int(activity_id)
+                for activity_id in (
+                    await self._session.scalars(
+                        select(CoachThread.activity_instance_id)
+                        .join(
+                            CoachMessage,
+                            (CoachMessage.owner_id == CoachThread.owner_id)
+                            & (CoachMessage.thread_id == CoachThread.id),
+                        )
+                        .where(CoachThread.owner_id == owner_id)
+                        .where(CoachThread.activity_instance_id.in_(activity_ids))
+                        .where(CoachMessage.speaker == "coach")
+                        .distinct()
+                    )
+                ).all()
+            }
+        pending = tuple(
+            int(item)
+            for item in (
+                await self._session.scalars(
+                    select(Correction.id)
+                    .where(Correction.owner_id == owner_id)
+                    .where(Correction.status.in_(("pending", "scheduled")))
+                    .where(Correction.due_date <= day.local_date)
+                    .order_by(Correction.priority, Correction.id)
+                )
+            ).all()
+        )
+        draft = build_handoff(
+            tuple(
+                HandoffActivityInput(
+                    activity_id=activity.id,
+                    stable_id=activity.task_stable_id_snapshot,
+                    objective=activity.task_objective_snapshot,
+                    state=activity.state,
+                    required=bool(required),
+                    focused_seconds=seconds.get(activity.id, 0),
+                    coached=activity.id in coached,
+                )
+                for activity, required in rows
+            ),
+            unfinished_requirement=command.unfinished_requirement,
+            pending_correction_ids=pending,
+        )
+        return DailyHandoff(
+            owner_id=owner_id,
+            study_day_id=day.id,
+            daily_close_id=close.id,
+            local_date=day.local_date,
+            day_status=day.status,
+            focused_minutes=max(draft.focused_minutes, day.focused_minutes),
+            next_action=draft.next_action,
+            blocks=[block.as_json() for block in draft.blocks],
+            gaps=list(draft.gaps),
+        )
+
+    async def load_handoff(self, *, owner_id: int, before: date) -> DailyHandoffResponse | None:
+        try:
+            row = await self._session.scalar(
+                select(DailyHandoff)
+                .where(DailyHandoff.owner_id == owner_id)
+                .where(DailyHandoff.local_date < before)
+                .order_by(DailyHandoff.local_date.desc(), DailyHandoff.id.desc())
+                .limit(1)
+            )
+            # Build the response before the rollback expires the loaded row.
+            response = None if row is None else handoff_response(row)
+            await self._session.rollback()
+        except SQLAlchemyError:
+            raise TodayUnavailable("the today workspace is unavailable") from None
+        return response
 
     @staticmethod
     def _task_card(
@@ -676,3 +794,24 @@ class SqlAlchemyTodayRepository:
 
 
 __all__ = ["SqlAlchemyTodayRepository"]
+
+
+def handoff_response(row: DailyHandoff) -> DailyHandoffResponse:
+    return DailyHandoffResponse(
+        local_date=row.local_date,
+        day_status=cast(Any, row.day_status),
+        focused_minutes=row.focused_minutes,
+        next_action=row.next_action,
+        blocks=tuple(
+            HandoffBlockResponse(
+                activity_id=int(cast(Any, block["activity_id"])),
+                stable_id=str(block["stable_id"]),
+                outcome=cast(Any, block["outcome"]),
+                assistance=cast(Any, block["assistance"]),
+                focused_minutes=int(cast(Any, block["focused_minutes"])),
+                state=cast(Any, block["state"]),
+            )
+            for block in row.blocks
+        ),
+        gaps=tuple(str(gap) for gap in row.gaps),
+    )

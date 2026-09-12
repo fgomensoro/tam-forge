@@ -44,13 +44,14 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
     )
     from tamforge_backend.database import database_url_to_sync, transaction_scope
     from tamforge_backend.evidence.config_loader import load_config_bundle
-    from tamforge_backend.learning.models import ActivityInstance, Attempt
+    from tamforge_backend.learning.models import ActivityInstance, Attempt, DailyClose, StudyDay
     from tamforge_backend.learning.repository import StudyDayService
     from tamforge_backend.roadmaps.models import TaskDefinition
     from tamforge_backend.roadmaps.package import inspect_zip_stream
     from tamforge_backend.roadmaps.repository import SqlAlchemyRoadmapRepository
     from tamforge_backend.roadmaps.service import RoadmapService
     from tamforge_backend.storage.fake import InMemoryObjectStore
+    from tamforge_backend.today.models import DailyHandoff
 
     config = Config("apps/backend/alembic.ini")
     config.attributes["database_url"] = test_database_url
@@ -120,6 +121,60 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
                     forbidden_id = next(a.id for a, d in rows if d.allowed_ai_role == "none")
                     await session.rollback()
 
+                # The day before closed with a gap; its handoff is what the Coach opens with.
+                async with factory() as session:
+                    async with transaction_scope(session):
+                        closed_at = datetime(2026, 8, 23, 23, tzinfo=UTC)
+                        previous = StudyDay(
+                            owner_id=owner_id,
+                            roadmap_version_id=approved.id,
+                            local_date=closed_at.date(),
+                            planned_minutes=60,
+                            focused_minutes=0,
+                            day_type="weekday",
+                            status="planned",
+                            created_at=closed_at - timedelta(hours=3),
+                            started_at=None,
+                            closed_at=None,
+                        )
+                        session.add(previous)
+                        await session.flush()
+                        previous.status = "in_progress"
+                        previous.started_at = closed_at - timedelta(hours=2)
+                        await session.flush()
+                        previous.focused_minutes = 20
+                        previous.status = "incomplete"
+                        previous.closed_at = closed_at
+                        await session.flush()
+                        close = DailyClose(
+                            owner_id=owner_id,
+                            roadmap_version_id=approved.id,
+                            study_day_id=previous.id,
+                            evidence_confirmed=True,
+                            evidence_manifest={"schema_version": 1},
+                            strongest_output="A warm-up note.",
+                            repeated_mistake="Started late.",
+                            unfinished_classification="required",
+                            unfinished_requirement="Finish the warm-up.",
+                            correction_count=0,
+                            closed_at=closed_at,
+                        )
+                        session.add(close)
+                        await session.flush()
+                        session.add(
+                            DailyHandoff(
+                                owner_id=owner_id,
+                                study_day_id=previous.id,
+                                daily_close_id=close.id,
+                                local_date=previous.local_date,
+                                day_status="incomplete",
+                                focused_minutes=20,
+                                next_action="Finish p0-w00-d00-warmup: Warm up.",
+                                blocks=[],
+                                gaps=["p0-w00-d00-warmup (required) left ready"],
+                            )
+                        )
+
                 transport = FakeTransport()
 
                 def service(session):  # type: ignore[no-untyped-def]
@@ -185,6 +240,12 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
                     request = transport.requests[0]
                     assert request.committed_attempt.startswith("Webhooks deliver")  # type: ignore[attr-defined]
                     assert request.block.allowed_ai_role == "tutor"  # type: ignore[attr-defined]
+                    # The previous day's handoff opens the conversation; the plan's next
+                    # step is still the activity's own, never the handoff's.
+                    assert request.handoff is not None  # type: ignore[attr-defined]
+                    assert "Next action: Finish p0-w00-d00-warmup: Warm up." in request.handoff  # type: ignore[attr-defined]
+                    assert "- p0-w00-d00-warmup (required) left ready" in request.handoff  # type: ignore[attr-defined]
+                    assert request.next_step == after.next_step  # type: ignore[attr-defined]
 
                 async with factory() as session:
                     accepted = await service(session).accept_evidence(

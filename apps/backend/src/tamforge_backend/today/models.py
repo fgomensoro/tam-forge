@@ -216,6 +216,43 @@ class Interview(Base):
     )
 
 
+class DailyHandoff(Base):
+    """What a closed day left behind, written once with the close and read the next day."""
+
+    __tablename__ = "daily_handoffs"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "id", name="uq_daily_handoffs_owner_id_id"),
+        UniqueConstraint("owner_id", "study_day_id", name="uq_daily_handoffs_owner_study_day"),
+        ForeignKeyConstraint(
+            ["daily_close_id"],
+            ["daily_closes.id"],
+            name="fk_daily_handoffs_daily_close_daily_closes",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("day_status IN ('closed', 'incomplete')", name="day_status_allowed"),
+        CheckConstraint("focused_minutes >= 0", name="focused_minutes_nonnegative"),
+        Index("ix_daily_handoffs_owner_local_date", "owner_id", "local_date"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    owner_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    study_day_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    daily_close_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    local_date: Mapped[date] = mapped_column(Date, nullable=False)
+    day_status: Mapped[str] = mapped_column(Text, nullable=False)
+    focused_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    next_action: Mapped[str] = mapped_column(Text, nullable=False)
+    blocks: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    gaps: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, server_default=func.now(), nullable=False
+    )
+
+
 class ActivityProcessingStatus(Base):
     """Current asynchronous status for one activity without diagnostic free text."""
 
@@ -654,6 +691,7 @@ __all__ = [
     "ActivityProcessingStatus",
     "Correction",
     "CorrectionWorkflowError",
+    "DailyHandoff",
     "Interview",
     "ProcessingWorkflowError",
     "validate_correction",
