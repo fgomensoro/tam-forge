@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import re
 import shutil
 import zipfile
@@ -39,7 +40,12 @@ from .ports import (
     RoadmapWorkflowError,
 )
 from .schemas import InspectedRoadmapPackage, ValidationIssue
-from .scheme import scheme_summary_from_payload
+from .scheme import (
+    SCHEME_FILE_NAME,
+    SchemeValidationError,
+    parse_scheme_text,
+    scheme_summary_from_payload,
+)
 
 _SAFE_IDEMPOTENCY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SAFE_SOURCE_KEY = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
@@ -55,6 +61,20 @@ class ImportNotApprovable(RoadmapWorkflowError):
 
 class MirrorNotRetryable(RoadmapWorkflowError):
     """A version has no retryable mirror failure."""
+
+
+def _zip_bytes(files: Mapping[str, bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name in sorted(files):
+            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, files[name])
+    return buffer.getvalue()
+
+
+class InvalidSchemeText(RoadmapWorkflowError):
+    """A scheme text that cannot even be parsed; validation issues come later."""
 
 
 def _file_chunks(path: Path, chunk_bytes: int = 64 * 1024) -> Iterator[bytes]:
@@ -495,6 +515,67 @@ class RoadmapService:
         """
         return await self._repository.activate_version(
             owner_id=owner_id, version_id=version_id, timezone=timezone
+        )
+
+    async def get_version(self, *, owner_id: int, version_id: int) -> RoadmapVersionRecord:
+        record = await self._repository.get_version(owner_id=owner_id, version_id=version_id)
+        if record is None:
+            raise RoadmapNotFound("roadmap version was not found")
+        return record
+
+    async def snapshot_files(self, object_key: str) -> dict[str, bytes]:
+        """The immutable package behind an import or version, as path -> bytes."""
+        stored = await self._object_store.stat(object_key)
+        if stored is None:
+            raise ObjectIntegrityError("immutable roadmap snapshot is unavailable")
+        with await self._open_package(object_key) as package:
+            if not package.accepted:
+                raise ImportNotApprovable("stored roadmap snapshot is invalid")
+            return {item.manifest.path: item.staged_path.read_bytes() for item in package.files}
+
+    async def stage_with_scheme(
+        self,
+        *,
+        owner_id: int,
+        source_key: str,
+        object_key: str,
+        yaml_text: str,
+        idempotency_key: str,
+    ) -> RoadmapImportRecord:
+        """Stage a new import: the stored snapshot plus an approved `roadmap.yaml`.
+
+        The snapshot is never rewritten; the scheme rides in a fresh package that
+        goes through the same validation, review, approval and activation as any
+        upload. That is how a planner proposal, or a hand-written scheme, becomes
+        a version.
+        """
+        try:
+            parse_scheme_text(yaml_text)
+        except SchemeValidationError as exc:
+            raise InvalidSchemeText(str(exc)) from None
+        files = await self.snapshot_files(object_key)
+        files[SCHEME_FILE_NAME] = yaml_text.encode("utf-8")
+        with inspect_zip_stream((_zip_bytes(files),)) as package:
+            return await self.stage_package(
+                owner_id=owner_id,
+                source_key=source_key,
+                source_name="scheme",
+                source_kind="package",
+                package_kind="zip",
+                idempotency_key=idempotency_key,
+                package=package,
+            )
+
+    async def get_source_key(self, *, owner_id: int, source_id: int) -> str:
+        key = await self._repository.source_key(owner_id=owner_id, source_id=source_id)
+        if key is None:
+            raise RoadmapNotFound("roadmap source was not found")
+        return key
+
+    async def completed_block_ids(self, *, owner_id: int, version_id: int) -> tuple[str, ...]:
+        return tuple(
+            await self._repository.completed_task_ids(owner_id=owner_id, version_id=version_id)
+            or ()
         )
 
     async def list_versions(self, *, owner_id: int) -> tuple[RoadmapVersionRecord, ...]:
