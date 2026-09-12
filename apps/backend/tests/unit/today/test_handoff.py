@@ -57,6 +57,7 @@ def test_a_day_can_close_with_gaps_and_records_assistance_and_minutes() -> None:
         "independent",
     ]
     assert [block.focused_minutes for block in draft.blocks] == [25, 0, 1]
+    assert draft.blocks[0].as_json()["note_id"] is None
     assert draft.focused_minutes == 26
     assert draft.gaps == (
         "d01-sql (required) left ready",
@@ -68,6 +69,26 @@ def test_a_day_can_close_with_gaps_and_records_assistance_and_minutes() -> None:
     # A coached completion is completed and coached; there is no mastery field to set.
     assert not hasattr(draft.blocks[0], "demonstrated")
     assert draft.blocks[0].state == "self_review_complete"
+
+
+def test_an_approved_note_is_linked_from_the_block_that_produced_it() -> None:
+    draft = build_handoff(
+        (
+            HandoffActivityInput(
+                activity_id=1,
+                stable_id="d01-recall",
+                objective="Recall.",
+                state="self_review_complete",
+                required=True,
+                focused_seconds=600,
+                coached=True,
+                note_id=77,
+            ),
+        ),
+        unfinished_requirement=None,
+    )
+    assert draft.blocks[0].note_id == 77
+    assert draft.blocks[0].as_json()["note_id"] == 77
 
 
 def test_the_next_action_is_the_plans_and_prefers_the_pending_self_review() -> None:

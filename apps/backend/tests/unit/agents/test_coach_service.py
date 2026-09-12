@@ -8,9 +8,12 @@ from tamforge_backend.agents.roles.coach import (
     CoachRequest,
     CoachService,
     CoachUnavailable,
+    NoteRequest,
     coaching_allowed,
     render_coach_prompt,
+    render_note_prompt,
     validate_coach_turn,
+    validate_note_draft,
 )
 from tamforge_backend.agents.roles.contracts import RoleContractError
 
@@ -119,3 +122,74 @@ def test_the_prompt_carries_the_brief_the_attempt_and_repair_errors() -> None:
     assert "Where the previous study day left off" in prompt
     assert "Next action: Finish d01-sql." in prompt
     assert "handoff" not in render_coach_prompt(_request()).lower()
+
+
+NOTE = {
+    "title": "Webhooks: delivery and retries",
+    "rule": "A 200 confirms durable acceptance, not processing.",
+    "explanation": "The provider retries until it sees a 2xx.",
+    "example": "Stripe retries with backoff for up to three days.",
+    "misconceptions": ["A 200 means the event was processed."],
+    "validated_queries": [{"query": "SELECT 1;", "result": "1"}],
+    "sources": ["docs/webhooks.md"],
+    "flashcards": [{"question": "What does a 200 confirm?", "answer": "Durable acceptance."}],
+}
+
+
+class FakeNoteTransport(FakeTransport):
+    def __init__(self, payloads: list[Mapping[str, object]]) -> None:
+        super().__init__([])
+        self.note_payloads = list(payloads)
+        self.note_requests: list[NoteRequest] = []
+
+    async def draft_note(self, request: NoteRequest) -> Mapping[str, object]:
+        self.note_requests.append(request)
+        return self.note_payloads.pop(0)
+
+
+def test_note_validation_refuses_completion_claims_and_malformed_cards() -> None:
+    assert validate_note_draft(NOTE) == ()
+    assert validate_note_draft({**NOTE, "status": "validated"})
+    assert validate_note_draft({**NOTE, "rule": "I marked this block as done."})
+    assert validate_note_draft({**NOTE, "explanation": "This is demonstrated mastery."})
+    assert validate_note_draft(
+        {**NOTE, "flashcards": [{"question": "No question mark", "answer": "x"}]}
+    )
+    assert validate_note_draft({**NOTE, "validated_queries": [{"query": "SELECT 1;"}]})
+
+
+@pytest.mark.anyio
+async def test_the_coach_drafts_a_note_only_where_allowed_and_after_a_commit() -> None:
+    transport = FakeNoteTransport([NOTE])
+    service = CoachService(transport, model="claude-opus-5")
+
+    draft = await service.draft_note(
+        NoteRequest(
+            block=BLOCK,
+            committed_attempt="Webhooks deliver events over HTTP.",
+            coach_messages=(("learner", "ya lo hice"), ("coach", "add retries")),
+            accepted_evidence=("Retries use exponential backoff.",),
+        )
+    )
+
+    assert draft.title == NOTE["title"]
+    assert draft.flashcards[0].question.endswith("?")
+    prompt = render_note_prompt(transport.note_requests[0])
+    assert "coach: add retries" in prompt and "- Retries use exponential backoff." in prompt
+    assert "do not invent queries" in prompt
+
+    with pytest.raises(RoleContractError, match="does not allow coaching"):
+        await service.draft_note(
+            NoteRequest(block=CoachBlock("s", "o", "none", (), ()), committed_attempt="x")
+        )
+    with pytest.raises(RoleContractError, match="only after the learner commits"):
+        await service.draft_note(NoteRequest(block=BLOCK, committed_attempt="  "))
+    with pytest.raises(CoachUnavailable):
+        await CoachService(FakeTransport([]), model="m").draft_note(
+            NoteRequest(block=BLOCK, committed_attempt="x")
+        )
+    bad = {**NOTE, "rule": "I marked this block as done."}
+    with pytest.raises(CoachUnavailable):
+        await CoachService(FakeNoteTransport([bad, bad]), model="m").draft_note(
+            NoteRequest(block=BLOCK, committed_attempt="x")
+        )

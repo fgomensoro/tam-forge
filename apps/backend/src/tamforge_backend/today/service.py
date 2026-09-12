@@ -64,9 +64,7 @@ class TodayStore(Protocol):
         idempotency_key: str,
     ) -> DailyCloseResponse: ...
 
-    async def load_handoff(
-        self, *, owner_id: int, before: date
-    ) -> DailyHandoffResponse | None: ...
+    async def load_handoff(self, *, owner_id: int, before: date) -> DailyHandoffResponse | None: ...
 
 
 _COMPLETED_FOR_CLOSE = frozenset(

@@ -27,7 +27,7 @@ from .compatibility import (
     ProbeObservation,
     ProbeQuotaExhausted,
 )
-from .roles.coach import CoachRequest
+from .roles.coach import CoachRequest, NoteRequest
 from .runtime import (
     AgentAuthenticationFailed,
     AgentQuotaExhausted,
@@ -157,6 +157,18 @@ class AgentSdkRuntime:
         run = await self._structured(
             prompt=render_coach_prompt(request),
             schema=coach_turn_schema(),
+            model=self._environ.get("TAMFORGE_COACH_MODEL", "claude-opus-5"),
+            system_prompt=COACH_SYSTEM_PROMPT,
+            max_turns=4,
+        )
+        return {} if run.structured_output is None else dict(run.structured_output)
+
+    async def draft_note(self, request: NoteRequest) -> Mapping[str, object]:
+        from .roles.coach import note_draft_schema, render_note_prompt
+
+        run = await self._structured(
+            prompt=render_note_prompt(request),
+            schema=note_draft_schema(),
             model=self._environ.get("TAMFORGE_COACH_MODEL", "claude-opus-5"),
             system_prompt=COACH_SYSTEM_PROMPT,
             max_turns=4,

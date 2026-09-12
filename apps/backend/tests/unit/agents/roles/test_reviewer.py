@@ -223,9 +223,7 @@ def test_attempt_reference_with_a_stale_commitment_withholds():
 
     stale = attempt_reference(commitment="c" * 64)
     assert (
-        evaluate_release(
-            english=english(stale), tam=tam(stale), state=state(manifest=(stale,))
-        )
+        evaluate_release(english=english(stale), tam=tam(stale), state=state(manifest=(stale,)))
         == "evidence_unavailable"
     )
 

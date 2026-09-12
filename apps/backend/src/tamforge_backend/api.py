@@ -19,6 +19,9 @@ from .evidence.service import EvidenceError
 from .learning.routes import activity_exception_handler
 from .learning.routes import router as activity_router
 from .learning.service import ActivityCommandError
+from .notes.routes import notes_exception_handler
+from .notes.routes import router as notes_router
+from .notes.service import NotesError
 from .notifications.routes import notification_exception_handler
 from .notifications.routes import router as notification_router
 from .notifications.service import NotificationError
@@ -46,6 +49,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(auth_router)
     app.include_router(activity_router)
     app.include_router(coaching_router)
+    app.include_router(notes_router)
     app.include_router(evidence_router)
     app.include_router(analysis_router)
     app.include_router(notification_router)
@@ -59,6 +63,7 @@ def register_routes(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, request_validation_exception_handler)
     app.add_exception_handler(ActivityCommandError, activity_exception_handler)
     app.add_exception_handler(CoachingError, coaching_exception_handler)
+    app.add_exception_handler(NotesError, notes_exception_handler)
     app.add_exception_handler(EvidenceError, evidence_exception_handler)
     app.add_exception_handler(FeedbackError, feedback_exception_handler)
     app.add_exception_handler(NotificationError, notification_exception_handler)

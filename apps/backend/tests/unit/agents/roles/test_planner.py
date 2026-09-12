@@ -31,9 +31,7 @@ def test_the_planner_never_sees_the_source_material() -> None:
     assert SOURCE_MATERIAL not in contract_for(AgentRole.PLANNER).allowed_context
 
     with pytest.raises(RoleContractError, match="context"):
-        prepare_role_prompt(
-            AgentRole.PLANNER, committed=True, requested_context=(SOURCE_MATERIAL,)
-        )
+        prepare_role_prompt(AgentRole.PLANNER, committed=True, requested_context=(SOURCE_MATERIAL,))
 
 
 def test_the_planner_reads_the_roadmap_and_the_evidence_summary() -> None:

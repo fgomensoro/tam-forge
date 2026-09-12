@@ -17,9 +17,7 @@ from tamforge_backend.agents.tools.registry import AgentRole
 
 def test_the_tutor_is_refused_until_there_is_a_committed_attempt() -> None:
     with pytest.raises(RoleContractError, match="commits"):
-        prepare_role_prompt(
-            AgentRole.TUTOR, committed=False, requested_context=(SOURCE_MATERIAL,)
-        )
+        prepare_role_prompt(AgentRole.TUTOR, committed=False, requested_context=(SOURCE_MATERIAL,))
 
     contract = prepare_role_prompt(
         AgentRole.TUTOR, committed=True, requested_context=(SOURCE_MATERIAL, COMMITTED_ATTEMPT)
