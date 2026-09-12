@@ -99,6 +99,10 @@ class StubRoadmapService:
         assert owner_id == 1 and version_id == 5
         return ("m1-w1-d01-sql",)
 
+    async def export_package(self, *, owner_id: int, version_id: int) -> bytes:
+        assert owner_id == 1 and version_id == 5
+        return b"PK\x05\x06" + b"\x00" * 18
+
     async def get_import(self, *, owner_id: int, import_id: int) -> RoadmapImportRecord:
         assert owner_id == 1 and import_id == 3
         return await self.stage_package(
@@ -343,3 +347,15 @@ def test_unparseable_scheme_text_is_a_422_problem() -> None:
 
     assert response.status_code == 422
     assert response.json()["code"] == "invalid_roadmap_scheme"
+
+
+def test_export_returns_the_package_zip_without_caching() -> None:
+    client, _ = _client()
+    with client:
+        response = client.get("/api/v1/roadmap-versions/5/export")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["content-disposition"].endswith('roadmap-version-5.zip"')
+    assert response.content.startswith(b"PK")

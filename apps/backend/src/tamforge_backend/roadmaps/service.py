@@ -566,6 +566,14 @@ class RoadmapService:
                 package=package,
             )
 
+    async def export_package(self, *, owner_id: int, version_id: int) -> bytes:
+        """The version's package as a deterministic zip: Markdown plus roadmap.yaml.
+
+        A backup or a readable copy for Obsidian, never the system of record.
+        """
+        version = await self.get_version(owner_id=owner_id, version_id=version_id)
+        return _zip_bytes(await self.snapshot_files(version.object_key))
+
     async def get_source_key(self, *, owner_id: int, source_id: int) -> str:
         key = await self._repository.source_key(owner_id=owner_id, source_id=source_id)
         if key is None:

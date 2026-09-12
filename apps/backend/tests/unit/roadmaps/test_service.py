@@ -545,6 +545,15 @@ async def test_staging_with_a_scheme_creates_a_validated_import_from_the_snapsho
     files = await service.snapshot_files(with_scheme.object_key)
     assert "roadmap.yaml" in files
 
+    version = await service.approve_import(owner_id=1, import_id=with_scheme.id)
+    exported = await service.export_package(owner_id=1, version_id=version.id)
+    import io
+    import zipfile
+
+    with zipfile.ZipFile(io.BytesIO(exported)) as archive:
+        assert "roadmap.yaml" in archive.namelist()
+        assert archive.namelist() == sorted(archive.namelist())
+
     with pytest.raises(InvalidSchemeText):
         await service.stage_with_scheme(
             owner_id=1,

@@ -165,12 +165,37 @@ extension RoadmapVersion {
     }
 }
 
+/// A scheme the planner proposed, or that failed validation. Frank approves it by
+/// staging it; nothing is applied on the server until then.
+struct SchemeProposal: Equatable, Sendable {
+    let yamlText: String
+    let summary: RoadmapJSONValue
+    let issues: [String]
+
+    var accepted: Bool { issues.isEmpty }
+}
+
+extension SchemeProposal {
+    init(wire value: Components.Schemas.SchemeProposalResponse) throws {
+        self.init(
+            yamlText: value.yamlText,
+            summary: try .init(openAPIObject: value.summary.additionalProperties),
+            issues: value.issues
+        )
+    }
+}
+
 protocol RoadmapServicing: Sendable {
     func stage(package: RoadmapPackage, idempotencyKey: String) async throws -> RoadmapImport
     func approve(importID: Int) async throws -> RoadmapVersion
     func retryMirror(versionID: Int) async throws -> RoadmapVersion
     func activate(versionID: Int) async throws -> RoadmapVersion
     func listVersions() async throws -> [RoadmapVersion]
+    func proposeScheme(importID: Int, instruction: String) async throws -> SchemeProposal
+    func stageScheme(importID: Int, yamlText: String) async throws -> RoadmapImport
+    func proposeReforecast(versionID: Int, instruction: String) async throws -> SchemeProposal
+    func stageReforecast(versionID: Int, yamlText: String) async throws -> RoadmapImport
+    func exportVersion(versionID: Int) async throws -> Data
 }
 
 enum RoadmapServiceError: Error, Equatable, Sendable {
@@ -272,6 +297,62 @@ struct LiveRoadmapService: RoadmapServicing, Sendable {
         return response.map(RoadmapVersion.init(wire:))
     }
 
+    func proposeScheme(importID: Int, instruction: String) async throws -> SchemeProposal {
+        try await propose(path: "/api/v1/roadmap-imports/\(importID)/scheme-proposals", instruction: instruction)
+    }
+
+    func stageScheme(importID: Int, yamlText: String) async throws -> RoadmapImport {
+        try await stageScheme(path: "/api/v1/roadmap-imports/\(importID)/scheme", yamlText: yamlText)
+    }
+
+    func proposeReforecast(versionID: Int, instruction: String) async throws -> SchemeProposal {
+        try await propose(path: "/api/v1/roadmap-versions/\(versionID)/scheme-proposals", instruction: instruction)
+    }
+
+    func stageReforecast(versionID: Int, yamlText: String) async throws -> RoadmapImport {
+        try await stageScheme(path: "/api/v1/roadmap-versions/\(versionID)/reforecasts", yamlText: yamlText)
+    }
+
+    func exportVersion(versionID: Int) async throws -> Data {
+        let data = try await send(method: .get, path: "/api/v1/roadmap-versions/\(versionID)/export")
+        guard let data, !data.isEmpty else { throw RoadmapServiceError.invalidResponse }
+        return data
+    }
+
+    private func propose(path: String, instruction: String) async throws -> SchemeProposal {
+        let body = try NativeJSONCodec.encode(
+            Components.Schemas.SchemeProposalRequest(instruction: instruction)
+        )
+        let response: Components.Schemas.SchemeProposalResponse = try await request(
+            method: .post,
+            path: path,
+            body: .init(body),
+            contentType: "application/json",
+            as: Components.Schemas.SchemeProposalResponse.self
+        )
+        do {
+            return try .init(wire: response)
+        } catch {
+            throw RoadmapServiceError.invalidResponse
+        }
+    }
+
+    private func stageScheme(path: String, yamlText: String) async throws -> RoadmapImport {
+        let body = try NativeJSONCodec.encode(Components.Schemas.SchemeTextRequest(yamlText: yamlText))
+        let response: Components.Schemas.RoadmapImportResponse = try await request(
+            method: .post,
+            path: path,
+            body: .init(body),
+            contentType: "application/json",
+            as: Components.Schemas.RoadmapImportResponse.self
+        )
+        do {
+            return try .init(wire: response)
+        } catch {
+            throw RoadmapServiceError.invalidResponse
+        }
+    }
+
     private func request<Value: Decodable & Sendable>(
         method: HTTPRequest.Method,
         path: String,
@@ -280,6 +361,29 @@ struct LiveRoadmapService: RoadmapServicing, Sendable {
         idempotencyKey: String? = nil,
         as type: Value.Type
     ) async throws -> Value {
+        let data = try await send(
+            method: method,
+            path: path,
+            body: body,
+            contentType: contentType,
+            idempotencyKey: idempotencyKey
+        )
+        guard let data else { throw RoadmapServiceError.invalidResponse }
+        do {
+            return try NativeJSONCodec.decode(type, from: data)
+        } catch {
+            throw RoadmapServiceError.invalidResponse
+        }
+    }
+
+    /// One authenticated round trip; the bytes of a 2xx body, or a problem error.
+    private func send(
+        method: HTTPRequest.Method,
+        path: String,
+        body: HTTPBody? = nil,
+        contentType: String? = nil,
+        idempotencyKey: String? = nil
+    ) async throws -> Data? {
         var headers: HTTPFields = [:]
         let onUnauthorized = await onUnauthorizedForRequest()
         if let token = try await resolveNativeBearerToken(using: bearerToken, onUnauthorized: onUnauthorized), !token.isEmpty {
@@ -308,12 +412,7 @@ struct LiveRoadmapService: RoadmapServicing, Sendable {
             }
             throw RoadmapServiceError.problem(statusCode: response.status.code, code: problem?.code)
         }
-        guard let data else { throw RoadmapServiceError.invalidResponse }
-        do {
-            return try NativeJSONCodec.decode(type, from: data)
-        } catch {
-            throw RoadmapServiceError.invalidResponse
-        }
+        return data
     }
 
     private static func collect(_ body: HTTPBody?, upTo maximumBytes: Int) async throws -> Data? {

@@ -146,10 +146,13 @@ struct RoadmapAdministrationView: View {
                 }
                 if let roadmapImport = model.roadmapImport {
                     validationReport(roadmapImport)
+                    schemeEditor
                     if roadmapImport.isValidated {
                         semanticDiff(roadmapImport.semanticDiff)
                         approvalGate(roadmapImport)
                     }
+                } else if model.reforecastTarget != nil {
+                    schemeEditor
                 }
                 if !model.versions.isEmpty { history }
             }
@@ -197,6 +200,7 @@ struct RoadmapAdministrationView: View {
                         metric("resources", report["resource_count"]?.integerValue)
                         metric("exit criteria", report["exit_criterion_count"]?.integerValue)
                     }
+                    schemeSummary(report["scheme_summary"])
                     if let hash = report["normalized_hash"]?.stringValue {
                         Text("Normalized content hash")
                             .font(.caption)
@@ -211,6 +215,78 @@ struct RoadmapAdministrationView: View {
                     Text("Validation needs attention")
                         .font(.headline)
                     validationIssues(roadmapImport.validationReport)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Days and budgets when the package carries a scheme; nothing for a legacy map.
+    @ViewBuilder
+    private func schemeSummary(_ value: RoadmapJSONValue?) -> some View {
+        if let summary = value?.objectValue, let days = summary["study_days"]?.integerValue, days > 0 {
+            let budgets = summary["budget_minutes"]?.objectValue ?? [:]
+            let ordered = budgets.keys.compactMap(Int.init).sorted()
+            let preview = ordered.prefix(7).map { day in
+                "Day \(day): \(budgets[String(day)]?.integerValue ?? 0) min"
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(days) study day\(days == 1 ? "" : "s") · \(summary["program"]?.stringValue ?? "scheme")")
+                    .font(.subheadline)
+                    .accessibilityIdentifier("roadmapSchemeSummary")
+                Text(preview.joined(separator: " · ") + (ordered.count > 7 ? " · …" : ""))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var schemeEditor: some View {
+        GroupBox("3. Scheme") {
+            VStack(alignment: .leading, spacing: 10) {
+                if let target = model.reforecastTarget {
+                    Text("Reforecast of \(target.versionKey): remaining work redistributed from today. Approving stages a new version; nothing changes until you activate it.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("The scheme decides days, blocks and minutes. Generate one with the planner or paste your own, then attach it to review the result.")
+                        .foregroundStyle(.secondary)
+                }
+                TextField("Instruction for the planner (optional)", text: $model.plannerInstruction)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("roadmapPlannerInstruction")
+                HStack {
+                    if model.reforecastTarget == nil {
+                        Button(model.isBusy ? "Working…" : "Generate with AI") {
+                            Task { await model.generateScheme() }
+                        }
+                        .disabled(!model.canGenerateScheme)
+                        .accessibilityIdentifier("roadmapGenerateSchemeButton")
+                    } else if let target = model.reforecastTarget {
+                        Button(model.isBusy ? "Working…" : "Propose reforecast") {
+                            Task { await model.proposeReforecast(target) }
+                        }
+                        .disabled(model.isBusy)
+                        .accessibilityIdentifier("roadmapProposeReforecastButton")
+                    }
+                    Button(model.reforecastTarget == nil ? "Attach scheme" : "Stage reforecast") {
+                        Task { await model.attachScheme() }
+                    }
+                    .disabled(!model.canAttachScheme)
+                    .accessibilityIdentifier("roadmapAttachSchemeButton")
+                }
+                TextEditor(text: $model.schemeDraft)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(minHeight: 160, maxHeight: 320)
+                    .accessibilityIdentifier("roadmapSchemeDraft")
+                if !model.schemeIssues.isEmpty {
+                    ForEach(Array(model.schemeIssues.enumerated()), id: \.offset) { _, issue in
+                        Text(issue)
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                }
+                if let summary = model.schemeSummary {
+                    schemeSummary(summary)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -246,7 +322,7 @@ struct RoadmapAdministrationView: View {
     }
 
     private func semanticDiff(_ diff: RoadmapJSONValue) -> some View {
-        GroupBox("3. Semantic comparison") {
+        GroupBox("4. Semantic comparison") {
             let summary = diff.objectValue?["summary"]?.objectValue ?? [:]
             VStack(alignment: .leading, spacing: 8) {
                 Text("What this roadmap changes")
@@ -334,7 +410,7 @@ struct RoadmapAdministrationView: View {
     }
 
     private func approvalGate(_ roadmapImport: RoadmapImport) -> some View {
-        GroupBox("4. Approve, mirror, then activate") {
+        GroupBox("5. Approve, mirror, then activate") {
             VStack(alignment: .leading, spacing: 12) {
                 if let version = model.version {
                     versionGate(version)
@@ -384,6 +460,16 @@ struct RoadmapAdministrationView: View {
             Button("Activate Month \(version.monthNumber)") { Task { await model.activate(version) } }
                 .disabled(model.isBusy || !version.canActivate)
         }
+        HStack {
+            if version.state == "active" {
+                Button("Reforecast…") { Task { await model.proposeReforecast(version) } }
+                    .disabled(model.isBusy)
+                    .accessibilityIdentifier("roadmapReforecastButton")
+            }
+            Button("Export package") { Task { await model.exportVersion(version) } }
+                .disabled(model.isBusy)
+                .accessibilityIdentifier("roadmapExportButton")
+        }
     }
 
     private var history: some View {
@@ -405,6 +491,12 @@ struct RoadmapAdministrationView: View {
                             Button("Activate") { Task { await model.activate(item) } }
                                 .disabled(model.isBusy)
                         }
+                        if item.state == "active" {
+                            Button("Reforecast…") { Task { await model.proposeReforecast(item) } }
+                                .disabled(model.isBusy)
+                        }
+                        Button("Export") { Task { await model.exportVersion(item) } }
+                            .disabled(model.isBusy)
                     }
                 }
             }

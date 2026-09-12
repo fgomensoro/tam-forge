@@ -301,6 +301,109 @@ final class RoadmapViewModelTests: XCTestCase {
         XCTAssertEqual(model.version?.state, "approved")
     }
 
+    func testGenerateStoresTheProposalAsTheDraftAndAttachingStagesANewImport() async throws {
+        let service = RoadmapServiceFixture(
+            stages: [.success(validImport())],
+            approved: version(month: 1, state: "approved", mirrorStatus: "not_required"),
+            retried: version(month: 1, state: "approved", mirrorStatus: "not_required"),
+            activated: version(month: 1, state: "active", mirrorStatus: "not_required")
+        )
+        let proposal = SchemeProposal(
+            yamlText: "schema_version: 1\n",
+            summary: .object(["program": .string("Demo"), "study_days": .integer(2)]),
+            issues: []
+        )
+        let staged = RoadmapImport(
+            id: 18,
+            status: "validated",
+            validationReport: .object([
+                "accepted": .bool(true),
+                "issues": .array([]),
+                "scheme_summary": .object(["program": .string("Demo"), "study_days": .integer(2)]),
+            ]),
+            semanticDiff: .object(["summary": .object(["added": .number(4)])]),
+            failureCode: nil
+        )
+        await service.configure(proposal: proposal, schemeImport: staged)
+        let model = RoadmapAdministrationModel(service: service)
+        model.select(try package())
+        await model.stage()
+        model.plannerInstruction = "three hours a day"
+
+        await model.generateScheme()
+
+        XCTAssertEqual(model.schemeDraft, "schema_version: 1\n")
+        XCTAssertEqual(model.schemeIssues, [])
+        XCTAssertEqual(model.schemeSummary?.objectValue?["study_days"]?.integerValue, 2)
+        let instructions = await service.proposalInstructions
+        XCTAssertEqual(instructions, ["three hours a day"])
+        XCTAssertTrue(model.canAttachScheme)
+
+        await model.attachScheme()
+
+        XCTAssertEqual(model.roadmapImport?.id, 18)
+        XCTAssertTrue(model.roadmapImport?.isValidated == true)
+        let stagedSchemes = await service.stagedSchemes
+        XCTAssertEqual(stagedSchemes, ["schema_version: 1\n"])
+        XCTAssertNil(model.errorMessage)
+    }
+
+    func testRefusedProposalKeepsItsIssuesAndPlannerUnavailableIsActionable() async throws {
+        let service = RoadmapServiceFixture(
+            stages: [.success(validImport())],
+            approved: version(month: 1, state: "approved", mirrorStatus: "not_required"),
+            retried: version(month: 1, state: "approved", mirrorStatus: "not_required"),
+            activated: version(month: 1, state: "active", mirrorStatus: "not_required")
+        )
+        await service.configure(
+            proposal: SchemeProposal(yamlText: "days: []\n", summary: .object([:]), issues: ["day 'x' is over budget"])
+        )
+        let model = RoadmapAdministrationModel(service: service)
+        model.select(try package())
+        await model.stage()
+
+        await model.generateScheme()
+        XCTAssertEqual(model.schemeIssues, ["day 'x' is over budget"])
+        XCTAssertNil(model.schemeSummary)
+        XCTAssertEqual(model.schemeDraft, "days: []\n")
+
+        await service.configure(proposalError: .problem(statusCode: 503, code: "planner_unavailable"))
+        await model.generateScheme()
+        XCTAssertEqual(model.errorMessage, "The planner needs Claude enabled on the server.")
+    }
+
+    func testReforecastTargetsTheActiveVersionAndExportHandsTheBytesToTheSaver() async throws {
+        let active = version(month: 1, state: "active", mirrorStatus: "not_required")
+        let service = RoadmapServiceFixture(
+            stages: [],
+            approved: active,
+            retried: active,
+            activated: active
+        )
+        await service.configure(
+            proposal: SchemeProposal(yamlText: "schema_version: 1\n", summary: .object([:]), issues: []),
+            schemeImport: validImport()
+        )
+        let saved = RoadmapSavedExportBox()
+        let model = RoadmapAdministrationModel(
+            service: service,
+            saveExport: { data, name in saved.record(data: data, name: name) }
+        )
+
+        await model.proposeReforecast(active)
+        XCTAssertEqual(model.reforecastTarget, active)
+        XCTAssertTrue(model.canAttachScheme)
+        await model.attachScheme()
+        XCTAssertNil(model.reforecastTarget)
+        XCTAssertEqual(model.roadmapImport, validImport())
+
+        await model.exportVersion(active)
+        XCTAssertEqual(saved.names, ["month-1-v1-v1.zip"])
+        XCTAssertEqual(saved.payloads.first, Data("PK-fixture".utf8))
+        let exported = await service.exportedVersions
+        XCTAssertEqual(exported, [8])
+    }
+
     private func package() throws -> RoadmapPackage {
         let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try Data("redacted roadmap".utf8).write(to: fileURL)
@@ -420,6 +523,49 @@ private actor RoadmapServiceFixture: RoadmapServicing {
         return activated
     }
     func listVersions() async throws -> [RoadmapVersion] { [] }
+
+    var proposal: SchemeProposal?
+    var proposalError: RoadmapServiceError?
+    var schemeImport: RoadmapImport?
+    private(set) var proposalInstructions: [String] = []
+    private(set) var stagedSchemes: [String] = []
+    private(set) var exportedVersions: [Int] = []
+
+    func configure(
+        proposal: SchemeProposal? = nil,
+        proposalError: RoadmapServiceError? = nil,
+        schemeImport: RoadmapImport? = nil
+    ) {
+        self.proposal = proposal
+        self.proposalError = proposalError
+        self.schemeImport = schemeImport
+    }
+
+    func proposeScheme(importID _: Int, instruction: String) async throws -> SchemeProposal {
+        proposalInstructions.append(instruction)
+        if let proposalError { throw proposalError }
+        guard let proposal else { throw RoadmapServiceError.invalidResponse }
+        return proposal
+    }
+
+    func stageScheme(importID _: Int, yamlText: String) async throws -> RoadmapImport {
+        stagedSchemes.append(yamlText)
+        guard let schemeImport else { throw RoadmapServiceError.invalidResponse }
+        return schemeImport
+    }
+
+    func proposeReforecast(versionID _: Int, instruction: String) async throws -> SchemeProposal {
+        try await proposeScheme(importID: 0, instruction: instruction)
+    }
+
+    func stageReforecast(versionID _: Int, yamlText: String) async throws -> RoadmapImport {
+        try await stageScheme(importID: 0, yamlText: yamlText)
+    }
+
+    func exportVersion(versionID: Int) async throws -> Data {
+        exportedVersions.append(versionID)
+        return Data("PK-fixture".utf8)
+    }
 }
 
 private enum StageOutcome: Sendable {
@@ -464,6 +610,11 @@ private actor DelayedRoadmapService: RoadmapServicing {
     func retryMirror(versionID _: Int) async throws -> RoadmapVersion { fatalError("Unused") }
     func activate(versionID _: Int) async throws -> RoadmapVersion { fatalError("Unused") }
     func listVersions() async throws -> [RoadmapVersion] { [] }
+    func proposeScheme(importID _: Int, instruction _: String) async throws -> SchemeProposal { fatalError("Unused") }
+    func stageScheme(importID _: Int, yamlText _: String) async throws -> RoadmapImport { fatalError("Unused") }
+    func proposeReforecast(versionID _: Int, instruction _: String) async throws -> SchemeProposal { fatalError("Unused") }
+    func stageReforecast(versionID _: Int, yamlText _: String) async throws -> RoadmapImport { fatalError("Unused") }
+    func exportVersion(versionID _: Int) async throws -> Data { fatalError("Unused") }
 }
 
 private final class RoadmapExpectationBox: @unchecked Sendable {
@@ -475,5 +626,17 @@ private final class RoadmapExpectationBox: @unchecked Sendable {
 
     func fulfill() {
         expectation.fulfill()
+    }
+}
+
+
+@MainActor
+private final class RoadmapSavedExportBox {
+    private(set) var payloads: [Data] = []
+    private(set) var names: [String] = []
+
+    func record(data: Data, name: String) {
+        payloads.append(data)
+        names.append(name)
     }
 }
