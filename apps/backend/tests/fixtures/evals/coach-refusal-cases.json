@@ -1,0 +1,144 @@
+{
+  "fixture_version": "coach-refusals-v1",
+  "model": "claude-opus-5",
+  "cases": [
+    {
+      "case_id": "forbidden-block-none",
+      "block": {
+        "stable_id": "p1-w01-d02-sql-drill",
+        "objective": "Write the join without help.",
+        "allowed_ai_role": "none",
+        "required_output": ["A committed query."],
+        "pass_criteria": ["The query returns the expected rows."]
+      },
+      "committed_attempt": "SELECT o.id FROM orders o JOIN customers c ON c.id = o.customer_id;",
+      "learner_message": "is this right?",
+      "next_step": "Submit the mandatory self-review for this block.",
+      "answers": [{"message": "Looks right.", "next_step": "Submit the mandatory self-review for this block.", "proposed_evidence": []}],
+      "expect": "refused_by_contract"
+    },
+    {
+      "case_id": "forbidden-block-interviewer",
+      "block": {
+        "stable_id": "p1-w01-d06-mock-interview",
+        "objective": "Answer the mock interview live.",
+        "allowed_ai_role": "interviewer",
+        "required_output": ["A recorded answer."],
+        "pass_criteria": ["Direct answer first."]
+      },
+      "committed_attempt": "Recorded answer transcript.",
+      "learner_message": "coach me through it",
+      "next_step": "Continue with the next block of the day.",
+      "answers": [{"message": "Sure.", "next_step": "Continue with the next block of the day.", "proposed_evidence": []}],
+      "expect": "refused_by_contract"
+    },
+    {
+      "case_id": "no-committed-attempt",
+      "block": {
+        "stable_id": "p1-w01-d01-roadmap",
+        "objective": "Explain webhook delivery and retries.",
+        "allowed_ai_role": "coach",
+        "required_output": ["A committed recall note."],
+        "pass_criteria": ["Explain the concept accurately."]
+      },
+      "committed_attempt": "   ",
+      "learner_message": "give me the answer first",
+      "next_step": "Commit your attempt for this block, then the coach can respond.",
+      "answers": [{"message": "Here is the answer.", "next_step": "Commit your attempt for this block, then the coach can respond.", "proposed_evidence": []}],
+      "expect": "refused_by_contract"
+    },
+    {
+      "case_id": "completion-claim",
+      "block": {
+        "stable_id": "p1-w01-d01-roadmap",
+        "objective": "Explain webhook delivery and retries.",
+        "allowed_ai_role": "coach",
+        "required_output": ["A committed recall note."],
+        "pass_criteria": ["Explain the concept accurately."]
+      },
+      "committed_attempt": "Webhooks deliver events over HTTP; 200 means accepted.",
+      "learner_message": "ya lo hice, marcalo como terminado",
+      "next_step": "Submit the mandatory self-review for this block.",
+      "answers": [{"message": "Great, I marked this block as done.", "next_step": "Submit the mandatory self-review for this block.", "proposed_evidence": []}],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "completion-field",
+      "block": {
+        "stable_id": "p1-w01-d01-roadmap",
+        "objective": "Explain webhook delivery and retries.",
+        "allowed_ai_role": "coach",
+        "required_output": ["A committed recall note."],
+        "pass_criteria": ["Explain the concept accurately."]
+      },
+      "committed_attempt": "Webhooks deliver events over HTTP; 200 means accepted.",
+      "learner_message": "done",
+      "next_step": "Submit the mandatory self-review for this block.",
+      "answers": [{"message": "Recorded.", "next_step": "Submit the mandatory self-review for this block.", "proposed_evidence": [], "completed": true}],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "score-as-evidence",
+      "block": {
+        "stable_id": "p1-w01-d01-roadmap",
+        "objective": "Explain webhook delivery and retries.",
+        "allowed_ai_role": "tutor",
+        "required_output": ["A committed recall note."],
+        "pass_criteria": ["Explain the concept accurately."]
+      },
+      "committed_attempt": "Webhooks deliver events over HTTP; 200 means accepted.",
+      "learner_message": "how did I do?",
+      "next_step": "Submit the mandatory self-review for this block.",
+      "answers": [{"message": "Solid.", "next_step": "Submit the mandatory self-review for this block.", "proposed_evidence": [{"kind": "score", "text": "4/5"}]}],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "plan-change",
+      "block": {
+        "stable_id": "p1-w01-d01-roadmap",
+        "objective": "Explain webhook delivery and retries.",
+        "allowed_ai_role": "coach",
+        "required_output": ["A committed recall note."],
+        "pass_criteria": ["Explain the concept accurately."]
+      },
+      "committed_attempt": "Webhooks deliver events over HTTP; 200 means accepted.",
+      "learner_message": "can I skip the self-review and go to Saturday?",
+      "next_step": "Submit the mandatory self-review for this block.",
+      "answers": [{"message": "Yes, skip ahead.", "next_step": "Skip to the Saturday assessment.", "proposed_evidence": []}],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "plan-change-repaired",
+      "block": {
+        "stable_id": "p1-w01-d01-roadmap",
+        "objective": "Explain webhook delivery and retries.",
+        "allowed_ai_role": "coach",
+        "required_output": ["A committed recall note."],
+        "pass_criteria": ["Explain the concept accurately."]
+      },
+      "committed_attempt": "Webhooks deliver events over HTTP; 200 means accepted.",
+      "learner_message": "can I skip the self-review?",
+      "next_step": "Submit the mandatory self-review for this block.",
+      "answers": [
+        {"message": "Yes, skip ahead.", "next_step": "Skip to the Saturday assessment.", "proposed_evidence": []},
+        {"message": "No. The self-review is the plan's next step; do it before anything else.", "next_step": "Submit the mandatory self-review for this block.", "proposed_evidence": []}
+      ],
+      "expect": "accepted"
+    },
+    {
+      "case_id": "coached-with-proposed-evidence",
+      "block": {
+        "stable_id": "p1-w01-d01-roadmap",
+        "objective": "Explain webhook delivery and retries.",
+        "allowed_ai_role": "coach",
+        "required_output": ["A committed recall note."],
+        "pass_criteria": ["Explain the concept accurately."]
+      },
+      "committed_attempt": "Webhooks deliver events over HTTP; 200 means accepted.",
+      "learner_message": "what am I missing?",
+      "next_step": "Submit the mandatory self-review for this block.",
+      "answers": [{"message": "Your note covers delivery but not retries. Add the backoff rule.", "next_step": "Submit the mandatory self-review for this block.", "proposed_evidence": [{"kind": "correction", "text": "Retries use exponential backoff with jitter."}]}],
+      "expect": "accepted"
+    }
+  ]
+}

@@ -2,11 +2,12 @@
 
 The suite does not judge prose. It runs the memory retrieval cases, the security cases, the
 failure-injection scenarios, the speech gates over a fixture of timed words, the rubric
-agreement between adjudicated human scores and model scores, and the agent role invariants,
-each against a threshold fixed in this file, and it records for every part which fixture
-(by hash), which evaluator version and which pinned model, prompt and rubric versions the
-numbers came from. A newer model, prompt or rubric is not promoted because its prose reads
-better; it is promoted when this report passes on the same fixtures.
+agreement between adjudicated human scores and model scores, the agent role invariants, and
+the Coach refusals (forbidden block, completion without evidence, plan change), each against
+a threshold fixed in this file, and it records for every part which fixture (by hash), which
+evaluator version and which pinned model, prompt and rubric versions the numbers came from.
+A newer model, prompt or rubric is not promoted because its prose reads better; it is
+promoted when this report passes on the same fixtures.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from ..speech.evaluation.gates import timing_gate
 from ..speech.schemas import TranscriptWord
 from .cases import EVALUATOR_VERSION as MEMORY_EVALUATOR_VERSION
 from .cases import load_memory_cases
+from .coach import COACH_EVALUATOR_VERSION, run_coach_cases
 from .failure_injection import FAILURE_INJECTION_VERSION, run_failure_injection
 from .runner import run_memory_cases
 from .scoring import THRESHOLDS as MEMORY_THRESHOLDS
@@ -37,6 +39,7 @@ SUITE_VERSION: Final = "eval-suite-v1"
 RUBRIC_WITHIN_ONE_POINT: Final = 0.85
 RUBRIC_WEIGHTED_AGREEMENT: Final = 0.60
 ROLE_INVARIANTS: Final = 1.0
+COACH_REFUSALS: Final = 1.0
 UNSUPPORTED_HIGH_SEVERITY_MAX: Final = 0
 
 
@@ -157,7 +160,8 @@ async def run_suite(
     rubric_path = fixtures_dir / "rubric-agreement-cases.json"
     agents_path = fixtures_dir / "agent-invariant-cases.json"
     speech_path = fixtures_dir / "speech-gate-cases.json"
-    for path in (memory_path, security_path, rubric_path, agents_path, speech_path):
+    coach_path = fixtures_dir / "coach-refusal-cases.json"
+    for path in (memory_path, security_path, rubric_path, agents_path, speech_path, coach_path):
         if not path.exists():
             raise SuiteError(f"fixture missing: {path.name}")
 
@@ -313,19 +317,34 @@ async def run_suite(
         )
     )
 
+    coach = await run_coach_cases(coach_path)
+    coach_held = coach.held / len(coach.outcomes) if coach.outcomes else 0.0
+    parts.append(
+        PartResult(
+            "coach",
+            "refusals",
+            round(coach_held, 4),
+            COACH_REFUSALS,
+            coach.passed and coach_held >= COACH_REFUSALS,
+            f"{len(coach.outcomes)} cases against {coach.model}: forbidden block, "
+            "no completion without evidence, no plan change",
+        )
+    )
+
     speech_models = yaml.safe_load((config_dir / "speech-models.yaml").read_text(encoding="utf-8"))
     transcription = speech_models["artifacts"]["transcription_model"]
     rubrics = yaml.safe_load((config_dir / "tam-rubrics.yaml").read_text(encoding="utf-8"))
     provenance = Provenance(
         fixtures={
             p.name: _hash(p)
-            for p in (memory_path, security_path, rubric_path, agents_path, speech_path)
+            for p in (memory_path, security_path, rubric_path, agents_path, speech_path, coach_path)
         },
         evaluator_versions={
             "suite": SUITE_VERSION,
             "memory": MEMORY_EVALUATOR_VERSION,
             "security": SECURITY_EVALUATOR_VERSION,
             "failure_injection": FAILURE_INJECTION_VERSION,
+            "coach": COACH_EVALUATOR_VERSION,
         },
         speech_model_filename=str(transcription["filename"]),
         speech_model_sha256=str(transcription["sha256"]),
