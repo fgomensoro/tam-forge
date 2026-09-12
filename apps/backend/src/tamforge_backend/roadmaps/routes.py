@@ -417,6 +417,26 @@ async def stage_reforecast(
     return _import_response(staged)
 
 
+@router.get(
+    "/roadmap-versions/{version_id}/export",
+    response_class=Response,
+    responses={200: {"content": {"application/zip": {}}}},
+)
+async def export_roadmap_version(
+    version_id: int,
+    service: Annotated[RoadmapService, Depends(get_roadmap_service)],
+    owner: Annotated[AuthenticatedOwner, Depends(get_authenticated_owner)],
+) -> Response:
+    package = await service.export_package(owner_id=owner.owner_id, version_id=version_id)
+    response = Response(
+        content=package,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="roadmap-version-{version_id}.zip"'},
+    )
+    _prevent_storage(response)
+    return response
+
+
 @router.get("/roadmap-versions", response_model=list[RoadmapVersionResponse])
 async def list_roadmap_versions(
     response: Response,
