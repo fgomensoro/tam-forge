@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from types import MappingProxyType
 
 from tamforge_backend.evidence.config_loader import load_config_bundle
 from tamforge_backend.roadmaps.diff import diff_roadmaps
@@ -21,17 +22,18 @@ def _fixture_files(name: str) -> dict[str, bytes]:
 
 def test_semantic_diff_reports_field_changes_and_ignores_file_heading_order() -> None:
     before_bundle = load_config_bundle(CONFIG_DIR)
-    tasks = list(before_bundle.roadmap_tasks)
-    first = tasks[0]
-    tasks[0] = first.model_copy(
-        update={
-            "objective": "Changed objective with the same stable identity.",
-            "pass_criteria": first.pass_criteria + ("New reviewed pass condition.",),
-        }
+    # The objective lives in the package scheme (month-v2.zip changes the first
+    # block's); pass criteria come from the release contract, so the "after"
+    # release amends the SQL contract.
+    sql_contract = before_bundle.roadmap_contracts["sql"]
+    contracts = dict(before_bundle.roadmap_contracts)
+    contracts["sql"] = sql_contract.model_copy(
+        update={"pass_criteria": sql_contract.pass_criteria + ("New reviewed pass condition.",)}
     )
-    after_bundle = replace(before_bundle, roadmap_tasks=tuple(tasks))
+    after_bundle = replace(before_bundle, roadmap_contracts=MappingProxyType(contracts))
     before = parse_roadmap(files=_fixture_files("month-v1.zip"), config=before_bundle)
     after = parse_roadmap(files=_fixture_files("month-v2.zip"), config=after_bundle)
+    first = before.tasks[0]
 
     result = diff_roadmaps(before, after)
 

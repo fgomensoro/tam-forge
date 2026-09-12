@@ -989,12 +989,8 @@ def test_migration_compiles_upgrade_and_exact_downgrade_without_credentials() ->
 
 
 def test_task_reference_forward_migration_compiles_exact_shape() -> None:
-    upgrade_sql = _offline_sql(
-        "upgrade", "20260826_0006_score_payload:20260826_0007_task_refs"
-    )
-    downgrade_sql = _offline_sql(
-        "downgrade", "20260826_0007_task_refs:20260826_0006_score_payload"
-    )
+    upgrade_sql = _offline_sql("upgrade", "20260826_0006_score_payload:20260826_0007_task_refs")
+    downgrade_sql = _offline_sql("downgrade", "20260826_0007_task_refs:20260826_0006_score_payload")
 
     assert "ALTER COLUMN exercise_type DROP NOT NULL" in upgrade_sql
     assert "ALTER COLUMN mapping_version DROP NOT NULL" in upgrade_sql

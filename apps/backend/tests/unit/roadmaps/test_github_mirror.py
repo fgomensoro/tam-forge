@@ -53,9 +53,7 @@ async def test_mirror_creates_one_non_force_commit_with_source_files_and_manifes
     assert blob_route.call_count == 2
     readme_blob = blob_route.calls[0].request
     assert readme_blob.headers["authorization"] == "Bearer mirror-token"
-    assert json.loads(readme_blob.content)["content"] == base64.b64encode(
-        b"# Roadmap\n"
-    ).decode()
+    assert json.loads(readme_blob.content)["content"] == base64.b64encode(b"# Roadmap\n").decode()
     tree = json.loads(tree_route.calls[0].request.content)
     assert tree["base_tree"] == "parent-tree"
     assert {item["path"] for item in tree["tree"]} == {

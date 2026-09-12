@@ -49,9 +49,9 @@ async def test_generate_returns_a_validated_proposal() -> None:
     assert proposal.summary == {
         "program": "Demo",
         "study_days": 2,
-        "budget_minutes": {"1": 120, "2": 60},
+        "budget_minutes": {"1": 130, "2": 60},
     }
-    assert "budget_minutes: 120" in proposal.yaml_text
+    assert "budget_minutes: 130" in proposal.yaml_text
     request = transport.requests[0]
     assert request.mode == "generate"
     assert request.instruction == "two hours a day"
