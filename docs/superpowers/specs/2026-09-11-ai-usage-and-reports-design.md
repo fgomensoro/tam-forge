@@ -108,4 +108,7 @@ Everything the weekly report has, over the month, plus:
   the reasoning, and the next-phase priorities.
 
 Delivery: stored in the app under Progress and emailed (epic #268). The email is
-the report; the app keeps the history and the links to the evidence.
+the report; the app keeps the history and the links to the evidence. Everything the
+AI reads or writes lives in the app's database and object store on the Hetzner
+host; the Obsidian vault is an import source and an export target, never the
+system of record.

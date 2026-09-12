@@ -26,15 +26,21 @@ imported, and a change such as "two hours a day from tomorrow" needs a code rele
 3. Fixed contract vocabulary. A block picks one of the existing contract types
    (sql, technical, pipeline, correction, case, communication, close and the
    Saturday contracts) and sets minutes and source. New types are added in the repo.
-4. The approved scheme is written back into the Obsidian folder. Obsidian stays the
-   single source of truth.
+4. The app is the system of record (PostgreSQL and MinIO on the Hetzner host).
+   Obsidian is only where the plan lives today: a package is imported once, and
+   from then on the scheme, the notes and the evidence are created and edited in
+   the app. Markdown export stays available as a readable backup, never as the
+   source. (Revised the same evening: the first draft had the approved scheme
+   written back into the vault.)
 5. Version 1 models blocks and pointers only. The interview queue, the coverage
    ledger and exit criteria stay as prose; the interview block of a day points at
    the question that is due.
 
 ## The scheme file
 
-`roadmap.yaml` at the root of the package (ZIP or folder):
+`roadmap.yaml` is the import and export format of the scheme. On import it sits at
+the root of the package (ZIP or folder); after import the scheme is stored with the
+roadmap version and is edited in the app, and an export regenerates the file.
 
 ```yaml
 schema_version: 1
@@ -108,8 +114,9 @@ A new agent role `planner` with a structured output that is exactly the scheme
 model. Two operations, both started from the Roadmaps screen and both producing a
 proposal the learner reviews before anything is written:
 
-- Generate: input is the package files plus an optional instruction ("three hours a
-  day, Saturdays are assessments"); output is a full `roadmap.yaml`.
+- Generate: input is the imported package files (already stored as an immutable
+  snapshot in the object store) plus an optional instruction ("three hours a day,
+  Saturdays are assessments"); output is a full scheme.
 - Reforecast: input is the active version, the evidence of what is done, today's
   date and the instruction ("two hours a day from tomorrow"); output is a new scheme
   whose `days` are the remaining work redistributed from today, with
@@ -120,21 +127,24 @@ and reported, never repaired silently. The role uses the existing bounded runtim
 subscription credential, quota and attestation gates; it is unavailable while
 Claude is disabled and the screen says so.
 
-## Write-back and the macOS app
+## The macOS app
 
-The app writes the approved `roadmap.yaml` into the chosen folder (entitlement
-moves from user-selected read-only to read-write; ZIP packages get the file added
-to a copy next to the original), then stages the package again through the normal
-import, review, approve and activate steps. The Review step shows the scheme summary
-(days, budget per day, blocks per day, sources resolved) beside the existing diff.
-Activation is unchanged.
+Import stays as it is: choose a ZIP or folder, review, approve, activate. The Review
+step shows the scheme summary (days, budget per day, blocks per day, sources
+resolved) beside the existing diff. When the package has no `roadmap.yaml`, the
+Review step offers Generate: the planner proposes a scheme from the imported
+files and the instruction, Frank edits or accepts it in the app, and the approved
+scheme is stored with the version. Reforecast starts from the Roadmaps screen on
+the active version and produces a new version the same way. Nothing is written
+into the vault; Export produces a package (Markdown plus `roadmap.yaml`) for
+backup or for reading in Obsidian.
 
 ## Migration
 
 - A script converts `config/tam-roadmap-task-map.yaml` and
   `config/releases/phase-1-six-week-v1` into two packages with `roadmap.yaml`;
-  both become test fixtures and the six-week one becomes Frank's package (his vault
-  folder plus the generated scheme).
+  both become test fixtures. Frank's vault folder (`Personal/TAM Practice`) is
+  imported once with the generated scheme; the app owns it from then on.
 - Existing roadmap versions in the database keep working; nothing is rewritten.
 
 ## Testing
@@ -146,7 +156,7 @@ Activation is unchanged.
   a 120-minute assessment day.
 - Planner role tests with a fake transport: valid proposal accepted, invalid
   proposal refused, disabled Claude reported.
-- Native parity fixture updated for the scheme summary and the write-back.
+- Native parity fixture updated for the scheme summary, Generate and Export.
 
 ## Out of scope for this epic
 
