@@ -172,3 +172,27 @@ def test_scheme_summary_is_empty_for_legacy_and_compact_for_schemes() -> None:
         "study_days": 2,
         "budget_minutes": {"1": 120, "2": 60},
     }
+
+
+@pytest.mark.parametrize(
+    ("name", "days", "tasks", "first_budget"),
+    [
+        ("month-1-scheme-v1.zip", 24, 158, 230),
+        ("phase-1-six-week-scheme-v1.zip", 36, 148, 180),
+    ],
+)
+def test_reference_scheme_packages_parse(
+    name: str, days: int, tasks: int, first_budget: int
+) -> None:
+    from tamforge_backend.roadmaps.package import inspect_zip_stream
+
+    payload = (ROOT / "apps" / "backend" / "tests" / "fixtures" / "roadmaps" / name).read_bytes()
+    with inspect_zip_stream((payload,)) as package:
+        assert package.accepted, package.issues
+        files = {item.manifest.path: item.staged_path.read_bytes() for item in package.files}
+    parsed = parse_roadmap(files=files, config=CONFIG)
+    assert parsed.scheme is not None
+    assert (len(parsed.scheme["days"]), len(parsed.tasks)) == (days, tasks)
+    assert parsed.scheme["days"]["1"]["budget_minutes"] == first_budget
+    assert parsed.scheme["days"]["6"]["kind"] == "assessment"
+    assert all(task.block for task in parsed.tasks)
