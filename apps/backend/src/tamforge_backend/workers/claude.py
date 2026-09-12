@@ -161,7 +161,47 @@ async def gate_step(sessions: async_sessionmaker[AsyncSession]) -> str | None:
         return "auth"
     except ClaudeWorkerConfigurationError:
         return "permission_required"
-    return None
+    return await probe_step(sessions, owner_id=owner_id)
+
+
+async def probe_step(
+    sessions: async_sessionmaker[AsyncSession], *, owner_id: int | None
+) -> str | None:
+    """Ask the installed runtime whether Claude work may run; report by closed reason."""
+    from datetime import UTC, datetime
+
+    from ..agents.compatibility import AttestationRepository, probe_claude_compatibility
+    from ..agents.sdk_runtime import AgentSdkRuntime
+    from ..config import Settings
+
+    if owner_id is None:
+        return "permission_required"
+    settings = Settings()
+    async with sessions() as session:
+        result = await probe_claude_compatibility(
+            runtime=AgentSdkRuntime(),
+            repository=AttestationRepository(session),
+            owner_id=owner_id,
+            enabled=settings.claude_enabled,
+            requested_model=settings.planner_model,
+            now=datetime.now(UTC),
+        )
+        await session.rollback()
+    if result.claude_may_run:
+        return None
+    return PROBE_HEARTBEAT_REASONS.get(result.reason, "service")
+
+
+PROBE_HEARTBEAT_REASONS: Mapping[str, str] = {
+    "not_enabled": "permission_required",
+    "attestation_missing": "permission_required",
+    "attestation_superseded": "permission_required",
+    "authentication_missing": "auth",
+    "authentication_not_subscription": "auth",
+    "authentication_rejected": "auth",
+    "quota_exhausted": "quota",
+    "policy_rejected": "permission_required",
+}
 
 
 def main() -> int:

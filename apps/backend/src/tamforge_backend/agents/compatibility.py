@@ -121,7 +121,8 @@ async def claude_status(
 # The floor this build has been verified against. Bump it together with the runbook's
 # policy check when a newer SDK becomes the supported one; a version below it is a
 # blocked runtime rather than a silent best effort.
-MINIMUM_SDK_VERSION = (1, 0, 0)
+# The Agent SDK release this build is pinned against (apps/backend/pyproject.toml).
+MINIMUM_SDK_VERSION = (0, 2, 152)
 
 # The probe's whole payload. It carries no owner content by construction, and an
 # exact match is what proves the structured-response path works end to end.
@@ -290,9 +291,9 @@ def _classify(observation: ProbeObservation) -> str:
     return "none"
 
 
-def _result(status: ProbeStatus, reason: str, now: datetime, **facts: str | None) -> (
-    CompatibilityResult
-):
+def _result(
+    status: ProbeStatus, reason: str, now: datetime, **facts: str | None
+) -> CompatibilityResult:
     return CompatibilityResult(
         status=status,
         reason=reason,
@@ -312,9 +313,7 @@ async def probe_claude_compatibility(
     now: datetime,
 ) -> CompatibilityResult:
     """Report whether Claude work may run, and what to do about it when it may not."""
-    status, reason = await claude_status(
-        repository=repository, owner_id=owner_id, enabled=enabled
-    )
+    status, reason = await claude_status(repository=repository, owner_id=owner_id, enabled=enabled)
     if status == "disabled":
         return _result("disabled", reason, now)
 

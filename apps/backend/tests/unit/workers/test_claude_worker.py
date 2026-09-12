@@ -198,3 +198,12 @@ def test_a_negative_retry_bound_is_refused() -> None:
         ClaudeWorker(
             FakeRuntime(), ledger=FakeLedger(), lease=FakeLease(), max_transient_retries=-1
         )
+
+
+def test_probe_reasons_map_onto_closed_heartbeat_reasons() -> None:
+    from tamforge_backend.agents.compatibility import PROBE_REASONS
+    from tamforge_backend.observability.logging import REASONS
+    from tamforge_backend.workers.claude import PROBE_HEARTBEAT_REASONS
+
+    assert set(PROBE_HEARTBEAT_REASONS.values()) <= REASONS
+    assert set(PROBE_HEARTBEAT_REASONS) <= set(PROBE_REASONS)
