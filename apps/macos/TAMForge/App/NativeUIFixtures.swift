@@ -116,6 +116,9 @@ private final class NativeUIFixtureState: @unchecked Sendable {
                 value = roadmapState == nil ? [] : [roadmap()]
             case "/api/v1/activities/41":
                 value = activity()
+            case "/api/v1/activities/41/coach":
+                value = ["activity_id": 41, "thread_id": NSNull(), "coaching_allowed": false,
+                         "committed": activityState == "output_committed", "next_step": "", "messages": []]
             case "/api/v1/activities/41/start", "/api/v1/activities/41/resume":
                 activityState = "active"
                 activityVersion += 1
