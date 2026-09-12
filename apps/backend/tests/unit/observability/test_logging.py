@@ -1,7 +1,8 @@
 import json
 from uuid import uuid4
 
-from tamforge_backend.observability.logging import safe_event
+from tamforge_backend.observability.heartbeats import WORKER_COMPONENTS
+from tamforge_backend.observability.logging import WORKERS, safe_event
 
 
 def test_events_keep_only_typed_operational_fields() -> None:
@@ -53,3 +54,21 @@ def test_rejected_objects_are_not_stringified() -> None:
     assert json.loads(safe_event("request_failed", error_code=Dangerous())) == {
         "event": "request_failed",
     }
+
+
+def test_worker_steps_keep_their_event_name_worker_and_status() -> None:
+    assert json.loads(safe_event("worker_step", worker="claude", status="needs_attention")) == {
+        "event": "worker_step",
+        "worker": "claude",
+        "status": "needs_attention",
+    }
+
+
+def test_worker_names_outside_the_known_set_are_dropped() -> None:
+    assert json.loads(safe_event("worker_started", worker="owner supplied name")) == {
+        "event": "worker_started",
+    }
+
+
+def test_loggable_worker_names_track_the_heartbeat_workers() -> None:
+    assert WORKERS == set(WORKER_COMPONENTS)
