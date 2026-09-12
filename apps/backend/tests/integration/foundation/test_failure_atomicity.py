@@ -137,6 +137,7 @@ def test_orphaned_snapshot_is_reconciled_and_mirror_failure_preserves_active_ver
                     baseline = await service.activate_version(
                         owner_id=owner_id,
                         version_id=baseline.id,
+                        timezone="America/Los_Angeles",
                     )
                     assert baseline.state == "active"
 

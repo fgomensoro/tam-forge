@@ -248,9 +248,16 @@ struct LiveRoadmapService: RoadmapServicing, Sendable {
     }
 
     func activate(versionID: Int) async throws -> RoadmapVersion {
+        // The first activation creates the learner settings server-side, so it
+        // carries this Mac's timezone; Today materializes days in that zone.
+        let body = try NativeJSONCodec.encode(
+            Components.Schemas.ActivateRoadmapVersionRequest(timezone: TimeZone.current.identifier)
+        )
         let response: Components.Schemas.RoadmapVersionResponse = try await request(
             method: .post,
             path: "/api/v1/roadmap-versions/\(versionID)/activate",
+            body: .init(body),
+            contentType: "application/json",
             as: Components.Schemas.RoadmapVersionResponse.self
         )
         return .init(wire: response)

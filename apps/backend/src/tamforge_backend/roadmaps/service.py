@@ -296,12 +296,8 @@ class RoadmapService:
             package_hash=package_hash,
         )
         if duplicate is not None:
-            if (
-                duplicate.idempotency_key == idempotency_key
-                and (
-                    duplicate.source_key != source_key
-                    or duplicate.package_hash != package_hash
-                )
+            if duplicate.idempotency_key == idempotency_key and (
+                duplicate.source_key != source_key or duplicate.package_hash != package_hash
             ):
                 raise ImportConflict("Idempotency-Key was already used for different content")
             return duplicate
@@ -478,9 +474,17 @@ class RoadmapService:
         )
 
     async def activate_version(
-        self, *, owner_id: int, version_id: int
+        self, *, owner_id: int, version_id: int, timezone: str | None = None
     ) -> RoadmapVersionRecord:
-        return await self._repository.activate_version(owner_id=owner_id, version_id=version_id)
+        """Activate a version; the first activation also creates the learner settings.
+
+        Today needs a timezone and a study start date before it can materialize a
+        day, and nothing else in the product creates that row. The caller passes
+        the learner's timezone; the study start date is the activation day there.
+        """
+        return await self._repository.activate_version(
+            owner_id=owner_id, version_id=version_id, timezone=timezone
+        )
 
     async def list_versions(self, *, owner_id: int) -> tuple[RoadmapVersionRecord, ...]:
         return await self._repository.list_versions(owner_id=owner_id)

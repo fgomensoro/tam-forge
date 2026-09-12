@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from tamforge_backend.auth.dependencies import get_authenticated_owner, require_csrf_owner
 from tamforge_backend.auth.schemas import AuthenticatedOwner
@@ -71,10 +72,11 @@ class StubRoadmapService:
         return (self._version(),)
 
     async def activate_version(
-        self, *, owner_id: int, version_id: int
+        self, *, owner_id: int, version_id: int, timezone: str | None = None
     ) -> RoadmapVersionRecord:
         assert owner_id == 1 and version_id == 5
         self.activated = True
+        self.activation_timezone = timezone
         return self._version(state="active")
 
     @staticmethod
@@ -147,13 +149,36 @@ def test_approval_and_activation_are_separate_explicit_mutations() -> None:
         approved = client.post("/api/v1/roadmap-imports/3/approve")
         assert service.approved
         assert not service.activated
-        activated = client.post("/api/v1/roadmap-versions/5/activate")
+        activated = client.post(
+            "/api/v1/roadmap-versions/5/activate", json={"timezone": "America/Montevideo"}
+        )
 
     assert approved.status_code == 200
     assert approved.json()["state"] == "approved"
     assert activated.status_code == 200
     assert activated.json()["state"] == "active"
     assert service.activated
+    assert service.activation_timezone == "America/Montevideo"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        None,
+        {},
+        {"timezone": "Mars/Olympus_Mons"},
+        {"timezone": "UTC"},
+        {"timezone": "../etc/localtime"},
+        {"timezone": "America/Montevideo", "study_start_date": "2026-09-12"},
+    ],
+)
+def test_activation_requires_a_known_iana_timezone(body: dict[str, str] | None) -> None:
+    client, service = _client()
+    with client:
+        activated = client.post("/api/v1/roadmap-versions/5/activate", json=body)
+
+    assert activated.status_code == 422
+    assert not service.activated
 
 
 def test_version_listing_exposes_mirror_state_but_not_normalized_payload() -> None:

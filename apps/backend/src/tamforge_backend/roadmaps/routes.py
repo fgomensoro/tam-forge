@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from typing import Annotated, Literal, cast
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import (
     APIRouter,
@@ -16,7 +17,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.dependencies import get_authenticated_owner, require_csrf_owner
@@ -70,6 +71,29 @@ class RoadmapVersionResponse(BaseModel):
     mirror_status: str
     mirror_ref: str | None
     mirror_error_code: str | None
+
+
+class ActivateRoadmapVersionRequest(BaseModel):
+    """The learner's IANA timezone; the first activation stores it with today's date."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    timezone: str = Field(
+        min_length=3,
+        max_length=64,
+        pattern=r"^[A-Za-z][A-Za-z0-9_+-]*/[A-Za-z0-9_+./-]+$",
+    )
+
+    @field_validator("timezone")
+    @classmethod
+    def _known_timezone(cls, value: str) -> str:
+        if ".." in value:
+            raise ValueError("timezone is not a known IANA zone")
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError("timezone is not a known IANA zone") from exc
+        return value
 
 
 def _prevent_storage(response: Response) -> None:
@@ -245,11 +269,14 @@ async def list_roadmap_versions(
 )
 async def activate_roadmap_version(
     version_id: int,
+    command: ActivateRoadmapVersionRequest,
     response: Response,
     service: Annotated[RoadmapService, Depends(get_roadmap_service)],
     owner: Annotated[AuthenticatedOwner, Depends(require_csrf_owner)],
 ) -> RoadmapVersionResponse:
-    result = await service.activate_version(owner_id=owner.owner_id, version_id=version_id)
+    result = await service.activate_version(
+        owner_id=owner.owner_id, version_id=version_id, timezone=command.timezone
+    )
     _prevent_storage(response)
     return _version_response(result)
 

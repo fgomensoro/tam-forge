@@ -33,8 +33,9 @@ import hashlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, cast
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -211,9 +212,7 @@ class SqlAlchemyRoadmapRepository:
                 result = self._to_import(item, source.source_key)
             return CreateImportResult(record=result, created=True)
 
-    async def begin_validation(
-        self, *, owner_id: int, import_id: int
-    ) -> RoadmapImportRecord:
+    async def begin_validation(self, *, owner_id: int, import_id: int) -> RoadmapImportRecord:
         async with _unavailable_on_database_error():
             async with transaction_scope(self._session):
                 item, source_key = await self._locked_import(owner_id, import_id)
@@ -261,9 +260,7 @@ class SqlAlchemyRoadmapRepository:
                 result = self._to_import(item, source_key)
             return result
 
-    async def get_import(
-        self, *, owner_id: int, import_id: int
-    ) -> RoadmapImportRecord | None:
+    async def get_import(self, *, owner_id: int, import_id: int) -> RoadmapImportRecord | None:
         async with _unavailable_on_database_error():
             row = (
                 await self._session.execute(
@@ -367,9 +364,7 @@ class SqlAlchemyRoadmapRepository:
                 result = self._to_version(version)
             return result
 
-    async def get_version(
-        self, *, owner_id: int, version_id: int
-    ) -> RoadmapVersionRecord | None:
+    async def get_version(self, *, owner_id: int, version_id: int) -> RoadmapVersionRecord | None:
         async with _unavailable_on_database_error():
             version = (
                 await self._session.execute(
@@ -395,9 +390,7 @@ class SqlAlchemyRoadmapRepository:
             await self._session.rollback()
             return result
 
-    async def begin_mirror(
-        self, *, owner_id: int, version_id: int
-    ) -> RoadmapVersionRecord:
+    async def begin_mirror(self, *, owner_id: int, version_id: int) -> RoadmapVersionRecord:
         async with _unavailable_on_database_error():
             async with transaction_scope(self._session):
                 version = await self._locked_version(owner_id, version_id)
@@ -435,7 +428,7 @@ class SqlAlchemyRoadmapRepository:
             return result
 
     async def activate_version(
-        self, *, owner_id: int, version_id: int
+        self, *, owner_id: int, version_id: int, timezone: str | None = None
     ) -> RoadmapVersionRecord:
         async with _unavailable_on_database_error():
             from ..learning.models import LearnerSetting
@@ -485,11 +478,29 @@ class SqlAlchemyRoadmapRepository:
                     await self._session.flush()
                 target.activated_at = now
                 target.state = "active"
-                await self._session.execute(
-                    update(LearnerSetting)
+                await self._session.flush()
+                setting = await self._session.scalar(
+                    select(LearnerSetting)
                     .where(LearnerSetting.owner_id == owner_id)
-                    .values(active_roadmap_version_id=target.id)
+                    .with_for_update()
                 )
+                if setting is None:
+                    if timezone is None:
+                        raise ActivationNotEligible(
+                            "the first activation needs the learner's timezone"
+                        )
+                    self._session.add(
+                        LearnerSetting(
+                            owner_id=owner_id,
+                            timezone=timezone,
+                            study_start_date=now.astimezone(ZoneInfo(timezone)).date(),
+                            active_roadmap_version_id=target.id,
+                        )
+                    )
+                else:
+                    setting.active_roadmap_version_id = target.id
+                    if timezone is not None:
+                        setting.timezone = timezone
                 self._session.add(
                     OutboxEvent(
                         owner_id=owner_id,
@@ -507,9 +518,7 @@ class SqlAlchemyRoadmapRepository:
                 result = self._to_version(target)
             return result
 
-    async def _locked_import(
-        self, owner_id: int, import_id: int
-    ) -> tuple[RoadmapImport, str]:
+    async def _locked_import(self, owner_id: int, import_id: int) -> tuple[RoadmapImport, str]:
         row = (
             await self._session.execute(
                 select(RoadmapImport, RoadmapSource.source_key)
@@ -633,9 +642,7 @@ class SqlAlchemyRoadmapRepository:
                     "schema_version": 1,
                     "items": list(task.evidence_requirements),
                 },
-                source_references=[
-                    {"path": task.source_path, "heading": task.source_heading}
-                ],
+                source_references=[{"path": task.source_path, "heading": task.source_heading}],
                 allowed_ai_role=task.allowed_ai_role,
                 source_path=task.source_path,
                 source_anchor=task.source_heading,
