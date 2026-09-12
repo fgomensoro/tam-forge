@@ -141,9 +141,7 @@ class Correction(Base):
             "priority",
         ),
         Index("ix_corrections_owner_source_activity", "owner_id", "source_activity_id"),
-        Index(
-            "ix_corrections_owner_source_evidence", "owner_id", "source_evidence_event_id"
-        ),
+        Index("ix_corrections_owner_source_evidence", "owner_id", "source_evidence_event_id"),
         Index("ix_corrections_owner_attempt_b", "owner_id", "attempt_b_activity_id"),
     )
 
@@ -320,9 +318,7 @@ class ActivityProcessingStatus(Base):
     state: Mapped[str] = mapped_column(Text, nullable=False)
     progress_label: Mapped[str] = mapped_column(Text, nullable=False)
     last_error_category: Mapped[str | None] = mapped_column(Text)
-    last_error_details: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB(none_as_null=True)
-    )
+    last_error_details: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, server_default=func.now(), nullable=False
     )
@@ -639,10 +635,7 @@ def _reject_same_state_processing_error_change(
     initiator: object,
 ) -> object:
     del initiator
-    if (
-        _is_persisted_change(target, value, old_value)
-        and not _processing_state_is_changing(target)
-    ):
+    if _is_persisted_change(target, value, old_value) and not _processing_state_is_changing(target):
         raise ProcessingWorkflowError("same-state processing error details are immutable")
     return value
 
@@ -670,9 +663,8 @@ def validate_processing_status(
     if target.updated_at < target.created_at:
         raise ProcessingWorkflowError("processing timestamps are not monotonic")
     if target.state == "needs_attention":
-        if (
-            target.last_error_category not in ERROR_CATEGORIES
-            or not validate_error_details_v1(target.last_error_details)
+        if target.last_error_category not in ERROR_CATEGORIES or not validate_error_details_v1(
+            target.last_error_details
         ):
             raise ProcessingWorkflowError("processing error details are invalid")
     elif target.last_error_category is not None or target.last_error_details is not None:

@@ -33,6 +33,7 @@ class HandoffActivityInput:
     required: bool
     focused_seconds: int
     coached: bool
+    note_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +44,7 @@ class HandoffBlock:
     assistance: Assistance
     focused_minutes: int
     state: str
+    note_id: int | None = None
 
     def as_json(self) -> dict[str, object]:
         return {
@@ -52,6 +54,7 @@ class HandoffBlock:
             "assistance": self.assistance,
             "focused_minutes": self.focused_minutes,
             "state": self.state,
+            "note_id": self.note_id,
         }
 
 
@@ -85,6 +88,7 @@ def build_handoff(
             assistance="coached" if item.coached else "independent",
             focused_minutes=item.focused_seconds // 60,
             state=item.state,
+            note_id=item.note_id,
         )
         for item in activities
     )

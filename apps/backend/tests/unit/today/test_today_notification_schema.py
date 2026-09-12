@@ -15,9 +15,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import URL
 from sqlalchemy.orm import make_transient_to_detached
 
-MIGRATION_PATH = Path(
-    "apps/backend/alembic/versions/20260825_0005_today_read_models.py"
-)
+MIGRATION_PATH = Path("apps/backend/alembic/versions/20260825_0005_today_read_models.py")
 EXPECTED_TABLES = {
     "corrections",
     "interviews",
@@ -295,7 +293,8 @@ def test_two_correction_slots_are_service_enforced_not_a_global_database_limit()
     assert all(
         not (
             isinstance(constraint, sa.UniqueConstraint)
-            and {column.name for column in constraint.columns} >= {
+            and {column.name for column in constraint.columns}
+            >= {
                 "owner_id",
                 "due_date",
                 "priority",
@@ -328,7 +327,6 @@ def test_scheduled_correction_can_be_superseded_without_rewriting_history() -> N
     correction.updated_at = now + timedelta(seconds=1)
     correction.completed_at = now + timedelta(seconds=1)
     validate_correction(None, None, correction)
-
 
 
 def test_correction_slot_service_locks_queries_and_inserts_in_one_transaction() -> None:
@@ -483,18 +481,12 @@ def test_structured_payload_contracts_reject_free_text_urls_and_secrets() -> Non
     assert validate_reference_payload_v1(
         {"schema_version": 1, "subject_id": 2**63 - 1, "related_id": 2**63 - 1}
     )
-    assert not validate_reference_payload_v1(
-        {"schema_version": 1, "subject_id": 2**63}
-    )
+    assert not validate_reference_payload_v1({"schema_version": 1, "subject_id": 2**63})
     assert not validate_reference_payload_v1(
         {"schema_version": 1, "subject_id": 7, "related_id": 2**63}
     )
-    assert validate_reference_payload_v1(
-        {"schema_version": 1, "subject_id": 7, "related_id": 9}
-    )
-    assert validate_error_details_v1(
-        {"schema_version": 1, "attempt": 2, "retry_after_seconds": 30}
-    )
+    assert validate_reference_payload_v1({"schema_version": 1, "subject_id": 7, "related_id": 9})
+    assert validate_error_details_v1({"schema_version": 1, "attempt": 2, "retry_after_seconds": 30})
     for payload in (
         {"schema_version": 1, "subject_id": 7, "message": "raw transcript"},
         {"schema_version": 1, "subject_id": 7, "url": "https://example.com"},
@@ -709,8 +701,7 @@ def test_job_updates_use_persisted_snapshot_and_are_assignment_order_independent
 
         assert isinstance(job, BackgroundJob)
         values = {
-            column.name: getattr(job, column.name)
-            for column in BackgroundJob.__table__.columns
+            column.name: getattr(job, column.name) for column in BackgroundJob.__table__.columns
         }
         values["_lease_expired"] = lease_expired
         return values
@@ -832,8 +823,7 @@ def test_job_update_final_rows_reject_invalid_claim_heartbeat_reclaim_and_termin
     ) -> dict[str, object]:
         assert isinstance(job, BackgroundJob)
         values = {
-            column.name: getattr(job, column.name)
-            for column in BackgroundJob.__table__.columns
+            column.name: getattr(job, column.name) for column in BackgroundJob.__table__.columns
         }
         values["_lease_expired"] = lease_expired
         return values
@@ -1093,6 +1083,7 @@ def test_workflow_timestamp_and_provenance_mutations_are_rejected_at_orm_boundar
         job.owner_id = 2
     with pytest.raises(JobWorkflowError, match="monotonic"):
         job.updated_at = now - timedelta(seconds=1)
+
 
 def test_offline_sql_contains_guards_search_path_indexes_and_reversible_downgrade() -> None:
     upgrade_sql = _offline_sql("upgrade", "20260825_0005_today_read_models")

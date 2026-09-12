@@ -17,9 +17,7 @@ def call(registry, context, arguments, role=AgentRole.ANALYST, name="search_evid
     return asyncio.run(registry.call(role, name, arguments, context=context))
 
 
-def test_a_call_stays_inside_the_context_this_run_was_granted(
-    registry, context, handled
-) -> None:
+def test_a_call_stays_inside_the_context_this_run_was_granted(registry, context, handled) -> None:
     assert call(registry, context, {"skill": "sql", "context_ordinals": (0, 2)})
     assert handled[0][0].context_ordinals == (0, 2)
 
@@ -73,9 +71,7 @@ def test_argument_text_shaped_like_an_attack_is_just_an_invalid_argument(
     assert handled == []
 
 
-def test_the_audit_records_which_context_a_successful_call_read(
-    registry, context, sink
-) -> None:
+def test_the_audit_records_which_context_a_successful_call_read(registry, context, sink) -> None:
     call(registry, context, {"skill": "sql", "context_ordinals": (1, 2)})
 
     assert sink.records[-1].phase == "succeeded"

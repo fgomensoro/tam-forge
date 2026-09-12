@@ -253,6 +253,7 @@ class HandoffBlockResponse(StrictModel):
     assistance: Literal["independent", "coached"]
     focused_minutes: Annotated[int, Field(ge=0)]
     state: ActivityState
+    note_id: PositiveId | None = None
 
 
 class DailyHandoffResponse(StrictModel):

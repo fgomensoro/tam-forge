@@ -65,9 +65,7 @@ def test_there_is_no_shell_network_or_filesystem_tool_to_call(
     assert handled == []
 
 
-def test_arguments_that_miss_the_schema_never_reach_the_handler(
-    registry, context, handled
-) -> None:
+def test_arguments_that_miss_the_schema_never_reach_the_handler(registry, context, handled) -> None:
     for arguments in ({}, {"skill": "NOT A SLUG"}, {"skill": "sql", "extra": 1}):
         with pytest.raises(ToolInputInvalid):
             call(registry, context, AgentRole.ANALYST, "search_evidence", arguments)

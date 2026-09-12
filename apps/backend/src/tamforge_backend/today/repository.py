@@ -48,6 +48,7 @@ from ..learning.repository import StudyDayNotReady, StudyDayService
 from ..learning.scheduling import SchemeInfo, scheme_for_version
 from ..learning.service import ActivityUnavailable
 from ..models.base import utc_now
+from ..notes.models import StudyNote
 from ..notifications.models import OutboxEvent
 from ..roadmaps.models import CurriculumNode, RoadmapVersion, TaskDefinition
 from .handoff import HandoffActivityInput, build_handoff
@@ -431,9 +432,7 @@ class SqlAlchemyTodayRepository:
                 self._session.add(close)
                 await self._session.flush()
                 self._session.add(
-                    await self._handoff(
-                        owner_id=owner_id, day=day, close=close, command=command
-                    )
+                    await self._handoff(owner_id=owner_id, day=day, close=close, command=command)
                 )
                 self._session.add(
                     OutboxEvent(
@@ -511,6 +510,17 @@ class SqlAlchemyTodayRepository:
                     )
                 ).all()
             }
+        notes: dict[int, int] = {}
+        if activity_ids:
+            for activity_id, note_id in (
+                await self._session.execute(
+                    select(StudyNote.activity_instance_id, StudyNote.id)
+                    .where(StudyNote.owner_id == owner_id)
+                    .where(StudyNote.activity_instance_id.in_(activity_ids))
+                    .where(StudyNote.status == "approved")
+                )
+            ).all():
+                notes[int(activity_id)] = int(note_id)
         pending = tuple(
             int(item)
             for item in (
@@ -533,6 +543,7 @@ class SqlAlchemyTodayRepository:
                     required=bool(required),
                     focused_seconds=seconds.get(activity.id, 0),
                     coached=activity.id in coached,
+                    note_id=notes.get(activity.id),
                 )
                 for activity, required in rows
             ),
@@ -810,6 +821,7 @@ def handoff_response(row: DailyHandoff) -> DailyHandoffResponse:
                 assistance=cast(Any, block["assistance"]),
                 focused_minutes=int(cast(Any, block["focused_minutes"])),
                 state=cast(Any, block["state"]),
+                note_id=cast(int | None, block.get("note_id")),
             )
             for block in row.blocks
         ),

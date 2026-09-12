@@ -78,6 +78,4 @@ def registry(sink: RecordingSink, handled: list) -> ToolRegistry:
 
 @pytest.fixture
 def context() -> ToolContext:
-    return ToolContext(
-        owner_id=1, activity_id=7, allowed_context_ordinals=frozenset({0, 1, 2})
-    )
+    return ToolContext(owner_id=1, activity_id=7, allowed_context_ordinals=frozenset({0, 1, 2}))

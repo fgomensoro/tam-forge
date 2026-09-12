@@ -161,9 +161,7 @@ def test_a_cited_artifact_raises_the_derived_scope():
     from tamforge_backend.agents.classification import SensitivityScope, derive_submission_scope
 
     assert (
-        derive_submission_scope(
-            attempt_kind="attempt_a", cited_artifact_classes=["written_output"]
-        )
+        derive_submission_scope(attempt_kind="attempt_a", cited_artifact_classes=["written_output"])
         is SensitivityScope.RELEASABLE
     )
     assert (
@@ -171,9 +169,7 @@ def test_a_cited_artifact_raises_the_derived_scope():
         is SensitivityScope.REDACTION_REQUIRED
     )
     assert (
-        derive_submission_scope(
-            attempt_kind="attempt_a", cited_artifact_classes=["original_audio"]
-        )
+        derive_submission_scope(attempt_kind="attempt_a", cited_artifact_classes=["original_audio"])
         is SensitivityScope.RESTRICTED
     )
 

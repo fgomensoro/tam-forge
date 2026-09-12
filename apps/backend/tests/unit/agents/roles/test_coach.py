@@ -58,9 +58,10 @@ def test_every_role_is_granted_only_what_its_own_contract_lists() -> None:
 
     for role, contract in ROLE_CONTRACTS.items():
         outside = every_kind - contract.allowed_context
-        assert prepare_role_prompt(
-            role, committed=True, requested_context=contract.allowed_context
-        ) is contract
+        assert (
+            prepare_role_prompt(role, committed=True, requested_context=contract.allowed_context)
+            is contract
+        )
         for kind in outside:
             with pytest.raises(RoleContractError, match="context"):
                 prepare_role_prompt(role, committed=True, requested_context=(kind,))
