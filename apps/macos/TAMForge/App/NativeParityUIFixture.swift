@@ -67,8 +67,13 @@ final class NativeParityUIFixture {
             roadmapState = "approved"
             return roadmap()
         case ("POST", "/api/v1/roadmap-versions/8/activate"):
-            try requireCommand(request, idempotency: false, body: false)
-            guard roadmapState == "approved" else { throw NativeParityFixtureError.invalidRequest }
+            try requireCommand(request, idempotency: false, body: true)
+            // Activation carries the learner's IANA zone; the server creates the
+            // learner settings from it on the first activation.
+            let command = try JSONSerialization.jsonObject(with: requestData(request)) as? [String: Any]
+            guard let zone = command?["timezone"] as? String, TimeZone(identifier: zone) != nil,
+                  command?.count == 1, roadmapState == "approved"
+            else { throw NativeParityFixtureError.invalidRequest }
             roadmapState = "active"
             return roadmap()
         case ("GET", "/api/v1/activities/41"):
