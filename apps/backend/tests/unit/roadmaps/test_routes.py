@@ -197,6 +197,7 @@ def test_version_listing_exposes_mirror_state_but_not_normalized_payload() -> No
             "mirror_status": "not_required",
             "mirror_ref": None,
             "mirror_error_code": None,
+            "scheme_summary": {},
         }
     ]
     assert "normalized_payload" not in response.text

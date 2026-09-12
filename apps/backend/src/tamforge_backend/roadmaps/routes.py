@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from typing import Annotated, Literal, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -40,6 +40,7 @@ from .ports import (
 )
 from .repository import SqlAlchemyRoadmapRepository
 from .schemas import BrowserFolderEntry
+from .scheme import scheme_summary_from_payload
 from .service import (
     ImportNotApprovable,
     InvalidImportRequest,
@@ -71,6 +72,8 @@ class RoadmapVersionResponse(BaseModel):
     mirror_status: str
     mirror_ref: str | None
     mirror_error_code: str | None
+    # Empty for legacy Month 1 versions; otherwise program, study days and budgets.
+    scheme_summary: dict[str, object] = Field(default_factory=dict)
 
 
 class ActivateRoadmapVersionRequest(BaseModel):
@@ -122,6 +125,9 @@ def _version_response(item: RoadmapVersionRecord) -> RoadmapVersionResponse:
         mirror_status=item.mirror_status,
         mirror_ref=item.mirror_ref,
         mirror_error_code=item.mirror_error_code,
+        scheme_summary=scheme_summary_from_payload(
+            cast(Mapping[str, object] | None, item.normalized_payload.get("scheme"))
+        ),
     )
 
 

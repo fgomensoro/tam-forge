@@ -147,6 +147,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
             "task_count": len(expected_roadmap.tasks),
             "resource_count": len(expected_roadmap.resources),
             "exit_criterion_count": len(expected_roadmap.exit_criteria),
+            "scheme_summary": {},
             "issues": [],
         },
         "semantic_diff": diff_roadmaps(empty_roadmap, expected_roadmap).to_dict(),

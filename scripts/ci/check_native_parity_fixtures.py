@@ -41,6 +41,7 @@ def validate_fixture(value: dict[str, Any], *, root: Path = ROOT) -> None:
         RoadmapImportResponse,
         RoadmapVersionResponse,
     )
+    from tamforge_backend.roadmaps.scheme import scheme_summary_from_payload
     from tamforge_backend.today.schemas import TodayResponse
 
     if set(value) != {
@@ -119,6 +120,7 @@ def validate_fixture(value: dict[str, Any], *, root: Path = ROOT) -> None:
             "task_count": len(parsed.tasks),
             "resource_count": len(parsed.resources),
             "exit_criterion_count": len(parsed.exit_criteria),
+            "scheme_summary": scheme_summary_from_payload(parsed.scheme),
             "issues": [],
         }
         or summary
