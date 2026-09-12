@@ -77,6 +77,21 @@ def test_invalid_schemes_report_named_issues(before: str, after: str, fragment: 
     assert any(fragment in issue for issue in issues), issues
 
 
+def test_budgets_above_storage_caps_are_issues() -> None:
+    weekday = SCHEME.replace("budget_minutes: 120", "budget_minutes: 300", 1).replace(
+        "minutes: 60, source: {file: docs/Queue.md", "minutes: 240, source: {file: docs/Queue.md", 1
+    )
+    issues = validate_scheme(parse_scheme_text(weekday), files=FILES, config=CONFIG)
+    assert any("exceeds the weekday maximum of 240" in issue for issue in issues), issues
+    assessment = SCHEME.replace("budget_minutes: 60", "budget_minutes: 130", 1).replace(
+        "minutes: 60, source: {file: Week 1.md, heading: Day 2}",
+        "minutes: 130, source: {file: Week 1.md, heading: Day 2}",
+        1,
+    )
+    issues = validate_scheme(parse_scheme_text(assessment), files=FILES, config=CONFIG)
+    assert any("exceeds the assessment maximum of 120" in issue for issue in issues), issues
+
+
 def test_duplicate_heading_in_the_source_file_is_an_issue() -> None:
     files = dict(FILES)
     files[WEEK] = FILES[WEEK] + b"\n## Day 1\n\nAgain.\n"

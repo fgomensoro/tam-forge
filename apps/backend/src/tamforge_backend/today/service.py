@@ -11,7 +11,7 @@ from typing import Protocol
 from sqlalchemy import Connection, func, insert, select, text
 from sqlalchemy.orm import Session
 
-from ..learning.time_policy import budget_for
+from ..learning.time_policy import DayBudget, budget_for
 from .models import Correction
 from .schemas import (
     ContinueAction,
@@ -116,9 +116,7 @@ def select_primary_action(
             allowed_ai_role=target.allowed_ai_role,
         )
 
-    resumable = next(
-        (item for item in ordered if item.state in {"active", "paused"}), None
-    )
+    resumable = next((item for item in ordered if item.state in {"active", "paused"}), None)
     if resumable is not None:
         return ContinueAction(
             kind="resume_activity",
@@ -127,9 +125,7 @@ def select_primary_action(
             allowed_ai_role=resumable.allowed_ai_role,
         )
 
-    pending_review = next(
-        (item for item in ordered if item.state == "output_committed"), None
-    )
+    pending_review = next((item for item in ordered if item.state == "output_committed"), None)
     if pending_review is not None:
         return ContinueAction(
             kind="complete_self_review",
@@ -176,13 +172,9 @@ def select_primary_action(
     blockers = tuple(
         item
         for item in ordered
-        if item.required
-        and item.block != "daily_close"
-        and item.state not in _COMPLETED_FOR_CLOSE
+        if item.required and item.block != "daily_close" and item.state not in _COMPLETED_FOR_CLOSE
     )
-    daily_close = next(
-        (item for item in ordered if item.block == "daily_close"), None
-    )
+    daily_close = next((item for item in ordered if item.block == "daily_close"), None)
     if not blockers and daily_close is not None:
         return ContinueAction(
             kind="close_day",
@@ -215,25 +207,33 @@ def _required_blocks(tasks: tuple[TodayTaskCard, ...]) -> tuple[TodayBlock, ...]
 
 def build_today_response(source: TodayReadInput) -> TodayResponse:
     """Apply time, Sunday, Continue, and stable-version policy to one snapshot."""
-    budget = budget_for(source.local_date)
+    budget = (
+        budget_for(source.local_date)
+        if source.budget is None
+        else DayBudget(
+            source.budget.day_type,
+            source.budget.target_minutes,
+            source.budget.acceptable_minimum,
+            source.budget.maximum_minutes,
+        )
+    )
     if source.planned_minutes > budget.maximum_minutes:
         raise TodayInvalidRequest("Today plan exceeds the protected time limit")
-    if (
-        source.day_type == "weekday"
-        and source.planned_minutes < budget.acceptable_minimum
-    ):
+    if source.day_type == "weekday" and source.planned_minutes < budget.acceptable_minimum:
         raise TodayInvalidRequest("weekday plan is below the protected minimum")
     is_off = source.day_status == "off" or source.day_type == "sunday"
     tasks = () if is_off else _ordered_tasks(source.tasks)
-    corrections = () if is_off else tuple(
-        sorted(
-            source.corrections,
-            key=lambda item: (item.due_date, item.priority, item.id),
-        )[:2]
+    corrections = (
+        ()
+        if is_off
+        else tuple(
+            sorted(
+                source.corrections,
+                key=lambda item: (item.due_date, item.priority, item.id),
+            )[:2]
+        )
     )
-    analyses = tuple(
-        sorted(source.analyses, key=lambda item: (item.updated_at, item.activity_id))
-    )
+    analyses = tuple(sorted(source.analyses, key=lambda item: (item.updated_at, item.activity_id)))
     primary = (
         None
         if is_off
@@ -293,9 +293,7 @@ def build_today_response(source: TodayReadInput) -> TodayResponse:
         required_blocks=() if is_off else _required_blocks(tasks),
         tasks=tasks,
         corrections=corrections,
-        interviews=tuple(
-            sorted(source.interviews, key=lambda item: (item.starts_at, item.id))
-        ),
+        interviews=tuple(sorted(source.interviews, key=lambda item: (item.starts_at, item.id))),
         awaiting_self_reviews=tuple(
             sorted(
                 source.awaiting_self_reviews,

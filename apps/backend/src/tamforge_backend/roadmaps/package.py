@@ -25,7 +25,10 @@ from .schemas import (
 _MEDIA_TYPES = {
     ".md": "text/markdown",
     ".sql": "application/sql",
+    ".yaml": "application/yaml",
 }
+# The scheme is the one YAML a package may carry, and only at its root.
+SCHEME_FILE_NAME = "roadmap.yaml"
 _WINDOWS_DRIVE = re.compile(r"^[A-Za-z]:")
 _ZIP_END_SIGNATURE = b"PK\x05\x06"
 _ZIP_CENTRAL_SIGNATURE = b"PK\x01\x02"
@@ -96,10 +99,18 @@ def _normalize_path(
     if len(normalized.encode("utf-8")) > limits.max_path_bytes:
         return None, _issue("path_too_long", "Normalized file path is too long.", normalized)
     suffix = PurePosixPath(normalized).suffix.lower()
+    if normalized == SCHEME_FILE_NAME:
+        return normalized, None
+    if suffix == ".yaml":
+        return None, _issue(
+            "yaml_outside_root",
+            "Only roadmap.yaml at the package root is supported.",
+            normalized,
+        )
     if suffix not in _MEDIA_TYPES:
         return None, _issue(
             "unsupported_file_type",
-            "Only Markdown and SQL roadmap files are supported.",
+            "Only Markdown, SQL and a root roadmap.yaml are supported.",
             normalized,
         )
     return normalized, None

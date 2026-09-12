@@ -10,15 +10,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from ..learning.enums import ActivityState
 
 PositiveId = Annotated[int, Field(gt=0)]
-AiRole = Literal[
-    "none", "planner", "tutor", "coach", "interviewer", "reviewer", "analyst"
-]
-DayStatus = Literal[
-    "off", "planned", "in_progress", "closed", "incomplete", "skipped"
-]
-UnfinishedClassification = Literal[
-    "none", "required", "useful", "optional", "superseded"
-]
+AiRole = Literal["none", "planner", "tutor", "coach", "interviewer", "reviewer", "analyst"]
+DayStatus = Literal["off", "planned", "in_progress", "closed", "incomplete", "skipped"]
+UnfinishedClassification = Literal["none", "required", "useful", "optional", "superseded"]
 UnfinishedConsequence = Literal[
     "none", "replace_adaptive", "retrieval_queue", "drop", "link_stronger_evidence"
 ]
@@ -102,6 +96,15 @@ class TodayAnalysis(StrictModel):
     updated_at: datetime
 
 
+class TodayBudget(StrictModel):
+    """The day's budget as the active roadmap's scheme declares it."""
+
+    day_type: Literal["weekday", "saturday", "sunday"]
+    target_minutes: Annotated[int, Field(ge=0, le=255)]
+    acceptable_minimum: Annotated[int, Field(ge=0, le=255)]
+    maximum_minutes: Annotated[int, Field(ge=0, le=255)]
+
+
 class TodayRoadmap(StrictModel):
     version_id: PositiveId
     version_key: Annotated[str, Field(min_length=1, max_length=128)]
@@ -150,6 +153,8 @@ class TodayReadInput(StrictModel):
     awaiting_self_reviews: tuple[TodaySelfReview, ...]
     analyses: tuple[TodayAnalysis, ...]
     source_updated_at: datetime
+    # None means a legacy version: the fixed weekday budget applies.
+    budget: TodayBudget | None = None
 
 
 class TodayResponse(StrictModel):
@@ -226,8 +231,7 @@ class DailyCloseCommand(StrictModel):
             raise ValueError("daily-close corrections must be unique")
         has_unfinished = self.unfinished_classification != "none"
         if has_unfinished != (
-            self.unfinished_requirement is not None
-            and bool(self.unfinished_requirement.strip())
+            self.unfinished_requirement is not None and bool(self.unfinished_requirement.strip())
         ):
             raise ValueError("unfinished classification and requirement are incoherent")
         if (

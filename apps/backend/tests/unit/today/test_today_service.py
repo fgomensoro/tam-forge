@@ -265,3 +265,31 @@ async def test_close_is_owner_scoped_and_idempotent_at_the_store_boundary() -> N
             "idempotency_key": "close-2026-08-27",
         },
     ]
+
+
+def test_budget_from_the_scheme_replaces_the_fixed_weekday_numbers() -> None:
+    from tamforge_backend.today.schemas import TodayBudget
+    from tamforge_backend.today.service import TodayInvalidRequest, build_today_response
+
+    task = _task(1, 1, "communication_spoken")
+    source = _source(local_date=date(2026, 9, 9), tasks=(task,)).model_copy(
+        update={
+            "planned_minutes": 180,
+            "focused_minutes": 195,
+            "budget": TodayBudget(
+                day_type="weekday",
+                target_minutes=180,
+                acceptable_minimum=165,
+                maximum_minutes=195,
+            ),
+        }
+    )
+    response = build_today_response(source)
+    assert response.time_policy.target_minutes == 180
+    assert response.time_policy.acceptable_minimum == 165
+    assert response.time_policy.hard_stop_minutes == 195
+    assert response.time_policy.hard_stop_recommended is True
+
+    below_floor = source.model_copy(update={"planned_minutes": 100, "focused_minutes": 0})
+    with pytest.raises(TodayInvalidRequest, match="below the protected minimum"):
+        build_today_response(below_floor)
