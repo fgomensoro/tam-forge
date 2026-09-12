@@ -29,21 +29,31 @@ Date: 2026-09-11. Status: agreed with Frank in brainstorming; feeds milestone M5
 | 2 | Pronunciation diagnostic | local | existing pipeline on the Mac | n/a | after a spoken attempt | already built |
 | 3 | Memory embeddings | local server | pinned embedding model on the host | n/a | after evidence, transcripts, debriefs | already built; a model change re-embeds everything |
 | 4 | Planner: generate or reforecast a scheme | `planner` | Opus | high | on demand from Roadmaps, a few times a month | structured output validated by the scheme model; never applied without approval |
-| 5 | Coach: daily guide chat | `coach` / `tutor` | Opus | medium; low for short acknowledgements | during a block that allows it, interactive | writes evidence and notes only; refuses in `none` blocks; latency matters more than depth |
-| 6 | Evidence capture chores (turn "done, here is my note" into an evidence record, tag transcript turns, extract numbers) | `analyst` | Haiku 4.5 | n/a (no thinking) | inside the Coach flow and after transcripts | high volume, low stakes, keeps the queue moving; validated by schema, never judged by this model |
+| 5 | Coach: daily guide chat | `coach` / `tutor` | Opus 5 | high; adaptive thinking keeps short acknowledgements cheap | during a block that allows it, interactive | writes evidence and notes only; refuses in `none` blocks; a slow turn blocks the queue, so the prompt asks for short answers |
+| 6 | Evidence capture chores (turn "done, here is my note" into an evidence record, tag transcript turns, extract numbers) | `analyst` | Sonnet 5 | low | inside the Coach flow and after transcripts | high volume, low stakes, keeps the queue moving; validated by schema, never judged by this model |
 | 7 | Practice interviewer | `interviewer` | Opus | high | interview blocks only | one question at a time, bounded follow-ups, no coaching |
-| 8 | Reviewer: rubric scoring of a spoken attempt or written evidence | `reviewer` | Opus | xhigh | asynchronously after a transcript is finalized or evidence is committed | writes skill score events; fixed prompt and rubric per contract so scores are comparable week to week |
+| 8 | Reviewer: rubric scoring of a spoken attempt or written evidence | `reviewer` | Fable 5.1 (Opus 5 xhigh if the subscription does not resolve it) | medium | asynchronously after a transcript is finalized or evidence is committed | writes skill score events with the model recorded on each; fixed prompt and rubric per contract so scores are comparable week to week |
 | 9 | Real interview debrief | `reviewer` | Opus | xhigh | once per real interview, on request | long context: whole transcript plus the interview record and the job requirements from the pipeline |
-| 10 | English class analysis | `reviewer` | Opus | high | once per class | fluency, vocabulary, recurring errors; compares with previous classes; feeds TAM English |
+| 10 | English class analysis | `reviewer` | Fable 5.1 (Opus 5 high as fallback) | medium | once per class | fluency, vocabulary, recurring errors; compares with previous classes; feeds TAM English |
 | 11 | Weekly report | `analyst` | Opus | xhigh | Sunday evening, scheduled | reads structured aggregates plus memory retrieval, not raw audio |
 | 12 | Monthly report | `analyst` | Opus | max | last day of the month, scheduled | same inputs plus targets and coverage; the most expensive job of the month and worth it |
 | 13 | Saturday assessment | none | no AI | n/a | never during the assessment | reviewer (#8) scores it after commit |
 
-Rules of thumb: anything that judges, plans or writes to Frank runs on Opus.
-Anything that only reshapes data into a schema runs on Haiku 4.5 and is validated
-by code. Sonnet 5 is not used unless a point proves too slow on Opus and too weak
-on Haiku; that is a measured decision, not a default. Effort is tuned per point
-and recorded in the prompt registry so a change is a reviewed diff.
+Rules of thumb (Frank's decision on 2026-09-11): anything that judges a
+transcript or a class runs on Fable 5.1 at medium effort, because judging quality
+is what the scores depend on; the newest model at medium effort beats the previous
+generation at its highest effort. Anything that plans, coaches or writes to Frank
+runs on Opus 5 at high effort. Anything that only reshapes data into a schema runs
+on Sonnet 5 at low effort and is validated by code. Haiku is not used. Effort is
+tuned per point and recorded in the prompt registry so a change is a reviewed diff.
+
+Fable 5.1 caveats the implementation must handle: it is available only if the
+subscription's compatibility probe resolves it (fall back to Opus 5 otherwise and
+say so in ops status); thinking is always on, depth is set only by `effort`; a
+response can end with `stop_reason: refusal`, which must be treated as a failed
+job with a retry on the fallback model, never as a score; every score event
+records the model that produced it so a model change shows up in the trend
+instead of hiding inside it.
 
 Thinking is adaptive on every Opus point. Every point has a structured output
 schema and a fixed system prompt cached across jobs. Every job records model,
