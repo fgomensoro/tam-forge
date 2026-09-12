@@ -10,7 +10,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from .database import validate_test_database_url
 from .evidence.config_loader import ConfigError, load_config_bundle
@@ -30,6 +30,14 @@ def _parser() -> argparse.ArgumentParser:
     validate_release = commands.add_parser("validate-roadmap-release")
     validate_release.add_argument("--release-dir", type=Path, required=True)
     validate_release.add_argument("--legacy-config-dir", type=Path, required=True)
+    probe = commands.add_parser("claude-probe")
+    probe.add_argument("--database-url", required=True)
+    probe.add_argument("--model", default=None)
+    attest = commands.add_parser("record-attestation")
+    attest.add_argument("--database-url", required=True)
+    attest.add_argument("--policy-version", required=True)
+    attest.add_argument("--model-improvement-disabled", action="store_true")
+    attest.add_argument("--subscription-policy-acknowledged", action="store_true")
     return parser
 
 
@@ -51,6 +59,88 @@ async def _apply(config_dir: Path, raw_url: str) -> SeedResult:
             return await seed_config(bundle, owner_id=None, session=session, apply=True)
     finally:
         await engine.dispose()
+
+
+async def _first_owner_id(factory: async_sessionmaker[AsyncSession]) -> int:
+    from sqlalchemy import select
+
+    from .auth.models import Owner
+
+    async with factory() as session:
+        owner_id = await session.scalar(select(Owner.id).order_by(Owner.id).limit(1))
+        await session.rollback()
+    if owner_id is None:
+        raise ClaudeCliError("no owner has signed in yet; the attestation belongs to the owner")
+    return int(owner_id)
+
+
+class ClaudeCliError(Exception):
+    """A Claude command could not run; the message never carries a secret."""
+
+
+async def _claude_probe(raw_url: str, requested_model: str | None) -> dict[str, object]:
+    from datetime import UTC, datetime
+
+    from .agents.compatibility import AttestationRepository, probe_claude_compatibility
+    from .agents.sdk_runtime import AgentSdkRuntime
+    from .config import Settings
+
+    settings = Settings()
+    engine = create_async_engine(_async_url(raw_url))
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        owner_id = await _first_owner_id(factory)
+        async with factory() as session:
+            result = await probe_claude_compatibility(
+                runtime=AgentSdkRuntime(),
+                repository=AttestationRepository(session),
+                owner_id=owner_id,
+                enabled=settings.claude_enabled,
+                requested_model=requested_model or settings.planner_model,
+                now=datetime.now(UTC),
+            )
+            await session.rollback()
+    finally:
+        await engine.dispose()
+    return {
+        "status": result.status,
+        "reason": result.reason,
+        "remediation": result.remediation,
+        "checked_at": result.checked_at.isoformat(),
+        "resolved_model": result.resolved_model,
+        "sdk_version": result.sdk_version,
+        "cli_version": result.cli_version,
+    }
+
+
+async def _record_attestation(
+    raw_url: str, *, policy_version: str, model_improvement_disabled: bool, acknowledged: bool
+) -> dict[str, object]:
+    from .agents.compatibility import AttestationRepository
+    from .agents.settings import EXPECTED_POLICY_VERSION, AttestationRecord
+
+    if policy_version != EXPECTED_POLICY_VERSION:
+        raise ClaudeCliError(
+            f"policy version must be {EXPECTED_POLICY_VERSION}; bump the constant first if "
+            "the published policy changed"
+        )
+    try:
+        record = AttestationRecord(
+            policy_version=policy_version,
+            model_improvement_disabled=model_improvement_disabled,
+            subscription_policy_acknowledged=acknowledged,
+        )
+    except ValueError as exc:
+        raise ClaudeCliError("both claims must be affirmed for an attestation") from exc
+    engine = create_async_engine(_async_url(raw_url))
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        owner_id = await _first_owner_id(factory)
+        async with factory() as session:
+            await AttestationRepository(session).record(owner_id=owner_id, record=record)
+    finally:
+        await engine.dispose()
+    return {"owner_id": owner_id, "policy_version": policy_version, "recorded": True}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -94,6 +184,17 @@ def main(argv: list[str] | None = None) -> int:
                 "coverage_requirements": len(coverage.requirements),
                 "coverage_assignments": len(coverage.assignments),
             }
+        elif args.command == "claude-probe":
+            payload = asyncio.run(_claude_probe(args.database_url, args.model))
+        elif args.command == "record-attestation":
+            payload = asyncio.run(
+                _record_attestation(
+                    args.database_url,
+                    policy_version=args.policy_version,
+                    model_improvement_disabled=args.model_improvement_disabled,
+                    acknowledged=args.subscription_policy_acknowledged,
+                )
+            )
         elif args.command == "seed-config" and not args.apply:
             bundle = load_config_bundle(args.config_dir)
             result = asyncio.run(seed_config(bundle, owner_id=None, session=None, apply=False))
@@ -113,7 +214,7 @@ def main(argv: list[str] | None = None) -> int:
             payload = asdict(result)
         else:  # pragma: no cover - argparse rejects this path
             raise SeedConfigError("unsupported command")
-    except (ConfigError, SeedConfigError, ValueError) as exc:
+    except (ConfigError, SeedConfigError, ClaudeCliError, ValueError) as exc:
         print(str(exc))
         return 2
     print(json.dumps(payload, sort_keys=True))

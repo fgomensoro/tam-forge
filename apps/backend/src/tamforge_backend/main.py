@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .agents.sdk_runtime import AgentSdkRuntime
 from .api import register_routes
 from .config import Settings
 from .database import create_database_resources
@@ -65,6 +66,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.settings = configured
             app.state.database = database
             app.state.oauth_state_manager = None
+            # The planner's seam to Claude. PlannerService still refuses while Claude
+            # is disabled; constructing the runtime reads no credential.
+            app.state.planner_transport = AgentSdkRuntime()
 
             async def probe_ingest() -> None:
                 # Built here rather than at startup on purpose. The store is

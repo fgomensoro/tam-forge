@@ -432,7 +432,7 @@ def test_the_probe_sends_no_owner_content():
 
 @pytest.mark.parametrize(
     "sdk_version,ready",
-    [("1", True), ("1.0", True), ("1.0.0", True), ("2.0.0-beta.3", True), ("0.9", False)],
+    [("1", True), ("1.0", True), ("0.2.152", True), ("2.0.0-beta.3", True), ("0.2.9", False)],
 )
 def test_a_short_version_string_is_padded_before_it_is_compared(sdk_version, ready):
     result = run_probe(StubRuntime(observation(sdk_version=sdk_version)))
