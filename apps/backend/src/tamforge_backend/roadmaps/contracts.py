@@ -170,11 +170,15 @@ class ParsedRoadmap:
     resources: tuple[NormalizedResource, ...]
     exit_criteria: tuple[NormalizedExitCriterion, ...]
     normalized_hash: str
+    # Present for packages that carry roadmap.yaml: rest weekdays, program and the
+    # per-day kind and budget the scheduler reads. None for legacy Month 1 maps.
+    scheme: dict[str, JsonValue] | None = None
 
     def payload_dict(self) -> dict[str, JsonValue]:
         return {
             "schema_version": self.schema_version,
             "roadmap_version": self.roadmap_version,
+            "scheme": self.scheme,
             "tasks": [item.to_dict() for item in self.tasks],
             "contracts": [item.to_dict() for item in self.contracts],
             "resources": [item.to_dict() for item in self.resources],

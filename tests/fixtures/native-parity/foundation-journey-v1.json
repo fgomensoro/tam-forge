@@ -19,7 +19,8 @@
         "task_count": 158,
         "resource_count": 3,
         "exit_criterion_count": 2,
-        "issues": []
+        "issues": [],
+        "scheme_summary": {}
       },
       "semantic_diff": {
         "summary": {
@@ -11994,7 +11995,8 @@
       "state": "active",
       "mirror_status": "not_required",
       "mirror_ref": null,
-      "mirror_error_code": null
+      "mirror_error_code": null,
+      "scheme_summary": {}
     },
     "today": {
       "local_date": "2026-08-24",

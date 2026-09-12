@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 
 from ..evidence.config_models import ConfigBundle, RoadmapTaskConfig
 from .contracts import (
+    JsonValue,
     NormalizedCorrectionSelection,
     NormalizedExitCriterion,
     NormalizedProcedureStep,
@@ -28,6 +29,9 @@ _FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
 _WIKI_LINK = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
 _MARKDOWN_LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)(?:\s+[^)]*)?\)")
 _LIST_ITEM = re.compile(r"^\s*(?:[-+*]|\d+[.)])\s+(.+?)\s*$")
+
+
+SCHEME_FILE_NAME = "roadmap.yaml"
 
 
 class RoadmapParseError(ValueError):
@@ -62,7 +66,7 @@ def _visible_lines(markdown: str) -> tuple[str, ...]:
     return tuple(visible)
 
 
-def _decode_markdown(files: Mapping[str, bytes]) -> dict[str, str]:
+def decode_markdown(files: Mapping[str, bytes]) -> dict[str, str]:
     markdown: dict[str, str] = {}
     for path, payload in files.items():
         if path.lower().endswith(".md"):
@@ -73,7 +77,7 @@ def _decode_markdown(files: Mapping[str, bytes]) -> dict[str, str]:
     return markdown
 
 
-def _headings(markdown: Mapping[str, str]) -> dict[str, dict[str, int]]:
+def headings_index(markdown: Mapping[str, str]) -> dict[str, dict[str, int]]:
     result: dict[str, dict[str, int]] = {}
     for path, content in markdown.items():
         counts: dict[str, int] = {}
@@ -133,6 +137,8 @@ def _resolve_local_resource(
 def _resources(
     files: Mapping[str, bytes],
     markdown: Mapping[str, str],
+    *,
+    require_local: bool = True,
 ) -> tuple[NormalizedResource, ...]:
     accumulated: dict[str, _ResourceAccumulator] = {}
 
@@ -151,12 +157,19 @@ def _resources(
         for match in _WIKI_LINK.finditer(visible):
             target = _text(match.group(1))
             label = match.group(2) or target
-            resolved = _resolve_local_resource(
-                source_path=source_path,
-                target=target,
-                files=files,
-                obsidian=True,
-            )
+            try:
+                resolved = _resolve_local_resource(
+                    source_path=source_path,
+                    target=target,
+                    files=files,
+                    obsidian=True,
+                )
+            except RoadmapParseError:
+                if require_local:
+                    raise
+                # A scheme package may link notes that live outside it (the vault's
+                # Docs folder). Only a block's source has to be inside the package.
+                continue
             add(resolved, "local", label, source_path)
         without_wiki = _WIKI_LINK.sub("", visible)
         for match in _MARKDOWN_LINK.finditer(without_wiki):
@@ -168,12 +181,17 @@ def _resources(
                     raise RoadmapParseError(f"unsupported resource URL {target!r}")
                 add(target, "external", label, source_path)
             else:
-                resolved = _resolve_local_resource(
-                    source_path=source_path,
-                    target=target,
-                    files=files,
-                    obsidian=False,
-                )
+                try:
+                    resolved = _resolve_local_resource(
+                        source_path=source_path,
+                        target=target,
+                        files=files,
+                        obsidian=False,
+                    )
+                except RoadmapParseError:
+                    if require_local:
+                        raise
+                    continue
                 add(resolved, "local", label, source_path)
     return tuple(
         NormalizedResource(
@@ -186,7 +204,9 @@ def _resources(
     )
 
 
-def _exit_criteria(markdown: Mapping[str, str]) -> tuple[NormalizedExitCriterion, ...]:
+def _exit_criteria(
+    markdown: Mapping[str, str], *, required: bool = True
+) -> tuple[NormalizedExitCriterion, ...]:
     sources: dict[str, set[str]] = {}
     for path, content in markdown.items():
         active_level: int | None = None
@@ -195,7 +215,9 @@ def _exit_criteria(markdown: Mapping[str, str]) -> tuple[NormalizedExitCriterion
             if heading is not None:
                 level = len(heading.group(1))
                 title = _text(heading.group(2)).casefold()
-                if title == "month 1 exit criteria":
+                if title == "month 1 exit criteria" or (
+                    not required and title.endswith("exit criteria")
+                ):
                     active_level = level
                 elif active_level is not None and level <= active_level:
                     active_level = None
@@ -207,6 +229,8 @@ def _exit_criteria(markdown: Mapping[str, str]) -> tuple[NormalizedExitCriterion
                 criterion = _text(item.group(1))
                 sources.setdefault(criterion, set()).add(path)
     if not sources:
+        if not required:
+            return ()
         raise RoadmapParseError("roadmap package must define Month 1 exit criteria")
     return tuple(
         NormalizedExitCriterion(text=text, source_paths=tuple(sorted(paths)))
@@ -335,12 +359,14 @@ def _validate_tasks(
 
 def parse_roadmap(*, files: Mapping[str, bytes], config: ConfigBundle) -> ParsedRoadmap:
     """Validate source links and return a canonical reviewed runtime projection."""
+    if SCHEME_FILE_NAME in files:
+        return parse_roadmap_scheme(files=files, config=config)
     if config.roadmap_schema_version != 1:
         raise RoadmapParseError(
             f"roadmap projection requires schema version 1, got {config.roadmap_schema_version}"
         )
-    markdown = _decode_markdown(files)
-    headings = _headings(markdown)
+    markdown = decode_markdown(files)
+    headings = headings_index(markdown)
     source_tasks = tuple(
         sorted(
             (task for task in config.roadmap_tasks if isinstance(task, RoadmapTaskConfig)),
@@ -374,4 +400,122 @@ def parse_roadmap(*, files: Mapping[str, bytes], config: ConfigBundle) -> Parsed
         resources=resources,
         exit_criteria=exit_criteria,
         normalized_hash=hashlib.sha256(canonical).hexdigest(),
+    )
+
+
+# Grouping only: week nodes in the curriculum tree. The calendar walk owns dates.
+STUDY_DAYS_PER_WEEK = 6
+
+_DEFAULT_CORRECTION = NormalizedCorrectionSelection(
+    source="due_corrections",
+    maximum_items=1,
+    allowed_kinds=("spoken_attempt_b", "targeted_sql_correction", "written_attempt_b"),
+    inherits_core_prompt=True,
+    inherits_original_exercise=True,
+    inherits_original_mapping_version=True,
+    no_attempt_c=True,
+    skill_level_effect="none",
+)
+
+
+def parse_roadmap_scheme(*, files: Mapping[str, bytes], config: ConfigBundle) -> ParsedRoadmap:
+    """Project a package that carries `roadmap.yaml` onto the normalized roadmap.
+
+    The scheme decides days, blocks, minutes and sources. The release config only
+    supplies the contract vocabulary (procedure, pass criteria, evidence) and the
+    exercise catalogue, so any plan shape imports without a code change.
+    """
+    from .scheme import (
+        SchemeValidationError,
+        block_name,
+        default_ai_role,
+        parse_scheme_text,
+        validate_scheme,
+    )
+
+    try:
+        scheme = parse_scheme_text(files[SCHEME_FILE_NAME].decode("utf-8"))
+    except (SchemeValidationError, UnicodeDecodeError) as exc:
+        raise RoadmapParseError(str(exc)) from None
+    issues = validate_scheme(scheme, files=files, config=config)
+    if issues:
+        raise RoadmapParseError("; ".join(issues))
+    markdown = decode_markdown(files)
+    tasks: list[NormalizedTask] = []
+    for day_number, day in enumerate(scheme.days, start=1):
+        for order, block in enumerate(day.blocks, start=1):
+            contract = config.roadmap_contracts[block.type]
+            is_correction = block.type == "correction"
+            exercise = None if is_correction else config.exercise(block.exercise_type)
+            tasks.append(
+                NormalizedTask(
+                    stable_id=block.id,
+                    month=1,
+                    week=(day_number - 1) // STUDY_DAYS_PER_WEEK + 1,
+                    day=day_number,
+                    block=block_name(block.type),
+                    order=order,
+                    source_path=block.source.file,
+                    source_heading=block.source.heading,
+                    exercise_type=None if is_correction else block.exercise_type,
+                    mapping_version=None if exercise is None else exercise.mapping_version,
+                    required=block.required and not is_correction,
+                    timebox_minutes=block.minutes,
+                    objective=block.objective,
+                    required_output=tuple(contract.required_output),
+                    pass_criteria=tuple(contract.pass_criteria),
+                    evidence_requirements=tuple(contract.evidence_requirements),
+                    procedure=tuple(
+                        NormalizedProcedureStep(
+                            phase=step.phase,
+                            minutes=step.minutes,
+                            requirement=step.requirement,
+                        )
+                        for step in contract.procedure
+                    ),
+                    constraints=tuple(contract.constraints),
+                    correction_selection=_DEFAULT_CORRECTION if is_correction else None,
+                    allowed_ai_role=block.allowed_ai_role or default_ai_role(block.type),
+                )
+            )
+    contracts = tuple(_contract(item) for item in tasks)
+    resources = _resources(files, markdown, require_local=False)
+    exit_criteria = _exit_criteria(markdown, required=False)
+    scheme_payload: dict[str, JsonValue] = {
+        "rest_weekdays": [int(index) for index in sorted(scheme.rest_weekday_indexes)],
+        "program": {"key": scheme.program.key, "title": scheme.program.title},
+        "lineage": (
+            None
+            if scheme.lineage is None
+            else {"predecessor_version": scheme.lineage.predecessor_version}
+        ),
+        "days": {
+            str(number): {"id": day.id, "kind": day.kind, "budget_minutes": day.budget_minutes}
+            for number, day in enumerate(scheme.days, start=1)
+        },
+    }
+    payload = {
+        "schema_version": 2,
+        "roadmap_version": scheme.program.key,
+        "scheme": scheme_payload,
+        "tasks": [item.to_dict() for item in tasks],
+        "contracts": [item.to_dict() for item in contracts],
+        "resources": [item.to_dict() for item in resources],
+        "exit_criteria": [item.to_dict() for item in exit_criteria],
+    }
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return ParsedRoadmap(
+        schema_version=2,
+        roadmap_version=scheme.program.key,
+        tasks=tuple(tasks),
+        contracts=contracts,
+        resources=resources,
+        exit_criteria=exit_criteria,
+        normalized_hash=hashlib.sha256(canonical).hexdigest(),
+        scheme=scheme_payload,
     )

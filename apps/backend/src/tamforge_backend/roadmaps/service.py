@@ -9,7 +9,7 @@ import zipfile
 from collections.abc import AsyncIterator, Iterator, Mapping
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import cast
+from typing import Any, cast
 
 from ..evidence.config_models import ConfigBundle
 from ..storage.models import ObjectIntegrityError, build_object_key
@@ -39,6 +39,7 @@ from .ports import (
     RoadmapWorkflowError,
 )
 from .schemas import InspectedRoadmapPackage, ValidationIssue
+from .scheme import scheme_summary_from_payload
 
 _SAFE_IDEMPOTENCY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SAFE_SOURCE_KEY = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
@@ -168,6 +169,14 @@ def _correction(value: object) -> NormalizedCorrectionSelection | None:
     )
 
 
+def _scheme_from_payload(value: object) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("stored normalized roadmap scheme is invalid")
+    return cast(dict[str, Any], value)
+
+
 def _parsed_from_payload(value: Mapping[str, object]) -> ParsedRoadmap:
     tasks_payload = value.get("tasks")
     resources_payload = value.get("resources")
@@ -249,6 +258,7 @@ def _parsed_from_payload(value: Mapping[str, object]) -> ParsedRoadmap:
         resources=resources,
         exit_criteria=exits,
         normalized_hash=str(value["normalized_hash"]),
+        scheme=_scheme_from_payload(value.get("scheme")),
     )
 
 
@@ -380,6 +390,7 @@ class RoadmapService:
                 "task_count": len(parsed.tasks),
                 "resource_count": len(parsed.resources),
                 "exit_criterion_count": len(parsed.exit_criteria),
+                "scheme_summary": scheme_summary_from_payload(parsed.scheme),
                 "issues": [],
             },
             semantic_diff=semantic_diff,
