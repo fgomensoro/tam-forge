@@ -17,6 +17,7 @@ from .schemas import (
     ContinueAction,
     DailyCloseCommand,
     DailyCloseResponse,
+    DailyHandoffResponse,
     TodayAnalysis,
     TodayBlock,
     TodayCorrection,
@@ -62,6 +63,10 @@ class TodayStore(Protocol):
         command: DailyCloseCommand,
         idempotency_key: str,
     ) -> DailyCloseResponse: ...
+
+    async def load_handoff(
+        self, *, owner_id: int, before: date
+    ) -> DailyHandoffResponse | None: ...
 
 
 _COMPLETED_FOR_CLOSE = frozenset(
@@ -335,6 +340,15 @@ class TodayService:
             command=command,
             idempotency_key=idempotency_key,
         )
+
+    async def get_handoff(self, *, owner_id: int, before: date) -> DailyHandoffResponse:
+        """The latest handoff from a day closed strictly before `before`."""
+        if owner_id <= 0:
+            raise TodayInvalidRequest("owner is invalid")
+        handoff = await self._store.load_handoff(owner_id=owner_id, before=before)
+        if handoff is None:
+            raise TodayNotReady("no study day has closed yet")
+        return handoff
 
 
 def _ensure_slot_available(

@@ -42,7 +42,7 @@ def test_today_api_is_deterministic_resumable_and_sunday_safe(
     from tamforge_backend.roadmaps.repository import SqlAlchemyRoadmapRepository
     from tamforge_backend.roadmaps.service import RoadmapService
     from tamforge_backend.storage.fake import InMemoryObjectStore
-    from tamforge_backend.today.models import ActivityProcessingStatus
+    from tamforge_backend.today.models import ActivityProcessingStatus, DailyHandoff
     from tamforge_backend.today.repository import SqlAlchemyTodayRepository
     from tamforge_backend.today.routes import get_today_service
     from tamforge_backend.today.service import TodayService
@@ -246,9 +246,35 @@ def test_today_api_is_deterministic_resumable_and_sunday_safe(
                             == replayed.json()["daily_close_id"]
                         )
 
+                        # The handoff is written with the close and read by the next day:
+                        # a day closed with gaps says so, names one exact next action, and
+                        # records the assistance per block without inferring mastery.
+                        nothing_before = await client.get("/api/v1/today/handoff?date=2026-08-24")
+                        assert nothing_before.status_code == 404, nothing_before.text
+                        handoff = await client.get("/api/v1/today/handoff?date=2026-08-25")
+                        assert handoff.status_code == 200, handoff.text
+                        handoff_payload = handoff.json()
+                        assert handoff_payload["local_date"] == "2026-08-24"
+                        assert handoff_payload["day_status"] == "incomplete"
+                        first_stable_id = initial_payload["tasks"][0]["stable_id"]
+                        assert handoff_payload["next_action"] == (
+                            f"Submit the self-review for {first_stable_id}."
+                        )
+                        blocks = {b["activity_id"]: b for b in handoff_payload["blocks"]}
+                        assert blocks[first_activity_id]["outcome"] == "unfinished"
+                        assert blocks[first_activity_id]["state"] == "output_committed"
+                        assert {b["assistance"] for b in blocks.values()} == {"independent"}
+                        assert "Complete the remaining required roadmap work." in (
+                            handoff_payload["gaps"]
+                        )
+                        assert len(handoff_payload["gaps"]) == len(blocks) + 1
+
                 async with factory() as session:
                     assert await session.scalar(
                         select(func.count()).select_from(DailyClose)
+                    ) == 1
+                    assert await session.scalar(
+                        select(func.count()).select_from(DailyHandoff)
                     ) == 1
                     assert await session.scalar(
                         select(func.count())

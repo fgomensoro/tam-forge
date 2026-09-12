@@ -109,9 +109,13 @@ def test_the_prompt_carries_the_brief_the_attempt_and_repair_errors() -> None:
             self_review="I rushed the retries part.",
             prior_messages=(("learner", "first"), ("coach", "reply")),
             repair_errors=("the next step must be the plan's, not the coach's",),
+            handoff="Previous study day 2026-09-11 closed.\nNext action: Finish d01-sql.",
         )
     )
     assert "Objective: Explain webhook delivery" in prompt
     assert f"next_step): {NEXT}" in prompt
     assert "Self-review:" in prompt and "coach: reply" in prompt
     assert "fix these" in prompt
+    assert "Where the previous study day left off" in prompt
+    assert "Next action: Finish d01-sql." in prompt
+    assert "handoff" not in render_coach_prompt(_request()).lower()

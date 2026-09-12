@@ -25,10 +25,12 @@ from ..agents.roles.coach import (
 )
 from ..agents.roles.contracts import RoleContractError
 from ..database import transaction_scope
-from ..learning.models import ActivityInstance, Attempt
+from ..learning.models import ActivityInstance, Attempt, StudyDay
 from ..learning.service import _string_items
 from ..models.base import utc_now
 from ..roadmaps.models import TaskDefinition
+from ..today.handoff import render_handoff
+from ..today.models import DailyHandoff
 from .models import CoachEvidence, CoachMessage, CoachThread
 from .schemas import CoachEvidenceProposal, CoachMessageResponse, CoachThreadResponse
 
@@ -121,6 +123,7 @@ class CoachThreadService:
                         (cast(Any, item.speaker), item.text)
                         for item in prior[-PRIOR_MESSAGE_LIMIT:]
                     ),
+                    handoff=await self._handoff(owner_id=owner_id, activity=loaded.activity),
                 )
                 try:
                     turn = await self._coach.turn(request)
@@ -227,6 +230,30 @@ class CoachThreadService:
             .order_by(CoachMessage.id)
         )
         return list(rows)
+
+    async def _handoff(self, *, owner_id: int, activity: ActivityInstance) -> str | None:
+        """The previous closed day's next action and gaps, so the Coach opens with them."""
+        local_date = await self._session.scalar(
+            select(StudyDay.local_date)
+            .where(StudyDay.owner_id == owner_id)
+            .where(StudyDay.id == activity.study_day_id)
+        )
+        if local_date is None:
+            return None
+        row = await self._session.scalar(
+            select(DailyHandoff)
+            .where(DailyHandoff.owner_id == owner_id)
+            .where(DailyHandoff.local_date < local_date)
+            .order_by(DailyHandoff.local_date.desc(), DailyHandoff.id.desc())
+            .limit(1)
+        )
+        if row is None:
+            return None
+        return render_handoff(
+            local_date=row.local_date.isoformat(),
+            next_action=row.next_action,
+            gaps=tuple(str(gap) for gap in row.gaps),
+        )
 
     async def _committed_attempt(self, *, owner_id: int, activity_id: int) -> str:
         attempt = await self._session.scalar(
