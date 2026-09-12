@@ -40,6 +40,7 @@ def test_the_suite_covers_speech_agents_memory_and_rubric(report: SuiteReport) -
         "speech",
         "rubric",
         "agents",
+        "coach",
     }
 
 
@@ -53,12 +54,19 @@ def test_provenance_names_every_fixture_model_prompt_and_rubric_by_hash_or_versi
         "rubric-agreement-cases.json",
         "agent-invariant-cases.json",
         "speech-gate-cases.json",
+        "coach-refusal-cases.json",
     }
     assert all(len(h) == 64 for h in p.fixtures.values())
     assert p.speech_model_filename == "ggml-small.en-q5_1.bin" and len(p.speech_model_sha256) == 64
     assert p.rubric_config_version == "seed-v1" and len(p.rubric_config_sha256) == 64
     assert p.prompt_version == "roles-v1"
-    assert set(p.evaluator_versions) == {"suite", "memory", "security", "failure_injection"}
+    assert set(p.evaluator_versions) == {
+        "suite",
+        "memory",
+        "security",
+        "failure_injection",
+        "coach",
+    }
 
 
 def test_rubric_agreement_uses_the_approved_floors(report: SuiteReport) -> None:
