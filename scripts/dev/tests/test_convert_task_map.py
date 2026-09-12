@@ -12,7 +12,7 @@ CASES = {
     "month-1": (
         ROOT / "config" / "tam-roadmap-task-map.yaml",
         FIXTURES / "month-v1.zip",
-        FIXTURES / "month-1-scheme-v1.zip",
+        FIXTURES / "month-v1.zip",
         (24, 158),
     ),
     "six-week": (

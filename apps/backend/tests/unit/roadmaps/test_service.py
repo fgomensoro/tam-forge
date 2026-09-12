@@ -525,7 +525,7 @@ async def test_staging_with_a_scheme_creates_a_validated_import_from_the_snapsho
             idempotency_key="legacy-import",
             package=package,
         )
-    assert staged.validation_report["scheme_summary"] == {}
+    assert staged.validation_report["scheme_summary"]["study_days"] == 24
 
     with_scheme = await service.stage_with_scheme(
         owner_id=1,

@@ -104,6 +104,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
     from tamforge_backend.roadmaps.models import RoadmapImport
     from tamforge_backend.roadmaps.package import inspect_zip_stream
     from tamforge_backend.roadmaps.parser import parse_roadmap
+    from tamforge_backend.roadmaps.scheme import scheme_summary_from_payload
     from tamforge_backend.storage.s3 import S3ObjectStore
     from tamforge_backend.today.repository import SqlAlchemyTodayRepository
     from tamforge_backend.today.service import TodayService
@@ -147,7 +148,7 @@ def test_month1_workspace_is_authenticated_resumable_and_idempotent(
             "task_count": len(expected_roadmap.tasks),
             "resource_count": len(expected_roadmap.resources),
             "exit_criterion_count": len(expected_roadmap.exit_criteria),
-            "scheme_summary": {},
+            "scheme_summary": scheme_summary_from_payload(expected_roadmap.scheme),
             "issues": [],
         },
         "semantic_diff": diff_roadmaps(empty_roadmap, expected_roadmap).to_dict(),
