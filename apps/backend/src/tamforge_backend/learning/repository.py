@@ -31,8 +31,8 @@ from .scheduling import (
     SchedulePolicyError,
     TaskTemplate,
     build_day,
-    curriculum_day_number,
     local_study_context,
+    scheme_for_version,
 )
 from .service import ActivityUnavailable
 
@@ -59,9 +59,7 @@ class StudyDayService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def ensure_current_day(
-        self, *, owner_id: int, at: datetime
-    ) -> StudyDayRecord | None:
+    async def ensure_current_day(self, *, owner_id: int, at: datetime) -> StudyDayRecord | None:
         if owner_id <= 0:
             raise StudyDayNotReady("owner is invalid")
         try:
@@ -76,9 +74,22 @@ class StudyDayService:
                 if setting is None:
                     raise StudyDayNotReady("learner settings are unavailable")
                 context = local_study_context(at, setting.timezone)
-                curriculum_day = curriculum_day_number(
-                    setting.study_start_date, context.local_date
+                # The version's scheme decides rest days and budgets; a legacy
+                # Month 1 version (or no version yet) keeps the Monday-anchored
+                # six-day week, so a rest day returns before anything is written.
+                version: RoadmapVersion | None = None
+                if setting.active_roadmap_version_id is not None:
+                    version = (
+                        await self._session.execute(
+                            select(RoadmapVersion)
+                            .where(RoadmapVersion.owner_id == owner_id)
+                            .where(RoadmapVersion.id == setting.active_roadmap_version_id)
+                        )
+                    ).scalar_one_or_none()
+                scheme = scheme_for_version(
+                    None if version is None else version.normalized_payload.get("scheme")
                 )
+                curriculum_day = scheme.day_number(setting.study_start_date, context.local_date)
                 if curriculum_day is None:
                     return None
                 existing = (
@@ -91,18 +102,12 @@ class StudyDayService:
                 ).scalar_one_or_none()
                 if existing is not None:
                     return await self._record(existing, created=False)
-                if setting.active_roadmap_version_id is None:
-                    raise StudyDayNotReady("an active roadmap is required")
-                version = (
-                    await self._session.execute(
-                        select(RoadmapVersion)
-                        .where(RoadmapVersion.owner_id == owner_id)
-                        .where(RoadmapVersion.id == setting.active_roadmap_version_id)
-                    )
-                ).scalar_one_or_none()
                 if version is None or version.state != "active":
-                    raise StudyDayNotReady("the selected roadmap is not active")
-
+                    raise StudyDayNotReady(
+                        "an active roadmap is required"
+                        if setting.active_roadmap_version_id is None
+                        else "the selected roadmap is not active"
+                    )
                 definitions = await self._definitions(
                     owner_id=owner_id,
                     version_id=version.id,
@@ -129,6 +134,7 @@ class StudyDayService:
                     curriculum_day=curriculum_day,
                     tasks=templates,
                     interviews=interviews,
+                    budget=scheme.budget(curriculum_day, context.local_date),
                 )
                 day = StudyDay(
                     owner_id=owner_id,

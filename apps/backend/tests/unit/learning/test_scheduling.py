@@ -14,7 +14,9 @@ from tamforge_backend.learning.scheduling import (
     build_day,
     curriculum_day_number,
     local_study_context,
+    scheme_for_version,
     select_carryover,
+    study_day_number,
 )
 
 
@@ -49,9 +51,9 @@ WEEKDAY_TASKS = (
     _task(6, "communication_spoken", 35),
     _task(7, "daily_close", 15),
 )
-SUNDAY_DATES = st.dates(
-    min_value=date(2000, 1, 1), max_value=date(2099, 12, 24)
-).map(lambda value: value + timedelta(days=(6 - value.weekday()) % 7))
+SUNDAY_DATES = st.dates(min_value=date(2000, 1, 1), max_value=date(2099, 12, 24)).map(
+    lambda value: value + timedelta(days=(6 - value.weekday()) % 7)
+)
 
 
 @given(SUNDAY_DATES)
@@ -89,9 +91,7 @@ def test_real_interview_replaces_relevant_blocks_instead_of_stacking() -> None:
     assert plan.day_type == "interview"
     assert plan.interview_minutes == 60
     assert plan.planned_minutes == 205
-    assert {item.block for item in plan.tasks}.isdisjoint(
-        {"communication_spoken", "tam_case"}
-    )
+    assert {item.block for item in plan.tasks}.isdisjoint({"communication_spoken", "tam_case"})
     assert plan.planned_minutes <= 255
 
 
@@ -203,3 +203,68 @@ def test_local_study_context_uses_learner_timezone_across_dst(
 
     assert context.local_date == expected_date
     assert (context.end_utc - context.start_utc).total_seconds() == expected_hours * 3600
+
+
+def test_study_day_number_walks_non_rest_dates_from_any_start() -> None:
+    start = date(2026, 9, 9)  # a Wednesday
+    rest = frozenset({6})
+
+    assert study_day_number(start, date(2026, 9, 9), rest_weekdays=rest) == 1
+    assert study_day_number(start, date(2026, 9, 12), rest_weekdays=rest) == 4
+    assert study_day_number(start, date(2026, 9, 13), rest_weekdays=rest) is None
+    assert study_day_number(start, date(2026, 9, 14), rest_weekdays=rest) == 5
+    with pytest.raises(SchedulePolicyError, match="precedes"):
+        study_day_number(start, date(2026, 9, 8), rest_weekdays=rest)
+
+
+def test_study_day_number_with_two_rest_days() -> None:
+    start = date(2026, 9, 7)  # Monday
+    rest = frozenset({5, 6})
+
+    assert study_day_number(start, date(2026, 9, 12), rest_weekdays=rest) is None
+    assert study_day_number(start, date(2026, 9, 14), rest_weekdays=rest) == 6
+
+
+def test_scheme_for_version_reads_budgets_and_falls_back_to_legacy() -> None:
+    legacy = scheme_for_version(None)
+    assert legacy.is_legacy
+    assert legacy.day_number(date(2026, 8, 24), date(2026, 8, 31)) == 7
+    assert legacy.budget(7, date(2026, 8, 31)).target_minutes == 240
+    assert legacy.next_study_date(date(2026, 8, 29)) == date(2026, 8, 31)
+
+    info = scheme_for_version(
+        {
+            "rest_weekdays": [5, 6],
+            "program": {"key": "demo", "title": "Demo"},
+            "days": {
+                "1": {"id": "d01", "kind": "weekday", "budget_minutes": 180},
+                "2": {"id": "d02", "kind": "assessment", "budget_minutes": 90},
+            },
+        }
+    )
+    assert not info.is_legacy
+    assert info.day_number(date(2026, 9, 9), date(2026, 9, 10)) == 2
+    assert info.budget(1, date(2026, 9, 9)).maximum_minutes == 195
+    assert info.budget(2, date(2026, 9, 10)).day_type == "saturday"
+    assert info.budget(2, date(2026, 9, 10)).maximum_minutes == 90
+    assert info.budget(3, date(2026, 9, 11)).target_minutes == 240  # beyond the scheme
+    assert info.next_study_date(date(2026, 9, 11)) == date(2026, 9, 14)
+    with pytest.raises(SchedulePolicyError, match="invalid"):
+        scheme_for_version({"rest_weekdays": [6], "days": "no"})
+
+
+def test_build_day_takes_the_scheme_budget() -> None:
+    tasks = (
+        TaskTemplate(1, "d01-a", "seed-v1", "Interview.", "communication_spoken", 1, 60, True),
+        TaskTemplate(2, "d01-b", "seed-v1", "Learn.", "technical_learning", 2, 105, True),
+        TaskTemplate(3, "d01-c", "seed-v1", "Close.", "daily_close", 3, 15, True),
+    )
+    from tamforge_backend.learning.time_policy import budget_for_day
+
+    plan = build_day(
+        date(2026, 9, 9), curriculum_day=1, tasks=tasks, budget=budget_for_day("weekday", 180)
+    )
+    assert plan.planned_minutes == 180
+    assert plan.day_type == "weekday"
+    with pytest.raises(SchedulePolicyError):
+        build_day(date(2026, 9, 9), curriculum_day=1, tasks=tasks)  # fixed 240 floor

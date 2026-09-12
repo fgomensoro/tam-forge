@@ -44,6 +44,7 @@ from ..learning.models import (
     StudyDay,
 )
 from ..learning.repository import StudyDayNotReady, StudyDayService
+from ..learning.scheduling import SchemeInfo, scheme_for_version
 from ..learning.service import ActivityUnavailable
 from ..models.base import utc_now
 from ..notifications.models import OutboxEvent
@@ -53,6 +54,7 @@ from .schemas import (
     DailyCloseCommand,
     DailyCloseResponse,
     TodayAnalysis,
+    TodayBudget,
     TodayCorrection,
     TodayInterview,
     TodayReadInput,
@@ -84,13 +86,14 @@ class SqlAlchemyTodayRepository:
             if setting is None or setting.active_roadmap_version_id is None:
                 await self._session.rollback()
                 raise TodayNotReady("learner settings and an active roadmap are required")
-            start_utc, end_utc, materialize_at = self._date_boundaries(
-                local_date, setting.timezone
-            )
+            start_utc, end_utc, materialize_at = self._date_boundaries(local_date, setting.timezone)
             if local_date < setting.study_start_date:
                 await self._session.rollback()
                 raise TodayNotReady("study date precedes the roadmap start")
-            if local_date.weekday() != 6:
+            scheme = await self._scheme(
+                owner_id=owner_id, version_id=setting.active_roadmap_version_id
+            )
+            if local_date.weekday() not in scheme.rest_weekdays:
                 await self._session.rollback()
                 try:
                     await StudyDayService(self._session).ensure_current_day(
@@ -108,9 +111,7 @@ class SqlAlchemyTodayRepository:
                 .where(StudyDay.local_date == local_date)
             )
             version_id = (
-                day.roadmap_version_id
-                if day is not None
-                else setting.active_roadmap_version_id
+                day.roadmap_version_id if day is not None else setting.active_roadmap_version_id
             )
             version = await self._session.scalar(
                 select(RoadmapVersion)
@@ -140,10 +141,7 @@ class SqlAlchemyTodayRepository:
                         .join(
                             task_node,
                             (task_node.owner_id == TaskDefinition.owner_id)
-                            & (
-                                task_node.roadmap_version_id
-                                == TaskDefinition.roadmap_version_id
-                            )
+                            & (task_node.roadmap_version_id == TaskDefinition.roadmap_version_id)
                             & (task_node.id == TaskDefinition.curriculum_node_id),
                         )
                         .where(ActivityInstance.owner_id == owner_id)
@@ -228,11 +226,7 @@ class SqlAlchemyTodayRepository:
                     await self._session.scalars(
                         select(ActivityProcessingStatus)
                         .where(ActivityProcessingStatus.owner_id == owner_id)
-                        .where(
-                            ActivityProcessingStatus.state.in_(
-                                ("ready", "needs_attention")
-                            )
-                        )
+                        .where(ActivityProcessingStatus.state.in_(("ready", "needs_attention")))
                         .order_by(
                             ActivityProcessingStatus.updated_at,
                             ActivityProcessingStatus.activity_instance_id,
@@ -285,11 +279,36 @@ class SqlAlchemyTodayRepository:
                 awaiting_self_reviews=awaiting_self_reviews,
                 analyses=analyses,
                 source_updated_at=source_updated_at,
+                budget=self._budget(scheme, setting.study_start_date, local_date),
             )
             await self._session.rollback()
             return source
         except SQLAlchemyError:
             raise TodayUnavailable("the today workspace is unavailable") from None
+
+    async def _scheme(self, *, owner_id: int, version_id: int | None) -> SchemeInfo:
+        if version_id is None:
+            return scheme_for_version(None)
+        version = await self._session.scalar(
+            select(RoadmapVersion)
+            .where(RoadmapVersion.owner_id == owner_id)
+            .where(RoadmapVersion.id == version_id)
+        )
+        if version is None:
+            return scheme_for_version(None)
+        return scheme_for_version(version.normalized_payload.get("scheme"))
+
+    @staticmethod
+    def _budget(scheme: SchemeInfo, study_start_date: date, local_date: date) -> TodayBudget | None:
+        if scheme.is_legacy or local_date < study_start_date:
+            return None
+        budget = scheme.budget(scheme.day_number(study_start_date, local_date), local_date)
+        return TodayBudget(
+            day_type=budget.day_type,
+            target_minutes=budget.target_minutes,
+            acceptable_minimum=budget.acceptable_minimum,
+            maximum_minutes=budget.maximum_minutes,
+        )
 
     async def close_day(
         self,
@@ -389,9 +408,7 @@ class SqlAlchemyTodayRepository:
                     await self._session.flush()
                 closed_at = max(now, cast(datetime, day.started_at), day.created_at)
                 day.status = (
-                    "closed"
-                    if command.unfinished_classification == "none"
-                    else "incomplete"
+                    "closed" if command.unfinished_classification == "none" else "incomplete"
                 )
                 day.closed_at = closed_at
                 close = DailyClose(
@@ -453,12 +470,8 @@ class SqlAlchemyTodayRepository:
                 )
                 for item in definition.source_references
             ),
-            required_output=SqlAlchemyTodayRepository._contract_items(
-                definition.output_contract
-            ),
-            pass_criteria=SqlAlchemyTodayRepository._contract_items(
-                definition.pass_contract
-            ),
+            required_output=SqlAlchemyTodayRepository._contract_items(definition.output_contract),
+            pass_criteria=SqlAlchemyTodayRepository._contract_items(definition.pass_contract),
             allowed_ai_role=cast(Any, definition.allowed_ai_role),
             evidence_requirements=SqlAlchemyTodayRepository._contract_items(
                 definition.evidence_contract
@@ -506,11 +519,7 @@ class SqlAlchemyTodayRepository:
             values.append(version.activated_at)
         if day is not None:
             values.append(day.created_at)
-            values.extend(
-                item
-                for item in (day.started_at, day.closed_at)
-                if item is not None
-            )
+            values.extend(item for item in (day.started_at, day.closed_at) if item is not None)
         for activity in activities:
             values.append(activity.created_at)
             values.extend(
@@ -524,9 +533,7 @@ class SqlAlchemyTodayRepository:
             )
         values.extend(item.updated_at for item in corrections)
         values.extend(item.updated_at for item in interviews)
-        values.extend(
-            cast(datetime, item.output_committed_at) for item in self_reviews
-        )
+        values.extend(cast(datetime, item.output_committed_at) for item in self_reviews)
         values.extend(item.updated_at for item in analyses)
         return tuple(values)
 
@@ -570,10 +577,7 @@ class SqlAlchemyTodayRepository:
             .join(
                 ActivityInstance,
                 (ActivityInstance.owner_id == ActivityArtifactLink.owner_id)
-                & (
-                    ActivityInstance.id
-                    == ActivityArtifactLink.activity_instance_id
-                ),
+                & (ActivityInstance.id == ActivityArtifactLink.activity_instance_id),
             )
             .where(ActivityArtifactLink.owner_id == owner_id)
             .where(ActivityInstance.study_day_id == study_day_id)
@@ -600,9 +604,14 @@ class SqlAlchemyTodayRepository:
     ) -> None:
         if not correction_ids:
             return
-        next_study_date = local_date + timedelta(days=1)
-        if next_study_date.weekday() == 6:
-            next_study_date += timedelta(days=1)
+        setting = await self._session.scalar(
+            select(LearnerSetting).where(LearnerSetting.owner_id == owner_id)
+        )
+        scheme = await self._scheme(
+            owner_id=owner_id,
+            version_id=None if setting is None else setting.active_roadmap_version_id,
+        )
+        next_study_date = scheme.next_study_date(local_date)
         rows = set(
             (
                 await self._session.scalars(
@@ -637,8 +646,7 @@ class SqlAlchemyTodayRepository:
             and existing.evidence_manifest == manifest
             and existing.strongest_output == command.strongest_output
             and existing.repeated_mistake == command.repeated_mistake
-            and existing.unfinished_classification
-            == command.unfinished_classification
+            and existing.unfinished_classification == command.unfinished_classification
             and existing.unfinished_requirement == command.unfinished_requirement
             and existing.correction_count == len(command.correction_ids)
         )

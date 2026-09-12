@@ -10,6 +10,7 @@ from tamforge_backend.learning.time_policy import (
     FocusEntry,
     TimePolicyError,
     budget_for,
+    budget_for_day,
     can_finish_early,
     counted_focused_minutes,
     hard_stop_recommended,
@@ -64,9 +65,9 @@ def test_finishing_early_requires_all_required_outputs_and_passes(
     assert can_finish_early(gates) is expected
 
 
-SUNDAY_DATES = st.dates(
-    min_value=date(2000, 1, 1), max_value=date(2099, 12, 24)
-).map(lambda value: value + timedelta(days=(6 - value.weekday()) % 7))
+SUNDAY_DATES = st.dates(min_value=date(2000, 1, 1), max_value=date(2099, 12, 24)).map(
+    lambda value: value + timedelta(days=(6 - value.weekday()) % 7)
+)
 
 
 @given(SUNDAY_DATES)
@@ -79,3 +80,17 @@ def test_sunday_budget_is_always_zero(local_date: date) -> None:
     validate_planned_minutes(budget, 0)
     with pytest.raises(TimePolicyError):
         validate_planned_minutes(budget, 1)
+
+
+def test_budget_for_day_uses_the_scheme_minutes() -> None:
+    weekday = budget_for_day("weekday", 180)
+    assert (weekday.day_type, weekday.target_minutes) == ("weekday", 180)
+    assert (weekday.acceptable_minimum, weekday.maximum_minutes) == (165, 195)
+    assessment = budget_for_day("assessment", 120)
+    assert (assessment.day_type, assessment.acceptable_minimum, assessment.maximum_minutes) == (
+        "saturday",
+        0,
+        120,
+    )
+    with pytest.raises(TimePolicyError):
+        budget_for_day("holiday", 60)

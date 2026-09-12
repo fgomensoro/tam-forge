@@ -47,6 +47,23 @@ def budget_for(local_date: date) -> DayBudget:
     return DayBudget("weekday", 240, 225, 255)
 
 
+def budget_for_day(kind: str, budget_minutes: int) -> DayBudget:
+    """Budget for one scheme day: the file decides the minutes, not the weekday.
+
+    A weekday keeps the same 15-minute tolerance the fixed 240-minute day had; an
+    assessment day is a hard cap with no floor, like the old Saturday.
+    """
+    if budget_minutes < 0:
+        raise TimePolicyError("day budget cannot be negative")
+    if kind == "assessment":
+        return DayBudget("saturday", budget_minutes, 0, budget_minutes)
+    if kind == "weekday":
+        return DayBudget(
+            "weekday", budget_minutes, max(budget_minutes - 15, 0), budget_minutes + 15
+        )
+    raise TimePolicyError("unknown scheme day kind")
+
+
 def validate_planned_minutes(budget: DayBudget, planned_minutes: int) -> None:
     """Reject negative, Sunday, and over-limit plans without inventing filler."""
     if planned_minutes < 0:
@@ -72,6 +89,5 @@ def counted_focused_minutes(entries: tuple[FocusEntry, ...]) -> int:
 def can_finish_early(gates: tuple[CompletionGate, ...]) -> bool:
     """Allow an early finish only after every required output and pass gate succeeds."""
     return bool(gates) and all(
-        item.required_outputs_satisfied and item.pass_conditions_satisfied
-        for item in gates
+        item.required_outputs_satisfied and item.pass_conditions_satisfied for item in gates
     )

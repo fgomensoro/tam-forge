@@ -53,6 +53,11 @@ DEFAULT_AI_ROLES: Mapping[str, str] = MappingProxyType(
     }
 )
 SCHEME_FILE_NAME = "roadmap.yaml"
+# Study days store minutes in a 0-255 column and an assessment day is capped at 120,
+# so a scheme cannot declare more than the storage accepts (weekdays keep a 15-minute
+# tolerance above the budget).
+WEEKDAY_MAX_MINUTES = 240
+ASSESSMENT_MAX_MINUTES = 120
 MAX_SCHEME_BYTES = 2 * 1024 * 1024
 _ID = r"^[a-z0-9][a-z0-9-]{2,63}$"
 
@@ -172,6 +177,12 @@ def validate_scheme(
                     )
             if block.required and block.type != "correction":
                 required_minutes += block.minutes
+        cap = ASSESSMENT_MAX_MINUTES if day.kind == "assessment" else WEEKDAY_MAX_MINUTES
+        if day.budget_minutes > cap:
+            issues.append(
+                f"day '{day.id}' budget {day.budget_minutes} exceeds the {day.kind} "
+                f"maximum of {cap} minutes"
+            )
         if required_minutes != day.budget_minutes:
             issues.append(
                 f"day '{day.id}' required minutes {required_minutes} do not equal "
@@ -220,8 +231,10 @@ def scheme_summary_from_payload(scheme: Mapping[str, object] | None) -> dict[str
 __all__ = [
     "CONTRACT_BLOCKS",
     "DEFAULT_AI_ROLES",
+    "ASSESSMENT_MAX_MINUTES",
     "MAX_SCHEME_BYTES",
     "SCHEME_FILE_NAME",
+    "WEEKDAY_MAX_MINUTES",
     "WEEKDAY_NAMES",
     "SchemeBlock",
     "SchemeDay",

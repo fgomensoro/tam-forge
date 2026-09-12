@@ -104,6 +104,8 @@ def test_differently_ordered_zip_members_have_same_content_hash() -> None:
         (["notes/./same.md", "notes/same.md"], "duplicate_path"),
         (["README.md", "readme.md"], "case_collision"),
         (["payload.exe"], "unsupported_file_type"),
+        (["docs/roadmap.yaml"], "yaml_outside_root"),
+        (["other.yaml"], "yaml_outside_root"),
     ],
 )
 def test_adapters_reject_unsafe_paths_and_file_types(

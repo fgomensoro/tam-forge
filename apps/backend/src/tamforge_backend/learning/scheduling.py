@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time
-from typing import Literal
+from datetime import UTC, date, datetime, time, timedelta
+from types import MappingProxyType
+from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from .time_policy import budget_for, validate_planned_minutes
+from .time_policy import DayBudget, budget_for, budget_for_day, validate_planned_minutes
 
 CarryoverKind = Literal["spoken_attempt_b", "written_attempt_b", "sql_correction"]
 UnfinishedClassification = Literal["required", "useful", "optional", "superseded"]
@@ -84,9 +86,7 @@ class UnfinishedWork:
     def __post_init__(self) -> None:
         if self.id <= 0 or self.minutes <= 0:
             raise SchedulePolicyError("unfinished work is invalid")
-        if (self.classification == "superseded") != (
-            self.stronger_evidence_id is not None
-        ):
+        if (self.classification == "superseded") != (self.stronger_evidence_id is not None):
             raise SchedulePolicyError(
                 "superseded work must link exactly one stronger evidence item"
             )
@@ -144,9 +144,79 @@ def curriculum_day_number(study_start_date: date, local_date: date) -> int | Non
     return (elapsed_days // 7) * 6 + local_date.weekday() + 1
 
 
-def select_carryover(
-    carryovers: tuple[Carryover, ...], *, local_date: date
-) -> Carryover | None:
+def study_day_number(
+    study_start_date: date, local_date: date, *, rest_weekdays: frozenset[int]
+) -> int | None:
+    """Count study dates from the start, skipping the scheme's rest weekdays.
+
+    Any start date works and the number is the ordinal of the day in the scheme,
+    so the same walk serves a six-day week, a five-day week or a plan that starts
+    on a Wednesday. Returns None on a rest day.
+    """
+    if local_date < study_start_date:
+        raise SchedulePolicyError("study date precedes the roadmap anchor")
+    if local_date.weekday() in rest_weekdays:
+        return None
+    number = 0
+    current = study_start_date
+    while current <= local_date:
+        if current.weekday() not in rest_weekdays:
+            number += 1
+        current += timedelta(days=1)
+    return number
+
+
+@dataclass(frozen=True, slots=True)
+class SchemeInfo:
+    """What the scheduler needs from a stored roadmap version's scheme."""
+
+    rest_weekdays: frozenset[int]
+    budgets: Mapping[int, DayBudget]
+
+    @property
+    def is_legacy(self) -> bool:
+        return not self.budgets
+
+    def day_number(self, study_start_date: date, local_date: date) -> int | None:
+        if self.is_legacy:
+            return curriculum_day_number(study_start_date, local_date)
+        return study_day_number(study_start_date, local_date, rest_weekdays=self.rest_weekdays)
+
+    def budget(self, curriculum_day: int | None, local_date: date) -> DayBudget:
+        if curriculum_day is not None and curriculum_day in self.budgets:
+            return self.budgets[curriculum_day]
+        return budget_for(local_date)
+
+    def next_study_date(self, local_date: date) -> date:
+        candidate = local_date + timedelta(days=1)
+        while candidate.weekday() in self.rest_weekdays:
+            candidate += timedelta(days=1)
+        return candidate
+
+
+LEGACY_SCHEME = SchemeInfo(rest_weekdays=frozenset({6}), budgets=MappingProxyType({}))
+
+
+def scheme_for_version(scheme: Mapping[str, Any] | None) -> SchemeInfo:
+    """Read rest weekdays and per-day budgets from a version's normalized scheme."""
+    if not scheme:
+        return LEGACY_SCHEME
+    days = scheme.get("days")
+    rest = scheme.get("rest_weekdays")
+    if not isinstance(days, Mapping) or not isinstance(rest, list):
+        raise SchedulePolicyError("stored roadmap scheme is invalid")
+    budgets: dict[int, DayBudget] = {}
+    for number, day in days.items():
+        if not isinstance(day, Mapping):
+            raise SchedulePolicyError("stored roadmap scheme day is invalid")
+        budgets[int(number)] = budget_for_day(str(day["kind"]), int(day["budget_minutes"]))
+    return SchemeInfo(
+        rest_weekdays=frozenset(int(index) for index in rest),
+        budgets=MappingProxyType(budgets),
+    )
+
+
+def select_carryover(carryovers: tuple[Carryover, ...], *, local_date: date) -> Carryover | None:
     """Select at most one due correction by due date, priority slot, and stable ID."""
     due = tuple(item for item in carryovers if item.due_date <= local_date)
     return min(due, key=lambda item: (item.due_date, item.priority, item.id), default=None)
@@ -172,9 +242,11 @@ def _replace_for_interviews(
         "sql",
     )
     for block in fallback_blocks:
-        if sum(item.timebox_minutes for item in remaining) + min(
-            interview_minutes, maximum_minutes
-        ) <= maximum_minutes:
+        if (
+            sum(item.timebox_minutes for item in remaining)
+            + min(interview_minutes, maximum_minutes)
+            <= maximum_minutes
+        ):
             break
         remaining = [item for item in remaining if item.block != block]
     return remaining
@@ -231,9 +303,7 @@ def _resolve_unfinished(
             decisions.append(MissedWorkDecision(work.id, "pending_replacement"))
             continue
         tasks = [
-            item
-            for item in tasks
-            if item.task_definition_id != replacement.task_definition_id
+            item for item in tasks if item.task_definition_id != replacement.task_definition_id
         ]
         rescheduled_minutes += work.minutes
         decisions.append(
@@ -253,9 +323,10 @@ def build_day(
     tasks: tuple[TaskTemplate, ...],
     interviews: tuple[InterviewCommitment, ...] = (),
     unfinished: tuple[UnfinishedWork, ...] = (),
+    budget: DayBudget | None = None,
 ) -> DayPlan:
     """Validate and adapt one roadmap day without changing its source definitions."""
-    budget = budget_for(local_date)
+    budget = budget or budget_for(local_date)
     if budget.day_type == "sunday":
         return DayPlan(local_date, None, "sunday", (), 0, 0, (), ())
     if curriculum_day is None or curriculum_day <= 0:
@@ -265,9 +336,7 @@ def build_day(
         raise SchedulePolicyError("a study day may contain only one correction warm-up")
     ordered = sorted(tasks, key=lambda item: (item.order, item.task_definition_id))
     interview_minutes = sum(item.minutes for item in interviews)
-    ordered = _replace_for_interviews(
-        ordered, interview_minutes, budget.maximum_minutes
-    )
+    ordered = _replace_for_interviews(ordered, interview_minutes, budget.maximum_minutes)
     counted_interview_minutes = min(interview_minutes, budget.maximum_minutes)
     ordered, decisions, rescheduled_minutes = _resolve_unfinished(
         ordered,

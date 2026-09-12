@@ -185,6 +185,8 @@ async def test_a_failing_study_day_materialization_answers_with_a_today_problem_
                 timezone="America/Los_Angeles",
                 study_start_date=date(2026, 8, 17),
             ),
+            # The active version's scheme decides rest days; a legacy payload.
+            SimpleNamespace(normalized_payload={}),
         ),
     )
     repository = SqlAlchemyTodayRepository(session)  # type: ignore[arg-type]
