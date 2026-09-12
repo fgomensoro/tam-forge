@@ -27,6 +27,7 @@ from .compatibility import (
     ProbeObservation,
     ProbeQuotaExhausted,
 )
+from .roles.coach import CoachRequest
 from .runtime import (
     AgentAuthenticationFailed,
     AgentQuotaExhausted,
@@ -52,6 +53,15 @@ PLANNER_SYSTEM_PROMPT = (
     "a source file and heading that exist in the package, and a one-line objective. "
     "Use only the files you are given. Never invent files or headings. Return only the "
     "scheme object."
+)
+
+COACH_SYSTEM_PROMPT = (
+    "You are the TAM Forge coach. The learner has committed an attempt for one study "
+    "block. Respond to what they wrote: name what is strong, name the gap against the "
+    "pass criteria, and give one concrete improvement. Repeat the plan's next step "
+    "verbatim in next_step; never invent a different one. Propose at most five short "
+    "evidence notes the learner may record. Never claim to have recorded, scored or "
+    "completed anything. Answer in the learner's language. Return only the object."
 )
 
 QueryFactory = Callable[..., AsyncIterator[Any]]
@@ -138,6 +148,20 @@ class AgentSdkRuntime:
         if run.structured_output is None:
             return {}
         return dict(run.structured_output)
+
+    # -- coach transport -----------------------------------------------------------
+
+    async def respond(self, request: CoachRequest) -> Mapping[str, object]:
+        from .roles.coach import coach_turn_schema, render_coach_prompt
+
+        run = await self._structured(
+            prompt=render_coach_prompt(request),
+            schema=coach_turn_schema(),
+            model=self._environ.get("TAMFORGE_COACH_MODEL", "claude-opus-5"),
+            system_prompt=COACH_SYSTEM_PROMPT,
+            max_turns=4,
+        )
+        return {} if run.structured_output is None else dict(run.structured_output)
 
     # -- shared -------------------------------------------------------------------
 
