@@ -173,6 +173,16 @@ class RoadmapRepository(Protocol):
 
     async def list_versions(self, *, owner_id: int) -> tuple[RoadmapVersionRecord, ...]: ...
 
+    async def completed_task_ids(self, *, owner_id: int, version_id: int) -> tuple[str, ...]:
+        """Stable ids of tasks whose output was committed under this version."""
+        del owner_id, version_id
+        return ()
+
+    async def source_key(self, *, owner_id: int, source_id: int) -> str | None:
+        """The stable key of a roadmap source, or None when it does not exist."""
+        del owner_id, source_id
+        return None
+
     async def begin_mirror(self, *, owner_id: int, version_id: int) -> RoadmapVersionRecord: ...
 
     async def finish_mirror(

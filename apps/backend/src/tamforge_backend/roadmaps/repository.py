@@ -377,6 +377,34 @@ class SqlAlchemyRoadmapRepository:
             await self._session.rollback()
             return result
 
+    async def completed_task_ids(self, *, owner_id: int, version_id: int) -> tuple[str, ...]:
+        from ..learning.models import ActivityInstance
+
+        async with _unavailable_on_database_error():
+            rows = (
+                await self._session.execute(
+                    select(ActivityInstance.task_stable_id_snapshot)
+                    .where(ActivityInstance.owner_id == owner_id)
+                    .where(ActivityInstance.roadmap_version_id == version_id)
+                    .where(ActivityInstance.output_committed_at.is_not(None))
+                    .distinct()
+                    .order_by(ActivityInstance.task_stable_id_snapshot)
+                )
+            ).scalars()
+            result = tuple(str(item) for item in rows)
+            await self._session.rollback()
+            return result
+
+    async def source_key(self, *, owner_id: int, source_id: int) -> str | None:
+        async with _unavailable_on_database_error():
+            key = await self._session.scalar(
+                select(RoadmapSource.source_key)
+                .where(RoadmapSource.owner_id == owner_id)
+                .where(RoadmapSource.id == source_id)
+            )
+            await self._session.rollback()
+            return None if key is None else str(key)
+
     async def list_versions(self, *, owner_id: int) -> tuple[RoadmapVersionRecord, ...]:
         async with _unavailable_on_database_error():
             versions = (

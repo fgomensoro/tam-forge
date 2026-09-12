@@ -63,6 +63,7 @@ class Settings(BaseSettings):
         "native_refresh_ttl_seconds": "TAMFORGE_NATIVE_REFRESH_TTL_SECONDS",
         "native_exchange_ttl_seconds": "TAMFORGE_NATIVE_EXCHANGE_TTL_SECONDS",
         "claude_enabled": "TAMFORGE_CLAUDE_ENABLED",
+        "planner_model": "TAMFORGE_PLANNER_MODEL",
     }
 
     model_config = SettingsConfigDict(
@@ -218,6 +219,15 @@ class Settings(BaseSettings):
     claude_enabled: bool = Field(
         default=False,
         validation_alias="TAMFORGE_CLAUDE_ENABLED",
+    )
+    # The model the planner role asks for; the compatibility probe decides whether
+    # the subscription resolves it. See the AI usage design spec of 2026-09-11.
+    planner_model: str = Field(
+        default="claude-fable-5-1",
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9][a-z0-9.-]*$",
+        validation_alias="TAMFORGE_PLANNER_MODEL",
     )
 
     def __init__(self, **values: Any) -> None:

@@ -101,6 +101,19 @@ def test_import_approval_and_activation_are_durable_and_separate(
                         timezone="America/Montevideo",
                     )
                     assert activated.state == "active"
+                    repository = SqlAlchemyRoadmapRepository(session)
+                    assert (
+                        await repository.source_key(
+                            owner_id=owner_id, source_id=activated.source_id
+                        )
+                        == "obsidian-main"
+                    )
+                    assert (
+                        await repository.completed_task_ids(
+                            owner_id=owner_id, version_id=activated.id
+                        )
+                        == ()
+                    )
                     setting = await session.scalar(
                         select(LearnerSetting).where(LearnerSetting.owner_id == owner_id)
                     )

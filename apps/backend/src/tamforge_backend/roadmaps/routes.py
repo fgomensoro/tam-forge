@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterator, Mapping
+from datetime import date
 from typing import Annotated, Literal, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -30,6 +32,7 @@ from ..storage.models import ObjectStoreError
 from ..storage.ports import ObjectStore
 from .github_mirror import GitHubRoadmapMirror
 from .package import inspect_browser_folder, inspect_zip_stream
+from .planner import EvidenceLine, PlannerService, PlannerUnavailable, SchemeProposal
 from .ports import (
     ActivationNotEligible,
     ImportConflict,
@@ -44,6 +47,7 @@ from .scheme import scheme_summary_from_payload
 from .service import (
     ImportNotApprovable,
     InvalidImportRequest,
+    InvalidSchemeText,
     MirrorNotRetryable,
     RoadmapService,
 )
@@ -74,6 +78,30 @@ class RoadmapVersionResponse(BaseModel):
     mirror_error_code: str | None
     # Empty for legacy Month 1 versions; otherwise program, study days and budgets.
     scheme_summary: dict[str, object] = Field(default_factory=dict)
+
+
+class SchemeProposalRequest(BaseModel):
+    """An optional instruction for the planner ("three hours a day, Saturdays off")."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    instruction: str = Field(default="", max_length=2000)
+
+
+class SchemeProposalResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    yaml_text: str
+    summary: dict[str, object]
+    issues: list[str]
+
+
+class SchemeTextRequest(BaseModel):
+    """An approved or hand-written scheme to stage with a stored snapshot."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    yaml_text: str = Field(min_length=1, max_length=2 * 1024 * 1024)
 
 
 class ActivateRoadmapVersionRequest(BaseModel):
@@ -258,6 +286,137 @@ async def retry_roadmap_mirror(
     return _version_response(result)
 
 
+def get_planner_service(
+    request: Request,
+    service: Annotated[RoadmapService, Depends(get_roadmap_service)],
+) -> PlannerService:
+    settings = cast(Settings, request.app.state.settings)
+    del service
+    config = request.app.state.roadmap_config
+    # The Agent SDK transport is wired by the Claude worker (epic F2); until then the
+    # planner refuses instead of pretending, and the screen says so.
+    transport = getattr(request.app.state, "planner_transport", None)
+    if not settings.claude_enabled:
+        transport = None
+    return PlannerService(transport, config=config, model=settings.planner_model)
+
+
+def _proposal_response(proposal: SchemeProposal) -> SchemeProposalResponse:
+    return SchemeProposalResponse(
+        yaml_text=proposal.yaml_text,
+        summary=proposal.summary,
+        issues=list(proposal.issues),
+    )
+
+
+def _scheme_idempotency_key(prefix: str, subject_id: int, yaml_text: str) -> str:
+    digest = hashlib.sha256(yaml_text.encode("utf-8")).hexdigest()[:32]
+    return f"{prefix}:{subject_id}:{digest}"
+
+
+@router.post(
+    "/roadmap-imports/{import_id}/scheme-proposals",
+    response_model=SchemeProposalResponse,
+)
+async def propose_scheme_for_import(
+    import_id: int,
+    command: SchemeProposalRequest,
+    response: Response,
+    service: Annotated[RoadmapService, Depends(get_roadmap_service)],
+    planner: Annotated[PlannerService, Depends(get_planner_service)],
+    owner: Annotated[AuthenticatedOwner, Depends(require_csrf_owner)],
+) -> SchemeProposalResponse:
+    record = await service.get_import(owner_id=owner.owner_id, import_id=import_id)
+    files = await service.snapshot_files(record.object_key)
+    proposal = await planner.generate(files=files, instruction=command.instruction)
+    _prevent_storage(response)
+    return _proposal_response(proposal)
+
+
+@router.post(
+    "/roadmap-imports/{import_id}/scheme",
+    response_model=RoadmapImportResponse,
+    status_code=201,
+)
+async def stage_scheme_for_import(
+    import_id: int,
+    command: SchemeTextRequest,
+    response: Response,
+    service: Annotated[RoadmapService, Depends(get_roadmap_service)],
+    owner: Annotated[AuthenticatedOwner, Depends(require_csrf_owner)],
+) -> RoadmapImportResponse:
+    record = await service.get_import(owner_id=owner.owner_id, import_id=import_id)
+    staged = await service.stage_with_scheme(
+        owner_id=owner.owner_id,
+        source_key=record.source_key,
+        object_key=record.object_key,
+        yaml_text=command.yaml_text,
+        idempotency_key=_scheme_idempotency_key("scheme", import_id, command.yaml_text),
+    )
+    _prevent_storage(response)
+    return _import_response(staged)
+
+
+@router.post(
+    "/roadmap-versions/{version_id}/scheme-proposals",
+    response_model=SchemeProposalResponse,
+)
+async def propose_reforecast(
+    version_id: int,
+    command: SchemeProposalRequest,
+    response: Response,
+    service: Annotated[RoadmapService, Depends(get_roadmap_service)],
+    planner: Annotated[PlannerService, Depends(get_planner_service)],
+    owner: Annotated[AuthenticatedOwner, Depends(require_csrf_owner)],
+) -> SchemeProposalResponse:
+    version = await service.get_version(owner_id=owner.owner_id, version_id=version_id)
+    files = await service.snapshot_files(version.object_key)
+    current = cast(Mapping[str, object] | None, version.normalized_payload.get("scheme")) or {}
+    done = set(await service.completed_block_ids(owner_id=owner.owner_id, version_id=version_id))
+    block_ids = [
+        str(task["stable_id"])
+        for task in cast(list[dict[str, object]], version.normalized_payload.get("tasks", []))
+    ]
+    evidence = tuple(
+        EvidenceLine(block_id=block_id, status="done" if block_id in done else "pending")
+        for block_id in block_ids
+    )
+    proposal = await planner.reforecast(
+        files=files,
+        current_scheme=current,
+        evidence=evidence,
+        today=date.today(),
+        instruction=command.instruction,
+    )
+    _prevent_storage(response)
+    return _proposal_response(proposal)
+
+
+@router.post(
+    "/roadmap-versions/{version_id}/reforecasts",
+    response_model=RoadmapImportResponse,
+    status_code=201,
+)
+async def stage_reforecast(
+    version_id: int,
+    command: SchemeTextRequest,
+    response: Response,
+    service: Annotated[RoadmapService, Depends(get_roadmap_service)],
+    owner: Annotated[AuthenticatedOwner, Depends(require_csrf_owner)],
+) -> RoadmapImportResponse:
+    version = await service.get_version(owner_id=owner.owner_id, version_id=version_id)
+    source = await service.get_source_key(owner_id=owner.owner_id, source_id=version.source_id)
+    staged = await service.stage_with_scheme(
+        owner_id=owner.owner_id,
+        source_key=source,
+        object_key=version.object_key,
+        yaml_text=command.yaml_text,
+        idempotency_key=_scheme_idempotency_key("reforecast", version_id, command.yaml_text),
+    )
+    _prevent_storage(response)
+    return _import_response(staged)
+
+
 @router.get("/roadmap-versions", response_model=list[RoadmapVersionResponse])
 async def list_roadmap_versions(
     response: Response,
@@ -292,6 +451,10 @@ def roadmap_problem_response(exc: Exception) -> JSONResponse:
         status, code, title = 404, "roadmap_not_found", "Roadmap not found"
     elif isinstance(exc, InvalidImportRequest):
         status, code, title = 422, "invalid_roadmap_import", "Invalid roadmap import"
+    elif isinstance(exc, InvalidSchemeText):
+        status, code, title = 422, "invalid_roadmap_scheme", "Invalid roadmap scheme"
+    elif isinstance(exc, PlannerUnavailable):
+        status, code, title = 503, "planner_unavailable", "Planner unavailable"
     elif isinstance(
         exc,
         (ImportConflict, ImportNotApprovable, ActivationNotEligible, MirrorNotRetryable),

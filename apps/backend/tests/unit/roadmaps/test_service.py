@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -483,3 +484,72 @@ async def test_month_two_activation_requires_exit_review_and_preserves_activity_
 
 async def _collect(stream: AsyncIterator[bytes]) -> bytes:
     return b"".join([chunk async for chunk in stream])
+
+
+SCHEME_FOR_MONTH_ONE = """
+schema_version: 1
+program: {key: month_one_scheme, title: Month one as a scheme}
+days:
+  - id: m1-scheme-d01
+    kind: weekday
+    budget_minutes: 60
+    blocks:
+      - id: m1-scheme-d01-learning
+        type: technical
+        minutes: 45
+        source: {file: "Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md", heading: "Day 1 — Baseline and HTTP"}
+        objective: Read the day.
+      - id: m1-scheme-d01-close
+        type: close
+        minutes: 15
+        source: {file: "Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md", heading: "Day 1 — Baseline and HTTP"}
+        objective: Close the day.
+"""
+
+
+@pytest.mark.anyio
+async def test_staging_with_a_scheme_creates_a_validated_import_from_the_snapshot() -> None:
+    from tamforge_backend.roadmaps.service import InvalidSchemeText
+
+    events: list[str] = []
+    repository = FakeRoadmapRepository(events)
+    store = RecordingStore(events)
+    service = RoadmapService(config=CONFIG, repository=repository, object_store=store, mirror=None)
+    with _package() as package:
+        staged = await service.stage_package(
+            owner_id=1,
+            source_key="obsidian-main",
+            source_name="TAM Roadmap",
+            source_kind="obsidian",
+            package_kind="zip",
+            idempotency_key="legacy-import",
+            package=package,
+        )
+    assert staged.validation_report["scheme_summary"] == {}
+
+    with_scheme = await service.stage_with_scheme(
+        owner_id=1,
+        source_key="obsidian-main",
+        object_key=staged.object_key,
+        yaml_text=SCHEME_FOR_MONTH_ONE,
+        idempotency_key="scheme:1:abc",
+    )
+    assert with_scheme.id != staged.id
+    assert with_scheme.status == "validated", with_scheme.validation_report
+    assert with_scheme.validation_report["scheme_summary"] == {
+        "program": "Month one as a scheme",
+        "study_days": 1,
+        "budget_minutes": {"1": 60},
+    }
+    assert with_scheme.validation_report["task_count"] == 2
+    files = await service.snapshot_files(with_scheme.object_key)
+    assert "roadmap.yaml" in files
+
+    with pytest.raises(InvalidSchemeText):
+        await service.stage_with_scheme(
+            owner_id=1,
+            source_key="obsidian-main",
+            object_key=staged.object_key,
+            yaml_text="days: [",
+            idempotency_key="scheme:1:broken",
+        )
