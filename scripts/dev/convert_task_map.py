@@ -108,11 +108,7 @@ def scheme_payload_from_task_map(task_map: Mapping[str, Any]) -> dict[str, Any]:
                 block["allowed_ai_role"] = str(role)
             blocks.append(block)
         assessment = all(str(task["block"]) == "saturday_assessment" for task in day["tasks"])
-        budget = sum(
-            block["minutes"]
-            for block in blocks
-            if block.get("required", True) and block["type"] != "correction"
-        )
+        budget = sum(block["minutes"] for block in blocks)
         days.append(
             {
                 "id": f"{version}-d{int(day['day']):02d}",
@@ -124,7 +120,7 @@ def scheme_payload_from_task_map(task_map: Mapping[str, Any]) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "schema_version": 1,
         "program": {
-            "key": str(program.get("program_key") or version.replace("-", "_")),
+            "key": str(program.get("program_key") or version),
             "title": str(program.get("display_name") or version),
         },
         "rest_weekdays": ["sunday"],

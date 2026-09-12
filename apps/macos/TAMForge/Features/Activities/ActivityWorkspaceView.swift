@@ -13,11 +13,18 @@ struct ActivityWorkspaceView: View {
     @State private var strongerEvidenceID = ""
     @State private var artifactClass: ActivityArtifactClass = .writtenOutput
     private let focusSelfReview: Bool
+    private let coach: CoachThreadModel?
+    private let note: StudyNoteModel?
 
-    init(model: ActivityWorkspaceModel, uploader: ActivityArtifactUploader, focusSelfReview: Bool = false) {
+    init(
+        model: ActivityWorkspaceModel, uploader: ActivityArtifactUploader, focusSelfReview: Bool = false,
+        coach: CoachThreadModel? = nil, note: StudyNoteModel? = nil
+    ) {
         self.model = model
         self.uploader = uploader
         self.focusSelfReview = focusSelfReview
+        self.coach = coach
+        self.note = note
     }
 
     var body: some View {
@@ -80,6 +87,8 @@ struct ActivityWorkspaceView: View {
                         incompletePanel(activity)
                     } else {
                         committedOutput(activity)
+                        if let coach { CoachPanel(model: coach) }
+                        if let note { StudyNotePanel(model: note) }
                         if model.showsSQLExecution {
                             SqlExecutionPanel(workspace: model, model: model.sqlExecution)
                         }

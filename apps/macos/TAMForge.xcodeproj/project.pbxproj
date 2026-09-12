@@ -158,6 +158,24 @@
 		F6000000000000000000000C /* RecordingAudioReading.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000001008 /* RecordingAudioReading.swift */; };
 		F6000000000000000000000D /* RecordingAudioReading.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000001008 /* RecordingAudioReading.swift */; };
 		F6000000000000000000000E /* RecordingAudioReadingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000001009 /* RecordingAudioReadingTests.swift */; };
+		FD000000000000000000001 /* CoachModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD000000000000000001001 /* CoachModels.swift */; };
+		FD000000000000000000002 /* CoachModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD000000000000000001001 /* CoachModels.swift */; };
+		FD000000000000000000003 /* CoachService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD000000000000000001003 /* CoachService.swift */; };
+		FD000000000000000000004 /* CoachService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD000000000000000001003 /* CoachService.swift */; };
+		FD000000000000000000005 /* CoachThreadModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD000000000000000001005 /* CoachThreadModel.swift */; };
+		FD000000000000000000006 /* CoachThreadModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD000000000000000001005 /* CoachThreadModel.swift */; };
+		FD000000000000000000007 /* CoachPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD000000000000000001007 /* CoachPanel.swift */; };
+		FD000000000000000000008 /* CoachPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD000000000000000001007 /* CoachPanel.swift */; };
+		FD000000000000000000009 /* CoachThreadModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD000000000000000001009 /* CoachThreadModelTests.swift */; };
+		FE000000000000000000001 /* StudyNoteModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000001001 /* StudyNoteModels.swift */; };
+		FE000000000000000000002 /* StudyNoteModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000001001 /* StudyNoteModels.swift */; };
+		FE000000000000000000003 /* StudyNoteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000001003 /* StudyNoteService.swift */; };
+		FE000000000000000000004 /* StudyNoteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000001003 /* StudyNoteService.swift */; };
+		FE000000000000000000005 /* StudyNoteModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000001005 /* StudyNoteModel.swift */; };
+		FE000000000000000000006 /* StudyNoteModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000001005 /* StudyNoteModel.swift */; };
+		FE000000000000000000007 /* StudyNotePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000001007 /* StudyNotePanel.swift */; };
+		FE000000000000000000008 /* StudyNotePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000001007 /* StudyNotePanel.swift */; };
+		FE000000000000000000009 /* StudyNoteModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000001009 /* StudyNoteModelTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -284,6 +302,16 @@
 		F70000000000000000001003 /* WhisperRuntimeSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperRuntimeSmokeTests.swift; sourceTree = "<group>"; };
 		F60000000000000000001008 /* RecordingAudioReading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingAudioReading.swift; sourceTree = "<group>"; };
 		F60000000000000000001009 /* RecordingAudioReadingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingAudioReadingTests.swift; sourceTree = "<group>"; };
+		FD000000000000000001001 /* CoachModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachModels.swift; sourceTree = "<group>"; };
+		FD000000000000000001003 /* CoachService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachService.swift; sourceTree = "<group>"; };
+		FD000000000000000001005 /* CoachThreadModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachThreadModel.swift; sourceTree = "<group>"; };
+		FD000000000000000001007 /* CoachPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachPanel.swift; sourceTree = "<group>"; };
+		FD000000000000000001009 /* CoachThreadModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachThreadModelTests.swift; sourceTree = "<group>"; };
+		FE000000000000000001001 /* StudyNoteModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudyNoteModels.swift; sourceTree = "<group>"; };
+		FE000000000000000001003 /* StudyNoteService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudyNoteService.swift; sourceTree = "<group>"; };
+		FE000000000000000001005 /* StudyNoteModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudyNoteModel.swift; sourceTree = "<group>"; };
+		FE000000000000000001007 /* StudyNotePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudyNotePanel.swift; sourceTree = "<group>"; };
+		FE000000000000000001009 /* StudyNoteModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudyNoteModelTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -375,6 +403,8 @@
 				FA000000000000000000001002 /* LocalSpeechSchedulerTests.swift */,
 				FB000000000000000000001002 /* PronunciationDiagnosticTests.swift */,
 				FC000000000000000000001002 /* RecordingFormatPolicyTests.swift */,
+				FD000000000000000001009 /* CoachThreadModelTests.swift */,
+				FE000000000000000001009 /* StudyNoteModelTests.swift */,
 				F80000000000000000001002 /* InterviewerTurnTests.swift */,
 				E20000000000000000000078 /* ActivityWorkspaceTests.swift */,
 			);
@@ -461,6 +491,8 @@
 				C10000000000000000000018 /* Notifications */,
 				E20000000000000000000092 /* Roadmaps */,
 				E20000000000000000000093 /* Activities */,
+				FD000000000000000002001 /* Coaching */,
+				FE000000000000000002001 /* Notes */,
 				F80000000000000000002001 /* Interviewer */,
 			);
 			path = Features;
@@ -564,6 +596,28 @@
 				E30000000000000000000064 /* EvidenceLedgerView.swift */,
 			);
 			path = Evidence;
+			sourceTree = "<group>";
+		};
+		FD000000000000000002001 /* Coaching */ = {
+			isa = PBXGroup;
+			children = (
+				FD000000000000000001001 /* CoachModels.swift */,
+				FD000000000000000001003 /* CoachService.swift */,
+				FD000000000000000001005 /* CoachThreadModel.swift */,
+				FD000000000000000001007 /* CoachPanel.swift */,
+			);
+			path = Coaching;
+			sourceTree = "<group>";
+		};
+		FE000000000000000002001 /* Notes */ = {
+			isa = PBXGroup;
+			children = (
+				FE000000000000000001001 /* StudyNoteModels.swift */,
+				FE000000000000000001003 /* StudyNoteService.swift */,
+				FE000000000000000001005 /* StudyNoteModel.swift */,
+				FE000000000000000001007 /* StudyNotePanel.swift */,
+			);
+			path = Notes;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -734,6 +788,14 @@
 				F90000000000000000000001 /* SpeechPerformanceHarness.swift in Sources */,
 				FA000000000000000000000001 /* LocalSpeechScheduler.swift in Sources */,
 				FB000000000000000000000001 /* PronunciationDiagnostic.swift in Sources */,
+				FD000000000000000000001 /* CoachModels.swift in Sources */,
+				FD000000000000000000003 /* CoachService.swift in Sources */,
+				FD000000000000000000005 /* CoachThreadModel.swift in Sources */,
+				FD000000000000000000007 /* CoachPanel.swift in Sources */,
+				FE000000000000000000001 /* StudyNoteModels.swift in Sources */,
+				FE000000000000000000003 /* StudyNoteService.swift in Sources */,
+				FE000000000000000000005 /* StudyNoteModel.swift in Sources */,
+				FE000000000000000000007 /* StudyNotePanel.swift in Sources */,
 				F80000000000000000000001 /* InterviewerTurn.swift in Sources */,
 				F6000000000000000000000C /* RecordingAudioReading.swift in Sources */,
 				E30000000000000000000001 /* EvidenceModels.swift in Sources */,
@@ -797,6 +859,14 @@
 				F90000000000000000000002 /* SpeechPerformanceHarness.swift in Sources */,
 				FA000000000000000000000002 /* LocalSpeechScheduler.swift in Sources */,
 				FB000000000000000000000002 /* PronunciationDiagnostic.swift in Sources */,
+				FD000000000000000000002 /* CoachModels.swift in Sources */,
+				FD000000000000000000004 /* CoachService.swift in Sources */,
+				FD000000000000000000006 /* CoachThreadModel.swift in Sources */,
+				FD000000000000000000008 /* CoachPanel.swift in Sources */,
+				FE000000000000000000002 /* StudyNoteModels.swift in Sources */,
+				FE000000000000000000004 /* StudyNoteService.swift in Sources */,
+				FE000000000000000000006 /* StudyNoteModel.swift in Sources */,
+				FE000000000000000000008 /* StudyNotePanel.swift in Sources */,
 				F80000000000000000000002 /* InterviewerTurn.swift in Sources */,
 				F6000000000000000000000D /* RecordingAudioReading.swift in Sources */,
 				F30000000000000000000021 /* RecordingFeatureTests.swift in Sources */,
@@ -859,6 +929,8 @@
 				FA000000000000000000000003 /* LocalSpeechSchedulerTests.swift in Sources */,
 				FB000000000000000000000003 /* PronunciationDiagnosticTests.swift in Sources */,
 				FC000000000000000000000003 /* RecordingFormatPolicyTests.swift in Sources */,
+				FD000000000000000000009 /* CoachThreadModelTests.swift in Sources */,
+				FE000000000000000000009 /* StudyNoteModelTests.swift in Sources */,
 				F80000000000000000000003 /* InterviewerTurnTests.swift in Sources */,
 				E20000000000000000000048 /* ActivityWorkspaceTests.swift in Sources */,
 			);

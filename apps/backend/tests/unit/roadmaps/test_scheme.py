@@ -29,7 +29,7 @@ rest_weekdays: [sunday]
 days:
   - id: d01
     kind: weekday
-    budget_minutes: 120
+    budget_minutes: 130
     blocks:
       - {id: d01-interview, type: communication, minutes: 60, source: {file: docs/Queue.md, heading: P1-Q01}, objective: Answer P1-Q01.}
       - {id: d01-learning, type: technical, minutes: 45, source: {file: Week 1.md, heading: Day 1}, objective: Read the day.}
@@ -61,7 +61,7 @@ def test_valid_scheme_has_no_issues() -> None:
     [
         ("heading: P1-Q01", "heading: P1-Q99", "heading 'P1-Q99' is missing"),
         ("file: docs/Queue.md", "file: docs/Missing.md", "file 'docs/Missing.md' is missing"),
-        ("minutes: 45", "minutes: 30", "day 'd01' required minutes 105 do not equal budget 120"),
+        ("minutes: 45", "minutes: 30", "day 'd01' block minutes 115 do not equal budget 130"),
         ("type: technical", "type: physics", "type 'physics' is not a contract"),
         ("id: d01-close", "id: d01-interview", "id 'd01-interview' is duplicated"),
         (
@@ -78,7 +78,7 @@ def test_invalid_schemes_report_named_issues(before: str, after: str, fragment: 
 
 
 def test_budgets_above_storage_caps_are_issues() -> None:
-    weekday = SCHEME.replace("budget_minutes: 120", "budget_minutes: 300", 1).replace(
+    weekday = SCHEME.replace("budget_minutes: 130", "budget_minutes: 310", 1).replace(
         "minutes: 60, source: {file: docs/Queue.md", "minutes: 240, source: {file: docs/Queue.md", 1
     )
     issues = validate_scheme(parse_scheme_text(weekday), files=FILES, config=CONFIG)
@@ -135,7 +135,7 @@ def test_scheme_package_projects_onto_parsed_roadmap() -> None:
         "program": {"key": "demo", "title": "Demo"},
         "lineage": None,
         "days": {
-            "1": {"id": "d01", "kind": "weekday", "budget_minutes": 120},
+            "1": {"id": "d01", "kind": "weekday", "budget_minutes": 130},
             "2": {"id": "d02", "kind": "assessment", "budget_minutes": 60},
         },
     }
@@ -170,14 +170,14 @@ def test_scheme_summary_is_empty_for_legacy_and_compact_for_schemes() -> None:
     assert scheme_summary_from_payload(parsed.scheme) == {
         "program": "Demo",
         "study_days": 2,
-        "budget_minutes": {"1": 120, "2": 60},
+        "budget_minutes": {"1": 130, "2": 60},
     }
 
 
 @pytest.mark.parametrize(
     ("name", "days", "tasks", "first_budget"),
     [
-        ("month-1-scheme-v1.zip", 24, 158, 230),
+        ("month-v1.zip", 24, 158, 240),
         ("phase-1-six-week-scheme-v1.zip", 36, 148, 180),
     ],
 )

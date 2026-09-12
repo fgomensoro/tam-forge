@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from urllib.parse import urlsplit
 
-from ..evidence.config_models import ConfigBundle, RoadmapTaskConfig
+from ..evidence.config_models import ConfigBundle
 from .contracts import (
     JsonValue,
     NormalizedCorrectionSelection,
@@ -238,54 +238,6 @@ def _exit_criteria(
     )
 
 
-def _correction(task: RoadmapTaskConfig) -> NormalizedCorrectionSelection | None:
-    selection = task.correction_selection
-    if selection is None:
-        return None
-    return NormalizedCorrectionSelection(
-        source=selection.source,
-        maximum_items=selection.maximum_items,
-        allowed_kinds=tuple(sorted(selection.allowed_kinds)),
-        inherits_core_prompt=selection.inherits_core_prompt,
-        inherits_original_exercise=selection.inherits_original_exercise,
-        inherits_original_mapping_version=selection.inherits_original_mapping_version,
-        no_attempt_c=selection.no_attempt_c,
-        skill_level_effect=selection.skill_level_effect,
-    )
-
-
-def _task(task: RoadmapTaskConfig) -> NormalizedTask:
-    return NormalizedTask(
-        stable_id=task.stable_id,
-        month=task.month,
-        week=task.week,
-        day=task.day,
-        block=task.block,
-        order=task.order,
-        source_path=task.source_path,
-        source_heading=task.source_heading,
-        exercise_type=task.exercise_type,
-        mapping_version=task.mapping_version,
-        required=task.required,
-        timebox_minutes=task.timebox_minutes,
-        objective=task.objective,
-        required_output=task.required_output,
-        pass_criteria=task.pass_criteria,
-        evidence_requirements=task.evidence_requirements,
-        procedure=tuple(
-            NormalizedProcedureStep(
-                phase=step.phase,
-                minutes=step.minutes,
-                requirement=step.requirement,
-            )
-            for step in task.procedure
-        ),
-        constraints=task.constraints,
-        correction_selection=_correction(task),
-        allowed_ai_role=task.allowed_ai_role,
-    )
-
-
 def _contract(task: NormalizedTask) -> NormalizedTaskContract:
     return NormalizedTaskContract(
         stable_id=task.stable_id,
@@ -298,109 +250,15 @@ def _contract(task: NormalizedTask) -> NormalizedTaskContract:
     )
 
 
-def _validate_tasks(
-    tasks: tuple[RoadmapTaskConfig, ...],
-    *,
-    config: ConfigBundle,
-    files: Mapping[str, bytes],
-    headings: Mapping[str, Mapping[str, int]],
-) -> None:
-    seen_ids: set[str] = set()
-    seen_orders: set[tuple[int, int, int]] = set()
-    totals: dict[int, int] = {}
-    days: set[int] = set()
-    for task in tasks:
-        if task.stable_id in seen_ids:
-            raise RoadmapParseError(f"duplicate task ID {task.stable_id!r}")
-        seen_ids.add(task.stable_id)
-        order_key = (task.week, task.day, task.order)
-        if order_key in seen_orders:
-            raise RoadmapParseError(f"duplicate task order for day {task.day}")
-        seen_orders.add(order_key)
-        if task.source_path not in files:
-            raise RoadmapParseError(f"source file {task.source_path!r} is missing")
-        heading_count = headings.get(task.source_path, {}).get(task.source_heading, 0)
-        if heading_count == 0:
-            raise RoadmapParseError(
-                f"source heading {task.source_heading!r} is missing from {task.source_path!r}"
-            )
-        if heading_count > 1:
-            raise RoadmapParseError(
-                f"{task.source_path} contains duplicate Markdown heading {task.source_heading!r}"
-            )
-        expected_week = ((task.day - 1) // 6) + 1
-        if task.week != expected_week:
-            raise RoadmapParseError(f"task {task.stable_id!r} has an invalid week/day pair")
-        if task.block == "correction_warmup":
-            if task.exercise_type is not None or task.mapping_version is not None:
-                raise RoadmapParseError("correction task must inherit exercise and mapping")
-        else:
-            if task.exercise_type is None or task.mapping_version is None:
-                raise RoadmapParseError("ordinary task requires exercise and mapping")
-            try:
-                exercise = config.exercise(task.exercise_type)
-            except KeyError as exc:
-                raise RoadmapParseError(f"unknown exercise {task.exercise_type!r}") from exc
-            if exercise.mapping_version != task.mapping_version:
-                raise RoadmapParseError(
-                    f"unknown mapping version {task.mapping_version!r} for {task.exercise_type!r}"
-                )
-        totals[task.day] = totals.get(task.day, 0) + task.timebox_minutes
-        days.add(task.day)
-    if days != set(range(1, 25)):
-        raise RoadmapParseError("task map must define all 24 Month 1 study days and no Sundays")
-    for day, total in sorted(totals.items()):
-        if day % 6 == 0:
-            if total > 120:
-                raise RoadmapParseError(f"Saturday {day} exceeds 120 minutes")
-        elif total != 240:
-            raise RoadmapParseError(f"weekday {day} must total exactly 240 minutes")
-
-
 def parse_roadmap(*, files: Mapping[str, bytes], config: ConfigBundle) -> ParsedRoadmap:
-    """Validate source links and return a canonical reviewed runtime projection."""
-    if SCHEME_FILE_NAME in files:
-        return parse_roadmap_scheme(files=files, config=config)
-    if config.roadmap_schema_version != 1:
-        raise RoadmapParseError(
-            f"roadmap projection requires schema version 1, got {config.roadmap_schema_version}"
-        )
-    markdown = decode_markdown(files)
-    headings = headings_index(markdown)
-    source_tasks = tuple(
-        sorted(
-            (task for task in config.roadmap_tasks if isinstance(task, RoadmapTaskConfig)),
-            key=lambda item: (item.week, item.day, item.order, item.stable_id),
-        )
-    )
-    _validate_tasks(source_tasks, config=config, files=files, headings=headings)
-    tasks = tuple(_task(item) for item in source_tasks)
-    contracts = tuple(_contract(item) for item in tasks)
-    resources = _resources(files, markdown)
-    exit_criteria = _exit_criteria(markdown)
-    payload = {
-        "schema_version": 1,
-        "roadmap_version": config.roadmap_version,
-        "tasks": [item.to_dict() for item in tasks],
-        "contracts": [item.to_dict() for item in contracts],
-        "resources": [item.to_dict() for item in resources],
-        "exit_criteria": [item.to_dict() for item in exit_criteria],
-    }
-    canonical = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return ParsedRoadmap(
-        schema_version=1,
-        roadmap_version=config.roadmap_version,
-        tasks=tasks,
-        contracts=contracts,
-        resources=resources,
-        exit_criteria=exit_criteria,
-        normalized_hash=hashlib.sha256(canonical).hexdigest(),
-    )
+    """Validate a package and return its canonical reviewed runtime projection.
+
+    Every package carries `roadmap.yaml`; the server-side task map only supplies
+    the contract vocabulary and the exercise catalogue.
+    """
+    if SCHEME_FILE_NAME not in files:
+        raise RoadmapParseError("roadmap package must carry roadmap.yaml at its root")
+    return parse_roadmap_scheme(files=files, config=config)
 
 
 # Grouping only: week nodes in the curriculum tree. The calendar walk owns dates.

@@ -162,6 +162,8 @@ private struct NativeFeatureServices {
     let roadmaps: any RoadmapServicing
     let activities: any ActivityAPI
     let evidence: any EvidenceServicing
+    let coaching: any CoachAPI
+    let notes: any StudyNoteAPI
 }
 
 @MainActor
@@ -223,7 +225,9 @@ private final class NativeShellComposition: ObservableObject {
                 session: httpSession, onUnauthorizedForRequest: onUnauthorizedForRequest
             ),
             activities: LiveActivityAPI(transport: transport),
-            evidence: LiveEvidenceAPI(transport: transport)
+            evidence: LiveEvidenceAPI(transport: transport),
+            coaching: LiveCoachAPI(transport: transport),
+            notes: LiveStudyNoteAPI(transport: transport)
         )
         #if DEBUG
             let isUITest = ProcessInfo.processInfo.arguments.contains("-ui-test-signed-out")
@@ -513,8 +517,9 @@ private struct NativeWorkspaceView: View {
             .task(id: identifier) { await state.evidence.open(activityID: identifier) }
         case .activity(let identifier) where dependencies.nativeFeatures.contains(.today):
             NativeActivityScreen(
-                activityID: identifier, api: services.activities, drafts: state.drafts,
-                timerJournal: state.timerJournal, focusSelfReview: focusSelfReview
+                activityID: identifier, api: services.activities, coaching: services.coaching,
+                notes: services.notes, drafts: state.drafts, timerJournal: state.timerJournal,
+                focusSelfReview: focusSelfReview
             )
             .id(identifier)
         default:
@@ -539,21 +544,27 @@ private struct NativeWorkspaceView: View {
 private struct NativeActivityScreen: View {
     @StateObject private var model: ActivityWorkspaceModel
     @StateObject private var uploader: ActivityArtifactUploader
+    @StateObject private var coach: CoachThreadModel
+    @StateObject private var note: StudyNoteModel
     let focusSelfReview: Bool
 
     init(
-        activityID: Int, api: any ActivityAPI, drafts: any ActivityDraftStoring,
-        timerJournal: any ActivityTimerJournaling, focusSelfReview: Bool
+        activityID: Int, api: any ActivityAPI, coaching: any CoachAPI, notes: any StudyNoteAPI,
+        drafts: any ActivityDraftStoring, timerJournal: any ActivityTimerJournaling, focusSelfReview: Bool
     ) {
         _model = StateObject(
             wrappedValue: ActivityWorkspaceModel(
                 activityID: activityID, api: api, drafts: drafts, timerJournal: timerJournal
             ))
         _uploader = StateObject(wrappedValue: ActivityArtifactUploader(api: api))
+        _coach = StateObject(wrappedValue: CoachThreadModel(activityID: activityID, api: coaching))
+        _note = StateObject(wrappedValue: StudyNoteModel(activityID: activityID, api: notes))
         self.focusSelfReview = focusSelfReview
     }
 
     var body: some View {
-        ActivityWorkspaceView(model: model, uploader: uploader, focusSelfReview: focusSelfReview)
+        ActivityWorkspaceView(
+            model: model, uploader: uploader, focusSelfReview: focusSelfReview, coach: coach, note: note
+        )
     }
 }

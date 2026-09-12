@@ -1,14 +1,13 @@
+# ruff: noqa: E501
 from __future__ import annotations
 
 import json
 import zipfile
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from tamforge_backend.cli import main as cli_main
 from tamforge_backend.evidence.config_loader import load_config_bundle
-from tamforge_backend.evidence.config_models import ConfigBundle
 from tamforge_backend.roadmaps.package import inspect_zip_stream
 from tamforge_backend.roadmaps.parser import RoadmapParseError, parse_roadmap
 
@@ -37,27 +36,6 @@ def test_phase1_package_is_deterministic_markdown_and_sql_only() -> None:
     files = _fixture_files("phase-1-six-week-v1.zip")
     assert "README.md" in files
     assert len(files) == 34
-
-
-def _bundle_with_task(
-    bundle: ConfigBundle,
-    index: int,
-    **updates: object,
-) -> ConfigBundle:
-    tasks = list(bundle.roadmap_tasks)
-    tasks[index] = tasks[index].model_copy(update=updates)
-    return replace(bundle, roadmap_tasks=tuple(tasks))
-
-
-def _bundle_with_task_id(
-    bundle: ConfigBundle,
-    stable_id: str,
-    **updates: object,
-) -> ConfigBundle:
-    index = next(
-        index for index, task in enumerate(bundle.roadmap_tasks) if task.stable_id == stable_id
-    )
-    return _bundle_with_task(bundle, index, **updates)
 
 
 def _summary(roadmap: object) -> dict[str, object]:
@@ -114,18 +92,17 @@ def test_parser_emits_exact_stable_tasks_contracts_resources_and_exit_criteria()
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
-        ("missing_heading", "source heading"),
-        ("missing_source", "source file"),
-        ("duplicate_heading", "duplicate Markdown heading"),
-        ("missing_resource", "referenced local resource"),
-        ("outside_resource", "outside the roadmap package"),
+        ("missing_heading", "heading 'Day 1 — Baseline and HTTP' is missing"),
+        (
+            "missing_source",
+            "file 'Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md' is missing",
+        ),
+        ("duplicate_heading", "appears 2 times"),
+        ("no_scheme", "must carry roadmap.yaml"),
         ("invalid_utf8", "valid UTF-8"),
     ],
 )
-def test_parser_rejects_missing_or_ambiguous_sources_and_resources(
-    mutation: str,
-    message: str,
-) -> None:
+def test_parser_rejects_missing_or_ambiguous_sources(mutation: str, message: str) -> None:
     files = _fixture_files("month-v1.zip")
     week_one = "Week 1 - SQL foundations, HTTP, troubleshooting, and story inventory.md"
     if mutation == "missing_heading":
@@ -137,10 +114,8 @@ def test_parser_rejects_missing_or_ambiguous_sources_and_resources(
         del files[week_one]
     elif mutation == "duplicate_heading":
         files[week_one] += b"\n## Day 1 \xe2\x80\x94 Baseline and HTTP\n"
-    elif mutation == "missing_resource":
-        files["README.md"] = files["README.md"].replace(b"sql/tasks", b"sql/missing")
-    elif mutation == "outside_resource":
-        files["README.md"] += b"\n- [[../private|Private]]\n"
+    elif mutation == "no_scheme":
+        del files["roadmap.yaml"]
     elif mutation == "invalid_utf8":
         files[week_one] += b"\n\xff"
 
@@ -148,46 +123,15 @@ def test_parser_rejects_missing_or_ambiguous_sources_and_resources(
         parse_roadmap(files=files, config=load_config_bundle(CONFIG_DIR))
 
 
-@pytest.mark.parametrize(
-    ("mutator", "message"),
-    [
-        (
-            lambda bundle: replace(bundle, roadmap_schema_version=2),
-            "requires schema version 1",
-        ),
-        (
-            lambda bundle: replace(
-                bundle,
-                roadmap_tasks=bundle.roadmap_tasks + (bundle.roadmap_tasks[0],),
-            ),
-            "duplicate task ID",
-        ),
-        (
-            lambda bundle: _bundle_with_task(bundle, 0, timebox_minutes=44),
-            "weekday 1 must total exactly 240",
-        ),
-        (
-            lambda bundle: _bundle_with_task_id(bundle, "m1-w3-d18-sql", timebox_minutes=31),
-            "Saturday 18 exceeds 120",
-        ),
-        (
-            lambda bundle: _bundle_with_task(bundle, 0, exercise_type="unknown_exercise"),
-            "unknown exercise",
-        ),
-        (
-            lambda bundle: _bundle_with_task(bundle, 0, mapping_version="unknown-v1"),
-            "unknown mapping version",
-        ),
-    ],
-)
-def test_parser_rejects_invalid_task_map_contracts(
-    mutator: object,
-    message: str,
-) -> None:
-    bundle = mutator(load_config_bundle(CONFIG_DIR))  # type: ignore[operator]
+def test_links_that_leave_the_package_are_allowed_but_not_block_sources() -> None:
+    files = _fixture_files("month-v1.zip")
+    files["README.md"] += (
+        b"\n- [[../private|Private]]\n- [[Docs/2026-09-08 - Active Study Reforecast]]\n"
+    )
 
-    with pytest.raises(RoadmapParseError, match=message):
-        parse_roadmap(files=_fixture_files("month-v1.zip"), config=bundle)
+    roadmap = parse_roadmap(files=files, config=load_config_bundle(CONFIG_DIR))
+
+    assert all(item.kind == "external" or item.key in files for item in roadmap.resources)
 
 
 def test_parser_does_not_treat_a_heading_inside_a_code_fence_as_source() -> None:
@@ -198,7 +142,7 @@ def test_parser_does_not_treat_a_heading_inside_a_code_fence_as_source() -> None
         "```markdown\n## Day 1 — Baseline and HTTP\n```".encode(),
     )
 
-    with pytest.raises(RoadmapParseError, match="source heading"):
+    with pytest.raises(RoadmapParseError, match="is missing"):
         parse_roadmap(files=files, config=load_config_bundle(CONFIG_DIR))
 
 

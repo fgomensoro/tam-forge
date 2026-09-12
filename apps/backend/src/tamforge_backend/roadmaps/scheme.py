@@ -71,7 +71,7 @@ class _Strict(BaseModel):
 
 
 class SchemeProgram(_Strict):
-    key: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")]
+    key: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")]
     title: Annotated[str, Field(min_length=1, max_length=128)]
 
 
@@ -147,7 +147,7 @@ def validate_scheme(
         if day.id in seen:
             issues.append(f"id '{day.id}' is duplicated")
         seen.add(day.id)
-        required_minutes = 0
+        total_minutes = 0
         for block in day.blocks:
             if block.id in seen:
                 issues.append(f"id '{block.id}' is duplicated")
@@ -175,17 +175,16 @@ def validate_scheme(
                         f"block '{block.id}': heading '{block.source.heading}' appears "
                         f"{count} times in '{block.source.file}'"
                     )
-            if block.required and block.type != "correction":
-                required_minutes += block.minutes
+            total_minutes += block.minutes
         cap = ASSESSMENT_MAX_MINUTES if day.kind == "assessment" else WEEKDAY_MAX_MINUTES
         if day.budget_minutes > cap:
             issues.append(
                 f"day '{day.id}' budget {day.budget_minutes} exceeds the {day.kind} "
                 f"maximum of {cap} minutes"
             )
-        if required_minutes != day.budget_minutes:
+        if total_minutes != day.budget_minutes:
             issues.append(
-                f"day '{day.id}' required minutes {required_minutes} do not equal "
+                f"day '{day.id}' block minutes {total_minutes} do not equal "
                 f"budget {day.budget_minutes}"
             )
         if sum(item.type == "correction" for item in day.blocks) > 1:
