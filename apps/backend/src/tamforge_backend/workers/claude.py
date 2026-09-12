@@ -147,12 +147,14 @@ async def gate_step(sessions: async_sessionmaker[AsyncSession]) -> str | None:
 
     async with sessions() as session:
         owner_id = await session.scalar(select(Owner.id).order_by(Owner.id).limit(1))
-        stored = (
-            None
-            if owner_id is None
-            else await AttestationRepository(session).current(owner_id=owner_id)
-        )
         await session.rollback()
+    stored = None
+    if owner_id is not None:
+        # A fresh session: `AttestationRepository.current` opens its own transaction,
+        # and a session that already autobegan one on the owner read would refuse it,
+        # which reads back as an invalid attestation rather than the real state.
+        async with sessions() as session:
+            stored = await AttestationRepository(session).current(owner_id=owner_id)
     try:
         ClaudeSubscriptionSettings.for_worker(environ=os.environ, stored=stored)
     except PaidCredentialForbidden:

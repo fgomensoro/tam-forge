@@ -207,3 +207,68 @@ def test_probe_reasons_map_onto_closed_heartbeat_reasons() -> None:
 
     assert set(PROBE_HEARTBEAT_REASONS.values()) <= REASONS
     assert set(PROBE_HEARTBEAT_REASONS) <= set(PROBE_REASONS)
+
+
+class _AutobeginSession:
+    """Just enough `AsyncSession` to refuse `begin()` once a statement autobegan.
+
+    SQLAlchemy starts a transaction on the first statement; `session.begin()` on that
+    session then raises `InvalidRequestError`, which `AttestationRepository.current`
+    translates into `InvalidProvenance`. The gate must never share one session between
+    its owner read and the attestation read.
+    """
+
+    def __init__(self) -> None:
+        self.in_transaction = False
+        self.rolled_back = 0
+
+    async def scalar(self, statement: object) -> object:
+        del statement
+        self.in_transaction = True
+        return 1  # the first owner id; the attestation read returns no row
+
+    def begin(self) -> _AutobeginSession:
+        from sqlalchemy.exc import InvalidRequestError
+
+        if self.in_transaction:
+            raise InvalidRequestError("A transaction is already begun on this Session.")
+        self.in_transaction = True
+        return self
+
+    async def __aenter__(self) -> _AutobeginSession:
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        self.in_transaction = False
+
+    async def rollback(self) -> None:
+        self.rolled_back += 1
+        self.in_transaction = False
+
+
+def test_the_gate_reads_the_attestation_on_a_fresh_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A shared session used to surface as `InvalidProvenance`, then `processing_failure`."""
+    from tamforge_backend.workers.claude import gate_step
+
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    sessions: list[_AutobeginSession] = []
+
+    def factory() -> _AutobeginSession:
+        session = _AutobeginSession()
+        sessions.append(session)
+        return session
+
+    # Attestation rows come back through `scalar` too; the second session answers the
+    # `current` read. Returning the owner id there would fail `verified`, so answer None.
+    async def scalar_none(self: _AutobeginSession, statement: object) -> object:
+        del statement
+        self.in_transaction = True
+        return 1 if len(sessions) == 1 else None
+
+    monkeypatch.setattr(_AutobeginSession, "scalar", scalar_none)
+
+    reason = asyncio.run(gate_step(factory))  # type: ignore[arg-type]
+
+    assert reason == "permission_required"
+    assert len(sessions) == 2
+    assert sessions[0].rolled_back == 1

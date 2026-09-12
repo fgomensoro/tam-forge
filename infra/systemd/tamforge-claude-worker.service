@@ -15,8 +15,9 @@ WorkingDirectory=/opt/tamforge/current
 ExecStart=/opt/tamforge/current/.venv/bin/python -m tamforge_backend.workers.claude
 EnvironmentFile=/etc/tamforge/claude-worker.env
 # ProtectHome makes /home unreadable, and asyncpg probes ~/.postgresql before every
-# connection; a readable HOME keeps that probe a clean miss.
-Environment=HOME=%S/tamforge/claude-worker
+# connection; a readable HOME keeps that probe a clean miss. The Claude CLI also
+# writes ~/.claude, so HOME is the writable state directory, not a read-only path.
+Environment=HOME=%S/tamforge/claude
 LoadCredential=claude-token:/etc/tamforge/secrets/claude-token
 Restart=on-failure
 RestartSec=5s
