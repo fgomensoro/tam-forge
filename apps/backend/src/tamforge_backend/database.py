@@ -6,9 +6,10 @@ import os
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import cast
+from typing import Protocol, cast
 
 from fastapi import Request
+from pydantic import SecretStr
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -17,9 +18,14 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from .config import Settings
-
 SessionFactory = async_sessionmaker[AsyncSession]
+
+
+class HasDatabaseUrl(Protocol):
+    """Anything that can hand over the database URL: the API settings or a worker's."""
+
+    @property
+    def database_url(self) -> SecretStr: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +40,7 @@ class DatabaseResources:
         await self.engine.dispose()
 
 
-def create_database_resources(settings: Settings) -> DatabaseResources:
+def create_database_resources(settings: HasDatabaseUrl) -> DatabaseResources:
     """Create a bounded, lazy pool without opening a database connection."""
     engine = create_async_engine(
         settings.database_url.get_secret_value(),
