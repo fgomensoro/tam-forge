@@ -7,21 +7,23 @@ did; its environment file carries only these values.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Final
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Kept outside the model: a leading-underscore class attribute is a pydantic private
+# attribute, read through state that does not exist until after `__init__` runs.
+FIELD_ENV_ALIASES: Final[dict[str, str]] = {
+    "environment": "TAMFORGE_ENV",
+    "database_url": "TAMFORGE_DATABASE_URL",
+    "claude_enabled": "TAMFORGE_CLAUDE_ENABLED",
+    "planner_model": "TAMFORGE_PLANNER_MODEL",
+    "coach_model": "TAMFORGE_COACH_MODEL",
+}
+
 
 class WorkerSettings(BaseSettings):
-    _FIELD_ENV_ALIASES = {
-        "environment": "TAMFORGE_ENV",
-        "database_url": "TAMFORGE_DATABASE_URL",
-        "claude_enabled": "TAMFORGE_CLAUDE_ENABLED",
-        "planner_model": "TAMFORGE_PLANNER_MODEL",
-        "coach_model": "TAMFORGE_COACH_MODEL",
-    }
-
     model_config = SettingsConfigDict(env_prefix="TAMFORGE_", extra="ignore")
 
     environment: str = Field(default="development", validation_alias="TAMFORGE_ENV")
@@ -34,7 +36,7 @@ class WorkerSettings(BaseSettings):
 
     def __init__(self, **values: Any) -> None:
         mapped = dict(values)
-        for field_name, env_alias in self._FIELD_ENV_ALIASES.items():
+        for field_name, env_alias in FIELD_ENV_ALIASES.items():
             if field_name in mapped and env_alias not in mapped:
                 mapped[env_alias] = mapped.pop(field_name)
         super().__init__(**mapped)
