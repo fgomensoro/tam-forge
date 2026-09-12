@@ -10,6 +10,9 @@ from .auth.crypto import InvalidOAuthState
 from .auth.routes import auth_exception_handler, request_validation_exception_handler
 from .auth.routes import router as auth_router
 from .auth.service import AuthError
+from .coaching.routes import coaching_exception_handler
+from .coaching.routes import router as coaching_router
+from .coaching.service import CoachingError
 from .evidence.routes import evidence_exception_handler
 from .evidence.routes import router as evidence_router
 from .evidence.service import EvidenceError
@@ -42,6 +45,7 @@ def register_routes(app: FastAPI) -> None:
     setup_sql_execution_runtime(app)
     app.include_router(auth_router)
     app.include_router(activity_router)
+    app.include_router(coaching_router)
     app.include_router(evidence_router)
     app.include_router(analysis_router)
     app.include_router(notification_router)
@@ -54,6 +58,7 @@ def register_routes(app: FastAPI) -> None:
     app.add_exception_handler(InvalidOAuthState, auth_exception_handler)
     app.add_exception_handler(RequestValidationError, request_validation_exception_handler)
     app.add_exception_handler(ActivityCommandError, activity_exception_handler)
+    app.add_exception_handler(CoachingError, coaching_exception_handler)
     app.add_exception_handler(EvidenceError, evidence_exception_handler)
     app.add_exception_handler(FeedbackError, feedback_exception_handler)
     app.add_exception_handler(NotificationError, notification_exception_handler)

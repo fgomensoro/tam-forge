@@ -172,11 +172,11 @@ async def probe_step(
 
     from ..agents.compatibility import AttestationRepository, probe_claude_compatibility
     from ..agents.sdk_runtime import AgentSdkRuntime
-    from ..config import Settings
+    from .settings import WorkerSettings
 
     if owner_id is None:
         return "permission_required"
-    settings = Settings()
+    settings = WorkerSettings()
     async with sessions() as session:
         result = await probe_claude_compatibility(
             runtime=AgentSdkRuntime(),

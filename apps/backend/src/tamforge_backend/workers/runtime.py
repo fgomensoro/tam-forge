@@ -14,8 +14,7 @@ from collections.abc import Awaitable, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from ..config import Settings
-from ..database import create_database_resources
+from ..database import HasDatabaseUrl, create_database_resources
 from ..observability.heartbeats import WorkerHeartbeatStore
 from ..observability.logging import safe_event
 
@@ -29,11 +28,13 @@ async def run_worker(
     name: str,
     step: Step,
     *,
-    settings: Settings | None = None,
+    settings: HasDatabaseUrl | None = None,
     interval_seconds: float = 15.0,
     iterations: int | None = None,
 ) -> None:
-    configured = settings or Settings()
+    from .settings import WorkerSettings
+
+    configured = settings or WorkerSettings()
     database = create_database_resources(configured)
     store = WorkerHeartbeatStore(database.session_factory)
     stop = asyncio.Event()
