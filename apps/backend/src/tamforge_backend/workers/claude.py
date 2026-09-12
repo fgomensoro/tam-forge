@@ -12,9 +12,13 @@ again inside the same minute, and both need a human.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, Protocol
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..agents.runtime import (
     AgentAuthenticationFailed,
@@ -124,6 +128,50 @@ class ClaudeWorker:
             await self._ledger.publish(result)
             return WorkerOutcome("published", "none", result)
         raise AssertionError("unreachable: the retry loop always returns")
+
+
+async def gate_step(sessions: async_sessionmaker[AsyncSession]) -> str | None:
+    """Beat with the state of the gate: attestation present, credential installed.
+
+    There is no queue of Claude jobs yet, so the worker's only duty is to say,
+    truthfully and every beat, whether Claude work could run on this host.
+    """
+    from ..agents.compatibility import AttestationRepository
+    from ..agents.settings import (
+        ClaudeSubscriptionSettings,
+        ClaudeWorkerConfigurationError,
+        PaidCredentialForbidden,
+        SubscriptionCredentialMissing,
+    )
+    from ..auth.models import Owner
+
+    async with sessions() as session:
+        owner_id = await session.scalar(select(Owner.id).order_by(Owner.id).limit(1))
+        stored = (
+            None
+            if owner_id is None
+            else await AttestationRepository(session).current(owner_id=owner_id)
+        )
+        await session.rollback()
+    try:
+        ClaudeSubscriptionSettings.for_worker(environ=os.environ, stored=stored)
+    except PaidCredentialForbidden:
+        return "permission_required"
+    except SubscriptionCredentialMissing:
+        return "auth"
+    except ClaudeWorkerConfigurationError:
+        return "permission_required"
+    return None
+
+
+def main() -> int:
+    from .runtime import run_main
+
+    return run_main("claude", gate_step, interval_seconds=30.0)
+
+
+if __name__ == "__main__":  # pragma: no cover - process entrypoint
+    raise SystemExit(main())
 
 
 __all__ = [

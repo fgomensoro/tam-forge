@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import math
 import time
 from collections.abc import Awaitable, Callable
@@ -95,6 +96,19 @@ async def probe_dependency(
     except Exception:
         # Cancellation from the caller is a BaseException and still propagates.
         return False
+
+
+async def run_probe_loop(
+    probe: Callable[[], Awaitable[None]],
+    *,
+    interval_seconds: float = HEARTBEAT_INTERVAL_SECONDS,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> None:
+    """Run a side-effecting probe on a schedule; a failing probe never stops the loop."""
+    while True:
+        await sleep(interval_seconds)
+        with contextlib.suppress(Exception):
+            await probe()
 
 
 async def run_health_heartbeat(
