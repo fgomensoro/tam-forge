@@ -15,8 +15,16 @@ EVENTS = frozenset(
         "component_changed",
         "job_completed",
         "server_event",
+        "worker_started",
+        "worker_step",
+        "worker_heartbeat_failed",
+        "worker_stopped",
     }
 )
+# Worker names are a closed set, so logging one is an enum, not a string. Kept
+# here (the lowest layer) because heartbeats.py imports this module; the unit
+# tests assert this stays in step with WORKER_COMPONENTS.
+WORKERS = frozenset({"general", "speech", "claude"})
 STATUSES = frozenset(
     {
         "ok",
@@ -72,6 +80,8 @@ def safe_event(event: str, **fields: object) -> str:
                 number = cast(int | float, value)
                 if 0 <= number <= 1e18 and math.isfinite(number):
                     payload[key] = number
+        elif key == "worker" and type(value) is str and value in WORKERS:
+            payload[key] = value
         elif key == "status" and type(value) is str and value in STATUSES:
             payload[key] = value
         elif key == "error_code" and type(value) is str and value in REASONS:
