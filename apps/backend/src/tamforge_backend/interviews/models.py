@@ -58,6 +58,37 @@ class InterviewTranscript(Base):
     )
 
 
+class InterviewDebrief(Base):
+    """The reviewer's debrief of one real interview; one per interview, replaceable."""
+
+    __tablename__ = "interview_debriefs"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "interview_id", name="uq_interview_debriefs_interview"),
+        ForeignKeyConstraint(
+            ["owner_id", "interview_id"],
+            ["interviews.owner_id", "interviews.id"],
+            name="fk_interview_debriefs_interview",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "transcript_source IN ('recording', 'transcript_only')", name="source_allowed"
+        ),
+        CheckConstraint("jsonb_typeof(outcome) = 'object'", name="outcome_object"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    owner_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    interview_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    transcript_source: Mapped[str] = mapped_column(Text, nullable=False)
+    transcript_sha256: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_version: Mapped[str] = mapped_column(Text, nullable=False)
+    outcome: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, server_default=func.now(), nullable=False
+    )
+
+
 class ReferenceMaterial(Base):
     """One entry of the answer bank or story catalog, imported as reference, never evidence."""
 
@@ -87,4 +118,10 @@ class ReferenceMaterial(Base):
     )
 
 
-__all__ = ["REFERENCE_KINDS", "TRANSCRIPT_ONLY", "InterviewTranscript", "ReferenceMaterial"]
+__all__ = [
+    "REFERENCE_KINDS",
+    "TRANSCRIPT_ONLY",
+    "InterviewDebrief",
+    "InterviewTranscript",
+    "ReferenceMaterial",
+]

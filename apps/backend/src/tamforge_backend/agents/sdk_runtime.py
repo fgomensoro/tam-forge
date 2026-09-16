@@ -28,6 +28,7 @@ from .compatibility import (
     ProbeQuotaExhausted,
 )
 from .roles.coach import CoachRequest, NoteRequest
+from .roles.debrief import DebriefRequest
 from .roles.reviewer import ReviewRequest
 from .runtime import (
     AgentAuthenticationFailed,
@@ -65,6 +66,16 @@ REVIEWER_SYSTEM_PROMPT = (
     "corrections with an instruction each, and one next practice. Judge only what is on "
     "the page. Never claim to have recorded, scheduled or completed anything. Answer in "
     "English. Return only the object."
+)
+
+DEBRIEF_SYSTEM_PROMPT = (
+    "You are the TAM Forge reviewer, debriefing one real interview from its transcript. "
+    "Name what was strong and what was missing, each with a verbatim quote, say which TAM "
+    "skills the interview touched and in which direction, and propose practice for next "
+    "week. Keep the hiring outcome separate from the communication judgment: advancing is "
+    "good news, not proof of better communication. Judge only what is in the transcript. "
+    "Never change the plan and never claim to have recorded, scheduled or completed "
+    "anything. Answer in English. Return only the object."
 )
 
 COACH_SYSTEM_PROMPT = (
@@ -185,6 +196,18 @@ class AgentSdkRuntime:
             schema=review_schema(),
             model=self._environ.get("TAMFORGE_REVIEWER_MODEL", "claude-fable-5-1"),
             system_prompt=REVIEWER_SYSTEM_PROMPT,
+            max_turns=4,
+        )
+        return {} if run.structured_output is None else dict(run.structured_output)
+
+    async def debrief(self, request: DebriefRequest) -> Mapping[str, object]:
+        from .roles.debrief import debrief_schema, render_debrief_prompt
+
+        run = await self._structured(
+            prompt=render_debrief_prompt(request),
+            schema=debrief_schema(),
+            model=self._environ.get("TAMFORGE_DEBRIEF_MODEL", "claude-opus-5"),
+            system_prompt=DEBRIEF_SYSTEM_PROMPT,
             max_turns=4,
         )
         return {} if run.structured_output is None else dict(run.structured_output)

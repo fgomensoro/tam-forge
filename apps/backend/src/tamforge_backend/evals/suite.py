@@ -28,6 +28,7 @@ from ..speech.schemas import TranscriptWord
 from .cases import EVALUATOR_VERSION as MEMORY_EVALUATOR_VERSION
 from .cases import load_memory_cases
 from .coach import COACH_EVALUATOR_VERSION, run_coach_cases
+from .debrief import DEBRIEF_EVALUATOR_VERSION, run_debrief_cases
 from .failure_injection import FAILURE_INJECTION_VERSION, run_failure_injection
 from .reviewer import REVIEWER_EVALUATOR_VERSION, run_reviewer_cases
 from .runner import run_memory_cases
@@ -42,6 +43,7 @@ RUBRIC_WEIGHTED_AGREEMENT: Final = 0.60
 ROLE_INVARIANTS: Final = 1.0
 COACH_REFUSALS: Final = 1.0
 REVIEWER_REFUSALS: Final = 1.0
+DEBRIEF_REFUSALS: Final = 1.0
 UNSUPPORTED_HIGH_SEVERITY_MAX: Final = 0
 
 
@@ -164,6 +166,7 @@ async def run_suite(
     speech_path = fixtures_dir / "speech-gate-cases.json"
     coach_path = fixtures_dir / "coach-refusal-cases.json"
     reviewer_path = fixtures_dir / "reviewer-refusal-cases.json"
+    debrief_path = fixtures_dir / "debrief-refusal-cases.json"
     for path in (
         memory_path,
         security_path,
@@ -172,6 +175,7 @@ async def run_suite(
         speech_path,
         coach_path,
         reviewer_path,
+        debrief_path,
     ):
         if not path.exists():
             raise SuiteError(f"fixture missing: {path.name}")
@@ -356,6 +360,20 @@ async def run_suite(
         )
     )
 
+    debrief = await run_debrief_cases(debrief_path)
+    debrief_held = debrief.held / len(debrief.outcomes) if debrief.outcomes else 0.0
+    parts.append(
+        PartResult(
+            "debrief",
+            "refusals",
+            round(debrief_held, 4),
+            DEBRIEF_REFUSALS,
+            debrief.passed and debrief_held >= DEBRIEF_REFUSALS,
+            f"{len(debrief.outcomes)} cases against {debrief.model}: verbatim quotes, "
+            "catalog skills, no plan change",
+        )
+    )
+
     speech_models = yaml.safe_load((config_dir / "speech-models.yaml").read_text(encoding="utf-8"))
     transcription = speech_models["artifacts"]["transcription_model"]
     rubrics = yaml.safe_load((config_dir / "tam-rubrics.yaml").read_text(encoding="utf-8"))
@@ -370,6 +388,7 @@ async def run_suite(
                 speech_path,
                 coach_path,
                 reviewer_path,
+                debrief_path,
             )
         },
         evaluator_versions={
@@ -379,6 +398,7 @@ async def run_suite(
             "failure_injection": FAILURE_INJECTION_VERSION,
             "coach": COACH_EVALUATOR_VERSION,
             "reviewer": REVIEWER_EVALUATOR_VERSION,
+            "debrief": DEBRIEF_EVALUATOR_VERSION,
         },
         speech_model_filename=str(transcription["filename"]),
         speech_model_sha256=str(transcription["sha256"]),

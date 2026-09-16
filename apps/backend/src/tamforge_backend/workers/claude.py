@@ -20,6 +20,7 @@ from typing import Any, Literal, Protocol, cast
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from ..agents.roles.debrief import DebriefService
 from ..agents.roles.reviewer import ReviewerService
 from ..agents.runtime import (
     AgentAuthenticationFailed,
@@ -168,6 +169,7 @@ async def gate_step(sessions: async_sessionmaker[AsyncSession]) -> str | None:
     if reason is not None:
         return reason
     await review_step(sessions)
+    await debrief_step(sessions)
     return None
 
 
@@ -250,6 +252,66 @@ async def review_step(
                 await service.mark_failed(
                     owner_id=job.owner_id, activity_id=job.payload.subject_id, category=category
                 )
+    return processed
+
+
+DEBRIEF_JOBS_PER_STEP = 1
+
+
+async def debrief_step(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    debriefer: DebriefService | None = None,
+    worker_id: str = "claude-debrief",
+) -> int:
+    """Run one requested interview debrief; every failure ends in a closed job state."""
+    from ..agents.sdk_runtime import AgentSdkRuntime
+    from ..interviews.debriefs import DEBRIEF_JOB_KIND, InterviewDebriefService
+    from ..interviews.service import InterviewInvalid, InterviewsUnavailable
+    from ..jobs.repository import SqlAlchemyJobRepository
+    from ..jobs.schemas import ClaimJobCommand, CompleteJobCommand, JobFailure, RetryJobCommand
+    from ..jobs.service import JobService
+    from .settings import WorkerSettings
+
+    if debriefer is None:
+        debriefer = DebriefService(AgentSdkRuntime(), model=WorkerSettings().debrief_model)
+    processed = 0
+    for _ in range(DEBRIEF_JOBS_PER_STEP):
+        async with sessions() as session:
+            jobs = JobService(SqlAlchemyJobRepository(session))
+            job = await jobs.claim(
+                ClaimJobCommand(worker_id=worker_id, kinds=(DEBRIEF_JOB_KIND,), lease_seconds=900)
+            )
+            if job is None:
+                return processed
+            service = InterviewDebriefService(session, debriefer=debriefer)
+            category: str | None = None
+            try:
+                await service.process(owner_id=job.owner_id, interview_id=job.payload.subject_id)
+            except InterviewInvalid:
+                category = "invalid_input"
+            except InterviewsUnavailable as exc:
+                text = str(exc).lower()
+                if "quota" in text:
+                    category = "resource_exhausted"
+                elif "credential" in text or "authentication" in text:
+                    category = "permission_required"
+                else:
+                    category = "transient_dependency"
+            except Exception:  # noqa: BLE001 - a job must always end in a closed state
+                await session.rollback()
+                category = "processing_failure"
+            if category is None:
+                await jobs.complete(job_id=job.id, command=CompleteJobCommand(worker_id=worker_id))
+                processed += 1
+                continue
+            await session.rollback()
+            await jobs.retry(
+                job_id=job.id,
+                command=RetryJobCommand(
+                    worker_id=worker_id, failure=JobFailure(category=cast(Any, category))
+                ),
+            )
     return processed
 
 

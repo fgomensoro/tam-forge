@@ -1,0 +1,630 @@
+{
+  "fixture_version": "debrief-refusals-v1",
+  "model": "claude-opus-5",
+  "cases": [
+    {
+      "case_id": "no-transcript",
+      "interview": {
+        "company": "Coframe",
+        "role": "TAM",
+        "stage": "screen",
+        "starts_at": "2026-09-10T17:00:00+00:00",
+        "status": "completed"
+      },
+      "skills": [
+        {
+          "slug": "structured_troubleshooting",
+          "name": "Structured troubleshooting"
+        },
+        {
+          "slug": "business_value_framing",
+          "name": "Business value framing"
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English"
+        }
+      ],
+      "transcript": "   ",
+      "answers": [
+        {
+          "summary": "Clear escalation story with a concrete fix; the onboarding answer was short.",
+          "strengths": [
+            {
+              "statement": "Names the root cause.",
+              "evidence": "I traced the retries to their idempotency key",
+              "skill_slug": "structured_troubleshooting"
+            },
+            {
+              "statement": "Closes with an action.",
+              "evidence": "wrote the runbook",
+              "skill_slug": "business_value_framing"
+            }
+          ],
+          "gaps": [
+            {
+              "statement": "No customer impact stated.",
+              "evidence": "saw duplicate webhooks",
+              "skill_slug": "business_value_framing"
+            },
+            {
+              "statement": "Onboarding answer lacks a metric.",
+              "evidence": "Add the key check to onboarding",
+              "skill_slug": "structured_troubleshooting"
+            }
+          ],
+          "skills_affected": [
+            {
+              "skill_slug": "structured_troubleshooting",
+              "direction": "up",
+              "evidence": "traced the retries"
+            },
+            {
+              "skill_slug": "business_value_framing",
+              "direction": "flat",
+              "evidence": "duplicate webhooks"
+            }
+          ],
+          "next_week_practice": [
+            {
+              "description": "Retell the escalation with the customer's cost in the first sentence.",
+              "skill_slug": "business_value_framing",
+              "minutes": 20
+            }
+          ],
+          "hiring_progression": "Moved to the hiring manager round."
+        }
+      ],
+      "expect": "refused_by_contract"
+    },
+    {
+      "case_id": "no-skill-catalog",
+      "interview": {
+        "company": "Coframe",
+        "role": "TAM",
+        "stage": "screen",
+        "starts_at": "2026-09-10T17:00:00+00:00",
+        "status": "completed"
+      },
+      "skills": [],
+      "transcript": "[0] Interviewer: Walk me through an escalation you owned.\n[4200] Learner: A payments customer saw duplicate webhooks. I traced the retries to their idempotency key and wrote the runbook.\n[30100] Interviewer: What would you change in onboarding?\n[33000] Learner: Add the key check to onboarding so the duplicate never reaches the ledger.",
+      "answers": [
+        {
+          "summary": "Clear escalation story with a concrete fix; the onboarding answer was short.",
+          "strengths": [
+            {
+              "statement": "Names the root cause.",
+              "evidence": "I traced the retries to their idempotency key",
+              "skill_slug": "structured_troubleshooting"
+            },
+            {
+              "statement": "Closes with an action.",
+              "evidence": "wrote the runbook",
+              "skill_slug": "business_value_framing"
+            }
+          ],
+          "gaps": [
+            {
+              "statement": "No customer impact stated.",
+              "evidence": "saw duplicate webhooks",
+              "skill_slug": "business_value_framing"
+            },
+            {
+              "statement": "Onboarding answer lacks a metric.",
+              "evidence": "Add the key check to onboarding",
+              "skill_slug": "structured_troubleshooting"
+            }
+          ],
+          "skills_affected": [
+            {
+              "skill_slug": "structured_troubleshooting",
+              "direction": "up",
+              "evidence": "traced the retries"
+            },
+            {
+              "skill_slug": "business_value_framing",
+              "direction": "flat",
+              "evidence": "duplicate webhooks"
+            }
+          ],
+          "next_week_practice": [
+            {
+              "description": "Retell the escalation with the customer's cost in the first sentence.",
+              "skill_slug": "business_value_framing",
+              "minutes": 20
+            }
+          ],
+          "hiring_progression": "Moved to the hiring manager round."
+        }
+      ],
+      "expect": "refused_by_contract"
+    },
+    {
+      "case_id": "invented-quote",
+      "interview": {
+        "company": "Coframe",
+        "role": "TAM",
+        "stage": "screen",
+        "starts_at": "2026-09-10T17:00:00+00:00",
+        "status": "completed"
+      },
+      "skills": [
+        {
+          "slug": "structured_troubleshooting",
+          "name": "Structured troubleshooting"
+        },
+        {
+          "slug": "business_value_framing",
+          "name": "Business value framing"
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English"
+        }
+      ],
+      "transcript": "[0] Interviewer: Walk me through an escalation you owned.\n[4200] Learner: A payments customer saw duplicate webhooks. I traced the retries to their idempotency key and wrote the runbook.\n[30100] Interviewer: What would you change in onboarding?\n[33000] Learner: Add the key check to onboarding so the duplicate never reaches the ledger.",
+      "answers": [
+        {
+          "summary": "Clear escalation story with a concrete fix; the onboarding answer was short.",
+          "strengths": [
+            {
+              "statement": "Names the root cause.",
+              "evidence": "we lost four hundred dollars",
+              "skill_slug": "structured_troubleshooting"
+            },
+            {
+              "statement": "Closes with an action.",
+              "evidence": "wrote the runbook",
+              "skill_slug": "business_value_framing"
+            }
+          ],
+          "gaps": [
+            {
+              "statement": "No customer impact stated.",
+              "evidence": "saw duplicate webhooks",
+              "skill_slug": "business_value_framing"
+            },
+            {
+              "statement": "Onboarding answer lacks a metric.",
+              "evidence": "Add the key check to onboarding",
+              "skill_slug": "structured_troubleshooting"
+            }
+          ],
+          "skills_affected": [
+            {
+              "skill_slug": "structured_troubleshooting",
+              "direction": "up",
+              "evidence": "traced the retries"
+            },
+            {
+              "skill_slug": "business_value_framing",
+              "direction": "flat",
+              "evidence": "duplicate webhooks"
+            }
+          ],
+          "next_week_practice": [
+            {
+              "description": "Retell the escalation with the customer's cost in the first sentence.",
+              "skill_slug": "business_value_framing",
+              "minutes": 20
+            }
+          ],
+          "hiring_progression": "Moved to the hiring manager round."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "skill-outside-catalog",
+      "interview": {
+        "company": "Coframe",
+        "role": "TAM",
+        "stage": "screen",
+        "starts_at": "2026-09-10T17:00:00+00:00",
+        "status": "completed"
+      },
+      "skills": [
+        {
+          "slug": "structured_troubleshooting",
+          "name": "Structured troubleshooting"
+        },
+        {
+          "slug": "business_value_framing",
+          "name": "Business value framing"
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English"
+        }
+      ],
+      "transcript": "[0] Interviewer: Walk me through an escalation you owned.\n[4200] Learner: A payments customer saw duplicate webhooks. I traced the retries to their idempotency key and wrote the runbook.\n[30100] Interviewer: What would you change in onboarding?\n[33000] Learner: Add the key check to onboarding so the duplicate never reaches the ledger.",
+      "answers": [
+        {
+          "summary": "Clear escalation story with a concrete fix; the onboarding answer was short.",
+          "strengths": [
+            {
+              "statement": "Names the root cause.",
+              "evidence": "I traced the retries to their idempotency key",
+              "skill_slug": "structured_troubleshooting"
+            },
+            {
+              "statement": "Closes with an action.",
+              "evidence": "wrote the runbook",
+              "skill_slug": "business_value_framing"
+            }
+          ],
+          "gaps": [
+            {
+              "statement": "No customer impact stated.",
+              "evidence": "saw duplicate webhooks",
+              "skill_slug": "business_value_framing"
+            },
+            {
+              "statement": "Onboarding answer lacks a metric.",
+              "evidence": "Add the key check to onboarding",
+              "skill_slug": "structured_troubleshooting"
+            }
+          ],
+          "skills_affected": [
+            {
+              "skill_slug": "charisma",
+              "direction": "up",
+              "evidence": "traced the retries"
+            }
+          ],
+          "next_week_practice": [
+            {
+              "description": "Retell the escalation with the customer's cost in the first sentence.",
+              "skill_slug": "business_value_framing",
+              "minutes": 20
+            }
+          ],
+          "hiring_progression": "Moved to the hiring manager round."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "plan-change-claim",
+      "interview": {
+        "company": "Coframe",
+        "role": "TAM",
+        "stage": "screen",
+        "starts_at": "2026-09-10T17:00:00+00:00",
+        "status": "completed"
+      },
+      "skills": [
+        {
+          "slug": "structured_troubleshooting",
+          "name": "Structured troubleshooting"
+        },
+        {
+          "slug": "business_value_framing",
+          "name": "Business value framing"
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English"
+        }
+      ],
+      "transcript": "[0] Interviewer: Walk me through an escalation you owned.\n[4200] Learner: A payments customer saw duplicate webhooks. I traced the retries to their idempotency key and wrote the runbook.\n[30100] Interviewer: What would you change in onboarding?\n[33000] Learner: Add the key check to onboarding so the duplicate never reaches the ledger.",
+      "answers": [
+        {
+          "summary": "I rescheduled next week's blocks around this gap.",
+          "strengths": [
+            {
+              "statement": "Names the root cause.",
+              "evidence": "I traced the retries to their idempotency key",
+              "skill_slug": "structured_troubleshooting"
+            },
+            {
+              "statement": "Closes with an action.",
+              "evidence": "wrote the runbook",
+              "skill_slug": "business_value_framing"
+            }
+          ],
+          "gaps": [
+            {
+              "statement": "No customer impact stated.",
+              "evidence": "saw duplicate webhooks",
+              "skill_slug": "business_value_framing"
+            },
+            {
+              "statement": "Onboarding answer lacks a metric.",
+              "evidence": "Add the key check to onboarding",
+              "skill_slug": "structured_troubleshooting"
+            }
+          ],
+          "skills_affected": [
+            {
+              "skill_slug": "structured_troubleshooting",
+              "direction": "up",
+              "evidence": "traced the retries"
+            },
+            {
+              "skill_slug": "business_value_framing",
+              "direction": "flat",
+              "evidence": "duplicate webhooks"
+            }
+          ],
+          "next_week_practice": [
+            {
+              "description": "Retell the escalation with the customer's cost in the first sentence.",
+              "skill_slug": "business_value_framing",
+              "minutes": 20
+            }
+          ],
+          "hiring_progression": "Moved to the hiring manager round."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "single-strength",
+      "interview": {
+        "company": "Coframe",
+        "role": "TAM",
+        "stage": "screen",
+        "starts_at": "2026-09-10T17:00:00+00:00",
+        "status": "completed"
+      },
+      "skills": [
+        {
+          "slug": "structured_troubleshooting",
+          "name": "Structured troubleshooting"
+        },
+        {
+          "slug": "business_value_framing",
+          "name": "Business value framing"
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English"
+        }
+      ],
+      "transcript": "[0] Interviewer: Walk me through an escalation you owned.\n[4200] Learner: A payments customer saw duplicate webhooks. I traced the retries to their idempotency key and wrote the runbook.\n[30100] Interviewer: What would you change in onboarding?\n[33000] Learner: Add the key check to onboarding so the duplicate never reaches the ledger.",
+      "answers": [
+        {
+          "summary": "Clear escalation story with a concrete fix; the onboarding answer was short.",
+          "strengths": [
+            {
+              "statement": "Names the root cause.",
+              "evidence": "traced the retries",
+              "skill_slug": "structured_troubleshooting"
+            }
+          ],
+          "gaps": [
+            {
+              "statement": "No customer impact stated.",
+              "evidence": "saw duplicate webhooks",
+              "skill_slug": "business_value_framing"
+            },
+            {
+              "statement": "Onboarding answer lacks a metric.",
+              "evidence": "Add the key check to onboarding",
+              "skill_slug": "structured_troubleshooting"
+            }
+          ],
+          "skills_affected": [
+            {
+              "skill_slug": "structured_troubleshooting",
+              "direction": "up",
+              "evidence": "traced the retries"
+            },
+            {
+              "skill_slug": "business_value_framing",
+              "direction": "flat",
+              "evidence": "duplicate webhooks"
+            }
+          ],
+          "next_week_practice": [
+            {
+              "description": "Retell the escalation with the customer's cost in the first sentence.",
+              "skill_slug": "business_value_framing",
+              "minutes": 20
+            }
+          ],
+          "hiring_progression": "Moved to the hiring manager round."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "repaired-once",
+      "interview": {
+        "company": "Coframe",
+        "role": "TAM",
+        "stage": "screen",
+        "starts_at": "2026-09-10T17:00:00+00:00",
+        "status": "completed"
+      },
+      "skills": [
+        {
+          "slug": "structured_troubleshooting",
+          "name": "Structured troubleshooting"
+        },
+        {
+          "slug": "business_value_framing",
+          "name": "Business value framing"
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English"
+        }
+      ],
+      "transcript": "[0] Interviewer: Walk me through an escalation you owned.\n[4200] Learner: A payments customer saw duplicate webhooks. I traced the retries to their idempotency key and wrote the runbook.\n[30100] Interviewer: What would you change in onboarding?\n[33000] Learner: Add the key check to onboarding so the duplicate never reaches the ledger.",
+      "answers": [
+        {
+          "summary": "I marked the interview as done.",
+          "strengths": [
+            {
+              "statement": "Names the root cause.",
+              "evidence": "I traced the retries to their idempotency key",
+              "skill_slug": "structured_troubleshooting"
+            },
+            {
+              "statement": "Closes with an action.",
+              "evidence": "wrote the runbook",
+              "skill_slug": "business_value_framing"
+            }
+          ],
+          "gaps": [
+            {
+              "statement": "No customer impact stated.",
+              "evidence": "saw duplicate webhooks",
+              "skill_slug": "business_value_framing"
+            },
+            {
+              "statement": "Onboarding answer lacks a metric.",
+              "evidence": "Add the key check to onboarding",
+              "skill_slug": "structured_troubleshooting"
+            }
+          ],
+          "skills_affected": [
+            {
+              "skill_slug": "structured_troubleshooting",
+              "direction": "up",
+              "evidence": "traced the retries"
+            },
+            {
+              "skill_slug": "business_value_framing",
+              "direction": "flat",
+              "evidence": "duplicate webhooks"
+            }
+          ],
+          "next_week_practice": [
+            {
+              "description": "Retell the escalation with the customer's cost in the first sentence.",
+              "skill_slug": "business_value_framing",
+              "minutes": 20
+            }
+          ],
+          "hiring_progression": "Moved to the hiring manager round."
+        },
+        {
+          "summary": "Clear escalation story with a concrete fix; the onboarding answer was short.",
+          "strengths": [
+            {
+              "statement": "Names the root cause.",
+              "evidence": "I traced the retries to their idempotency key",
+              "skill_slug": "structured_troubleshooting"
+            },
+            {
+              "statement": "Closes with an action.",
+              "evidence": "wrote the runbook",
+              "skill_slug": "business_value_framing"
+            }
+          ],
+          "gaps": [
+            {
+              "statement": "No customer impact stated.",
+              "evidence": "saw duplicate webhooks",
+              "skill_slug": "business_value_framing"
+            },
+            {
+              "statement": "Onboarding answer lacks a metric.",
+              "evidence": "Add the key check to onboarding",
+              "skill_slug": "structured_troubleshooting"
+            }
+          ],
+          "skills_affected": [
+            {
+              "skill_slug": "structured_troubleshooting",
+              "direction": "up",
+              "evidence": "traced the retries"
+            },
+            {
+              "skill_slug": "business_value_framing",
+              "direction": "flat",
+              "evidence": "duplicate webhooks"
+            }
+          ],
+          "next_week_practice": [
+            {
+              "description": "Retell the escalation with the customer's cost in the first sentence.",
+              "skill_slug": "business_value_framing",
+              "minutes": 20
+            }
+          ],
+          "hiring_progression": "Moved to the hiring manager round."
+        }
+      ],
+      "expect": "accepted"
+    },
+    {
+      "case_id": "quoted-and-bounded",
+      "interview": {
+        "company": "Coframe",
+        "role": "TAM",
+        "stage": "screen",
+        "starts_at": "2026-09-10T17:00:00+00:00",
+        "status": "completed"
+      },
+      "skills": [
+        {
+          "slug": "structured_troubleshooting",
+          "name": "Structured troubleshooting"
+        },
+        {
+          "slug": "business_value_framing",
+          "name": "Business value framing"
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English"
+        }
+      ],
+      "transcript": "[0] Interviewer: Walk me through an escalation you owned.\n[4200] Learner: A payments customer saw duplicate webhooks. I traced the retries to their idempotency key and wrote the runbook.\n[30100] Interviewer: What would you change in onboarding?\n[33000] Learner: Add the key check to onboarding so the duplicate never reaches the ledger.",
+      "answers": [
+        {
+          "summary": "Clear escalation story with a concrete fix; the onboarding answer was short.",
+          "strengths": [
+            {
+              "statement": "Names the root cause.",
+              "evidence": "I traced the retries to their idempotency key",
+              "skill_slug": "structured_troubleshooting"
+            },
+            {
+              "statement": "Closes with an action.",
+              "evidence": "wrote the runbook",
+              "skill_slug": "business_value_framing"
+            }
+          ],
+          "gaps": [
+            {
+              "statement": "No customer impact stated.",
+              "evidence": "saw duplicate webhooks",
+              "skill_slug": "business_value_framing"
+            },
+            {
+              "statement": "Onboarding answer lacks a metric.",
+              "evidence": "Add the key check to onboarding",
+              "skill_slug": "structured_troubleshooting"
+            }
+          ],
+          "skills_affected": [
+            {
+              "skill_slug": "structured_troubleshooting",
+              "direction": "up",
+              "evidence": "traced the retries"
+            },
+            {
+              "skill_slug": "business_value_framing",
+              "direction": "flat",
+              "evidence": "duplicate webhooks"
+            }
+          ],
+          "next_week_practice": [
+            {
+              "description": "Retell the escalation with the customer's cost in the first sentence.",
+              "skill_slug": "business_value_framing",
+              "minutes": 20
+            }
+          ],
+          "hiring_progression": "Moved to the hiring manager round."
+        }
+      ],
+      "expect": "accepted"
+    }
+  ]
+}
