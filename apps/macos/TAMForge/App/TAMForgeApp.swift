@@ -13,10 +13,10 @@ struct TAMForgeApp: App {
             let nativeFeatures: Set<NativeFeature> =
                 arguments.contains("-ui-test-signed-in")
                     && !arguments.contains("-ui-test-native-features")
-                ? [] : [.today, .roadmaps, .evidence, .recording, .interviews, .classes, .cards]
+                ? [] : [.today, .roadmaps, .evidence, .recording, .interviews, .classes, .cards, .progress]
         #else
             let nativeFeatures: Set<NativeFeature> = [
-                .today, .roadmaps, .evidence, .recording, .interviews, .classes, .cards,
+                .today, .roadmaps, .evidence, .recording, .interviews, .classes, .cards, .progress,
             ]
         #endif
         self.init(
@@ -171,6 +171,7 @@ private struct NativeFeatureServices {
     let interviews: any InterviewAPI
     let classes: any EnglishClassAPI
     let cards: any CardAPI
+    let progress: any ProgressAPI
 }
 
 @MainActor
@@ -245,7 +246,8 @@ private final class NativeShellComposition: ObservableObject {
             reviews: LiveReviewAPI(transport: transport),
             interviews: LiveInterviewAPI(transport: transport, recordings: recordingServer),
             classes: LiveEnglishClassAPI(transport: transport, recordings: recordingServer),
-            cards: LiveCardAPI(transport: transport)
+            cards: LiveCardAPI(transport: transport),
+            progress: LiveProgressAPI(transport: transport)
         )
         #if DEBUG
             let isUITest = ProcessInfo.processInfo.arguments.contains("-ui-test-signed-out")
@@ -352,6 +354,7 @@ private final class NativeWorkspaceState: ObservableObject {
     let interviews: InterviewsModel
     let classes: ClassesModel
     let cards: CardsModel
+    let progress: ProgressModel
     let drafts = InMemoryActivityDraftStore()
     let timerJournal: any ActivityTimerJournaling
 
@@ -371,6 +374,7 @@ private final class NativeWorkspaceState: ObservableObject {
         interviews = InterviewsModel(api: services.interviews)
         classes = ClassesModel(api: services.classes)
         cards = CardsModel(api: services.cards, coordinator: recording)
+        progress = ProgressModel(api: services.progress)
         #if DEBUG
             let arguments = ProcessInfo.processInfo.arguments
             if arguments.contains("-ui-test-signed-in") || arguments.contains("-ui-test-signed-out")
@@ -467,6 +471,14 @@ private struct NativeWorkspaceView: View {
                     }
                     .accessibilityIdentifier("cardsNavigation")
                 }
+                if dependencies.nativeFeatures.contains(.progress) {
+                    Button {
+                        session.select(.progress)
+                    } label: {
+                        Label("Progress", systemImage: "chart.line.uptrend.xyaxis")
+                    }
+                    .accessibilityIdentifier("progressNavigation")
+                }
             }
             .navigationTitle("TAM Forge")
         } detail: {
@@ -557,6 +569,8 @@ private struct NativeWorkspaceView: View {
             ClassesView(model: state.classes, coordinator: recording)
         case .cards where dependencies.nativeFeatures.contains(.cards):
             CardsView(model: state.cards)
+        case .progress where dependencies.nativeFeatures.contains(.progress):
+            ProgressScreen(model: state.progress)
         case .evidence(let identifier) where dependencies.nativeFeatures.contains(.evidence):
             EvidenceLedgerView(
                 model: state.evidence,

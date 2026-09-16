@@ -62,6 +62,7 @@ enum NativeFeature: Hashable, Sendable {
     case interviews
     case classes
     case cards
+    case progress
 }
 
 struct AppDependencies: Sendable {

@@ -6,6 +6,7 @@ import asyncio
 import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -61,6 +62,7 @@ def test_review_pipeline_on_postgres(test_database_url: str) -> None:
     from tamforge_backend.learning.models import ActivityInstance, Attempt, SelfReview
     from tamforge_backend.learning.repository import StudyDayService
     from tamforge_backend.notifications.models import OutboxEvent
+    from tamforge_backend.progress.service import ProgressQueryService
     from tamforge_backend.reviews.models import ActivityReview
     from tamforge_backend.reviews.service import ReviewService
     from tamforge_backend.roadmaps.models import TaskDefinition
@@ -255,6 +257,15 @@ def test_review_pipeline_on_postgres(test_database_url: str) -> None:
                         select(func.count()).select_from(SkillEvidenceEvent)
                     )
                     assert events == len(after.evidence_event_ids) > 0
+                    # The Progress read model sees the same review, the study day and the skills.
+                    progress = await ProgressQueryService(session).read(owner_id=owner_id)
+                    assert [a.activity_id for a in progress.assessments] == [activity_id]
+                    assert progress.assessments[0].dimension_count == len(after.dimensions)
+                    assert progress.assessments[0].average_score == Decimal("3.00")
+                    assert len(progress.weeks) == 1 and progress.weeks[0].study_days == 1
+                    moved = [s for s in progress.skills if s.latest_level is not None]
+                    assert moved and all(s.points for s in moved)
+                    assert progress.interviews == ()
                     notified = await session.scalar(
                         select(func.count())
                         .select_from(OutboxEvent)
