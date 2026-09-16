@@ -110,10 +110,11 @@ def test_seed_is_idempotent_and_changed_mapping_creates_new_version(
                     )
                     == 42
                 )
-                assert await session.scalar(select(func.count()).select_from(RubricVersion)) == 2
+                # Two seeds, each with the portfolio and the study-block rubric.
+                assert await session.scalar(select(func.count()).select_from(RubricVersion)) == 4
                 assert (
                     await session.scalar(select(func.count()).select_from(RubricDimension))
-                    == 14
+                    == 26
                 )
                 assert (
                     await session.scalar(
