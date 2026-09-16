@@ -6,6 +6,9 @@ from fastapi.exceptions import RequestValidationError
 from .analysis.repository import FeedbackError
 from .analysis.routes import feedback_exception_handler
 from .analysis.routes import router as analysis_router
+from .assessments.routes import assessments_exception_handler
+from .assessments.routes import router as assessments_router
+from .assessments.service import AssessmentsUnavailable
 from .auth.crypto import InvalidOAuthState
 from .auth.routes import auth_exception_handler, request_validation_exception_handler
 from .auth.routes import router as auth_router
@@ -69,6 +72,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(classes_router)
     app.include_router(cards_router)
     app.include_router(progress_router)
+    app.include_router(assessments_router)
     app.include_router(reviews_router)
     app.include_router(evidence_router)
     app.include_router(analysis_router)
@@ -88,6 +92,7 @@ def register_routes(app: FastAPI) -> None:
     app.add_exception_handler(ClassesError, classes_exception_handler)
     app.add_exception_handler(CardsError, cards_exception_handler)
     app.add_exception_handler(ProgressUnavailable, progress_exception_handler)
+    app.add_exception_handler(AssessmentsUnavailable, assessments_exception_handler)
     app.add_exception_handler(ReviewsError, reviews_exception_handler)
     app.add_exception_handler(EvidenceError, evidence_exception_handler)
     app.add_exception_handler(FeedbackError, feedback_exception_handler)

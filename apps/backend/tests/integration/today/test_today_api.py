@@ -62,9 +62,7 @@ def test_today_api_is_deterministic_resumable_and_sunday_safe(
             ).scalar_one()
 
         async def exercise() -> None:
-            async_url = make_url(test_database_url).set(
-                drivername="postgresql+asyncpg"
-            )
+            async_url = make_url(test_database_url).set(drivername="postgresql+asyncpg")
             engine = create_async_engine(async_url)
             factory = async_sessionmaker(
                 engine,
@@ -146,9 +144,7 @@ def test_today_api_is_deterministic_resumable_and_sunday_safe(
                         transport=ASGITransport(app=app),
                         base_url="https://app.example.test",
                     ) as client:
-                        initial = await client.get(
-                            "/api/v1/today?date=2026-08-24"
-                        )
+                        initial = await client.get("/api/v1/today?date=2026-08-24")
                         assert initial.status_code == 200, initial.text
                         initial_payload = initial.json()
                         assert initial_payload["total_planned_minutes"] == 240
@@ -160,9 +156,7 @@ def test_today_api_is_deterministic_resumable_and_sunday_safe(
 
                         async with factory() as session:
                             async with transaction_scope(session):
-                                first = await session.get(
-                                    ActivityInstance, first_activity_id
-                                )
+                                first = await session.get(ActivityInstance, first_activity_id)
                                 assert first is not None
                                 first_started_at = first.created_at + timedelta(seconds=1)
                                 first.state = "active"
@@ -185,9 +179,7 @@ def test_today_api_is_deterministic_resumable_and_sunday_safe(
                                     )
                                 )
 
-                        refreshed = await client.get(
-                            "/api/v1/today?date=2026-08-24"
-                        )
+                        refreshed = await client.get("/api/v1/today?date=2026-08-24")
                         assert refreshed.status_code == 200, refreshed.text
                         refreshed_payload = refreshed.json()
                         assert refreshed_payload["etag"] != initial_payload["etag"]
@@ -197,14 +189,13 @@ def test_today_api_is_deterministic_resumable_and_sunday_safe(
                             "label": "Complete mandatory self-review",
                             "allowed_ai_role": "none",
                         }
-                        assert refreshed_payload["awaiting_self_reviews"][0][
-                            "activity_id"
-                        ] == first_activity_id
+                        assert (
+                            refreshed_payload["awaiting_self_reviews"][0]["activity_id"]
+                            == first_activity_id
+                        )
                         assert refreshed_payload["analyses"][0]["activity_id"] == second_activity_id
 
-                        sunday = await client.get(
-                            "/api/v1/today?date=2026-08-30"
-                        )
+                        sunday = await client.get("/api/v1/today?date=2026-08-30")
                         assert sunday.status_code == 200, sunday.text
                         assert sunday.json()["day_status"] == "off"
                         assert sunday.json()["tasks"] == []
@@ -241,10 +232,7 @@ def test_today_api_is_deterministic_resumable_and_sunday_safe(
                         assert closed.json()["consequence"] == "replace_adaptive"
                         assert closed.json()["replayed"] is False
                         assert replayed.json()["replayed"] is True
-                        assert (
-                            closed.json()["daily_close_id"]
-                            == replayed.json()["daily_close_id"]
-                        )
+                        assert closed.json()["daily_close_id"] == replayed.json()["daily_close_id"]
 
                         # The handoff is written with the close and read by the next day:
                         # a day closed with gaps says so, names one exact next action, and
@@ -264,23 +252,23 @@ def test_today_api_is_deterministic_resumable_and_sunday_safe(
                         assert blocks[first_activity_id]["outcome"] == "unfinished"
                         assert blocks[first_activity_id]["state"] == "output_committed"
                         assert {b["assistance"] for b in blocks.values()} == {"independent"}
-                        assert "Complete the remaining required roadmap work." in (
-                            handoff_payload["gaps"]
+                        assert (
+                            "Complete the remaining required roadmap work."
+                            in (handoff_payload["gaps"])
                         )
                         assert len(handoff_payload["gaps"]) == len(blocks) + 1
 
                 async with factory() as session:
-                    assert await session.scalar(
-                        select(func.count()).select_from(DailyClose)
-                    ) == 1
-                    assert await session.scalar(
-                        select(func.count()).select_from(DailyHandoff)
-                    ) == 1
-                    assert await session.scalar(
-                        select(func.count())
-                        .select_from(OutboxEvent)
-                        .where(OutboxEvent.event_type == "study_day.incomplete")
-                    ) == 1
+                    assert await session.scalar(select(func.count()).select_from(DailyClose)) == 1
+                    assert await session.scalar(select(func.count()).select_from(DailyHandoff)) == 1
+                    assert (
+                        await session.scalar(
+                            select(func.count())
+                            .select_from(OutboxEvent)
+                            .where(OutboxEvent.event_type == "study_day.incomplete")
+                        )
+                        == 1
+                    )
             finally:
                 await engine.dispose()
 

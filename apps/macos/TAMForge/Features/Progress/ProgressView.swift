@@ -22,6 +22,7 @@ struct ProgressScreen: View {
                 }
                 skills
                 weeks
+                assessmentDays
                 assessments
                 interviews
             }
@@ -90,6 +91,37 @@ struct ProgressScreen: View {
                             .frame(width: 220, alignment: .leading)
                     }
                     .accessibilityIdentifier("progressWeek-\(week.weekStart)")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var assessmentDays: some View {
+        GroupBox("Saturday assessments") {
+            VStack(alignment: .leading, spacing: 8) {
+                if model.report.assessmentDays.isEmpty, model.hasLoaded {
+                    Text("No assessment days yet.").foregroundStyle(.secondary)
+                }
+                ForEach(model.report.assessmentDays) { day in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(day.localDate).font(.body.weight(.medium))
+                            Text(day.dayStatus).font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            Text(day.averageScore.map { "\($0) avg · \(day.scoredContracts)/\(day.contracts.count) scored" } ?? "not scored yet")
+                                .font(.caption.monospacedDigit())
+                        }
+                        ForEach(day.contracts) { contract in
+                            HStack {
+                                Text(contract.contractType.replacingOccurrences(of: "_", with: " ")).font(.caption)
+                                Text(contract.result.replacingOccurrences(of: "_", with: " ")).font(.caption).foregroundStyle(.secondary)
+                                Spacer()
+                                Text(contract.averageScore.map { "\($0)" } ?? "–").font(.caption.monospacedDigit())
+                            }
+                        }
+                    }
+                    .accessibilityIdentifier("progressAssessmentDay-\(day.studyDayID)")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
