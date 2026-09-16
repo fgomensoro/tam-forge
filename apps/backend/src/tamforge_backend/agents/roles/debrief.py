@@ -13,6 +13,7 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -82,6 +83,25 @@ class DebriefRequest:
     repair_errors: tuple[str, ...] = ()
 
 
+# Frank's Interview Progress Tracker compares every interview on the same four dimensions;
+# hiring progression is reported apart because advancing is not proof of better communication.
+TRACKER_DIMENSIONS: tuple[tuple[str, str], ...] = (
+    ("answer_clarity", "Answer clarity and structure"),
+    ("technical_examples", "Technical examples and supporting evidence"),
+    ("english_accuracy", "English accuracy visible in the transcript"),
+    ("follow_up_handling", "Handling of follow-up questions"),
+)
+DIMENSION_MAXIMUM = Decimal("4")
+
+
+class ScoredTrackerDimension(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    slug: str = Field(min_length=1, max_length=64)
+    score: Decimal = Field(ge=0, le=4)
+    rationale: str = Field(min_length=1, max_length=400)
+
+
 class DebriefFinding(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -112,6 +132,7 @@ class DebriefOutcome(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     summary: str = Field(min_length=1, max_length=1500)
+    dimensions: tuple[ScoredTrackerDimension, ...] = Field(min_length=4, max_length=4)
     strengths: tuple[DebriefFinding, ...] = Field(min_length=2, max_length=4)
     gaps: tuple[DebriefFinding, ...] = Field(min_length=2, max_length=4)
     skills_affected: tuple[SkillEffect, ...] = Field(min_length=1, max_length=6)
@@ -139,6 +160,12 @@ def validate_debrief(
         return (f"debrief {location}: {first['msg']}",)
     known = {skill.slug for skill in skills}
     haystack = _normalize(transcript)
+    expected = [slug for slug, _ in TRACKER_DIMENSIONS]
+    if sorted(d.slug for d in outcome.dimensions) != sorted(expected):
+        return ("the debrief must score exactly the tracker dimensions: " + ", ".join(expected),)
+    for dimension in outcome.dimensions:
+        if dimension.score != dimension.score.quantize(Decimal("0.5")):
+            return (f"dimension {dimension.slug} must be scored in half points",)
     for group, items in (("strengths", outcome.strengths), ("gaps", outcome.gaps)):
         for item in items:
             if item.skill_slug not in known:
@@ -265,6 +292,10 @@ def render_debrief_prompt(request: DebriefRequest) -> str:
             + "\n".join(f"- {item}" for item in request.reference)
         )
     lines.append(
+        "Score these four comparison dimensions in half points from 0 to 4, each with a "
+        "rationale:\n" + "\n".join(f"- {slug}: {name}" for slug, name in TRACKER_DIMENSIONS)
+    )
+    lines.append(
         "Return a summary; two to four strengths and two to four gaps, each with a verbatim "
         "quote from the transcript as evidence and the skill it concerns; the skills affected "
         "with a direction (up, flat, down) and a quote; one to three practice proposals for "
@@ -283,6 +314,8 @@ __all__ = [
     "DEBRIEF_JOB_TYPE",
     "DEBRIEF_PROMPT_VERSION",
     "DEBRIEF_SCHEMA_ID",
+    "DIMENSION_MAXIMUM",
+    "TRACKER_DIMENSIONS",
     "DebriefFinding",
     "DebriefInterview",
     "DebriefOutcome",
@@ -292,6 +325,7 @@ __all__ = [
     "DebriefTransport",
     "DebriefUnavailable",
     "PracticeProposal",
+    "ScoredTrackerDimension",
     "SkillEffect",
     "debrief_schema",
     "render_debrief_prompt",
