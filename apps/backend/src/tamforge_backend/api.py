@@ -22,6 +22,9 @@ from .classes.service import ClassesError
 from .coaching.routes import coaching_exception_handler
 from .coaching.routes import router as coaching_router
 from .coaching.service import CoachingError
+from .coverage_ledger.routes import coverage_exception_handler
+from .coverage_ledger.routes import router as coverage_router
+from .coverage_ledger.service import CoverageError
 from .evidence.routes import evidence_exception_handler
 from .evidence.routes import router as evidence_router
 from .evidence.service import EvidenceError
@@ -74,6 +77,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(cards_router)
     app.include_router(progress_router)
     app.include_router(assessments_router)
+    app.include_router(coverage_router)
     app.include_router(reviews_router)
     app.include_router(evidence_router)
     app.include_router(analysis_router)
@@ -94,6 +98,7 @@ def register_routes(app: FastAPI) -> None:
     app.add_exception_handler(CardsError, cards_exception_handler)
     app.add_exception_handler(ProgressUnavailable, progress_exception_handler)
     app.add_exception_handler(AssessmentsUnavailable, assessments_exception_handler)
+    app.add_exception_handler(CoverageError, coverage_exception_handler)
     app.add_exception_handler(ReviewsError, reviews_exception_handler)
     app.add_exception_handler(EvidenceError, evidence_exception_handler)
     app.add_exception_handler(FeedbackError, feedback_exception_handler)

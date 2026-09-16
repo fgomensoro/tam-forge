@@ -54,6 +54,7 @@ def test_review_pipeline_on_postgres(test_database_url: str) -> None:
     from sqlalchemy.engine import make_url
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from tamforge_backend.agents.roles.reviewer import ReviewerService
+    from tamforge_backend.coverage_ledger.service import CoverageLedgerService
     from tamforge_backend.database import database_url_to_sync, transaction_scope
     from tamforge_backend.evidence.config_loader import load_config_bundle
     from tamforge_backend.evidence.models import Competency, SkillEvidenceEvent
@@ -266,6 +267,18 @@ def test_review_pipeline_on_postgres(test_database_url: str) -> None:
                     moved = [s for s in progress.skills if s.latest_level is not None]
                     assert moved and all(s.points for s in moved)
                     assert progress.interviews == ()
+                    # The coverage ledger moved on its own: the reviewed task is covered with
+                    # qualifying evidence, everything else on the version still waits.
+                    ledger = await CoverageLedgerService(session).read(owner_id=owner_id)
+                    covered = next(i for i in ledger.items if activity_id in i.activity_ids)
+                    assert covered.status == "completed"
+                    assert covered.evidence_status in {"qualifying", "nonqualifying"}
+                    assert set(covered.evidence_event_ids) == set(after.evidence_event_ids)
+                    assert ledger.summary.completed == 1
+                    assert ledger.summary.required_items > 1
+                    assert ledger.summary.pending == ledger.summary.required_items - 1
+                    assert ledger.interview_queue and ledger.summary.next_question
+                    assert all(q.status == "pending" for q in ledger.interview_queue)
                     notified = await session.scalar(
                         select(func.count())
                         .select_from(OutboxEvent)
