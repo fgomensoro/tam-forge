@@ -128,7 +128,7 @@ def test_the_prompt_ranks_skills_by_gap_and_names_the_rules() -> None:
 
 def test_the_due_month_turns_over_on_the_last_evening_local_time() -> None:
     assert due_month(datetime(2026, 10, 1, 0, 59, tzinfo=UTC), "America/Los_Angeles") == date(
-        2026, 9, 1
+        2026, 8, 1
     )
     assert due_month(datetime(2026, 10, 1, 1, 0, tzinfo=UTC), "America/Los_Angeles") == date(
         2026, 9, 1
