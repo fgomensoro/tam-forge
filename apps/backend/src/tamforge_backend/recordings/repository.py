@@ -40,6 +40,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.models import Owner
+from ..classes.models import EnglishClass
 from ..database import transaction_scope
 from ..learning.models import ActivityInstance
 from ..models.base import utc_now
@@ -185,6 +186,14 @@ class SqlAlchemyRecordingRepository:
                     )
                     if interview is None:
                         raise RecordingInvalidRequest("recording interview was not found")
+                if command.english_class_id is not None:
+                    english_class = await self._session.scalar(
+                        select(EnglishClass.id)
+                        .where(EnglishClass.owner_id == owner_id)
+                        .where(EnglishClass.id == command.english_class_id)
+                    )
+                    if english_class is None:
+                        raise RecordingInvalidRequest("recording class was not found")
                 result = RecordingCreateResponse(
                     recording_id=command.recording_id,
                     state="reserved",
@@ -198,6 +207,7 @@ class SqlAlchemyRecordingRepository:
                     started_at=command.started_at,
                     activity_instance_id=command.activity_id,
                     interview_id=command.interview_id,
+                    english_class_id=command.english_class_id,
                     create_idempotency_key=idempotency_key,
                     create_request_hash=request_hash,
                     create_result_json=result.model_dump(mode="json"),
@@ -665,6 +675,25 @@ class SqlAlchemyRecordingRepository:
             ]
             return tuple(statuses)
 
+    async def for_class(
+        self, *, owner_id: int, class_id: int
+    ) -> tuple[RecordingStatusResponse, ...]:
+        """Every recording of one English class, oldest first."""
+        async with _unavailable_on_database_error():
+            recordings = (
+                await self._session.scalars(
+                    select(Recording)
+                    .where(Recording.owner_id == owner_id)
+                    .where(Recording.english_class_id == class_id)
+                    .order_by(Recording.started_at, Recording.id)
+                )
+            ).all()
+            statuses = [
+                await self.status(owner_id=owner_id, recording_id=item.client_recording_id)
+                for item in recordings
+            ]
+            return tuple(statuses)
+
     async def attach_interview(
         self, *, owner_id: int, interview_id: int, recording_id: UUID
     ) -> RecordingStatusResponse:
@@ -859,6 +888,7 @@ class SqlAlchemyRecordingRepository:
             transcript_lineage_accepted=recording.transcript_lineage_accepted,
             activity_id=recording.activity_instance_id,
             interview_id=recording.interview_id,
+            english_class_id=recording.english_class_id,
             started_at=recording.started_at,
         )
 

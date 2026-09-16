@@ -13,6 +13,7 @@ struct RecordingServerStatus: Equatable, Sendable {
     var state: String = "reserved"
     var activityID: Int? = nil
     var interviewID: Int? = nil
+    var classID: Int? = nil
     var startedAt: Date? = nil
 }
 
@@ -28,6 +29,8 @@ protocol RecordingServerServicing: Sendable {
     func recordings(activityID: Int) async throws -> [RecordingServerStatus]
     /// Every recording of one real interview, oldest first.
     func recordings(interviewID: Int) async throws -> [RecordingServerStatus]
+    /// Every recording of one English class, oldest first.
+    func recordings(classID: Int) async throws -> [RecordingServerStatus]
     /// The server's speaker turns and the state of the analysis job.
     func analysis(recordingID: UUID) async throws -> RecordingAnalysis
 }
@@ -35,6 +38,7 @@ protocol RecordingServerServicing: Sendable {
 extension RecordingServerServicing {
     func recordings(activityID: Int) async throws -> [RecordingServerStatus] { [] }
     func recordings(interviewID: Int) async throws -> [RecordingServerStatus] { [] }
+    func recordings(classID: Int) async throws -> [RecordingServerStatus] { [] }
     func analysis(recordingID: UUID) async throws -> RecordingAnalysis { .notRequested }
 }
 
@@ -192,6 +196,19 @@ struct LiveRecordingServerClient: RecordingServerServicing, @unchecked Sendable 
         let data = try await sendJSON(
             method: "GET",
             path: "/api/v1/recordings/by-interview/\(interviewID)",
+            body: nil,
+            idempotencyKey: nil,
+            expectedStatus: 200
+        )
+        _ = try decodeGenerated(Components.Schemas.PendingRecordingPage.self, data: data)
+        let page = try decode(RecordingServerStatusPagePayload.self, data: data)
+        return try page.items.map { try $0.status }
+    }
+
+    func recordings(classID: Int) async throws -> [RecordingServerStatus] {
+        let data = try await sendJSON(
+            method: "GET",
+            path: "/api/v1/recordings/by-class/\(classID)",
             body: nil,
             idempotencyKey: nil,
             expectedStatus: 200
@@ -431,7 +448,8 @@ actor RecordingUploadPipeline: RecordingUploading {
                     startedAt: NativeJSONCodec.timestamp(startedAt),
                     tracks: tracks,
                     activityID: link.activityID,
-                    interviewID: link.interviewID
+                    interviewID: link.interviewID,
+                    classID: link.classID
                 ),
                 idempotencyKey: "recording.create.\(recordingID.uuidString.lowercased())"
             )
@@ -675,6 +693,7 @@ private struct RecordingServerStatusPayload: Decodable {
     let transcriptLineageAccepted: Bool
     let activityID: Int?
     let interviewID: Int?
+    let classID: Int?
     let startedAt: Date?
 
     enum CodingKeys: String, CodingKey {
@@ -684,6 +703,7 @@ private struct RecordingServerStatusPayload: Decodable {
         case transcriptLineageAccepted = "transcript_lineage_accepted"
         case activityID = "activity_id"
         case interviewID = "interview_id"
+        case classID = "english_class_id"
         case startedAt = "started_at"
     }
 
@@ -699,6 +719,7 @@ private struct RecordingServerStatusPayload: Decodable {
                 state: state,
                 activityID: activityID,
                 interviewID: interviewID,
+                classID: classID,
                 startedAt: startedAt
             )
         }

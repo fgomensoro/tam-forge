@@ -227,16 +227,19 @@ struct RecordingCreatePayload: Codable, Equatable, Sendable {
     let activityID: Int?
     /// The real interview this recording captured; omitted for practice.
     let interviewID: Int?
+    /// The English class this recording captured; omitted otherwise.
+    let classID: Int?
 
     init(
         recordingID: String, startedAt: String, tracks: [RecordingTrackDeclarationPayload],
-        activityID: Int? = nil, interviewID: Int? = nil
+        activityID: Int? = nil, interviewID: Int? = nil, classID: Int? = nil
     ) {
         self.recordingID = recordingID
         self.startedAt = startedAt
         self.tracks = tracks
         self.activityID = activityID
         self.interviewID = interviewID
+        self.classID = classID
     }
 
     enum CodingKeys: String, CodingKey {
@@ -246,6 +249,7 @@ struct RecordingCreatePayload: Codable, Equatable, Sendable {
         case tracks
         case activityID = "activity_id"
         case interviewID = "interview_id"
+        case classID = "english_class_id"
     }
 }
 
@@ -255,13 +259,21 @@ struct RecordingCreatePayload: Codable, Equatable, Sendable {
 struct RecordingLink: Codable, Equatable, Sendable {
     let activityID: Int?
     let interviewID: Int?
+    let classID: Int?
+
+    init(activityID: Int?, interviewID: Int?, classID: Int? = nil) {
+        self.activityID = activityID
+        self.interviewID = interviewID
+        self.classID = classID
+    }
 
     enum CodingKeys: String, CodingKey {
         case activityID = "activity_id"
         case interviewID = "interview_id"
+        case classID = "english_class_id"
     }
 
-    var isEmpty: Bool { activityID == nil && interviewID == nil }
+    var isEmpty: Bool { activityID == nil && interviewID == nil && classID == nil }
 
     static func url(recordingID: UUID, rootURL: URL) -> URL {
         rootURL.appendingPathComponent(recordingID.uuidString, isDirectory: true)
@@ -279,7 +291,8 @@ struct RecordingLink: Codable, Equatable, Sendable {
         else { return RecordingLink(activityID: nil, interviewID: nil) }
         return RecordingLink(
             activityID: (link.activityID ?? 0) > 0 ? link.activityID : nil,
-            interviewID: (link.interviewID ?? 0) > 0 ? link.interviewID : nil
+            interviewID: (link.interviewID ?? 0) > 0 ? link.interviewID : nil,
+            classID: (link.classID ?? 0) > 0 ? link.classID : nil
         )
     }
 }

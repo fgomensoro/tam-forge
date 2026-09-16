@@ -10,6 +10,9 @@ from .auth.crypto import InvalidOAuthState
 from .auth.routes import auth_exception_handler, request_validation_exception_handler
 from .auth.routes import router as auth_router
 from .auth.service import AuthError
+from .classes.routes import classes_exception_handler
+from .classes.routes import router as classes_router
+from .classes.service import ClassesError
 from .coaching.routes import coaching_exception_handler
 from .coaching.routes import router as coaching_router
 from .coaching.service import CoachingError
@@ -57,6 +60,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(coaching_router)
     app.include_router(notes_router)
     app.include_router(interviews_router)
+    app.include_router(classes_router)
     app.include_router(reviews_router)
     app.include_router(evidence_router)
     app.include_router(analysis_router)
@@ -73,6 +77,7 @@ def register_routes(app: FastAPI) -> None:
     app.add_exception_handler(CoachingError, coaching_exception_handler)
     app.add_exception_handler(NotesError, notes_exception_handler)
     app.add_exception_handler(InterviewsError, interviews_exception_handler)
+    app.add_exception_handler(ClassesError, classes_exception_handler)
     app.add_exception_handler(ReviewsError, reviews_exception_handler)
     app.add_exception_handler(EvidenceError, evidence_exception_handler)
     app.add_exception_handler(FeedbackError, feedback_exception_handler)

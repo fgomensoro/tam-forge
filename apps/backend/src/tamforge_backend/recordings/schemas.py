@@ -92,6 +92,8 @@ class RecordingCreateCommand(StrictModel):
     activity_id: Annotated[int | None, Field(gt=0)] = None
     # The real interview this recording captured; absent for practice.
     interview_id: Annotated[int | None, Field(gt=0)] = None
+    # The English class this recording captured; its evidence maps to TAM English.
+    english_class_id: Annotated[int | None, Field(gt=0)] = None
 
     @model_validator(mode="after")
     def validate_tracks(self) -> Self:
@@ -332,6 +334,7 @@ class RecordingStatusResponse(StrictModel):
     transcript_lineage_accepted: bool
     activity_id: Annotated[int | None, Field(gt=0)] = None
     interview_id: Annotated[int | None, Field(gt=0)] = None
+    english_class_id: Annotated[int | None, Field(gt=0)] = None
     started_at: datetime | None = None
 
     @model_validator(mode="after")
