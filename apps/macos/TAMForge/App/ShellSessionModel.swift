@@ -7,6 +7,7 @@ enum ShellRoute: Equatable, Sendable {
     case recording
     case interviews
     case classes
+    case cards
     case activity(Int)
     case evidence(activityID: Int?)
 
@@ -20,6 +21,8 @@ enum ShellRoute: Equatable, Sendable {
             "interviews"
         case .classes:
             "classes"
+        case .cards:
+            "cards"
         case .evidence:
             "evidence"
         case .today, .activity:
@@ -33,6 +36,7 @@ enum ShellRoute: Equatable, Sendable {
         case "recording": .recording
         case "interviews": .interviews
         case "classes": .classes
+        case "cards": .cards
         case "evidence": .evidence(activityID: nil)
         default: .today
         }

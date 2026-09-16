@@ -13,10 +13,10 @@ struct TAMForgeApp: App {
             let nativeFeatures: Set<NativeFeature> =
                 arguments.contains("-ui-test-signed-in")
                     && !arguments.contains("-ui-test-native-features")
-                ? [] : [.today, .roadmaps, .evidence, .recording, .interviews, .classes]
+                ? [] : [.today, .roadmaps, .evidence, .recording, .interviews, .classes, .cards]
         #else
             let nativeFeatures: Set<NativeFeature> = [
-                .today, .roadmaps, .evidence, .recording, .interviews, .classes,
+                .today, .roadmaps, .evidence, .recording, .interviews, .classes, .cards,
             ]
         #endif
         self.init(
@@ -170,6 +170,7 @@ private struct NativeFeatureServices {
     let reviews: any ReviewAPI
     let interviews: any InterviewAPI
     let classes: any EnglishClassAPI
+    let cards: any CardAPI
 }
 
 @MainActor
@@ -243,7 +244,8 @@ private final class NativeShellComposition: ObservableObject {
             recordings: recordingServer,
             reviews: LiveReviewAPI(transport: transport),
             interviews: LiveInterviewAPI(transport: transport, recordings: recordingServer),
-            classes: LiveEnglishClassAPI(transport: transport, recordings: recordingServer)
+            classes: LiveEnglishClassAPI(transport: transport, recordings: recordingServer),
+            cards: LiveCardAPI(transport: transport)
         )
         #if DEBUG
             let isUITest = ProcessInfo.processInfo.arguments.contains("-ui-test-signed-out")
@@ -349,10 +351,11 @@ private final class NativeWorkspaceState: ObservableObject {
     let evidence: EvidenceLedgerModel
     let interviews: InterviewsModel
     let classes: ClassesModel
+    let cards: CardsModel
     let drafts = InMemoryActivityDraftStore()
     let timerJournal: any ActivityTimerJournaling
 
-    init(services: NativeFeatureServices) {
+    init(services: NativeFeatureServices, recording: RecordingCoordinator) {
         #if DEBUG
             if let fixedNow = NativeParityUIFixture.fixedNow() {
                 today = TodayViewModel(client: services.today, now: { fixedNow })
@@ -367,6 +370,7 @@ private final class NativeWorkspaceState: ObservableObject {
         evidence = EvidenceLedgerModel(service: services.evidence)
         interviews = InterviewsModel(api: services.interviews)
         classes = ClassesModel(api: services.classes)
+        cards = CardsModel(api: services.cards, coordinator: recording)
         #if DEBUG
             let arguments = ProcessInfo.processInfo.arguments
             if arguments.contains("-ui-test-signed-in") || arguments.contains("-ui-test-signed-out")
@@ -401,7 +405,7 @@ private struct NativeWorkspaceView: View {
         self.session = session
         self.services = services
         self.recording = recording
-        _state = StateObject(wrappedValue: NativeWorkspaceState(services: services))
+        _state = StateObject(wrappedValue: NativeWorkspaceState(services: services, recording: recording))
     }
 
     var body: some View {
@@ -454,6 +458,14 @@ private struct NativeWorkspaceView: View {
                         Label("English classes", systemImage: "character.book.closed")
                     }
                     .accessibilityIdentifier("classesNavigation")
+                }
+                if dependencies.nativeFeatures.contains(.cards) {
+                    Button {
+                        session.select(.cards)
+                    } label: {
+                        Label("Cards", systemImage: "rectangle.on.rectangle.angled")
+                    }
+                    .accessibilityIdentifier("cardsNavigation")
                 }
             }
             .navigationTitle("TAM Forge")
@@ -543,6 +555,8 @@ private struct NativeWorkspaceView: View {
             InterviewsView(model: state.interviews, coordinator: recording)
         case .classes where dependencies.nativeFeatures.contains(.classes):
             ClassesView(model: state.classes, coordinator: recording)
+        case .cards where dependencies.nativeFeatures.contains(.cards):
+            CardsView(model: state.cards)
         case .evidence(let identifier) where dependencies.nativeFeatures.contains(.evidence):
             EvidenceLedgerView(
                 model: state.evidence,
@@ -558,7 +572,7 @@ private struct NativeWorkspaceView: View {
                 activityID: identifier, api: services.activities, coaching: services.coaching,
                 notes: services.notes, recordings: services.recordings, recording: recording,
                 reviews: services.reviews, drafts: state.drafts, timerJournal: state.timerJournal,
-                focusSelfReview: focusSelfReview
+                focusSelfReview: focusSelfReview, cards: state.cards
             )
             .id(identifier)
         default:
@@ -588,11 +602,13 @@ private struct NativeActivityScreen: View {
     @StateObject private var spoken: SpokenAttemptModel
     @StateObject private var review: ReviewModel
     let focusSelfReview: Bool
+    let cards: CardsModel
 
     init(
         activityID: Int, api: any ActivityAPI, coaching: any CoachAPI, notes: any StudyNoteAPI,
         recordings: any RecordingServerServicing, recording: RecordingCoordinator, reviews: any ReviewAPI,
-        drafts: any ActivityDraftStoring, timerJournal: any ActivityTimerJournaling, focusSelfReview: Bool
+        drafts: any ActivityDraftStoring, timerJournal: any ActivityTimerJournaling, focusSelfReview: Bool,
+        cards: CardsModel
     ) {
         _model = StateObject(
             wrappedValue: ActivityWorkspaceModel(
@@ -607,12 +623,13 @@ private struct NativeActivityScreen: View {
             ))
         _review = StateObject(wrappedValue: ReviewModel(activityID: activityID, api: reviews))
         self.focusSelfReview = focusSelfReview
+        self.cards = cards
     }
 
     var body: some View {
         ActivityWorkspaceView(
             model: model, uploader: uploader, focusSelfReview: focusSelfReview, coach: coach, note: note,
-            spoken: spoken, aiReview: review
+            spoken: spoken, aiReview: review, cards: cards
         )
     }
 }

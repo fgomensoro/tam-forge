@@ -206,6 +206,15 @@
 		FB300000000000000000007 /* ClassesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB300000000000000001007 /* ClassesView.swift */; };
 		FB300000000000000000008 /* ClassesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB300000000000000001007 /* ClassesView.swift */; };
 		FB300000000000000000009 /* ClassesModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB300000000000000001009 /* ClassesModelTests.swift */; };
+		FB4000000000000000000001 /* CardModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4000000000000000001001 /* CardModels.swift */; };
+		FB4000000000000000000002 /* CardModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4000000000000000001001 /* CardModels.swift */; };
+		FB4000000000000000000003 /* CardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4000000000000000001003 /* CardService.swift */; };
+		FB4000000000000000000004 /* CardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4000000000000000001003 /* CardService.swift */; };
+		FB4000000000000000000005 /* CardsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4000000000000000001005 /* CardsModel.swift */; };
+		FB4000000000000000000006 /* CardsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4000000000000000001005 /* CardsModel.swift */; };
+		FB4000000000000000000007 /* CardsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4000000000000000001007 /* CardsView.swift */; };
+		FB4000000000000000000008 /* CardsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4000000000000000001007 /* CardsView.swift */; };
+		FB4000000000000000000009 /* CardsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4000000000000000001009 /* CardsModelTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -359,6 +368,11 @@
 		FB300000000000000001005 /* ClassesModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassesModel.swift; sourceTree = "<group>"; };
 		FB300000000000000001007 /* ClassesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassesView.swift; sourceTree = "<group>"; };
 		FB300000000000000001009 /* ClassesModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassesModelTests.swift; sourceTree = "<group>"; };
+		FB4000000000000000001001 /* CardModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardModels.swift; sourceTree = "<group>"; };
+		FB4000000000000000001003 /* CardService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardService.swift; sourceTree = "<group>"; };
+		FB4000000000000000001005 /* CardsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardsModel.swift; sourceTree = "<group>"; };
+		FB4000000000000000001007 /* CardsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardsView.swift; sourceTree = "<group>"; };
+		FB4000000000000000001009 /* CardsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardsModelTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -456,6 +470,7 @@
 				FB100000000000000001009 /* ReviewModelTests.swift */,
 				FB200000000000000001009 /* InterviewsModelTests.swift */,
 				FB300000000000000001009 /* ClassesModelTests.swift */,
+				FB4000000000000000001009 /* CardsModelTests.swift */,
 				F80000000000000000001002 /* InterviewerTurnTests.swift */,
 				E20000000000000000000078 /* ActivityWorkspaceTests.swift */,
 			);
@@ -547,6 +562,7 @@
 				FB100000000000000002001 /* Reviews */,
 				FB200000000000000002001 /* Interviews */,
 				FB300000000000000002001 /* Classes */,
+				FB4000000000000000002001 /* Cards */,
 				F80000000000000000002001 /* Interviewer */,
 			);
 			path = Features;
@@ -706,6 +722,17 @@
 				FB300000000000000001007 /* ClassesView.swift */,
 			);
 			path = Classes;
+			sourceTree = "<group>";
+		};
+		FB4000000000000000002001 /* Cards */ = {
+			isa = PBXGroup;
+			children = (
+				FB4000000000000000001001 /* CardModels.swift */,
+				FB4000000000000000001003 /* CardService.swift */,
+				FB4000000000000000001005 /* CardsModel.swift */,
+				FB4000000000000000001007 /* CardsView.swift */,
+			);
+			path = Cards;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -897,6 +924,10 @@
 				FB300000000000000000003 /* ClassService.swift in Sources */,
 				FB300000000000000000005 /* ClassesModel.swift in Sources */,
 				FB300000000000000000007 /* ClassesView.swift in Sources */,
+				FB4000000000000000000001 /* CardModels.swift in Sources */,
+				FB4000000000000000000003 /* CardService.swift in Sources */,
+				FB4000000000000000000005 /* CardsModel.swift in Sources */,
+				FB4000000000000000000007 /* CardsView.swift in Sources */,
 				F80000000000000000000001 /* InterviewerTurn.swift in Sources */,
 				F6000000000000000000000C /* RecordingAudioReading.swift in Sources */,
 				E30000000000000000000001 /* EvidenceModels.swift in Sources */,
@@ -981,6 +1012,10 @@
 				FB300000000000000000004 /* ClassService.swift in Sources */,
 				FB300000000000000000006 /* ClassesModel.swift in Sources */,
 				FB300000000000000000008 /* ClassesView.swift in Sources */,
+				FB4000000000000000000002 /* CardModels.swift in Sources */,
+				FB4000000000000000000004 /* CardService.swift in Sources */,
+				FB4000000000000000000006 /* CardsModel.swift in Sources */,
+				FB4000000000000000000008 /* CardsView.swift in Sources */,
 				F80000000000000000000002 /* InterviewerTurn.swift in Sources */,
 				F6000000000000000000000D /* RecordingAudioReading.swift in Sources */,
 				F30000000000000000000021 /* RecordingFeatureTests.swift in Sources */,
@@ -1049,6 +1084,7 @@
 				FB100000000000000000009 /* ReviewModelTests.swift in Sources */,
 				FB200000000000000000009 /* InterviewsModelTests.swift in Sources */,
 				FB300000000000000000009 /* ClassesModelTests.swift in Sources */,
+				FB4000000000000000000009 /* CardsModelTests.swift in Sources */,
 				F80000000000000000000003 /* InterviewerTurnTests.swift in Sources */,
 				E20000000000000000000048 /* ActivityWorkspaceTests.swift in Sources */,
 			);
