@@ -16,6 +16,7 @@ from .schemas import (
     EvidenceEventPage,
     PortfolioHistoryResponse,
     SkillListResponse,
+    SkillSeriesResponse,
     SkillSummaryResponse,
 )
 from .service import (
@@ -60,6 +61,19 @@ async def get_skill(
     owner: Annotated[AuthenticatedOwner, Depends(get_authenticated_owner)],
 ) -> SkillSummaryResponse:
     result = await service.get_skill(owner_id=owner.owner_id, skill_slug=skill_slug)
+    _prevent_storage(response)
+    return result
+
+
+@router.get("/skills/{skill_slug}/series", response_model=SkillSeriesResponse)
+async def get_skill_series(
+    skill_slug: str,
+    response: Response,
+    service: Annotated[EvidenceQueryService, Depends(get_evidence_query_service)],
+    owner: Annotated[AuthenticatedOwner, Depends(get_authenticated_owner)],
+) -> SkillSeriesResponse:
+    """The skill's estimates over time and the score events behind them, against targets."""
+    result = await service.skill_series(owner_id=owner.owner_id, skill_slug=skill_slug)
     _prevent_storage(response)
     return result
 

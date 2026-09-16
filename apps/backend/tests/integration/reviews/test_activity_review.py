@@ -55,7 +55,8 @@ def test_review_pipeline_on_postgres(test_database_url: str) -> None:
     from tamforge_backend.agents.roles.reviewer import ReviewerService
     from tamforge_backend.database import database_url_to_sync, transaction_scope
     from tamforge_backend.evidence.config_loader import load_config_bundle
-    from tamforge_backend.evidence.models import SkillEvidenceEvent
+    from tamforge_backend.evidence.models import Competency, SkillEvidenceEvent
+    from tamforge_backend.evidence.repository import SqlAlchemyEvidenceRepository
     from tamforge_backend.evidence.seed import seed_config
     from tamforge_backend.learning.models import ActivityInstance, Attempt, SelfReview
     from tamforge_backend.learning.repository import StudyDayService
@@ -260,6 +261,23 @@ def test_review_pipeline_on_postgres(test_database_url: str) -> None:
                         .where(OutboxEvent.event_type == "activity.feedback_ready")
                     )
                     assert notified == 1
+
+                # The skill series shows the point and the event the review produced.
+                async with factory() as session:
+                    reader = SqlAlchemyEvidenceRepository(session)
+                    first_event = await session.get(SkillEvidenceEvent, after.evidence_event_ids[0])
+                    assert first_event is not None
+                    competency = await session.get(Competency, first_event.competency_id)
+                    assert competency is not None
+                    series = await reader.skill_series(
+                        owner_id=owner_id, skill_slug=competency.slug
+                    )
+                    assert series.final_target >= series.baseline
+                    assert [e.event_id for e in series.events] == [first_event.id]
+                    assert series.events[0].assistance == "ai_after_committed_attempt"
+                    assert series.events[0].evaluator == "ai_rubric_reviewer"
+                    assert len(series.points) == 1
+                    assert series.points[0].snapshot_date == series.events[0].occurred_at.date()
 
                 # A second pass finds nothing to do and never calls the reviewer again.
                 assert await review_step(factory, reviewer=reviewer) == 0

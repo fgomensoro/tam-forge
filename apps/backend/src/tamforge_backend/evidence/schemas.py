@@ -79,9 +79,7 @@ class EvidenceEvaluationCommand(StrictModel):
         "explicit_interviewer_feedback",
     ]
     difficulty: Literal["introductory", "standard", "advanced"]
-    ai_role: Literal[
-        "none", "planner", "tutor", "coach", "interviewer", "reviewer", "analyst"
-    ]
+    ai_role: Literal["none", "planner", "tutor", "coach", "interviewer", "reviewer", "analyst"]
     evaluated_at: datetime
     artifact_ids: Annotated[tuple[PositiveId, ...], Field(max_length=64)] = ()
     observation_ids: Annotated[tuple[PositiveId, ...], Field(max_length=64)] = ()
@@ -89,9 +87,7 @@ class EvidenceEvaluationCommand(StrictModel):
     audio_available: bool
     written_english_available: bool
     scored_recording: bool
-    dimensions: Annotated[
-        tuple[DimensionEvaluationInput, ...], Field(min_length=1, max_length=64)
-    ]
+    dimensions: Annotated[tuple[DimensionEvaluationInput, ...], Field(min_length=1, max_length=64)]
     skill_dimension_subsets: Annotated[
         tuple[SkillDimensionSubsetInput, ...], Field(max_length=32)
     ] = ()
@@ -166,6 +162,44 @@ class SkillSummaryResponse(StrictModel):
 
 class SkillListResponse(StrictModel):
     items: tuple[SkillSummaryResponse, ...]
+
+
+class SkillSeriesPoint(StrictModel):
+    """One estimate in time, from the snapshot the ledger wrote after an event."""
+
+    snapshot_id: PositiveId
+    snapshot_date: date
+    estimated_level: Decimal
+    confidence: str
+    trend: str
+    qualifying_event_count: int
+
+
+class SkillScoreEvent(StrictModel):
+    """One scored entry that moved the skill, with how independently it was earned."""
+
+    event_id: PositiveId
+    occurred_at: datetime
+    activity_id: PositiveId
+    exercise_type: str
+    evaluator: str
+    practice_mode: str
+    assistance: str
+    performance_score: Decimal
+    effective_weight: Decimal
+    qualifying_for_level: bool
+
+
+class SkillSeriesResponse(StrictModel):
+    """A skill's trajectory: estimates over time and the events behind them, against targets."""
+
+    slug: str
+    name: str
+    baseline: Decimal
+    month_one_target: Decimal
+    final_target: Decimal
+    points: tuple[SkillSeriesPoint, ...]
+    events: tuple[SkillScoreEvent, ...]
 
 
 class EvidenceEventResponse(StrictModel):

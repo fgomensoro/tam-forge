@@ -23,6 +23,7 @@ from .schemas import (
     PortfolioHistoryResponse,
     RecordEvaluationResponse,
     SkillListResponse,
+    SkillSeriesResponse,
     SkillSummaryResponse,
 )
 from .scoring import (
@@ -177,9 +178,9 @@ class EvidenceStore(Protocol):
 class EvidenceReader(Protocol):
     async def list_skills(self, *, owner_id: int) -> SkillListResponse: ...
 
-    async def get_skill(
-        self, *, owner_id: int, skill_slug: str
-    ) -> SkillSummaryResponse: ...
+    async def skill_series(self, *, owner_id: int, skill_slug: str) -> SkillSeriesResponse: ...
+
+    async def get_skill(self, *, owner_id: int, skill_slug: str) -> SkillSummaryResponse: ...
 
     async def list_skill_evidence(
         self,
@@ -254,9 +255,7 @@ class EvidenceService:
             idempotency_key=idempotency_key,
             request_hash=request_hash,
             command=command,
-            prepare=lambda context: self.prepare_evaluation(
-                context=context, command=command
-            ),
+            prepare=lambda context: self.prepare_evaluation(context=context, command=command),
         )
 
     @staticmethod
@@ -284,9 +283,7 @@ class EvidenceService:
                     dimension_slug=persisted.slug,
                     availability=supplied.availability,
                     score=supplied.score,
-                    weight=(
-                        persisted.weight if supplied.availability == "scored" else None
-                    ),
+                    weight=(persisted.weight if supplied.availability == "scored" else None),
                     artifact_ids=supplied.evidence_artifact_ids,
                     observation_ids=supplied.evidence_observation_ids,
                 )
@@ -297,8 +294,7 @@ class EvidenceService:
             context=context, conditions=conditions
         )
         subset_by_skill = {
-            item.skill_slug: item.dimension_slugs
-            for item in command.skill_dimension_subsets
+            item.skill_slug: item.dimension_slugs for item in command.skill_dimension_subsets
         }
         expected_skill_slugs = (
             set() if context.attempt_kind == "attempt_b" else set(impact_by_skill)
@@ -307,13 +303,9 @@ class EvidenceService:
             raise EvidenceConflict(
                 "skill dimension subsets do not match the applicable mapped skills"
             )
-        assigned_dimensions = tuple(
-            slug for values in subset_by_skill.values() for slug in values
-        )
+        assigned_dimensions = tuple(slug for values in subset_by_skill.values() for slug in values)
         if len(assigned_dimensions) != len(set(assigned_dimensions)):
-            raise EvidenceInvalidRequest(
-                "each mapped skill requires its own dimension subset"
-            )
+            raise EvidenceInvalidRequest("each mapped skill requires its own dimension subset")
 
         skill_events: list[PreparedSkillEvent] = []
         if context.attempt_kind != "attempt_b":
@@ -370,9 +362,7 @@ class EvidenceService:
                         allowed_selected_competencies=frozenset(
                             context.exercise.allowed_selected_competencies
                         ),
-                        selector_committed_before_attempt=(
-                            context.selector_committed_in_attempt
-                        ),
+                        selector_committed_before_attempt=(context.selector_committed_in_attempt),
                     ),
                     formula=context.formula,
                 )
@@ -420,9 +410,7 @@ class EvidenceService:
 
         scenario_key = hashlib.sha256(context.prompt.encode()).hexdigest()
         referenced_artifacts = set(command.artifact_ids)
-        dimension_artifacts = {
-            item for value in prepared_dimensions for item in value.artifact_ids
-        }
+        dimension_artifacts = {item for value in prepared_dimensions for item in value.artifact_ids}
         return PreparedEvaluation(
             config_seed_version_id=context.config_seed_version_id,
             activity_id=context.activity_id,
@@ -484,9 +472,7 @@ class EvidenceService:
         }
         if not dimension_artifact_ids.issubset(set(command.artifact_ids)):
             raise EvidenceConflict("dimension artifact is absent from the input manifest")
-        classes = {
-            context.linked_artifact_classes[item] for item in command.artifact_ids
-        }
+        classes = {context.linked_artifact_classes[item] for item in command.artifact_ids}
         if command.transcript_available and "transcript" not in classes:
             raise EvidenceConflict("transcript availability lacks immutable evidence")
         if command.audio_available and "original_audio" not in classes:
@@ -507,10 +493,7 @@ class EvidenceService:
             "ai_generated",
         }:
             raise EvidenceConflict("assistance does not match the committed attempt")
-        if (
-            command.evaluator == "ai_rubric_reviewer"
-            and command.assistance == "no_ai"
-        ):
+        if command.evaluator == "ai_rubric_reviewer" and command.assistance == "no_ai":
             raise EvidenceConflict("AI review must be recorded after commitment")
 
     @staticmethod
@@ -536,8 +519,7 @@ class EvidenceService:
                 not context.selector_committed_in_attempt
                 or context.selector_field != exercise.required_precommit_field
                 or context.selected_competency is None
-                or context.selected_competency
-                not in exercise.allowed_selected_competencies
+                or context.selected_competency not in exercise.allowed_selected_competencies
             ):
                 raise EvidenceConflict("required precommit selector is missing or invalid")
         impacts: dict[str, tuple[Decimal, str]] = {}
@@ -586,9 +568,12 @@ class EvidenceQueryService:
     async def list_skills(self, *, owner_id: int) -> SkillListResponse:
         return await self._reader.list_skills(owner_id=owner_id)
 
-    async def get_skill(
-        self, *, owner_id: int, skill_slug: str
-    ) -> SkillSummaryResponse:
+    async def skill_series(self, *, owner_id: int, skill_slug: str) -> SkillSeriesResponse:
+        if owner_id <= 0:
+            raise EvidenceInvalidRequest("owner is invalid")
+        return await self._reader.skill_series(owner_id=owner_id, skill_slug=skill_slug)
+
+    async def get_skill(self, *, owner_id: int, skill_slug: str) -> SkillSummaryResponse:
         if not skill_slug.strip():
             raise EvidenceInvalidRequest("skill slug is invalid")
         return await self._reader.get_skill(owner_id=owner_id, skill_slug=skill_slug)
