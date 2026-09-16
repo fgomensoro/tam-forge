@@ -61,9 +61,7 @@ class Debrief:
             raise DebriefError("an empty debrief is not a debrief")
         if self.committed_at < self.interview_ended_at:
             raise DebriefError("a debrief is written after the interview, not before")
-        if self.committed_at - self.interview_ended_at > timedelta(
-            minutes=DEBRIEF_WINDOW_MINUTES
-        ):
+        if self.committed_at - self.interview_ended_at > timedelta(minutes=DEBRIEF_WINDOW_MINUTES):
             raise DebriefError("too late to be a debrief; this is recollection")
 
     @property

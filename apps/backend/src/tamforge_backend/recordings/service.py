@@ -320,6 +320,18 @@ class RecordingService:
     ) -> tuple[RecordingStatusResponse, ...]:
         return await self._repository.for_activity(owner_id=owner_id, activity_id=activity_id)
 
+    async def for_interview(
+        self, *, owner_id: int, interview_id: int
+    ) -> tuple[RecordingStatusResponse, ...]:
+        return await self._repository.for_interview(owner_id=owner_id, interview_id=interview_id)
+
+    async def attach_interview(
+        self, *, owner_id: int, interview_id: int, recording_id: UUID
+    ) -> RecordingStatusResponse:
+        return await self._repository.attach_interview(
+            owner_id=owner_id, interview_id=interview_id, recording_id=recording_id
+        )
+
     async def pending(self, *, owner_id: int) -> tuple[RecordingStatusResponse, ...]:
         return await self._repository.pending(owner_id=owner_id)
 

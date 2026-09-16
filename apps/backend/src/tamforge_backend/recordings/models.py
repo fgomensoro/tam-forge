@@ -184,6 +184,7 @@ class Recording(Base):
         Boolean, default=False, server_default=text("false"), nullable=False
     )
     activity_instance_id: Mapped[int | None] = mapped_column(BigInteger)
+    interview_id: Mapped[int | None] = mapped_column(BigInteger)
     transcript_lineage_accepted: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false"), nullable=False
     )

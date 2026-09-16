@@ -12,6 +12,7 @@ struct RecordingServerStatus: Equatable, Sendable {
     let transcriptLineageAccepted: Bool
     var state: String = "reserved"
     var activityID: Int? = nil
+    var interviewID: Int? = nil
     var startedAt: Date? = nil
 }
 
@@ -25,12 +26,15 @@ protocol RecordingServerServicing: Sendable {
     func status(recordingID: UUID) async throws -> RecordingServerStatus
     /// Every recording made for one Today block, oldest first.
     func recordings(activityID: Int) async throws -> [RecordingServerStatus]
+    /// Every recording of one real interview, oldest first.
+    func recordings(interviewID: Int) async throws -> [RecordingServerStatus]
     /// The server's speaker turns and the state of the analysis job.
     func analysis(recordingID: UUID) async throws -> RecordingAnalysis
 }
 
 extension RecordingServerServicing {
     func recordings(activityID: Int) async throws -> [RecordingServerStatus] { [] }
+    func recordings(interviewID: Int) async throws -> [RecordingServerStatus] { [] }
     func analysis(recordingID: UUID) async throws -> RecordingAnalysis { .notRequested }
 }
 
@@ -175,6 +179,19 @@ struct LiveRecordingServerClient: RecordingServerServicing, @unchecked Sendable 
         let data = try await sendJSON(
             method: "GET",
             path: "/api/v1/recordings/by-activity/\(activityID)",
+            body: nil,
+            idempotencyKey: nil,
+            expectedStatus: 200
+        )
+        _ = try decodeGenerated(Components.Schemas.PendingRecordingPage.self, data: data)
+        let page = try decode(RecordingServerStatusPagePayload.self, data: data)
+        return try page.items.map { try $0.status }
+    }
+
+    func recordings(interviewID: Int) async throws -> [RecordingServerStatus] {
+        let data = try await sendJSON(
+            method: "GET",
+            path: "/api/v1/recordings/by-interview/\(interviewID)",
             body: nil,
             idempotencyKey: nil,
             expectedStatus: 200
@@ -398,6 +415,7 @@ actor RecordingUploadPipeline: RecordingUploading {
         let journal = try RecordingUploadJournal(directoryURL: directory)
         let journalState = await journal.snapshot()
         if !journalState.createAccepted {
+            let link = RecordingLink.read(recordingID: recordingID, rootURL: spoolFactory.rootURL)
             let tracks = RecordingTrackKind.allCases.map { track in
                 RecordingTrackDeclarationPayload(
                     trackID: RecordingTrackIdentity.id(
@@ -412,9 +430,8 @@ actor RecordingUploadPipeline: RecordingUploading {
                     recordingID: recordingID.uuidString.lowercased(),
                     startedAt: NativeJSONCodec.timestamp(startedAt),
                     tracks: tracks,
-                    activityID: RecordingActivityLink.read(
-                        recordingID: recordingID, rootURL: spoolFactory.rootURL
-                    )
+                    activityID: link.activityID,
+                    interviewID: link.interviewID
                 ),
                 idempotencyKey: "recording.create.\(recordingID.uuidString.lowercased())"
             )
@@ -657,6 +674,7 @@ private struct RecordingServerStatusPayload: Decodable {
     let audioCreatedOnServer: Bool
     let transcriptLineageAccepted: Bool
     let activityID: Int?
+    let interviewID: Int?
     let startedAt: Date?
 
     enum CodingKeys: String, CodingKey {
@@ -665,6 +683,7 @@ private struct RecordingServerStatusPayload: Decodable {
         case audioCreatedOnServer = "audio_created_on_server"
         case transcriptLineageAccepted = "transcript_lineage_accepted"
         case activityID = "activity_id"
+        case interviewID = "interview_id"
         case startedAt = "started_at"
     }
 
@@ -679,6 +698,7 @@ private struct RecordingServerStatusPayload: Decodable {
                 transcriptLineageAccepted: transcriptLineageAccepted,
                 state: state,
                 activityID: activityID,
+                interviewID: interviewID,
                 startedAt: startedAt
             )
         }
