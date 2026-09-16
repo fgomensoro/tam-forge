@@ -27,6 +27,7 @@ from ..speech.evaluation.gates import timing_gate
 from ..speech.schemas import TranscriptWord
 from .cases import EVALUATOR_VERSION as MEMORY_EVALUATOR_VERSION
 from .cases import load_memory_cases
+from .class_analysis import CLASS_ANALYSIS_EVALUATOR_VERSION, run_class_analysis_cases
 from .coach import COACH_EVALUATOR_VERSION, run_coach_cases
 from .debrief import DEBRIEF_EVALUATOR_VERSION, run_debrief_cases
 from .failure_injection import FAILURE_INJECTION_VERSION, run_failure_injection
@@ -44,6 +45,7 @@ ROLE_INVARIANTS: Final = 1.0
 COACH_REFUSALS: Final = 1.0
 REVIEWER_REFUSALS: Final = 1.0
 DEBRIEF_REFUSALS: Final = 1.0
+CLASS_ANALYSIS_REFUSALS: Final = 1.0
 UNSUPPORTED_HIGH_SEVERITY_MAX: Final = 0
 
 
@@ -167,6 +169,7 @@ async def run_suite(
     coach_path = fixtures_dir / "coach-refusal-cases.json"
     reviewer_path = fixtures_dir / "reviewer-refusal-cases.json"
     debrief_path = fixtures_dir / "debrief-refusal-cases.json"
+    class_path = fixtures_dir / "class-analysis-refusal-cases.json"
     for path in (
         memory_path,
         security_path,
@@ -176,6 +179,7 @@ async def run_suite(
         coach_path,
         reviewer_path,
         debrief_path,
+        class_path,
     ):
         if not path.exists():
             raise SuiteError(f"fixture missing: {path.name}")
@@ -374,6 +378,20 @@ async def run_suite(
         )
     )
 
+    classes = await run_class_analysis_cases(class_path)
+    classes_held = classes.held / len(classes.outcomes) if classes.outcomes else 0.0
+    parts.append(
+        PartResult(
+            "class_analysis",
+            "refusals",
+            round(classes_held, 4),
+            CLASS_ANALYSIS_REFUSALS,
+            classes.passed and classes_held >= CLASS_ANALYSIS_REFUSALS,
+            f"{len(classes.outcomes)} cases against {classes.model}: half points, verbatim "
+            "examples, honest comparison, no completion claim",
+        )
+    )
+
     speech_models = yaml.safe_load((config_dir / "speech-models.yaml").read_text(encoding="utf-8"))
     transcription = speech_models["artifacts"]["transcription_model"]
     rubrics = yaml.safe_load((config_dir / "tam-rubrics.yaml").read_text(encoding="utf-8"))
@@ -389,6 +407,7 @@ async def run_suite(
                 coach_path,
                 reviewer_path,
                 debrief_path,
+                class_path,
             )
         },
         evaluator_versions={
@@ -399,6 +418,7 @@ async def run_suite(
             "coach": COACH_EVALUATOR_VERSION,
             "reviewer": REVIEWER_EVALUATOR_VERSION,
             "debrief": DEBRIEF_EVALUATOR_VERSION,
+            "class_analysis": CLASS_ANALYSIS_EVALUATOR_VERSION,
         },
         speech_model_filename=str(transcription["filename"]),
         speech_model_sha256=str(transcription["sha256"]),

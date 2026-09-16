@@ -66,16 +66,29 @@ class ProgressInterview(StrictModel):
     recording_count: int
 
 
+class ProgressClassPoint(StrictModel):
+    """One analysed English class: its fluency and vocabulary on the TAM English scale."""
+
+    class_id: int
+    starts_at: datetime
+    teacher: str
+    fluency_score: Decimal
+    vocabulary_score: Decimal
+    progress_direction: str
+
+
 class ProgressResponse(StrictModel):
     skills: tuple[ProgressSkill, ...]
     weeks: tuple[ProgressWeek, ...]
     assessments: tuple[ProgressAssessment, ...]
     assessment_days: tuple[AssessmentDayResult, ...]
     interviews: tuple[ProgressInterview, ...]
+    english_classes: tuple[ProgressClassPoint, ...] = ()
 
 
 __all__ = [
     "ProgressAssessment",
+    "ProgressClassPoint",
     "ProgressInterview",
     "ProgressResponse",
     "ProgressSkill",

@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..assessments.service import AssessmentQueryService
+from ..classes.models import ClassAnalysis, EnglishClass
 from ..evidence.repository import SqlAlchemyEvidenceRepository
 from ..evidence.service import EvidenceError, EvidenceQueryService
 from ..learning.models import ActivityInstance, StudyDay
@@ -22,6 +23,7 @@ from ..roadmaps.models import TaskDefinition
 from ..today.models import Interview
 from .schemas import (
     ProgressAssessment,
+    ProgressClassPoint,
     ProgressInterview,
     ProgressResponse,
     ProgressSkill,
@@ -83,6 +85,7 @@ class ProgressQueryService:
             assessments = await self._assessments(owner_id)
             days = await AssessmentQueryService(self._session)._list(owner_id=owner_id, limit=8)
             interviews = await self._interviews(owner_id)
+            classes = await self._classes(owner_id)
             await self._session.rollback()
         except (SQLAlchemyError, EvidenceError):
             raise ProgressUnavailable("progress is unavailable") from None
@@ -92,11 +95,16 @@ class ProgressQueryService:
             assessments=assessments,
             assessment_days=days.items,
             interviews=interviews,
+            english_classes=classes,
         )
 
     async def _skills(self, owner_id: int) -> tuple[ProgressSkill, ...]:
         evidence = EvidenceQueryService(SqlAlchemyEvidenceRepository(self._session))
-        listed = await evidence.list_skills(owner_id=owner_id)
+        try:
+            listed = await evidence.list_skills(owner_id=owner_id)
+        except EvidenceError:
+            # No seeded configuration yet: there are no skills to show, not an outage.
+            return ()
         skills: list[ProgressSkill] = []
         for summary in listed.items:
             series = await evidence.skill_series(owner_id=owner_id, skill_slug=summary.slug)
@@ -183,6 +191,32 @@ class ProgressQueryService:
                 )
             )
         return tuple(items)
+
+    async def _classes(self, owner_id: int) -> tuple[ProgressClassPoint, ...]:
+        rows = (
+            await self._session.execute(
+                select(ClassAnalysis, EnglishClass)
+                .join(
+                    EnglishClass,
+                    (EnglishClass.owner_id == ClassAnalysis.owner_id)
+                    & (EnglishClass.id == ClassAnalysis.english_class_id),
+                )
+                .where(ClassAnalysis.owner_id == owner_id)
+                .order_by(EnglishClass.starts_at, EnglishClass.id)
+                .limit(52)
+            )
+        ).all()
+        return tuple(
+            ProgressClassPoint(
+                class_id=record.id,
+                starts_at=record.starts_at,
+                teacher=record.teacher,
+                fluency_score=Decimal(analysis.fluency_score),
+                vocabulary_score=Decimal(analysis.vocabulary_score),
+                progress_direction=str(analysis.outcome.get("progress_direction", "")),
+            )
+            for analysis, record in rows
+        )
 
     async def _interviews(self, owner_id: int) -> tuple[ProgressInterview, ...]:
         recordings = (

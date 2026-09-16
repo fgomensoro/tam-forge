@@ -20,6 +20,7 @@ from typing import Any, Literal, Protocol, cast
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from ..agents.roles.class_analysis import ClassAnalysisService
 from ..agents.roles.debrief import DebriefService
 from ..agents.roles.reviewer import ReviewerService
 from ..agents.runtime import (
@@ -170,6 +171,7 @@ async def gate_step(sessions: async_sessionmaker[AsyncSession]) -> str | None:
         return reason
     await review_step(sessions)
     await debrief_step(sessions)
+    await class_analysis_step(sessions)
     return None
 
 
@@ -291,6 +293,68 @@ async def debrief_step(
             except InterviewInvalid:
                 category = "invalid_input"
             except InterviewsUnavailable as exc:
+                text = str(exc).lower()
+                if "quota" in text:
+                    category = "resource_exhausted"
+                elif "credential" in text or "authentication" in text:
+                    category = "permission_required"
+                else:
+                    category = "transient_dependency"
+            except Exception:  # noqa: BLE001 - a job must always end in a closed state
+                await session.rollback()
+                category = "processing_failure"
+            if category is None:
+                await jobs.complete(job_id=job.id, command=CompleteJobCommand(worker_id=worker_id))
+                processed += 1
+                continue
+            await session.rollback()
+            await jobs.retry(
+                job_id=job.id,
+                command=RetryJobCommand(
+                    worker_id=worker_id, failure=JobFailure(category=cast(Any, category))
+                ),
+            )
+    return processed
+
+
+CLASS_ANALYSIS_JOBS_PER_STEP = 1
+
+
+async def class_analysis_step(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    analyst: ClassAnalysisService | None = None,
+    worker_id: str = "claude-class-analysis",
+) -> int:
+    """Run one requested English class analysis; every failure ends in a closed state."""
+    from ..agents.sdk_runtime import AgentSdkRuntime
+    from ..classes.analysis import CLASS_ANALYSIS_JOB_KIND, EnglishClassAnalysisService
+    from ..classes.service import ClassesUnavailable, ClassInvalid
+    from ..jobs.repository import SqlAlchemyJobRepository
+    from ..jobs.schemas import ClaimJobCommand, CompleteJobCommand, JobFailure, RetryJobCommand
+    from ..jobs.service import JobService
+    from .settings import WorkerSettings
+
+    if analyst is None:
+        analyst = ClassAnalysisService(AgentSdkRuntime(), model=WorkerSettings().reviewer_model)
+    processed = 0
+    for _ in range(CLASS_ANALYSIS_JOBS_PER_STEP):
+        async with sessions() as session:
+            jobs = JobService(SqlAlchemyJobRepository(session))
+            job = await jobs.claim(
+                ClaimJobCommand(
+                    worker_id=worker_id, kinds=(CLASS_ANALYSIS_JOB_KIND,), lease_seconds=900
+                )
+            )
+            if job is None:
+                return processed
+            service = EnglishClassAnalysisService(session, analyst=analyst)
+            category: str | None = None
+            try:
+                await service.process(owner_id=job.owner_id, class_id=job.payload.subject_id)
+            except ClassInvalid:
+                category = "invalid_input"
+            except ClassesUnavailable as exc:
                 text = str(exc).lower()
                 if "quota" in text:
                     category = "resource_exhausted"
