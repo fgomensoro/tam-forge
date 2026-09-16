@@ -225,15 +225,18 @@ struct RecordingCreatePayload: Codable, Equatable, Sendable {
     let tracks: [RecordingTrackDeclarationPayload]
     /// The Today block this recording is a spoken attempt for; omitted for free recordings.
     let activityID: Int?
+    /// The real interview this recording captured; omitted for practice.
+    let interviewID: Int?
 
     init(
         recordingID: String, startedAt: String, tracks: [RecordingTrackDeclarationPayload],
-        activityID: Int? = nil
+        activityID: Int? = nil, interviewID: Int? = nil
     ) {
         self.recordingID = recordingID
         self.startedAt = startedAt
         self.tracks = tracks
         self.activityID = activityID
+        self.interviewID = interviewID
     }
 
     enum CodingKeys: String, CodingKey {
@@ -242,34 +245,55 @@ struct RecordingCreatePayload: Codable, Equatable, Sendable {
         case startedAt = "started_at"
         case tracks
         case activityID = "activity_id"
+        case interviewID = "interview_id"
     }
 }
 
-/// The activity a recording was started for, kept as a small sidecar file beside the
-/// encrypted spool so the upload, which may run in a later launch, can carry it. It is
-/// not secret and not part of the authenticated spool format.
-enum RecordingActivityLink {
-    private struct Payload: Codable {
-        let activityID: Int
-        enum CodingKeys: String, CodingKey { case activityID = "activity_id" }
+/// The activity or interview a recording was started for, kept as a small sidecar file
+/// beside the encrypted spool so the upload, which may run in a later launch, can carry it.
+/// It is not secret and not part of the authenticated spool format.
+struct RecordingLink: Codable, Equatable, Sendable {
+    let activityID: Int?
+    let interviewID: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case activityID = "activity_id"
+        case interviewID = "interview_id"
     }
+
+    var isEmpty: Bool { activityID == nil && interviewID == nil }
 
     static func url(recordingID: UUID, rootURL: URL) -> URL {
         rootURL.appendingPathComponent(recordingID.uuidString, isDirectory: true)
             .appendingPathComponent("activity-link.json", isDirectory: false)
     }
 
-    static func write(activityID: Int, recordingID: UUID, rootURL: URL) throws {
-        let data = try JSONEncoder().encode(Payload(activityID: activityID))
+    static func write(_ link: RecordingLink, recordingID: UUID, rootURL: URL) throws {
+        let data = try JSONEncoder().encode(link)
         try data.write(to: url(recordingID: recordingID, rootURL: rootURL), options: .atomic)
     }
 
-    static func read(recordingID: UUID, rootURL: URL) -> Int? {
+    static func read(recordingID: UUID, rootURL: URL) -> RecordingLink {
         guard let data = try? Data(contentsOf: url(recordingID: recordingID, rootURL: rootURL)),
-              let payload = try? JSONDecoder().decode(Payload.self, from: data),
-              payload.activityID > 0
-        else { return nil }
-        return payload.activityID
+              let link = try? JSONDecoder().decode(RecordingLink.self, from: data)
+        else { return RecordingLink(activityID: nil, interviewID: nil) }
+        return RecordingLink(
+            activityID: (link.activityID ?? 0) > 0 ? link.activityID : nil,
+            interviewID: (link.interviewID ?? 0) > 0 ? link.interviewID : nil
+        )
+    }
+}
+
+/// Kept for the activity-only call sites and tests.
+enum RecordingActivityLink {
+    static func write(activityID: Int, recordingID: UUID, rootURL: URL) throws {
+        try RecordingLink.write(
+            RecordingLink(activityID: activityID, interviewID: nil), recordingID: recordingID, rootURL: rootURL
+        )
+    }
+
+    static func read(recordingID: UUID, rootURL: URL) -> Int? {
+        RecordingLink.read(recordingID: recordingID, rootURL: rootURL).activityID
     }
 }
 

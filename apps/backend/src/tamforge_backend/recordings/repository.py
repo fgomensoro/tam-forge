@@ -43,6 +43,7 @@ from ..auth.models import Owner
 from ..database import transaction_scope
 from ..learning.models import ActivityInstance
 from ..models.base import utc_now
+from ..today.models import Interview
 from .contracts import timeline_sha256
 from .models import Recording, RecordingGap, RecordingPart, RecordingTrack
 from .schemas import (
@@ -176,6 +177,14 @@ class SqlAlchemyRecordingRepository:
                     )
                     if activity is None:
                         raise RecordingInvalidRequest("recording activity was not found")
+                if command.interview_id is not None:
+                    interview = await self._session.scalar(
+                        select(Interview.id)
+                        .where(Interview.owner_id == owner_id)
+                        .where(Interview.id == command.interview_id)
+                    )
+                    if interview is None:
+                        raise RecordingInvalidRequest("recording interview was not found")
                 result = RecordingCreateResponse(
                     recording_id=command.recording_id,
                     state="reserved",
@@ -188,6 +197,7 @@ class SqlAlchemyRecordingRepository:
                     state="reserved",
                     started_at=command.started_at,
                     activity_instance_id=command.activity_id,
+                    interview_id=command.interview_id,
                     create_idempotency_key=idempotency_key,
                     create_request_hash=request_hash,
                     create_result_json=result.model_dump(mode="json"),
@@ -636,6 +646,52 @@ class SqlAlchemyRecordingRepository:
             ]
             return tuple(statuses)
 
+    async def for_interview(
+        self, *, owner_id: int, interview_id: int
+    ) -> tuple[RecordingStatusResponse, ...]:
+        """Every recording of one real interview, oldest first."""
+        async with _unavailable_on_database_error():
+            recordings = (
+                await self._session.scalars(
+                    select(Recording)
+                    .where(Recording.owner_id == owner_id)
+                    .where(Recording.interview_id == interview_id)
+                    .order_by(Recording.started_at, Recording.id)
+                )
+            ).all()
+            statuses = [
+                await self.status(owner_id=owner_id, recording_id=item.client_recording_id)
+                for item in recordings
+            ]
+            return tuple(statuses)
+
+    async def attach_interview(
+        self, *, owner_id: int, interview_id: int, recording_id: UUID
+    ) -> RecordingStatusResponse:
+        """Link an existing recording to an interview after the fact."""
+        async with _unavailable_on_database_error():
+            async with transaction_scope(self._session):
+                interview = await self._session.scalar(
+                    select(Interview.id)
+                    .where(Interview.owner_id == owner_id)
+                    .where(Interview.id == interview_id)
+                )
+                if interview is None:
+                    raise RecordingNotFound("interview was not found")
+                recording = await self._session.scalar(
+                    select(Recording)
+                    .where(Recording.owner_id == owner_id)
+                    .where(Recording.client_recording_id == recording_id)
+                    .with_for_update()
+                )
+                if recording is None:
+                    raise RecordingNotFound("recording was not found")
+                if recording.interview_id not in (None, interview_id):
+                    raise RecordingConflict("recording belongs to another interview")
+                recording.interview_id = interview_id
+                await self._session.flush()
+            return await self.status(owner_id=owner_id, recording_id=recording_id)
+
     async def status(self, *, owner_id: int, recording_id: UUID) -> RecordingStatusResponse:
         async with _unavailable_on_database_error():
             recording = await self._session.scalar(
@@ -802,6 +858,7 @@ class SqlAlchemyRecordingRepository:
             audio_created_on_server=recording.audio_created_on_server,
             transcript_lineage_accepted=recording.transcript_lineage_accepted,
             activity_id=recording.activity_instance_id,
+            interview_id=recording.interview_id,
             started_at=recording.started_at,
         )
 

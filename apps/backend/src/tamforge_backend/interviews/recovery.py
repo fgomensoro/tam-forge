@@ -77,9 +77,7 @@ class RecoveryPlan:
         return next(step for step in self.steps if not step.coached)
 
 
-def schedule_unresolved(
-    queued: QueuedRetrieval, attempt: TransferAttempt
-) -> TransferAttempt:
+def schedule_unresolved(queued: QueuedRetrieval, attempt: TransferAttempt) -> TransferAttempt:
     """Accept a later attempt for an unresolved correction, or refuse it.
 
     The rule is the correction contract's own rather than a second copy. Repeating the

@@ -5,6 +5,7 @@ enum ShellRoute: Equatable, Sendable {
     case today
     case roadmaps
     case recording
+    case interviews
     case activity(Int)
     case evidence(activityID: Int?)
 
@@ -14,6 +15,8 @@ enum ShellRoute: Equatable, Sendable {
             "roadmaps"
         case .recording:
             "recording"
+        case .interviews:
+            "interviews"
         case .evidence:
             "evidence"
         case .today, .activity:
@@ -25,6 +28,7 @@ enum ShellRoute: Equatable, Sendable {
         switch identifier {
         case "roadmaps": .roadmaps
         case "recording": .recording
+        case "interviews": .interviews
         case "evidence": .evidence(activityID: nil)
         default: .today
         }

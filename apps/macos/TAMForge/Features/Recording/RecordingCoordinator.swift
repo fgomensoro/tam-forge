@@ -242,13 +242,18 @@ final class RecordingCoordinator: ObservableObject {
 
     /// Writes the activity link beside the spool once the recording exists; injected so
     /// the coordinator never learns the spool root, and tests can observe the link.
-    var activityLinkWriter: ((UUID, Int) throws -> Void)?
+    var activityLinkWriter: ((UUID, RecordingLink) throws -> Void)?
     /// The activity the recording in flight (or the last one) was started for.
     @Published private(set) var activityID: Int?
+    /// The real interview the recording in flight (or the last one) was started for.
+    @Published private(set) var interviewID: Int?
+    /// The most recently started recording, so a record can attach it after the fact.
+    @Published private(set) var lastRecordingID: UUID?
 
-    func start(activityID: Int? = nil) async {
+    func start(activityID: Int? = nil, interviewID: Int? = nil) async {
         guard !phase.isActive else { return }
         self.activityID = activityID
+        self.interviewID = interviewID
         await pauseUploadsForCapture()
         defer {
             if !phase.isActive { enqueueAllPendingUploads() }
@@ -274,8 +279,10 @@ final class RecordingCoordinator: ObservableObject {
             let spool = try await spoolFactory.create(recordingID: recordingID)
             self.spool = spool
             createdSpool = true
-            if let activityID, let activityLinkWriter {
-                try activityLinkWriter(recordingID, activityID)
+            lastRecordingID = recordingID
+            let link = RecordingLink(activityID: activityID, interviewID: interviewID)
+            if !link.isEmpty, let activityLinkWriter {
+                try activityLinkWriter(recordingID, link)
             }
             let pendingGapWrites = PendingGapWrites()
             self.pendingGapWrites = pendingGapWrites

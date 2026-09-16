@@ -124,6 +124,7 @@ def test_a_debrief_names_its_interview_and_its_owner(field: str) -> None:
 # Issue #84: questions segmented from the two synchronized tracks, a timestamped
 # user/remote timeline, labels kept apart, and no speaker diarization.
 
+
 def words(*spans: tuple[int, int]) -> tuple[RecognizedWord, ...]:
     return tuple(
         RecognizedWord(text=f"w{index}", start_ms=start, end_ms=end)
@@ -132,9 +133,7 @@ def words(*spans: tuple[int, int]) -> tuple[RecognizedWord, ...]:
 
 
 def test_the_track_decides_the_speaker_and_nothing_else() -> None:
-    built = tl.build_timeline(
-        microphone=words((3_000, 3_500)), system_audio=words((0, 900))
-    )
+    built = tl.build_timeline(microphone=words((3_000, 3_500)), system_audio=words((0, 900)))
 
     assert [item.speaker for item in built] == ["remote", "user"]
     assert get_args(tl.Speaker) == ("user", "remote")
@@ -152,12 +151,8 @@ def test_the_timeline_runs_in_the_order_things_happened() -> None:
 
 def test_a_long_silence_starts_a_new_utterance() -> None:
     assert tl.QUESTION_GAP_MS == 2_000
-    joined = tl.build_timeline(
-        microphone=words((0, 500), (1_000, 1_500)), system_audio=()
-    )
-    split = tl.build_timeline(
-        microphone=words((0, 500), (3_000, 3_500)), system_audio=()
-    )
+    joined = tl.build_timeline(microphone=words((0, 500), (1_000, 1_500)), system_audio=())
+    split = tl.build_timeline(microphone=words((0, 500), (3_000, 3_500)), system_audio=())
 
     assert len(joined) == 1 and joined[0].end_ms == 1_500
     assert len(split) == 2
@@ -184,9 +179,7 @@ def test_a_question_nobody_answered_is_recorded_as_unanswered() -> None:
 
 
 def test_speech_before_the_question_is_not_its_answer() -> None:
-    turns = tl.segment_questions(
-        microphone=words((0, 400)), system_audio=words((3_000, 3_800))
-    )
+    turns = tl.segment_questions(microphone=words((0, 400)), system_audio=words((3_000, 3_800)))
 
     assert turns[0].answered is False
 
@@ -213,8 +206,11 @@ def test_the_four_labels_are_the_analysis_contracts_own() -> None:
 
 def test_uncertainty_rides_on_the_claim_rather_than_being_a_fifth_label() -> None:
     # A thing can be observed and still be hard to hear.
-    claim = tl.Claim(statement="They said the renewal is at risk.", label="observed_content",
-                     confidence=Decimal("0.4"))
+    claim = tl.Claim(
+        statement="They said the renewal is at risk.",
+        label="observed_content",
+        confidence=Decimal("0.4"),
+    )
 
     assert claim.label == "observed_content"
     assert claim.confidence == Decimal("0.4")

@@ -147,9 +147,7 @@ def release_to_claude(
     """Return the audit record for a permitted, approved release, or refuse it."""
     if preview.interview_id != interview.interview_id or preview.owner_id != owner_id:
         raise RedactionError("that preview belongs to another interview or owner")
-    state, reason = recording_lock(
-        interview, permission, scope="release_to_claude", now=now
-    )
+    state, reason = recording_lock(interview, permission, scope="release_to_claude", now=now)
     if state != "unlocked":
         raise RedactionError(f"release is not permitted: {reason}")
     if approval.preview_sha256 != preview.preview_sha256:

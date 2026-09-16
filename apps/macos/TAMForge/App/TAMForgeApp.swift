@@ -13,9 +13,11 @@ struct TAMForgeApp: App {
             let nativeFeatures: Set<NativeFeature> =
                 arguments.contains("-ui-test-signed-in")
                     && !arguments.contains("-ui-test-native-features")
-                ? [] : [.today, .roadmaps, .evidence, .recording]
+                ? [] : [.today, .roadmaps, .evidence, .recording, .interviews]
         #else
-            let nativeFeatures: Set<NativeFeature> = [.today, .roadmaps, .evidence, .recording]
+            let nativeFeatures: Set<NativeFeature> = [
+                .today, .roadmaps, .evidence, .recording, .interviews,
+            ]
         #endif
         self.init(
             dependencies: .live(
@@ -166,6 +168,7 @@ private struct NativeFeatureServices {
     let notes: any StudyNoteAPI
     let recordings: any RecordingServerServicing
     let reviews: any ReviewAPI
+    let interviews: any InterviewAPI
 }
 
 @MainActor
@@ -237,7 +240,8 @@ private final class NativeShellComposition: ObservableObject {
             coaching: LiveCoachAPI(transport: transport),
             notes: LiveStudyNoteAPI(transport: transport),
             recordings: recordingServer,
-            reviews: LiveReviewAPI(transport: transport)
+            reviews: LiveReviewAPI(transport: transport),
+            interviews: LiveInterviewAPI(transport: transport, recordings: recordingServer)
         )
         #if DEBUG
             let isUITest = ProcessInfo.processInfo.arguments.contains("-ui-test-signed-out")
@@ -287,10 +291,8 @@ private final class NativeShellComposition: ObservableObject {
             audioReader: recordingSpool,
             transcriber: transcriber
         )
-        recording.activityLinkWriter = { [rootURL = recordingSpool.rootURL] recordingID, activityID in
-            try RecordingActivityLink.write(
-                activityID: activityID, recordingID: recordingID, rootURL: rootURL
-            )
+        recording.activityLinkWriter = { [rootURL = recordingSpool.rootURL] recordingID, link in
+            try RecordingLink.write(link, recordingID: recordingID, rootURL: rootURL)
         }
     }
 
@@ -343,6 +345,7 @@ private final class NativeWorkspaceState: ObservableObject {
     let notifications: NotificationViewModel
     let roadmaps: RoadmapAdministrationModel
     let evidence: EvidenceLedgerModel
+    let interviews: InterviewsModel
     let drafts = InMemoryActivityDraftStore()
     let timerJournal: any ActivityTimerJournaling
 
@@ -359,6 +362,7 @@ private final class NativeWorkspaceState: ObservableObject {
         notifications = NotificationViewModel(client: services.notifications)
         roadmaps = RoadmapAdministrationModel(service: services.roadmaps)
         evidence = EvidenceLedgerModel(service: services.evidence)
+        interviews = InterviewsModel(api: services.interviews)
         #if DEBUG
             let arguments = ProcessInfo.processInfo.arguments
             if arguments.contains("-ui-test-signed-in") || arguments.contains("-ui-test-signed-out")
@@ -430,6 +434,14 @@ private struct NativeWorkspaceView: View {
                         Label("Recording", systemImage: "record.circle")
                     }
                     .accessibilityIdentifier("recordingNavigation")
+                }
+                if dependencies.nativeFeatures.contains(.interviews) {
+                    Button {
+                        session.select(.interviews)
+                    } label: {
+                        Label("Interviews", systemImage: "person.2.wave.2")
+                    }
+                    .accessibilityIdentifier("interviewsNavigation")
                 }
             }
             .navigationTitle("TAM Forge")
@@ -515,6 +527,8 @@ private struct NativeWorkspaceView: View {
             RoadmapAdministrationView(model: state.roadmaps)
         case .recording where dependencies.nativeFeatures.contains(.recording):
             RecordingView(coordinator: recording)
+        case .interviews where dependencies.nativeFeatures.contains(.interviews):
+            InterviewsView(model: state.interviews, coordinator: recording)
         case .evidence(let identifier) where dependencies.nativeFeatures.contains(.evidence):
             EvidenceLedgerView(
                 model: state.evidence,
