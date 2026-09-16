@@ -81,6 +81,9 @@ from .schemas import (
     PortfolioScoreResponse,
     RecordEvaluationResponse,
     SkillListResponse,
+    SkillScoreEvent,
+    SkillSeriesPoint,
+    SkillSeriesResponse,
     SkillSnapshotResponse,
     SkillSummaryResponse,
     SnapshotManifestItem,
@@ -565,18 +568,12 @@ class SqlAlchemyEvidenceRepository:
                         ExerciseTypeVersion.config_seed_version_id
                         == SkillEvidenceEvent.config_seed_version_id
                     )
-                    & (
-                        ExerciseTypeVersion.id
-                        == SkillEvidenceEvent.exercise_type_version_id
-                    ),
+                    & (ExerciseTypeVersion.id == SkillEvidenceEvent.exercise_type_version_id),
                 )
                 .join(
                     Attempt,
                     (Attempt.owner_id == SkillEvidenceEvent.owner_id)
-                    & (
-                        Attempt.activity_instance_id
-                        == SkillEvidenceEvent.activity_instance_id
-                    )
+                    & (Attempt.activity_instance_id == SkillEvidenceEvent.activity_instance_id)
                     & (Attempt.id == SkillEvidenceEvent.attempt_id),
                 )
                 .join(
@@ -589,10 +586,7 @@ class SqlAlchemyEvidenceRepository:
                     & (RubricEvaluation.id == SkillEvidenceEvent.rubric_evaluation_id),
                 )
                 .where(SkillEvidenceEvent.owner_id == owner_id)
-                .where(
-                    SkillEvidenceEvent.config_seed_version_id
-                    == config_seed_version_id
-                )
+                .where(SkillEvidenceEvent.config_seed_version_id == config_seed_version_id)
                 .where(SkillEvidenceEvent.competency_id == skill_id)
                 .where(SkillEvidenceEvent.formula_version == formula_version)
                 .order_by(SkillEvidenceEvent.occurred_at, SkillEvidenceEvent.id)
@@ -785,10 +779,7 @@ class SqlAlchemyEvidenceRepository:
                         PortfolioJudgmentScore.config_seed_version_id
                         == prepared.config_seed_version_id
                     )
-                    .where(
-                        PortfolioJudgmentScore.formula_version
-                        == prepared.formula.version
-                    )
+                    .where(PortfolioJudgmentScore.formula_version == prepared.formula.version)
                     .order_by(
                         PortfolioJudgmentScore.scored_at,
                         PortfolioJudgmentScore.id,
@@ -828,9 +819,7 @@ class SqlAlchemyEvidenceRepository:
             delegation_ownership=components["delegation_ownership"],
             communication_control=components["communication_control"],
             proactive_work_protection=components["proactive_work_protection"],
-            evidence_based_reprioritization=components[
-                "evidence_based_reprioritization"
-            ],
+            evidence_based_reprioritization=components["evidence_based_reprioritization"],
             english_clarity=components["english_clarity"],
             total_score=scored.total_score,
             trend_basis={
@@ -860,9 +849,7 @@ class SqlAlchemyEvidenceRepository:
             AuditEvent(
                 owner_id=owner_id,
                 actor_kind="system",
-                actor_subject_hash=hashlib.sha256(
-                    f"evidence-worker:{owner_id}".encode()
-                ).digest(),
+                actor_subject_hash=hashlib.sha256(f"evidence-worker:{owner_id}".encode()).digest(),
                 action="evidence.recorded",
                 aggregate_type="activity",
                 aggregate_id=str(activity_id),
@@ -940,9 +927,7 @@ class SqlAlchemyEvidenceRepository:
                         month_one_target=item.month_one_target,
                         final_target=item.final_target,
                         latest_snapshot=(
-                            self._snapshot_response(latest[item.id])
-                            if item.id in latest
-                            else None
+                            self._snapshot_response(latest[item.id]) if item.id in latest else None
                         ),
                     )
                     for item in skills
@@ -958,6 +943,80 @@ class SqlAlchemyEvidenceRepository:
                 if item.slug == skill_slug:
                     return item
             raise EvidenceNotFound("skill was not found")
+
+    async def skill_series(self, *, owner_id: int, skill_slug: str) -> SkillSeriesResponse:
+        """Every snapshot and every scored event of one skill, oldest first, with targets."""
+        async with _unavailable_on_database_error():
+            summary = await self.get_skill(owner_id=owner_id, skill_slug=skill_slug)
+            competencies = list(
+                (
+                    await self._session.scalars(
+                        select(Competency.id)
+                        .where(Competency.owner_id == owner_id)
+                        .where(Competency.slug == skill_slug)
+                    )
+                ).all()
+            )
+            snapshots = (
+                await self._session.scalars(
+                    select(SkillSnapshot)
+                    .where(SkillSnapshot.owner_id == owner_id)
+                    .where(SkillSnapshot.competency_id.in_(competencies))
+                    .order_by(
+                        SkillSnapshot.snapshot_date, SkillSnapshot.created_at, SkillSnapshot.id
+                    )
+                )
+            ).all()
+            rows = (
+                await self._session.execute(
+                    select(SkillEvidenceEvent, ExerciseTypeVersion.exercise_type)
+                    .join(
+                        ExerciseTypeVersion,
+                        (ExerciseTypeVersion.owner_id == SkillEvidenceEvent.owner_id)
+                        & (
+                            ExerciseTypeVersion.config_seed_version_id
+                            == SkillEvidenceEvent.config_seed_version_id
+                        )
+                        & (ExerciseTypeVersion.id == SkillEvidenceEvent.exercise_type_version_id),
+                    )
+                    .where(SkillEvidenceEvent.owner_id == owner_id)
+                    .where(SkillEvidenceEvent.competency_id.in_(competencies))
+                    .order_by(SkillEvidenceEvent.occurred_at, SkillEvidenceEvent.id)
+                )
+            ).all()
+            return SkillSeriesResponse(
+                slug=summary.slug,
+                name=summary.name,
+                baseline=summary.baseline,
+                month_one_target=summary.month_one_target,
+                final_target=summary.final_target,
+                points=tuple(
+                    SkillSeriesPoint(
+                        snapshot_id=item.id,
+                        snapshot_date=item.snapshot_date,
+                        estimated_level=item.estimated_level,
+                        confidence=item.confidence_code,
+                        trend=item.trend_code,
+                        qualifying_event_count=item.qualifying_event_count,
+                    )
+                    for item in snapshots
+                ),
+                events=tuple(
+                    SkillScoreEvent(
+                        event_id=event.id,
+                        occurred_at=event.occurred_at,
+                        activity_id=event.activity_instance_id,
+                        exercise_type=exercise_type,
+                        evaluator=event.evaluator_kind,
+                        practice_mode=event.practice_mode,
+                        assistance=event.assistance_code,
+                        performance_score=event.performance_score,
+                        effective_weight=event.effective_weight,
+                        qualifying_for_level=event.qualifying_for_level,
+                    )
+                    for event, exercise_type in rows
+                ),
+            )
 
     async def list_skill_evidence(
         self,
@@ -1016,10 +1075,7 @@ class SqlAlchemyEvidenceRepository:
             .join(
                 Competency,
                 (Competency.owner_id == SkillEvidenceEvent.owner_id)
-                & (
-                    Competency.config_seed_version_id
-                    == SkillEvidenceEvent.config_seed_version_id
-                )
+                & (Competency.config_seed_version_id == SkillEvidenceEvent.config_seed_version_id)
                 & (Competency.id == SkillEvidenceEvent.competency_id),
             )
             .join(

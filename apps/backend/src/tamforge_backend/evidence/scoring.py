@@ -80,9 +80,7 @@ def calculate_performance_score(
         weight_sum += weight
     if weight_sum <= 0:
         raise ScoringError("dimension weight denominator must be greater than zero")
-    score = (weighted_sum / weight_sum).quantize(
-        SCORE_QUANTUM, rounding=ROUND_HALF_UP
-    )
+    score = (weighted_sum / weight_sum).quantize(SCORE_QUANTUM, rounding=ROUND_HALF_UP)
     if not Decimal("0") <= score <= Decimal("4"):
         raise ScoringError("performance score escaped the configured scale")
     return PerformanceScoreResult(
@@ -121,13 +119,9 @@ def calculate_effective_weight(
     factors = EffectiveWeightFactors(
         skill_impact=impact,
         practice_mode=practice_factor,
-        assistance=_factor(
-            formula.assistance_factors, assistance, category="assistance"
-        ),
+        assistance=_factor(formula.assistance_factors, assistance, category="assistance"),
         evaluator=_factor(formula.evaluator_factors, evaluator, category="evaluator"),
-        difficulty=_factor(
-            formula.difficulty_factors, difficulty, category="difficulty"
-        ),
+        difficulty=_factor(formula.difficulty_factors, difficulty, category="difficulty"),
     )
     raw = (
         factors.skill_impact

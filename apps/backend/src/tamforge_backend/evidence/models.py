@@ -69,9 +69,7 @@ ASSISTANCE_CODES = frozenset(
         "ai_generated",
     }
 )
-QUALIFYING_ASSISTANCE_CODES = frozenset(
-    {"no_ai", "ai_after_committed_attempt"}
-)
+QUALIFYING_ASSISTANCE_CODES = frozenset({"no_ai", "ai_after_committed_attempt"})
 EVALUATOR_KINDS = frozenset(
     {
         "self",
@@ -173,9 +171,7 @@ class Competency(Base):
             name="uq_competencies_owner_config_slug",
         ),
         CheckConstraint("slug ~ '^[a-z][a-z0-9_]{0,63}$'", name="slug_safe"),
-        CheckConstraint(
-            "btrim(name) <> '' AND octet_length(name) <= 128", name="name_bounded"
-        ),
+        CheckConstraint("btrim(name) <> '' AND octet_length(name) <= 128", name="name_bounded"),
         CheckConstraint(
             "baseline_level BETWEEN 0 AND 4 AND month_one_target BETWEEN 0 AND 4 "
             "AND final_target BETWEEN 0 AND 4",
@@ -221,9 +217,7 @@ class ExerciseTypeVersion(Base):
             "mapping_version",
             name="uq_exercise_type_versions_owner_type_mapping",
         ),
-        CheckConstraint(
-            "exercise_type ~ '^[a-z][a-z0-9_]{0,63}$'", name="exercise_type_safe"
-        ),
+        CheckConstraint("exercise_type ~ '^[a-z][a-z0-9_]{0,63}$'", name="exercise_type_safe"),
         CheckConstraint(
             "mapping_version ~ '^[a-z0-9][a-z0-9._-]{0,63}$'", name="mapping_version_safe"
         ),
@@ -241,9 +235,7 @@ class ExerciseTypeVersion(Base):
             "tamforge_validate_tags_v1(tags)",
             name="tags_valid",
         ),
-        Index(
-            "ix_exercise_type_versions_owner_config", "owner_id", "config_seed_version_id"
-        ),
+        Index("ix_exercise_type_versions_owner_config", "owner_id", "config_seed_version_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
@@ -362,9 +354,7 @@ class RubricVersion(Base):
             "AND version_key ~ '^[a-z0-9][a-z0-9._-]{0,63}$'",
             name="keys_safe",
         ),
-        CheckConstraint(
-            "btrim(name) <> '' AND octet_length(name) <= 128", name="name_bounded"
-        ),
+        CheckConstraint("btrim(name) <> '' AND octet_length(name) <= 128", name="name_bounded"),
         CheckConstraint(
             "scope_code IN ('tam', 'english', 'portfolio', 'exercise')",
             name="scope_code_allowed",
@@ -418,12 +408,8 @@ class RubricDimension(Base):
             "dimension_key",
             name="uq_rubric_dimensions_owner_rubric_key",
         ),
-        CheckConstraint(
-            "dimension_key ~ '^[a-z][a-z0-9_]{0,63}$'", name="dimension_key_safe"
-        ),
-        CheckConstraint(
-            "btrim(name) <> '' AND octet_length(name) <= 128", name="name_bounded"
-        ),
+        CheckConstraint("dimension_key ~ '^[a-z][a-z0-9_]{0,63}$'", name="dimension_key_safe"),
+        CheckConstraint("btrim(name) <> '' AND octet_length(name) <= 128", name="name_bounded"),
         CheckConstraint("weight > 0 AND weight <= 1", name="weight_positive"),
         CheckConstraint("max_score > 0 AND max_score <= 20", name="max_score_bounded"),
         CheckConstraint("ordinal >= 0", name="ordinal_nonnegative"),
@@ -503,17 +489,13 @@ class RubricEvaluation(Base):
             "'explicit_interviewer_feedback')",
             name="evaluator_kind_allowed",
         ),
-        CheckConstraint(
-            "evaluation_schema_version > 0", name="evaluation_schema_version_positive"
-        ),
+        CheckConstraint("evaluation_schema_version > 0", name="evaluation_schema_version_positive"),
         CheckConstraint(
             "tamforge_validate_reference_manifest_v1(input_manifest)",
             name="input_manifest_valid",
         ),
         CheckConstraint("created_at >= evaluated_at", name="created_after_evaluation"),
-        Index(
-            "ix_rubric_evaluations_owner_activity", "owner_id", "activity_instance_id"
-        ),
+        Index("ix_rubric_evaluations_owner_activity", "owner_id", "activity_instance_id"),
         Index(
             "ix_rubric_evaluations_owner_activity_attempt",
             "owner_id",
@@ -640,9 +622,7 @@ class SkillEvidenceEvent(Base):
 
     __tablename__ = "skill_evidence_events"
     __table_args__ = (
-        UniqueConstraint(
-            "owner_id", "id", name="uq_skill_evidence_events_owner_id_id"
-        ),
+        UniqueConstraint("owner_id", "id", name="uq_skill_evidence_events_owner_id_id"),
         ForeignKeyConstraint(
             ["owner_id", "activity_instance_id"],
             ["activity_instances.owner_id", "activity_instances.id"],
@@ -763,13 +743,9 @@ class SkillEvidenceEvent(Base):
             "(NOT qualifying_for_level AND qualification_reason_code <> 'qualifies')",
             name="qualification_coherent",
         ),
-        CheckConstraint(
-            "tamforge_validate_explanation_v1(explanation)", name="explanation_valid"
-        ),
+        CheckConstraint("tamforge_validate_explanation_v1(explanation)", name="explanation_valid"),
         CheckConstraint("created_at >= occurred_at", name="created_after_occurrence"),
-        Index(
-            "ix_skill_evidence_events_owner_activity", "owner_id", "activity_instance_id"
-        ),
+        Index("ix_skill_evidence_events_owner_activity", "owner_id", "activity_instance_id"),
         Index(
             "ix_skill_evidence_events_owner_activity_attempt",
             "owner_id",
@@ -1040,9 +1016,7 @@ class PortfolioJudgmentScore(Base):
     delegation_ownership: Mapped[Decimal] = mapped_column(Numeric(5, 3), nullable=False)
     communication_control: Mapped[Decimal] = mapped_column(Numeric(5, 3), nullable=False)
     proactive_work_protection: Mapped[Decimal] = mapped_column(Numeric(5, 3), nullable=False)
-    evidence_based_reprioritization: Mapped[Decimal] = mapped_column(
-        Numeric(5, 3), nullable=False
-    )
+    evidence_based_reprioritization: Mapped[Decimal] = mapped_column(Numeric(5, 3), nullable=False)
     english_clarity: Mapped[Decimal] = mapped_column(Numeric(5, 3), nullable=False)
     total_score: Mapped[Decimal] = mapped_column(Numeric(6, 3), nullable=False)
     trend_basis: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
@@ -1314,9 +1288,8 @@ def _validate_qualification_reason(
     else:
         expected_reason = "excluded_by_formula"
 
-    if (
-        target.qualification_reason_code != expected_reason
-        or target.qualifying_for_level != (expected_reason == "qualifies")
+    if target.qualification_reason_code != expected_reason or target.qualifying_for_level != (
+        expected_reason == "qualifies"
     ):
         raise EvidenceContractError("qualification reason does not match stored evidence")
     if (
@@ -1324,9 +1297,7 @@ def _validate_qualification_reason(
         and target.practice_mode == "independent_practice"
         and attempt_kind != "attempt_a"
     ):
-        raise EvidenceContractError(
-            "qualifying independent practice requires committed Attempt A"
-        )
+        raise EvidenceContractError("qualifying independent practice requires committed Attempt A")
 
 
 def _validate_structured_payloads(
@@ -1336,27 +1307,29 @@ def _validate_structured_payloads(
 ) -> None:
     del mapper, connection
     validators: dict[tuple[type[Base], str], object] = {
-        (ExerciseTypeVersion, "tags"): lambda value: isinstance(value, list)
-        and len(value) <= 32
-        and all(
-            isinstance(item, str)
-            and item
-            in {
-                "observability",
-                "oauth_api_security",
-                "webhooks",
-                "idempotency",
-                "retries_backoff",
-                "payment_operations",
-                "ledger_reconciliation",
-                "customer_expectation_management",
-                "qbr_health_review",
-                "behavioral_interview",
-                "launch_readiness",
-                "data_quality",
-                "portfolio_prioritization",
-            }
-            for item in value
+        (ExerciseTypeVersion, "tags"): lambda value: (
+            isinstance(value, list)
+            and len(value) <= 32
+            and all(
+                isinstance(item, str)
+                and item
+                in {
+                    "observability",
+                    "oauth_api_security",
+                    "webhooks",
+                    "idempotency",
+                    "retries_backoff",
+                    "payment_operations",
+                    "ledger_reconciliation",
+                    "customer_expectation_management",
+                    "qbr_health_review",
+                    "behavioral_interview",
+                    "launch_readiness",
+                    "data_quality",
+                    "portfolio_prioritization",
+                }
+                for item in value
+            )
         ),
         (RubricEvaluation, "input_manifest"): _validate_reference_manifest,
         (RubricDimensionScore, "evidence_manifest"): _validate_reference_manifest,
@@ -1512,13 +1485,9 @@ def validate_skill_evidence_event(
                 RubricEvaluation.__table__.c.owner_id == target.owner_id,
                 RubricEvaluation.__table__.c.config_seed_version_id
                 == target.config_seed_version_id,
-                RubricEvaluation.__table__.c.activity_instance_id
-                == target.activity_instance_id,
-                RubricEvaluation.__table__.c.attempt_id.is_not_distinct_from(
-                    target.attempt_id
-                ),
-                RubricEvaluation.__table__.c.rubric_version_id
-                == target.rubric_version_id,
+                RubricEvaluation.__table__.c.activity_instance_id == target.activity_instance_id,
+                RubricEvaluation.__table__.c.attempt_id.is_not_distinct_from(target.attempt_id),
+                RubricEvaluation.__table__.c.rubric_version_id == target.rubric_version_id,
                 RubricEvaluation.__table__.c.id == target.rubric_evaluation_id,
             )
         ).scalar_one_or_none()
@@ -1536,27 +1505,20 @@ def validate_skill_evidence_event(
                     RubricDimensionScore.__table__.c.owner_id == target.owner_id,
                     RubricDimensionScore.__table__.c.config_seed_version_id
                     == target.config_seed_version_id,
-                    RubricDimensionScore.__table__.c.rubric_version_id
-                    == target.rubric_version_id,
+                    RubricDimensionScore.__table__.c.rubric_version_id == target.rubric_version_id,
                     RubricDimensionScore.__table__.c.rubric_evaluation_id
                     == target.rubric_evaluation_id,
-                    RubricDimensionScore.__table__.c.id
-                    == score_item["dimension_score_id"],
+                    RubricDimensionScore.__table__.c.id == score_item["dimension_score_id"],
                     RubricDimensionScore.__table__.c.availability == "scored",
                 )
             ).one_or_none()
             if stored_dimension is None:
-                raise EvidenceContractError(
-                    "raw scores must match immutable dimensions"
-                )
+                raise EvidenceContractError("raw scores must match immutable dimensions")
             stored_score, stored_weight = map(_as_decimal, stored_dimension)
-            if (
-                stored_score != _as_decimal(score_item["score"])
-                or stored_weight != _as_decimal(score_item["weight"])
+            if stored_score != _as_decimal(score_item["score"]) or stored_weight != _as_decimal(
+                score_item["weight"]
             ):
-                raise EvidenceContractError(
-                    "raw scores must match immutable dimensions"
-                )
+                raise EvidenceContractError("raw scores must match immutable dimensions")
             stored_numerator += stored_score * stored_weight
             stored_denominator += stored_weight
         if (
@@ -1589,8 +1551,7 @@ def validate_rubric_dimension_score(
     maximum = connection.execute(
         select(RubricDimension.__table__.c.max_score).where(
             RubricDimension.__table__.c.owner_id == target.owner_id,
-            RubricDimension.__table__.c.config_seed_version_id
-            == target.config_seed_version_id,
+            RubricDimension.__table__.c.config_seed_version_id == target.config_seed_version_id,
             RubricDimension.__table__.c.rubric_version_id == target.rubric_version_id,
             RubricDimension.__table__.c.id == target.rubric_dimension_id,
         )
@@ -1608,9 +1569,7 @@ def validate_skill_snapshot(
 ) -> None:
     del mapper
     _validate_structured_payloads(None, connection, target)
-    manifest_ids = {
-        int(item["event_id"]) for item in target.contributing_event_manifest["events"]
-    }
+    manifest_ids = {int(item["event_id"]) for item in target.contributing_event_manifest["events"]}
     for basis in (target.confidence_basis, target.trend_basis):
         if not set(basis.get("event_ids", [])).issubset(manifest_ids):
             raise EvidenceContractError("snapshot basis event ids must be contributing events")
@@ -1642,8 +1601,7 @@ def validate_skill_snapshot(
             Competency.__table__.c.final_target,
         ).where(
             Competency.__table__.c.owner_id == target.owner_id,
-            Competency.__table__.c.config_seed_version_id
-            == target.config_seed_version_id,
+            Competency.__table__.c.config_seed_version_id == target.config_seed_version_id,
             Competency.__table__.c.id == target.competency_id,
         )
     ).one_or_none()
@@ -1688,9 +1646,7 @@ def validate_skill_snapshot(
         ):
             raise EvidenceContractError("included snapshot event weight is invalid")
         if inclusion_code == "discounted_same_day" and (
-            not stored_qualifying
-            or manifest_weight <= 0
-            or manifest_weight > stored_weight
+            not stored_qualifying or manifest_weight <= 0 or manifest_weight > stored_weight
         ):
             raise EvidenceContractError("discounted snapshot event weight is invalid")
         if (
@@ -1708,19 +1664,11 @@ def validate_skill_snapshot(
         (baseline * Decimal("2") + reconstructed_weighted_sum)
         / (Decimal("2") + reconstructed_weight)
     ).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
-    expected_weight = reconstructed_weight.quantize(
-        Decimal("0.000001"), rounding=ROUND_HALF_UP
-    )
+    expected_weight = reconstructed_weight.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
     expected_gaps = (
-        (baseline - expected_estimate).quantize(
-            Decimal("0.001"), rounding=ROUND_HALF_UP
-        ),
-        (month_target - expected_estimate).quantize(
-            Decimal("0.001"), rounding=ROUND_HALF_UP
-        ),
-        (final_target - expected_estimate).quantize(
-            Decimal("0.001"), rounding=ROUND_HALF_UP
-        ),
+        (baseline - expected_estimate).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP),
+        (month_target - expected_estimate).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP),
+        (final_target - expected_estimate).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP),
     )
     if (
         target.total_effective_weight != expected_weight
@@ -1750,12 +1698,16 @@ def validate_portfolio_judgment_score(
         if event_ids:
             raise EvidenceContractError("first portfolio score cannot have trend history")
         return
-    if basis_code not in {
-        "too_few_events",
-        "improving",
-        "stable",
-        "declining",
-    } or not event_ids:
+    if (
+        basis_code
+        not in {
+            "too_few_events",
+            "improving",
+            "stable",
+            "declining",
+        }
+        or not event_ids
+    ):
         raise EvidenceContractError("portfolio trend requires prior score history")
     if connection is None:
         return

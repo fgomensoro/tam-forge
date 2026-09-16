@@ -40,15 +40,16 @@ def _weighted_average(events: tuple[TrendEvent, ...]) -> Decimal | None:
     total_weight = sum((item.effective_weight for item in events), Decimal("0"))
     if total_weight <= 0:
         return None
-    return sum(
-        (item.performance_score * item.effective_weight for item in events),
-        Decimal("0"),
-    ) / total_weight
+    return (
+        sum(
+            (item.performance_score * item.effective_weight for item in events),
+            Decimal("0"),
+        )
+        / total_weight
+    )
 
 
-def calculate_trend(
-    events: Sequence[TrendEvent], *, rules: TrendRules
-) -> TrendResult:
+def calculate_trend(events: Sequence[TrendEvent], *, rules: TrendRules) -> TrendResult:
     required = rules.recent_event_count + rules.preceding_event_count
     ordered = tuple(sorted(events, key=lambda item: (item.occurred_at, str(item.event_id))))
     if len(ordered) < required:
@@ -61,9 +62,7 @@ def calculate_trend(
     event_ids = tuple(item.event_id for item in selected)
     if preceding_average is None or recent_average is None:
         return TrendResult("insufficient_evidence", None, None, None, event_ids)
-    delta = (recent_average - preceding_average).quantize(
-        TREND_QUANTUM, rounding=ROUND_HALF_UP
-    )
+    delta = (recent_average - preceding_average).quantize(TREND_QUANTUM, rounding=ROUND_HALF_UP)
     if delta >= rules.minimum_delta:
         code = "improving"
     elif delta <= -rules.minimum_delta:
@@ -73,11 +72,7 @@ def calculate_trend(
     return TrendResult(
         code=code,
         delta=delta,
-        preceding_average=preceding_average.quantize(
-            TREND_QUANTUM, rounding=ROUND_HALF_UP
-        ),
-        recent_average=recent_average.quantize(
-            TREND_QUANTUM, rounding=ROUND_HALF_UP
-        ),
+        preceding_average=preceding_average.quantize(TREND_QUANTUM, rounding=ROUND_HALF_UP),
+        recent_average=recent_average.quantize(TREND_QUANTUM, rounding=ROUND_HALF_UP),
         event_ids=event_ids,
     )

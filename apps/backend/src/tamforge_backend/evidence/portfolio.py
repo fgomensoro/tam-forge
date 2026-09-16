@@ -109,12 +109,8 @@ def score_portfolio_judgment(
         if not isinstance(value, Decimal) or not value.is_finite() or value < 0:
             raise PortfolioScoringError("component score must be a nonnegative Decimal")
         if value > dimension.maximum:
-            raise PortfolioScoringError(
-                f"{dimension.slug} exceeds its maximum {dimension.maximum}"
-            )
-        components.append(
-            PortfolioComponentScore(dimension.slug, value, dimension.maximum)
-        )
+            raise PortfolioScoringError(f"{dimension.slug} exceeds its maximum {dimension.maximum}")
+        components.append(PortfolioComponentScore(dimension.slug, value, dimension.maximum))
     total = sum((item.score for item in components), Decimal("0")).quantize(
         SCORE_QUANTUM, rounding=ROUND_HALF_UP
     )
@@ -151,9 +147,7 @@ def map_portfolio_skill_evidence(
     )
     expected = {impact.skill_slug for impact in applicable}
     if set(skill_scores) != expected:
-        raise PortfolioScoringError(
-            "every applicable mapped skill requires an independent score"
-        )
+        raise PortfolioScoringError("every applicable mapped skill requires an independent score")
     mapped: list[PortfolioSkillEvidence] = []
     for impact in applicable:
         score = skill_scores[impact.skill_slug]

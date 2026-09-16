@@ -17,6 +17,9 @@ from tamforge_backend.evidence.schemas import (
     PortfolioHistoryResponse,
     PortfolioScoreResponse,
     SkillListResponse,
+    SkillScoreEvent,
+    SkillSeriesPoint,
+    SkillSeriesResponse,
     SkillSummaryResponse,
 )
 from tamforge_backend.evidence.service import EvidenceConflict
@@ -88,6 +91,41 @@ class StubEvidenceQueryService:
             raise EvidenceConflict("internal evidence detail must not leak")
         return self._skill()
 
+    async def skill_series(self, **values: object) -> SkillSeriesResponse:
+        self.calls.append(("skill_series", values))
+        skill = self._skill()
+        return SkillSeriesResponse(
+            slug=skill.slug,
+            name=skill.name,
+            baseline=skill.baseline,
+            month_one_target=skill.month_one_target,
+            final_target=skill.final_target,
+            points=(
+                SkillSeriesPoint(
+                    snapshot_id=5,
+                    snapshot_date=date(2026, 9, 16),
+                    estimated_level=Decimal("2.750"),
+                    confidence="medium",
+                    trend="up",
+                    qualifying_event_count=2,
+                ),
+            ),
+            events=(
+                SkillScoreEvent(
+                    event_id=9,
+                    occurred_at=datetime(2026, 9, 16, 12, tzinfo=UTC),
+                    activity_id=30,
+                    exercise_type="integration_diagram_and_explanation",
+                    evaluator="ai_rubric_reviewer",
+                    practice_mode="independent_practice",
+                    assistance="ai_after_committed_attempt",
+                    performance_score=Decimal("3.000"),
+                    effective_weight=Decimal("0.75"),
+                    qualifying_for_level=True,
+                ),
+            ),
+        )
+
     async def list_skill_evidence(self, **values: object) -> EvidenceEventPage:
         self.calls.append(("skill-evidence", values))
         return self._evidence()
@@ -152,9 +190,7 @@ def test_evidence_routes_are_owner_scoped_bounded_and_read_only() -> None:
         skill_evidence = client.get(
             "/api/v1/skills/structured_troubleshooting/evidence?cursor=20&limit=10"
         )
-        activity_evidence = client.get(
-            "/api/v1/activities/7/evidence?cursor=20&limit=10"
-        )
+        activity_evidence = client.get("/api/v1/activities/7/evidence?cursor=20&limit=10")
         portfolio = client.get("/api/v1/portfolio-judgment?cursor=20&limit=10")
         write_attempt = client.post("/api/v1/skills", json={})
 
@@ -218,9 +254,24 @@ def test_evidence_errors_are_closed_and_internal_details_do_not_leak() -> None:
 def test_evidence_routes_reject_unbounded_pagination_before_service_call() -> None:
     client, service = _client()
     with client:
-        response = client.get(
-            "/api/v1/skills/structured_troubleshooting/evidence?limit=101"
-        )
+        response = client.get("/api/v1/skills/structured_troubleshooting/evidence?limit=101")
 
     assert response.status_code == 422
     assert service.calls == []
+
+
+def test_the_skill_series_carries_targets_points_and_events_with_their_assistance() -> None:
+    client, service = _client()
+    with client:
+        response = client.get("/api/v1/skills/structured_troubleshooting/series")
+
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "no-store"
+    payload = response.json()
+    assert {"baseline", "month_one_target", "final_target"} <= payload.keys()
+    assert payload["points"][0]["estimated_level"] == "2.750"
+    assert payload["events"][0]["assistance"] == "ai_after_committed_attempt"
+    assert payload["events"][0]["qualifying_for_level"] is True
+    assert ("skill_series", {"owner_id": 1, "skill_slug": "structured_troubleshooting"}) in [
+        (name, values) for name, values in service.calls
+    ]

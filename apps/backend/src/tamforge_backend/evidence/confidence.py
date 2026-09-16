@@ -107,17 +107,13 @@ def classify_confidence(
     _validate_as_of(as_of)
     qualifying = tuple(
         sorted(
-            (
-                item
-                for item in events
-                if item.qualifying_for_level and item.occurred_at <= as_of
-            ),
+            (item for item in events if item.qualifying_for_level and item.occurred_at <= as_of),
             key=_event_key,
         )
     )
-    total_weight = sum(
-        (item.effective_weight for item in qualifying), Decimal("0")
-    ).quantize(WEIGHT_QUANTUM, rounding=ROUND_HALF_UP)
+    total_weight = sum((item.effective_weight for item in qualifying), Decimal("0")).quantize(
+        WEIGHT_QUANTUM, rounding=ROUND_HALF_UP
+    )
     exercise_count = len({item.exercise_type for item in qualifying})
     assessment_cutoff = as_of - timedelta(days=formula.confidence.high_recent_assessment_days)
     has_recent_assessment = any(
@@ -138,17 +134,13 @@ def classify_confidence(
         )
     )
     has_independent_attempt = any(
-        item.practice_mode == "independent_practice"
-        and item.attempt_kind == "attempt_a"
+        item.practice_mode == "independent_practice" and item.attempt_kind == "attempt_a"
         for item in qualifying
     )
     medium = (
         total_weight >= formula.confidence.medium_minimum_effective_weight
         and exercise_count >= formula.confidence.medium_minimum_exercise_types
-        and (
-            has_independent_attempt
-            or not formula.confidence.medium_requires_independent_attempt
-        )
+        and (has_independent_attempt or not formula.confidence.medium_requires_independent_attempt)
     )
     if high:
         code, basis = "high", "high_weight_diversity_recency"
@@ -170,9 +162,7 @@ def classify_recency(
 ) -> RecencyResult:
     _validate_as_of(as_of)
     qualifying = tuple(
-        item
-        for item in events
-        if item.qualifying_for_level and item.occurred_at <= as_of
+        item for item in events if item.qualifying_for_level and item.occurred_at <= as_of
     )
     if not qualifying:
         return RecencyResult("no_evidence", None, None)
@@ -214,15 +204,9 @@ def estimate_skill(
 
     for item in events:
         if item.effective_weight > formula.maximum_effective_weight_per_event:
-            raise EvidenceEstimateError(
-                "effective_weight exceeds the configured per-event maximum"
-            )
+            raise EvidenceEstimateError("effective_weight exceeds the configured per-event maximum")
     qualifying = sorted(
-        (
-            item
-            for item in events
-            if item.qualifying_for_level and item.occurred_at <= as_of
-        ),
+        (item for item in events if item.qualifying_for_level and item.occurred_at <= as_of),
         key=_event_key,
     )
     selected = qualifying[-formula.latest_qualifying_events :]
@@ -242,9 +226,7 @@ def estimate_skill(
         group = (item.exercise_type, item.scenario_key, item.occurred_at.date())
         rank = group_counts.get(group, 0) + 1
         group_counts[group] = rank
-        raw_weight = item.effective_weight.quantize(
-            WEIGHT_QUANTUM, rounding=ROUND_HALF_UP
-        )
+        raw_weight = item.effective_weight.quantize(WEIGHT_QUANTUM, rounding=ROUND_HALF_UP)
         discounted = rank > formula.full_weight_same_day_limit
         used_weight = raw_weight
         if discounted:
@@ -263,17 +245,15 @@ def estimate_skill(
         )
 
     adjusted_events = tuple(adjusted)
-    total_weight = sum(
-        (item.effective_weight for item in adjusted_events), Decimal("0")
-    ).quantize(WEIGHT_QUANTUM, rounding=ROUND_HALF_UP)
+    total_weight = sum((item.effective_weight for item in adjusted_events), Decimal("0")).quantize(
+        WEIGHT_QUANTUM, rounding=ROUND_HALF_UP
+    )
     denominator = formula.prior_weight + total_weight
     numerator = baseline * formula.prior_weight + sum(
         (item.performance_score * item.effective_weight for item in adjusted_events),
         Decimal("0"),
     )
-    estimate = (numerator / denominator).quantize(
-        SCORE_QUANTUM, rounding=ROUND_HALF_UP
-    )
+    estimate = (numerator / denominator).quantize(SCORE_QUANTUM, rounding=ROUND_HALF_UP)
     strong_modes = {"timed_assessment", "mock_interview", "real_interview"}
     strong_dates = [
         item.occurred_at for item in adjusted_events if item.practice_mode in strong_modes

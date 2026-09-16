@@ -80,8 +80,7 @@ def qualify_evidence(
             return QualificationResult(False, "missing_precommit_selector")
         if (
             not candidate.selector_committed_before_attempt
-            or candidate.selected_competency
-            not in candidate.allowed_selected_competencies
+            or candidate.selected_competency not in candidate.allowed_selected_competencies
         ):
             return QualificationResult(False, "invalid_precommit_selector")
     return QualificationResult(True, "qualifies")
