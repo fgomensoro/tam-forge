@@ -12,11 +12,13 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..assessments.service import AssessmentQueryService
 from ..evidence.repository import SqlAlchemyEvidenceRepository
 from ..evidence.service import EvidenceError, EvidenceQueryService
 from ..learning.models import ActivityInstance, StudyDay
 from ..recordings.models import Recording
 from ..reviews.models import ActivityReview
+from ..roadmaps.models import TaskDefinition
 from ..today.models import Interview
 from .schemas import (
     ProgressAssessment,
@@ -79,12 +81,17 @@ class ProgressQueryService:
             skills = await self._skills(owner_id)
             weeks = await self._weeks(owner_id)
             assessments = await self._assessments(owner_id)
+            days = await AssessmentQueryService(self._session)._list(owner_id=owner_id, limit=8)
             interviews = await self._interviews(owner_id)
             await self._session.rollback()
         except (SQLAlchemyError, EvidenceError):
             raise ProgressUnavailable("progress is unavailable") from None
         return ProgressResponse(
-            skills=skills, weeks=weeks, assessments=assessments, interviews=interviews
+            skills=skills,
+            weeks=weeks,
+            assessments=assessments,
+            assessment_days=days.items,
+            interviews=interviews,
         )
 
     async def _skills(self, owner_id: int) -> tuple[ProgressSkill, ...]:
@@ -133,12 +140,20 @@ class ProgressQueryService:
         rows = (
             await self._session.execute(
                 select(
-                    ActivityReview, ActivityInstance.task_stable_id_snapshot, StudyDay.local_date
+                    ActivityReview,
+                    ActivityInstance.task_stable_id_snapshot,
+                    StudyDay.local_date,
+                    TaskDefinition.block,
                 )
                 .join(
                     ActivityInstance,
                     (ActivityInstance.owner_id == ActivityReview.owner_id)
                     & (ActivityInstance.id == ActivityReview.activity_instance_id),
+                )
+                .join(
+                    TaskDefinition,
+                    (TaskDefinition.owner_id == ActivityInstance.owner_id)
+                    & (TaskDefinition.id == ActivityInstance.task_definition_id),
                 )
                 .join(
                     StudyDay,
@@ -151,7 +166,7 @@ class ProgressQueryService:
             )
         ).all()
         items: list[ProgressAssessment] = []
-        for review, stable_id, local_date in rows:
+        for review, stable_id, local_date, block in rows:
             average, count = average_dimension_score(review.outcome)
             items.append(
                 ProgressAssessment(
@@ -160,6 +175,7 @@ class ProgressQueryService:
                     task_stable_id=str(stable_id),
                     local_date=local_date,
                     rubric_slug=review.rubric_slug,
+                    block=str(block),
                     average_score=average,
                     dimension_count=count,
                     verdict=str(review.outcome.get("verdict", "")),

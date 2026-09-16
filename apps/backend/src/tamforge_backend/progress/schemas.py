@@ -5,6 +5,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
+from ..assessments.schemas import AssessmentDayResult
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -47,6 +49,7 @@ class ProgressAssessment(StrictModel):
     task_stable_id: str
     local_date: date
     rubric_slug: str
+    block: str
     average_score: Decimal
     dimension_count: int
     verdict: str
@@ -67,6 +70,7 @@ class ProgressResponse(StrictModel):
     skills: tuple[ProgressSkill, ...]
     weeks: tuple[ProgressWeek, ...]
     assessments: tuple[ProgressAssessment, ...]
+    assessment_days: tuple[AssessmentDayResult, ...]
     interviews: tuple[ProgressInterview, ...]
 
 

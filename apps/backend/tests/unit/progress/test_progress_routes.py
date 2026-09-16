@@ -76,12 +76,14 @@ class StubService:
                     task_stable_id="p0-w00-d00-warmup",
                     local_date=date(2026, 9, 16),
                     rubric_slug="tam_block",
+                    block="tam_case",
                     average_score=Decimal("3.00"),
                     dimension_count=6,
                     verdict="Correct on delivery.",
                     reviewed_at=datetime(2026, 9, 16, 12, tzinfo=UTC),
                 ),
             ),
+            assessment_days=(),
             interviews=(
                 ProgressInterview(
                     interview_id=2,
@@ -125,6 +127,8 @@ def test_progress_is_one_owner_scoped_read_with_every_section() -> None:
     assert payload["skills"][0]["points"][0]["snapshot_date"] == "2026-09-16"
     assert payload["weeks"][0]["planned_minutes"] == 600
     assert payload["assessments"][0]["average_score"] == "3.00"
+    assert payload["assessments"][0]["block"] == "tam_case"
+    assert payload["assessment_days"] == []
     assert payload["interviews"][0]["company"] == "Coframe"
     assert write.status_code == 405
     assert service.calls == [1]

@@ -12,7 +12,13 @@ final class ProgressModelTests: XCTestCase {
         "latest_level": null, "confidence": null, "trend": null, "points": []}],
      "weeks": [{"week_start": "2026-09-14", "planned_minutes": 600, "focused_minutes": 420, "study_days": 5, "closed_days": 3}],
      "assessments": [{"review_id": 3, "activity_id": 41, "task_stable_id": "p0-w00-d00-warmup", "local_date": "2026-09-16",
-       "rubric_slug": "tam_block", "average_score": "3.00", "dimension_count": 6, "verdict": "Correct.", "reviewed_at": "2026-09-16T12:00:00Z"}],
+       "rubric_slug": "tam_block", "block": "tam_case", "average_score": "3.00", "dimension_count": 6, "verdict": "Correct.", "reviewed_at": "2026-09-16T12:00:00Z"}],
+     "assessment_days": [{"study_day_id": 6, "local_date": "2026-08-29", "day_status": "closed", "planned_minutes": 120, "focused_minutes": 110,
+       "contracts": [{"activity_id": 61, "task_stable_id": "m1-w1-d06-sql", "contract_type": "saturday_sql", "exercise_type": "sql_no_ai_timed_assessment",
+         "activity_state": "feedback_ready", "result": "scored", "average_score": "3.00", "dimension_count": 6, "review_id": 9, "evidence_event_ids": [1]},
+         {"activity_id": 62, "task_stable_id": "m1-w1-d06-case", "contract_type": "saturday_case", "exercise_type": null, "activity_state": "planned",
+         "result": "not_attempted", "average_score": null, "dimension_count": 0, "review_id": null, "evidence_event_ids": []}],
+       "scored_contracts": 1, "average_score": "3.00"}],
      "interviews": [{"interview_id": 2, "company": "Coframe", "role": "TAM", "stage": "screen",
        "starts_at": "2026-09-10T17:00:00Z", "status": "completed", "recording_count": 1}]}
     """
@@ -27,6 +33,10 @@ final class ProgressModelTests: XCTestCase {
         XCTAssertEqual(report.weeks[0].completion, 0.7, accuracy: 0.001)
         XCTAssertEqual(report.assessments[0].averageScore, Decimal(string: "3.00"))
         XCTAssertEqual(report.interviews[0].company, "Coframe")
+        XCTAssertEqual(report.assessments[0].block, "tam_case")
+        XCTAssertEqual(report.assessmentDays[0].averageScore, Decimal(string: "3.00"))
+        XCTAssertEqual(report.assessmentDays[0].contracts.map(\.result), ["scored", "not_attempted"])
+        XCTAssertNil(report.assessmentDays[0].contracts[1].averageScore)
 
         let api = FakeProgressAPI(report: report)
         let model = ProgressModel(api: api)

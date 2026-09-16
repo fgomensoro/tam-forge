@@ -121,7 +121,7 @@ private final class NativeUIFixtureState: @unchecked Sendable {
             case "/api/v1/cards/due":
                 value = ["local_date": "2026-09-16", "items": []]
             case "/api/v1/progress":
-                value = ["skills": [], "weeks": [], "assessments": [], "interviews": []]
+                value = ["skills": [], "weeks": [], "assessments": [], "assessment_days": [], "interviews": []]
             case "/api/v1/activities/41/coach":
                 value = ["activity_id": 41, "thread_id": NSNull(), "coaching_allowed": false,
                          "committed": activityState == "output_committed", "next_step": "", "messages": []]

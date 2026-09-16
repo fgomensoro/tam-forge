@@ -61,6 +61,7 @@ struct ProgressAssessment: Equatable, Sendable, Identifiable {
     let taskStableID: String
     let localDate: String
     let rubricSlug: String
+    let block: String
     let averageScore: Decimal
     let dimensionCount: Int
     let verdict: String
@@ -78,13 +79,35 @@ struct ProgressInterview: Equatable, Sendable, Identifiable {
     var id: Int { interviewID }
 }
 
+/// One contract of an assessment day and how it went.
+struct ProgressAssessmentContract: Equatable, Sendable, Identifiable {
+    let activityID: Int
+    let taskStableID: String
+    let contractType: String
+    let result: String
+    let averageScore: Decimal?
+    var id: Int { activityID }
+}
+
+/// A Saturday: its contracts and the average of the ones the reviewer scored.
+struct ProgressAssessmentDay: Equatable, Sendable, Identifiable {
+    let studyDayID: Int
+    let localDate: String
+    let dayStatus: String
+    let contracts: [ProgressAssessmentContract]
+    let scoredContracts: Int
+    let averageScore: Decimal?
+    var id: Int { studyDayID }
+}
+
 struct ProgressReport: Equatable, Sendable {
     let skills: [ProgressSkill]
     let weeks: [ProgressWeek]
     let assessments: [ProgressAssessment]
+    let assessmentDays: [ProgressAssessmentDay]
     let interviews: [ProgressInterview]
 
-    static let empty = ProgressReport(skills: [], weeks: [], assessments: [], interviews: [])
+    static let empty = ProgressReport(skills: [], weeks: [], assessments: [], assessmentDays: [], interviews: [])
 }
 
 extension ProgressSkillPoint: Decodable {
@@ -140,6 +163,7 @@ extension ProgressAssessment: Decodable {
         case taskStableID = "task_stable_id"
         case localDate = "local_date"
         case rubricSlug = "rubric_slug"
+        case block
         case averageScore = "average_score"
         case dimensionCount = "dimension_count"
     }
@@ -151,6 +175,7 @@ extension ProgressAssessment: Decodable {
         taskStableID = try container.decode(String.self, forKey: .taskStableID)
         localDate = try container.decode(String.self, forKey: .localDate)
         rubricSlug = try container.decode(String.self, forKey: .rubricSlug)
+        block = try container.decodeIfPresent(String.self, forKey: .block) ?? ""
         averageScore = try ProgressDecimal.decode(container, .averageScore)
         dimensionCount = try container.decode(Int.self, forKey: .dimensionCount)
         verdict = try container.decode(String.self, forKey: .verdict)
@@ -166,7 +191,61 @@ extension ProgressInterview: Decodable {
     }
 }
 
-extension ProgressReport: Decodable {}
+extension ProgressAssessmentContract: Decodable {
+    enum CodingKeys: String, CodingKey {
+        case result
+        case activityID = "activity_id"
+        case taskStableID = "task_stable_id"
+        case contractType = "contract_type"
+        case averageScore = "average_score"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        activityID = try container.decode(Int.self, forKey: .activityID)
+        taskStableID = try container.decode(String.self, forKey: .taskStableID)
+        contractType = try container.decode(String.self, forKey: .contractType)
+        result = try container.decode(String.self, forKey: .result)
+        averageScore = try ProgressDecimal.decodeIfPresent(container, .averageScore)
+    }
+}
+
+extension ProgressAssessmentDay: Decodable {
+    enum CodingKeys: String, CodingKey {
+        case contracts
+        case studyDayID = "study_day_id"
+        case localDate = "local_date"
+        case dayStatus = "day_status"
+        case scoredContracts = "scored_contracts"
+        case averageScore = "average_score"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        studyDayID = try container.decode(Int.self, forKey: .studyDayID)
+        localDate = try container.decode(String.self, forKey: .localDate)
+        dayStatus = try container.decode(String.self, forKey: .dayStatus)
+        contracts = try container.decode([ProgressAssessmentContract].self, forKey: .contracts)
+        scoredContracts = try container.decode(Int.self, forKey: .scoredContracts)
+        averageScore = try ProgressDecimal.decodeIfPresent(container, .averageScore)
+    }
+}
+
+extension ProgressReport: Decodable {
+    enum CodingKeys: String, CodingKey {
+        case skills, weeks, assessments, interviews
+        case assessmentDays = "assessment_days"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        skills = try container.decode([ProgressSkill].self, forKey: .skills)
+        weeks = try container.decode([ProgressWeek].self, forKey: .weeks)
+        assessments = try container.decode([ProgressAssessment].self, forKey: .assessments)
+        assessmentDays = try container.decodeIfPresent([ProgressAssessmentDay].self, forKey: .assessmentDays) ?? []
+        interviews = try container.decode([ProgressInterview].self, forKey: .interviews)
+    }
+}
 
 enum ProgressAPIError: Error, Equatable {
     case unauthorized
