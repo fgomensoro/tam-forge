@@ -72,6 +72,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.coach_transport = app.state.planner_transport
             app.state.debrief_transport = app.state.planner_transport
             app.state.class_analysis_transport = app.state.planner_transport
+            app.state.report_transport = app.state.planner_transport
 
             async def probe_ingest() -> None:
                 # Built here rather than at startup on purpose. The store is

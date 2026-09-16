@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal, Protocol, cast
 
 from sqlalchemy import select
@@ -23,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ..agents.roles.class_analysis import ClassAnalysisService
 from ..agents.roles.debrief import DebriefService
 from ..agents.roles.reviewer import ReviewerService
+from ..agents.roles.weekly_report import WeeklyReportService
 from ..agents.runtime import (
     AgentAuthenticationFailed,
     AgentOutputInvalid,
@@ -172,6 +174,7 @@ async def gate_step(sessions: async_sessionmaker[AsyncSession]) -> str | None:
     await review_step(sessions)
     await debrief_step(sessions)
     await class_analysis_step(sessions)
+    await weekly_report_step(sessions)
     return None
 
 
@@ -377,6 +380,72 @@ async def class_analysis_step(
                 ),
             )
     return processed
+
+
+async def weekly_report_step(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    analyst: WeeklyReportService | None = None,
+    sender: Any = None,
+    now: datetime | None = None,
+    worker_id: str = "claude-weekly-report",
+) -> int:
+    """Queue the due week for every learner, then compose one report; failures close."""
+    from datetime import date
+
+    from ..agents.sdk_runtime import AgentSdkRuntime
+    from ..jobs.repository import SqlAlchemyJobRepository
+    from ..jobs.schemas import ClaimJobCommand, CompleteJobCommand, JobFailure, RetryJobCommand
+    from ..jobs.service import JobService
+    from ..reports.service import (
+        WEEKLY_REPORT_JOB_KIND,
+        ReportInvalid,
+        ReportsUnavailable,
+        WeeklyReportQueue,
+    )
+    from .settings import WorkerSettings
+
+    if analyst is None:
+        analyst = WeeklyReportService(AgentSdkRuntime(), model=WorkerSettings().report_model)
+    async with sessions() as session:
+        await WeeklyReportQueue(session, analyst=analyst, sender=sender).schedule_due(now=now)
+    async with sessions() as session:
+        jobs = JobService(SqlAlchemyJobRepository(session))
+        job = await jobs.claim(
+            ClaimJobCommand(worker_id=worker_id, kinds=(WEEKLY_REPORT_JOB_KIND,), lease_seconds=900)
+        )
+        if job is None:
+            return 0
+        service = WeeklyReportQueue(session, analyst=analyst, sender=sender)
+        category: str | None = None
+        try:
+            await service.process(
+                owner_id=job.owner_id, week_start=date.fromordinal(job.payload.subject_id)
+            )
+        except ReportInvalid:
+            category = "invalid_input"
+        except ReportsUnavailable as exc:
+            text = str(exc).lower()
+            if "quota" in text:
+                category = "resource_exhausted"
+            elif "credential" in text or "authentication" in text:
+                category = "permission_required"
+            else:
+                category = "transient_dependency"
+        except Exception:  # noqa: BLE001 - a job must always end in a closed state
+            await session.rollback()
+            category = "processing_failure"
+        if category is None:
+            await jobs.complete(job_id=job.id, command=CompleteJobCommand(worker_id=worker_id))
+            return 1
+        await session.rollback()
+        await jobs.retry(
+            job_id=job.id,
+            command=RetryJobCommand(
+                worker_id=worker_id, failure=JobFailure(category=cast(Any, category))
+            ),
+        )
+        return 0
 
 
 async def probe_step(
