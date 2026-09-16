@@ -24,6 +24,8 @@ from ..agents.roles.coach import (
     coaching_allowed,
 )
 from ..agents.roles.contracts import RoleContractError
+from ..cards.importing import coach_card_command, skill_slug_for
+from ..cards.service import CardService
 from ..database import transaction_scope
 from ..learning.models import ActivityInstance, Attempt, StudyDay
 from ..learning.service import _string_items
@@ -144,7 +146,7 @@ class CoachThreadService:
                         text=turn.message,
                         next_step=turn.next_step,
                         proposed_evidence=[
-                            {"kind": item.kind, "text": item.text}
+                            {"kind": item.kind, "text": item.text, "answer": item.answer}
                             for item in turn.proposed_evidence
                         ],
                     )
@@ -157,8 +159,16 @@ class CoachThreadService:
             raise CoachingUnavailable("the coaching store is unavailable") from None
 
     async def accept_evidence(
-        self, *, owner_id: int, activity_id: int, message_id: int, index: int
+        self,
+        *,
+        owner_id: int,
+        activity_id: int,
+        message_id: int,
+        index: int,
+        question: str = "",
+        answer: str = "",
     ) -> CoachThreadResponse:
+        """Record one accepted proposal. An accepted card also becomes a flashcard."""
         try:
             async with transaction_scope(self._session):
                 loaded = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
@@ -183,14 +193,37 @@ class CoachThreadService:
                 )
                 if existing is None:
                     proposal = proposals[index]
+                    kind = str(proposal["kind"])
+                    text = question.strip() or str(proposal["text"])
+                    if kind == "card":
+                        card_answer = answer.strip() or str(proposal.get("answer", ""))
+                        if not card_answer:
+                            raise CoachingInvalidRequest("a card needs an answer")
+                        skill = await skill_slug_for(
+                            self._session,
+                            owner_id=owner_id,
+                            exercise_type=loaded.definition.exercise_type,
+                        )
+                        await CardService(self._session, clock=self._clock).upsert_many(
+                            owner_id=owner_id,
+                            commands=[
+                                coach_card_command(
+                                    message_id=message_id,
+                                    index=index,
+                                    question=text,
+                                    answer=card_answer,
+                                    skill_slug=skill,
+                                )
+                            ],
+                        )
                     self._session.add(
                         CoachEvidence(
                             owner_id=owner_id,
                             thread_id=loaded.thread.id,
                             message_id=message_id,
                             proposal_index=index,
-                            kind=str(proposal["kind"]),
-                            text=str(proposal["text"]),
+                            kind=kind,
+                            text=text,
                         )
                     )
                     await self._session.flush()
@@ -294,6 +327,7 @@ class CoachThreadService:
                                 index=index,
                                 kind=cast(Any, proposal["kind"]),
                                 text=str(proposal["text"]),
+                                answer=str(proposal.get("answer", "")),
                                 accepted=(item.id, index) in accepted,
                             )
                             for index, proposal in enumerate(item.proposed_evidence)

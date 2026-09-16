@@ -31,6 +31,8 @@ from ..agents.roles.coach import (
     coaching_allowed,
 )
 from ..agents.roles.contracts import RoleContractError
+from ..cards.importing import note_card_commands, skill_slug_for
+from ..cards.service import CardService
 from ..coaching.models import CoachEvidence, CoachMessage, CoachThread
 from ..database import transaction_scope
 from ..learning.artifacts import unencrypted_metadata
@@ -261,6 +263,22 @@ class StudyNoteService:
                 note.approved_at = now
                 note.updated_at = now
                 await self._session.flush()
+                # The note's flashcards become cards now that the note is frozen. They are
+                # content-addressed, so approving a re-drafted note never duplicates them.
+                skill = await skill_slug_for(
+                    self._session,
+                    owner_id=owner_id,
+                    exercise_type=loaded.definition.exercise_type,
+                )
+                await CardService(self._session, clock=self._clock).upsert_many(
+                    owner_id=owner_id,
+                    commands=note_card_commands(
+                        note_id=note.id,
+                        flashcards=_flashcard_pairs(note),
+                        skill_slug=skill,
+                        assistance=note.assistance,
+                    ),
+                )
                 return _response(note, loaded)
         except SQLAlchemyError:
             raise NotesUnavailable("the notes store is unavailable") from None
@@ -439,6 +457,14 @@ class StudyNoteService:
             .limit(1)
         )
         return found is not None
+
+
+def _flashcard_pairs(note: StudyNote) -> tuple[tuple[str, str], ...]:
+    return tuple(
+        (str(item.get("question", "")), str(item.get("answer", "")))
+        for item in note.flashcards
+        if isinstance(item, dict)
+    )
 
 
 async def _chunks(payload: bytes) -> AsyncIterator[bytes]:

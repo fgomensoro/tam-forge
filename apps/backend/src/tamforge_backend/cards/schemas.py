@@ -76,6 +76,15 @@ class CardReviewResult(StrictModel):
     review: CardReviewResponse
 
 
+class CardImportResponse(StrictModel):
+    """What an import did: how many cards were new, how many already existed."""
+
+    source_ref: str
+    created: int
+    existing: int
+    cards: tuple[CardResponse, ...]
+
+
 class CardsExport(StrictModel):
     scheduler_version: str
     cards: tuple[CardResponse, ...]
@@ -84,6 +93,7 @@ class CardsExport(StrictModel):
 
 __all__ = [
     "CardCommand",
+    "CardImportResponse",
     "CardPage",
     "CardResponse",
     "CardReviewResponse",

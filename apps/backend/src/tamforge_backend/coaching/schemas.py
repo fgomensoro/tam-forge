@@ -12,8 +12,9 @@ class StrictModel(BaseModel):
 
 class CoachEvidenceProposal(StrictModel):
     index: Annotated[int, Field(ge=0)]
-    kind: Literal["note", "correction", "question"]
+    kind: Literal["note", "correction", "question", "card"]
     text: str
+    answer: str = ""
     accepted: bool
 
 
@@ -40,8 +41,12 @@ class CoachMessageCommand(StrictModel):
 
 
 class AcceptEvidenceCommand(StrictModel):
+    """Accept one proposal. A card may be edited on the way in; blank fields keep the proposal."""
+
     message_id: Annotated[int, Field(gt=0)]
     index: Annotated[int, Field(ge=0, le=4)]
+    question: Annotated[str, Field(max_length=2048)] = ""
+    answer: Annotated[str, Field(max_length=4096)] = ""
 
 
 __all__ = [

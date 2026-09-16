@@ -80,6 +80,8 @@ async def accept_coach_evidence(
         activity_id=activity_id,
         message_id=command.message_id,
         index=command.index,
+        question=command.question,
+        answer=command.answer,
     )
     _prevent_storage(response)
     return result
