@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..agents.roles.debrief import DebriefService
 from ..auth.dependencies import get_authenticated_owner, require_csrf_owner
 from ..auth.schemas import AuthenticatedOwner, ProblemResponse
+from ..config import Settings
 from ..database import get_db_session
+from .debriefs import InterviewDebriefService
 from .schemas import (
     AttachRecordingCommand,
     InterviewCommand,
+    InterviewDebriefResponse,
     InterviewPage,
     InterviewResponse,
     InterviewTranscriptCommand,
@@ -52,6 +56,19 @@ def get_reference_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> ReferenceMaterialService:
     return ReferenceMaterialService(session)
+
+
+def get_debrief_service(
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> InterviewDebriefService:
+    settings = cast(Settings, request.app.state.settings)
+    transport = getattr(request.app.state, "debrief_transport", None)
+    if not settings.claude_enabled:
+        transport = None
+    return InterviewDebriefService(
+        session, debriefer=DebriefService(transport, model=settings.debrief_model)
+    )
 
 
 @router.get("", response_model=InterviewPage)
@@ -149,6 +166,31 @@ async def read_transcript(
     return result
 
 
+@router.post("/{interview_id}/debrief", response_model=InterviewDebriefResponse, status_code=202)
+async def request_debrief(
+    interview_id: int,
+    response: Response,
+    service: Annotated[InterviewDebriefService, Depends(get_debrief_service)],
+    owner: Annotated[AuthenticatedOwner, Depends(require_csrf_owner)],
+) -> InterviewDebriefResponse:
+    """Queue the debrief of this interview's transcript; the worker runs it."""
+    result = await service.request(owner_id=owner.owner_id, interview_id=interview_id)
+    _prevent_storage(response)
+    return result
+
+
+@router.get("/{interview_id}/debrief", response_model=InterviewDebriefResponse)
+async def read_debrief(
+    interview_id: int,
+    response: Response,
+    service: Annotated[InterviewDebriefService, Depends(get_debrief_service)],
+    owner: Annotated[AuthenticatedOwner, Depends(get_authenticated_owner)],
+) -> InterviewDebriefResponse:
+    result = await service.read(owner_id=owner.owner_id, interview_id=interview_id)
+    _prevent_storage(response)
+    return result
+
+
 @reference_router.post("", response_model=ReferenceImportResponse, status_code=201)
 async def import_reference_material(
     command: ReferenceImportCommand,
@@ -180,7 +222,7 @@ def interviews_problem_response(exc: Exception) -> JSONResponse:
     elif isinstance(exc, InterviewInvalid):
         status, code, title = 422, "interview_invalid", "Invalid interview command"
     elif isinstance(exc, InterviewConflict):
-        status, code, title = 409, "interview_conflict", "Recording belongs to another interview"
+        status, code, title = 409, "interview_conflict", "Interview conflict"
     elif isinstance(exc, InterviewsUnavailable):
         status, code, title = 503, "interviews_unavailable", "Interviews unavailable"
     else:
@@ -205,6 +247,7 @@ async def interviews_exception_handler(request: Request, exc: Exception) -> JSON
 
 
 __all__ = [
+    "get_debrief_service",
     "get_interview_service",
     "get_reference_service",
     "interviews_exception_handler",

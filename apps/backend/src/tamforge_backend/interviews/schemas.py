@@ -86,6 +86,43 @@ class InterviewTranscriptResponse(StrictModel):
     created_at: datetime
 
 
+class DebriefFindingResponse(StrictModel):
+    statement: str
+    evidence: str
+    skill_slug: str
+
+
+class DebriefSkillEffectResponse(StrictModel):
+    skill_slug: str
+    skill_name: str
+    direction: Literal["up", "flat", "down"]
+    evidence: str
+
+
+class DebriefPracticeResponse(StrictModel):
+    description: str
+    skill_slug: str
+    minutes: int
+
+
+class InterviewDebriefResponse(StrictModel):
+    """Where the debrief stands, then what it says. It proposes; it never changes the plan."""
+
+    interview_id: int
+    status: Literal["not_requested", "queued", "running", "ready", "needs_attention"]
+    failure_category: str | None = None
+    debrief_id: int | None = None
+    transcript_source: Literal["recording", "transcript_only"] | None = None
+    model: str | None = None
+    summary: str | None = None
+    strengths: tuple[DebriefFindingResponse, ...] = ()
+    gaps: tuple[DebriefFindingResponse, ...] = ()
+    skills_affected: tuple[DebriefSkillEffectResponse, ...] = ()
+    next_week_practice: tuple[DebriefPracticeResponse, ...] = ()
+    hiring_progression: str | None = None
+    created_at: datetime | None = None
+
+
 ReferenceKind = Literal["answer_bank", "story_catalog"]
 
 
@@ -121,6 +158,10 @@ class ReferencePage(StrictModel):
 
 __all__ = [
     "AttachRecordingCommand",
+    "DebriefFindingResponse",
+    "DebriefPracticeResponse",
+    "DebriefSkillEffectResponse",
+    "InterviewDebriefResponse",
     "InterviewCommand",
     "InterviewPage",
     "InterviewRecordingSummary",

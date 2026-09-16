@@ -70,6 +70,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # is disabled; constructing the runtime reads no credential.
             app.state.planner_transport = AgentSdkRuntime()
             app.state.coach_transport = app.state.planner_transport
+            app.state.debrief_transport = app.state.planner_transport
 
             async def probe_ingest() -> None:
                 # Built here rather than at startup on purpose. The store is

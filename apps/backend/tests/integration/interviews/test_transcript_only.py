@@ -3,11 +3,45 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
 pytestmark = pytest.mark.integration
+CONFIG_DIR = Path(__file__).parents[5] / "config"
+
+
+class FakeDebriefTransport:
+    def __init__(self) -> None:
+        self.requests: list[object] = []
+
+    async def debrief(self, request: object) -> Mapping[str, object]:
+        self.requests.append(request)
+        skills = [s.slug for s in request.skills]  # type: ignore[attr-defined]
+        return {
+            "summary": "Names the cause; says nothing about the customer's cost.",
+            "strengths": [
+                {"statement": "Names the cause.", "evidence": "Short.", "skill_slug": skills[0]},
+                {"statement": "Stays concrete.", "evidence": "short", "skill_slug": skills[1]},
+            ],
+            "gaps": [
+                {"statement": "No impact stated.", "evidence": "Short.", "skill_slug": skills[0]},
+                {"statement": "No close.", "evidence": "short", "skill_slug": skills[1]},
+            ],
+            "skills_affected": [
+                {"skill_slug": skills[0], "direction": "flat", "evidence": "Short."}
+            ],
+            "next_week_practice": [
+                {
+                    "description": "Retell with the cost first.",
+                    "skill_slug": skills[1],
+                    "minutes": 20,
+                }
+            ],
+            "hiring_progression": "Waiting to hear back.",
+        }
 
 
 def test_transcript_only_interview_and_reference_import(test_database_url: str) -> None:
@@ -16,18 +50,24 @@ def test_transcript_only_interview_and_reference_import(test_database_url: str) 
     from sqlalchemy import create_engine, text
     from sqlalchemy.engine import make_url
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-    from tamforge_backend.database import database_url_to_sync
+    from tamforge_backend.agents.roles.debrief import DebriefService
+    from tamforge_backend.database import database_url_to_sync, transaction_scope
+    from tamforge_backend.evidence.config_loader import load_config_bundle
+    from tamforge_backend.evidence.seed import seed_config
+    from tamforge_backend.interviews.debriefs import InterviewDebriefService
     from tamforge_backend.interviews.schemas import (
         InterviewCommand,
         InterviewTranscriptCommand,
         ReferenceImportCommand,
     )
     from tamforge_backend.interviews.service import (
+        InterviewConflict,
         InterviewInvalid,
         InterviewNotFound,
         InterviewService,
         ReferenceMaterialService,
     )
+    from tamforge_backend.workers.claude import debrief_step
 
     config = Config("apps/backend/alembic.ini")
     config.attributes["database_url"] = test_database_url
@@ -125,6 +165,39 @@ def test_transcript_only_interview_and_reference_import(test_database_url: str) 
                     )
                     assert "unverified" in cited[0]
                     await session.rollback()
+
+                # The debrief: refused without a skill catalog, queued once it is seeded,
+                # run by the worker, read back with its quotes and practice; the same
+                # transcript is not debriefed twice.
+                debriefer = DebriefService(FakeDebriefTransport(), model="claude-opus-5")
+                async with factory() as session:
+                    service = InterviewDebriefService(session, debriefer=debriefer)
+                    before = await service.read(owner_id=owner_id, interview_id=created.id)
+                    assert before.status == "not_requested"
+                    queued = await service.request(owner_id=owner_id, interview_id=created.id)
+                    assert queued.status == "queued"
+                    async with transaction_scope(session):
+                        await seed_config(
+                            load_config_bundle(CONFIG_DIR),
+                            owner_id=owner_id,
+                            session=session,
+                            apply=True,
+                        )
+                assert await debrief_step(factory, debriefer=debriefer) == 1
+                async with factory() as session:
+                    service = InterviewDebriefService(session, debriefer=debriefer)
+                    ready = await service.read(owner_id=owner_id, interview_id=created.id)
+                    assert ready.status == "ready", ready
+                    assert ready.transcript_source == "transcript_only"
+                    assert ready.model == "claude-opus-5"
+                    assert len(ready.strengths) == 2 and len(ready.gaps) == 2
+                    assert ready.skills_affected[0].skill_name
+                    assert ready.next_week_practice[0].minutes == 20
+                    with pytest.raises(InterviewConflict):
+                        await service.request(owner_id=owner_id, interview_id=created.id)
+                    transport = debriefer._transport  # type: ignore[attr-defined]
+                    assert transport.requests[0].transcript_source == "transcript_only"
+                    assert transport.requests[0].reference  # the answer bank was cited
             finally:
                 await engine.dispose()
 
