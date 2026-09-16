@@ -394,6 +394,9 @@ class WeeklyReportQueue:
 
     async def list(self, *, owner_id: int, limit: int = 12) -> WeeklyReportPage:
         try:
+            # The evidence reader owns its unit of work, so it goes first; the ORM rows
+            # are read after it and rendered before this read's transaction closes.
+            names = await self._skill_names(owner_id)
             rows = (
                 await self._session.scalars(
                     select(WeeklyReport)
@@ -402,7 +405,6 @@ class WeeklyReportQueue:
                     .limit(limit)
                 )
             ).all()
-            names = await self._skill_names(owner_id)
             page = WeeklyReportPage(
                 items=tuple(_response(r.week_start, r, None, names) for r in rows)
             )
@@ -414,6 +416,7 @@ class WeeklyReportQueue:
     async def read(self, *, owner_id: int, week_start: date) -> WeeklyReportResponse:
         try:
             try:
+                names = await self._skill_names(owner_id)
                 row = await self._session.scalar(
                     select(WeeklyReport)
                     .where(WeeklyReport.owner_id == owner_id)
@@ -429,7 +432,6 @@ class WeeklyReportQueue:
                     .order_by(BackgroundJob.id.desc())
                     .limit(1)
                 )
-                names = await self._skill_names(owner_id) if row else {}
                 return _response(week_start, row, job, names)
             finally:
                 await self._session.rollback()
@@ -442,7 +444,9 @@ class WeeklyReportQueue:
                 SqlAlchemyEvidenceRepository(self._session)
             ).list_skills(owner_id=owner_id)
         except EvidenceError:
+            await self._session.rollback()
             return {}
+        await self._session.rollback()
         return {s.slug: s.name for s in listed.items}
 
     async def _timezone(self, owner_id: int) -> str:
@@ -477,7 +481,8 @@ def _inputs_json(request: WeeklyReportRequest) -> dict[str, Any]:
 
 
 def _status(job: BackgroundJob | None, row: WeeklyReport | None) -> str:
-    if row is not None and (job is None or job.state == "succeeded"):
+    # A stored report is the truth: a parked job from an earlier attempt does not hide it.
+    if row is not None:
         return "ready"
     if job is None:
         return "not_requested"
