@@ -46,6 +46,9 @@ from .progress.service import ProgressUnavailable
 from .recordings.routes import recording_exception_handler
 from .recordings.routes import router as recording_router
 from .recordings.service import RecordingError
+from .reports.routes import reports_exception_handler
+from .reports.routes import router as reports_router
+from .reports.service import ReportsError
 from .reviews.routes import reviews_exception_handler
 from .reviews.routes import router as reviews_router
 from .reviews.service import ReviewsError
@@ -78,6 +81,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(progress_router)
     app.include_router(assessments_router)
     app.include_router(coverage_router)
+    app.include_router(reports_router)
     app.include_router(reviews_router)
     app.include_router(evidence_router)
     app.include_router(analysis_router)
@@ -99,6 +103,7 @@ def register_routes(app: FastAPI) -> None:
     app.add_exception_handler(ProgressUnavailable, progress_exception_handler)
     app.add_exception_handler(AssessmentsUnavailable, assessments_exception_handler)
     app.add_exception_handler(CoverageError, coverage_exception_handler)
+    app.add_exception_handler(ReportsError, reports_exception_handler)
     app.add_exception_handler(ReviewsError, reviews_exception_handler)
     app.add_exception_handler(EvidenceError, evidence_exception_handler)
     app.add_exception_handler(FeedbackError, feedback_exception_handler)

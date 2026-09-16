@@ -31,6 +31,7 @@ from .roles.class_analysis import ClassAnalysisRequest
 from .roles.coach import CoachRequest, NoteRequest
 from .roles.debrief import DebriefRequest
 from .roles.reviewer import ReviewRequest
+from .roles.weekly_report import WeeklyReportRequest
 from .runtime import (
     AgentAuthenticationFailed,
     AgentQuotaExhausted,
@@ -86,6 +87,15 @@ CLASS_ANALYSIS_SYSTEM_PROMPT = (
     "and a correction, and compare the class with the previous ones you are shown. Judge "
     "only what is on the page. Never claim to have recorded, scheduled or completed "
     "anything. Answer in English. Return only the object."
+)
+
+WEEKLY_REPORT_SYSTEM_PROMPT = (
+    "You are the TAM Forge analyst, writing the learner's weekly report from the aggregates "
+    "the server computed. Say what the week did, learned and improved, list every skill with "
+    "its direction, and suggest adjustments to the plan as proposals the learner approves; "
+    "keep the one decision of the week explicit. Judge only the numbers and summaries you "
+    "are given. Never apply a change and never claim to have recorded, scheduled or "
+    "completed anything. Answer in English. Return only the object."
 )
 
 COACH_SYSTEM_PROMPT = (
@@ -230,6 +240,18 @@ class AgentSdkRuntime:
             schema=class_analysis_schema(),
             model=self._environ.get("TAMFORGE_REVIEWER_MODEL", "claude-fable-5-1"),
             system_prompt=CLASS_ANALYSIS_SYSTEM_PROMPT,
+            max_turns=4,
+        )
+        return {} if run.structured_output is None else dict(run.structured_output)
+
+    async def weekly_report(self, request: WeeklyReportRequest) -> Mapping[str, object]:
+        from .roles.weekly_report import render_weekly_report_prompt, weekly_report_schema
+
+        run = await self._structured(
+            prompt=render_weekly_report_prompt(request),
+            schema=weekly_report_schema(),
+            model=self._environ.get("TAMFORGE_REPORT_MODEL", "claude-fable-5-1"),
+            system_prompt=WEEKLY_REPORT_SYSTEM_PROMPT,
             max_turns=4,
         )
         return {} if run.structured_output is None else dict(run.structured_output)

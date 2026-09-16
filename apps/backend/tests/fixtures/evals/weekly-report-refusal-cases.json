@@ -1,0 +1,429 @@
+{
+  "fixture_version": "weekly-report-refusals-v1",
+  "model": "claude-fable-5-1",
+  "cases": [
+    {
+      "case_id": "no-skill-catalog",
+      "week_start": "2026-09-07",
+      "skills": [],
+      "answers": [
+        {
+          "headline": "Focused week: SQL moved, English flat.",
+          "did": [
+            "Closed four study days.",
+            "Completed the Saturday SQL contract."
+          ],
+          "learned": [
+            "Idempotency keys stop duplicate ledger rows."
+          ],
+          "improved": [
+            "SQL reconciliation rose half a point."
+          ],
+          "skills": [
+            {
+              "skill_slug": "sql_reconciliation",
+              "direction": "up",
+              "note": "Three scored events."
+            },
+            {
+              "skill_slug": "tam_english",
+              "direction": "flat",
+              "note": "One class, no assessed speech."
+            }
+          ],
+          "suggestions": [
+            {
+              "change": "Move one SQL block to a spoken explanation.",
+              "reason": "English had no scored evidence.",
+              "skill_slug": "tam_english"
+            }
+          ],
+          "risks": [
+            "No interview practice this week."
+          ],
+          "decision_for_frank": "Approve the spoken SQL block or keep the written one."
+        }
+      ],
+      "expect": "refused_by_contract"
+    },
+    {
+      "case_id": "skill-missing",
+      "week_start": "2026-09-07",
+      "skills": [
+        {
+          "slug": "sql_reconciliation",
+          "name": "SQL reconciliation",
+          "level_at_start": "2",
+          "level_at_end": "2.5",
+          "events_this_week": 3
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English",
+          "level_at_start": "2",
+          "level_at_end": "2",
+          "events_this_week": 1
+        }
+      ],
+      "answers": [
+        {
+          "headline": "Focused week: SQL moved, English flat.",
+          "did": [
+            "Closed four study days.",
+            "Completed the Saturday SQL contract."
+          ],
+          "learned": [
+            "Idempotency keys stop duplicate ledger rows."
+          ],
+          "improved": [
+            "SQL reconciliation rose half a point."
+          ],
+          "skills": [
+            {
+              "skill_slug": "sql_reconciliation",
+              "direction": "up",
+              "note": "Three scored events."
+            }
+          ],
+          "suggestions": [
+            {
+              "change": "Move one SQL block to a spoken explanation.",
+              "reason": "English had no scored evidence.",
+              "skill_slug": "tam_english"
+            }
+          ],
+          "risks": [
+            "No interview practice this week."
+          ],
+          "decision_for_frank": "Approve the spoken SQL block or keep the written one."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "skill-outside-catalog",
+      "week_start": "2026-09-07",
+      "skills": [
+        {
+          "slug": "sql_reconciliation",
+          "name": "SQL reconciliation",
+          "level_at_start": "2",
+          "level_at_end": "2.5",
+          "events_this_week": 3
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English",
+          "level_at_start": "2",
+          "level_at_end": "2",
+          "events_this_week": 1
+        }
+      ],
+      "answers": [
+        {
+          "headline": "Focused week: SQL moved, English flat.",
+          "did": [
+            "Closed four study days.",
+            "Completed the Saturday SQL contract."
+          ],
+          "learned": [
+            "Idempotency keys stop duplicate ledger rows."
+          ],
+          "improved": [
+            "SQL reconciliation rose half a point."
+          ],
+          "skills": [
+            {
+              "skill_slug": "sql_reconciliation",
+              "direction": "up",
+              "note": "Three scored events."
+            },
+            {
+              "skill_slug": "tam_english",
+              "direction": "flat",
+              "note": "One class, no assessed speech."
+            }
+          ],
+          "suggestions": [
+            {
+              "change": "x",
+              "reason": "y",
+              "skill_slug": "charisma"
+            }
+          ],
+          "risks": [
+            "No interview practice this week."
+          ],
+          "decision_for_frank": "Approve the spoken SQL block or keep the written one."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "plan-applied-claim",
+      "week_start": "2026-09-07",
+      "skills": [
+        {
+          "slug": "sql_reconciliation",
+          "name": "SQL reconciliation",
+          "level_at_start": "2",
+          "level_at_end": "2.5",
+          "events_this_week": 3
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English",
+          "level_at_start": "2",
+          "level_at_end": "2",
+          "events_this_week": 1
+        }
+      ],
+      "answers": [
+        {
+          "headline": "I rescheduled Thursday's block for you.",
+          "did": [
+            "Closed four study days.",
+            "Completed the Saturday SQL contract."
+          ],
+          "learned": [
+            "Idempotency keys stop duplicate ledger rows."
+          ],
+          "improved": [
+            "SQL reconciliation rose half a point."
+          ],
+          "skills": [
+            {
+              "skill_slug": "sql_reconciliation",
+              "direction": "up",
+              "note": "Three scored events."
+            },
+            {
+              "skill_slug": "tam_english",
+              "direction": "flat",
+              "note": "One class, no assessed speech."
+            }
+          ],
+          "suggestions": [
+            {
+              "change": "Move one SQL block to a spoken explanation.",
+              "reason": "English had no scored evidence.",
+              "skill_slug": "tam_english"
+            }
+          ],
+          "risks": [
+            "No interview practice this week."
+          ],
+          "decision_for_frank": "Approve the spoken SQL block or keep the written one."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "no-suggestion",
+      "week_start": "2026-09-07",
+      "skills": [
+        {
+          "slug": "sql_reconciliation",
+          "name": "SQL reconciliation",
+          "level_at_start": "2",
+          "level_at_end": "2.5",
+          "events_this_week": 3
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English",
+          "level_at_start": "2",
+          "level_at_end": "2",
+          "events_this_week": 1
+        }
+      ],
+      "answers": [
+        {
+          "headline": "Focused week: SQL moved, English flat.",
+          "did": [
+            "Closed four study days.",
+            "Completed the Saturday SQL contract."
+          ],
+          "learned": [
+            "Idempotency keys stop duplicate ledger rows."
+          ],
+          "improved": [
+            "SQL reconciliation rose half a point."
+          ],
+          "skills": [
+            {
+              "skill_slug": "sql_reconciliation",
+              "direction": "up",
+              "note": "Three scored events."
+            },
+            {
+              "skill_slug": "tam_english",
+              "direction": "flat",
+              "note": "One class, no assessed speech."
+            }
+          ],
+          "suggestions": [],
+          "risks": [
+            "No interview practice this week."
+          ],
+          "decision_for_frank": "Approve the spoken SQL block or keep the written one."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "repaired-once",
+      "week_start": "2026-09-07",
+      "skills": [
+        {
+          "slug": "sql_reconciliation",
+          "name": "SQL reconciliation",
+          "level_at_start": "2",
+          "level_at_end": "2.5",
+          "events_this_week": 3
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English",
+          "level_at_start": "2",
+          "level_at_end": "2",
+          "events_this_week": 1
+        }
+      ],
+      "answers": [
+        {
+          "headline": "I applied the change.",
+          "did": [
+            "Closed four study days.",
+            "Completed the Saturday SQL contract."
+          ],
+          "learned": [
+            "Idempotency keys stop duplicate ledger rows."
+          ],
+          "improved": [
+            "SQL reconciliation rose half a point."
+          ],
+          "skills": [
+            {
+              "skill_slug": "sql_reconciliation",
+              "direction": "up",
+              "note": "Three scored events."
+            },
+            {
+              "skill_slug": "tam_english",
+              "direction": "flat",
+              "note": "One class, no assessed speech."
+            }
+          ],
+          "suggestions": [
+            {
+              "change": "Move one SQL block to a spoken explanation.",
+              "reason": "English had no scored evidence.",
+              "skill_slug": "tam_english"
+            }
+          ],
+          "risks": [
+            "No interview practice this week."
+          ],
+          "decision_for_frank": "Approve the spoken SQL block or keep the written one."
+        },
+        {
+          "headline": "Focused week: SQL moved, English flat.",
+          "did": [
+            "Closed four study days.",
+            "Completed the Saturday SQL contract."
+          ],
+          "learned": [
+            "Idempotency keys stop duplicate ledger rows."
+          ],
+          "improved": [
+            "SQL reconciliation rose half a point."
+          ],
+          "skills": [
+            {
+              "skill_slug": "sql_reconciliation",
+              "direction": "up",
+              "note": "Three scored events."
+            },
+            {
+              "skill_slug": "tam_english",
+              "direction": "flat",
+              "note": "One class, no assessed speech."
+            }
+          ],
+          "suggestions": [
+            {
+              "change": "Move one SQL block to a spoken explanation.",
+              "reason": "English had no scored evidence.",
+              "skill_slug": "tam_english"
+            }
+          ],
+          "risks": [
+            "No interview practice this week."
+          ],
+          "decision_for_frank": "Approve the spoken SQL block or keep the written one."
+        }
+      ],
+      "expect": "accepted"
+    },
+    {
+      "case_id": "every-skill-once",
+      "week_start": "2026-09-07",
+      "skills": [
+        {
+          "slug": "sql_reconciliation",
+          "name": "SQL reconciliation",
+          "level_at_start": "2",
+          "level_at_end": "2.5",
+          "events_this_week": 3
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English",
+          "level_at_start": "2",
+          "level_at_end": "2",
+          "events_this_week": 1
+        }
+      ],
+      "answers": [
+        {
+          "headline": "Focused week: SQL moved, English flat.",
+          "did": [
+            "Closed four study days.",
+            "Completed the Saturday SQL contract."
+          ],
+          "learned": [
+            "Idempotency keys stop duplicate ledger rows."
+          ],
+          "improved": [
+            "SQL reconciliation rose half a point."
+          ],
+          "skills": [
+            {
+              "skill_slug": "sql_reconciliation",
+              "direction": "up",
+              "note": "Three scored events."
+            },
+            {
+              "skill_slug": "tam_english",
+              "direction": "flat",
+              "note": "One class, no assessed speech."
+            }
+          ],
+          "suggestions": [
+            {
+              "change": "Move one SQL block to a spoken explanation.",
+              "reason": "English had no scored evidence.",
+              "skill_slug": "tam_english"
+            }
+          ],
+          "risks": [
+            "No interview practice this week."
+          ],
+          "decision_for_frank": "Approve the spoken SQL block or keep the written one."
+        }
+      ],
+      "expect": "accepted"
+    }
+  ]
+}
