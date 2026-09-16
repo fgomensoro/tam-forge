@@ -94,3 +94,34 @@ rubrics:
         name: English clarity
         maximum: 2
         weight: 0.10
+  - slug: tam_block
+    version: seed-v1
+    name: Study block review
+    scope: exercise
+    scale_min: 0
+    scale_max: 4
+    dimensions:
+      - slug: correctness
+        name: Correctness of the content
+        maximum: 4
+        weight: 0.25
+      - slug: structure
+        name: Structure and clarity
+        maximum: 4
+        weight: 0.15
+      - slug: relevance
+        name: Relevance to the block's objective
+        maximum: 4
+        weight: 0.15
+      - slug: customer_judgment
+        name: Customer judgment
+        maximum: 4
+        weight: 0.15
+      - slug: technical_reasoning
+        name: Technical reasoning
+        maximum: 4
+        weight: 0.15
+      - slug: business_framing
+        name: Business framing
+        maximum: 4
+        weight: 0.15

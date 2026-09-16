@@ -1,0 +1,682 @@
+{
+  "fixture_version": "reviewer-refusals-v1",
+  "model": "claude-fable-5-1",
+  "cases": [
+    {
+      "case_id": "no-committed-attempt",
+      "block": {
+        "stable_id": "p1-w01-d01-roadmap",
+        "objective": "Explain webhook delivery and retries.",
+        "required_output": [
+          "A committed recall note."
+        ],
+        "pass_criteria": [
+          "Explain the concept accurately."
+        ]
+      },
+      "dimensions": [
+        {
+          "slug": "correctness",
+          "name": "Correctness",
+          "maximum": 4
+        },
+        {
+          "slug": "structure",
+          "name": "Structure",
+          "maximum": 4
+        }
+      ],
+      "committed_attempt": "   ",
+      "answers": [
+        {
+          "verdict": "Correct, with a weak close.",
+          "dimensions": [
+            {
+              "slug": "correctness",
+              "score": "3.5",
+              "rationale": "Names the rule.",
+              "evidence": "200 means accepted"
+            },
+            {
+              "slug": "structure",
+              "score": "2",
+              "rationale": "No close.",
+              "evidence": "so yeah"
+            }
+          ],
+          "strengths": [
+            {
+              "statement": "Names durable acceptance."
+            },
+            {
+              "statement": "Uses the right vocabulary."
+            }
+          ],
+          "corrections": [
+            {
+              "statement": "Close with a decision.",
+              "instruction": "End with the next action."
+            },
+            {
+              "statement": "Name the retry policy.",
+              "instruction": "State backoff and jitter."
+            }
+          ],
+          "next_practice": "Answer aloud in ninety seconds."
+        }
+      ],
+      "expect": "refused_by_contract"
+    },
+    {
+      "case_id": "score-above-maximum",
+      "block": {
+        "stable_id": "p1-w01-d01-roadmap",
+        "objective": "Explain webhook delivery and retries.",
+        "required_output": [
+          "A committed recall note."
+        ],
+        "pass_criteria": [
+          "Explain the concept accurately."
+        ]
+      },
+      "dimensions": [
+        {
+          "slug": "correctness",
+          "name": "Correctness",
+          "maximum": 4
+        },
+        {
+          "slug": "structure",
+          "name": "Structure",
+          "maximum": 4
+        }
+      ],
+      "committed_attempt": "Webhooks deliver events over HTTP; 200 means accepted.",
+      "answers": [
+        {
+          "verdict": "Correct, with a weak close.",
+          "dimensions": [
+            {
+              "slug": "correctness",
+              "score": "5",
+              "rationale": "Names the rule.",
+              "evidence": "200 means accepted"
+            },
+            {
+              "slug": "structure",
+              "score": "2",
+              "rationale": "No close.",
+              "evidence": "so yeah"
+            }
+          ],
+          "strengths": [
+            {
+              "statement": "Names durable acceptance."
+            },
+            {
+              "statement": "Uses the right vocabulary."
+            }
+          ],
+          "corrections": [
+            {
+              "statement": "Close with a decision.",
+              "instruction": "End with the next action."
+            },
+            {
+              "statement": "Name the retry policy.",
+              "instruction": "State backoff and jitter."
+            }
+          ],
+          "next_practice": "Answer aloud in ninety seconds."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "dimension-not-in-rubric",
+      "block": {
+        "stable_id": "p1-w01-d01-roadmap",
+        "objective": "Explain webhook delivery and retries.",
+        "required_output": [
+          "A committed recall note."
+        ],
+        "pass_criteria": [
+          "Explain the concept accurately."
+        ]
+      },
+      "dimensions": [
+        {
+          "slug": "correctness",
+          "name": "Correctness",
+          "maximum": 4
+        },
+        {
+          "slug": "structure",
+          "name": "Structure",
+          "maximum": 4
+        }
+      ],
+      "committed_attempt": "Webhooks deliver events over HTTP; 200 means accepted.",
+      "answers": [
+        {
+          "verdict": "Correct, with a weak close.",
+          "dimensions": [
+            {
+              "slug": "correctness",
+              "score": "3.5",
+              "rationale": "Names the rule.",
+              "evidence": "200 means accepted"
+            },
+            {
+              "slug": "charisma",
+              "score": "2",
+              "rationale": "No close.",
+              "evidence": "so yeah"
+            }
+          ],
+          "strengths": [
+            {
+              "statement": "Names durable acceptance."
+            },
+            {
+              "statement": "Uses the right vocabulary."
+            }
+          ],
+          "corrections": [
+            {
+              "statement": "Close with a decision.",
+              "instruction": "End with the next action."
+            },
+            {
+              "statement": "Name the retry policy.",
+              "instruction": "State backoff and jitter."
+            }
+          ],
+          "next_practice": "Answer aloud in ninety seconds."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "missing-dimension",
+      "block": {
+        "stable_id": "p1-w01-d01-roadmap",
+        "objective": "Explain webhook delivery and retries.",
+        "required_output": [
+          "A committed recall note."
+        ],
+        "pass_criteria": [
+          "Explain the concept accurately."
+        ]
+      },
+      "dimensions": [
+        {
+          "slug": "correctness",
+          "name": "Correctness",
+          "maximum": 4
+        },
+        {
+          "slug": "structure",
+          "name": "Structure",
+          "maximum": 4
+        }
+      ],
+      "committed_attempt": "Webhooks deliver events over HTTP; 200 means accepted.",
+      "answers": [
+        {
+          "verdict": "Correct, with a weak close.",
+          "dimensions": [
+            {
+              "slug": "correctness",
+              "score": "3.5",
+              "rationale": "Names the rule.",
+              "evidence": "200 means accepted"
+            }
+          ],
+          "strengths": [
+            {
+              "statement": "Names durable acceptance."
+            },
+            {
+              "statement": "Uses the right vocabulary."
+            }
+          ],
+          "corrections": [
+            {
+              "statement": "Close with a decision.",
+              "instruction": "End with the next action."
+            },
+            {
+              "statement": "Name the retry policy.",
+              "instruction": "State backoff and jitter."
+            }
+          ],
+          "next_practice": "Answer aloud in ninety seconds."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "quarter-point-score",
+      "block": {
+        "stable_id": "p1-w01-d01-roadmap",
+        "objective": "Explain webhook delivery and retries.",
+        "required_output": [
+          "A committed recall note."
+        ],
+        "pass_criteria": [
+          "Explain the concept accurately."
+        ]
+      },
+      "dimensions": [
+        {
+          "slug": "correctness",
+          "name": "Correctness",
+          "maximum": 4
+        },
+        {
+          "slug": "structure",
+          "name": "Structure",
+          "maximum": 4
+        }
+      ],
+      "committed_attempt": "Webhooks deliver events over HTTP; 200 means accepted.",
+      "answers": [
+        {
+          "verdict": "Correct, with a weak close.",
+          "dimensions": [
+            {
+              "slug": "correctness",
+              "score": "3.25",
+              "rationale": "Names the rule.",
+              "evidence": "200 means accepted"
+            },
+            {
+              "slug": "structure",
+              "score": "2",
+              "rationale": "No close.",
+              "evidence": "so yeah"
+            }
+          ],
+          "strengths": [
+            {
+              "statement": "Names durable acceptance."
+            },
+            {
+              "statement": "Uses the right vocabulary."
+            }
+          ],
+          "corrections": [
+            {
+              "statement": "Close with a decision.",
+              "instruction": "End with the next action."
+            },
+            {
+              "statement": "Name the retry policy.",
+              "instruction": "State backoff and jitter."
+            }
+          ],
+          "next_practice": "Answer aloud in ninety seconds."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "completion-claim",
+      "block": {
+        "stable_id": "p1-w01-d01-roadmap",
+        "objective": "Explain webhook delivery and retries.",
+        "required_output": [
+          "A committed recall note."
+        ],
+        "pass_criteria": [
+          "Explain the concept accurately."
+        ]
+      },
+      "dimensions": [
+        {
+          "slug": "correctness",
+          "name": "Correctness",
+          "maximum": 4
+        },
+        {
+          "slug": "structure",
+          "name": "Structure",
+          "maximum": 4
+        }
+      ],
+      "committed_attempt": "Webhooks deliver events over HTTP; 200 means accepted.",
+      "answers": [
+        {
+          "verdict": "Great work, I recorded a 4 and marked the block done.",
+          "dimensions": [
+            {
+              "slug": "correctness",
+              "score": "3.5",
+              "rationale": "Names the rule.",
+              "evidence": "200 means accepted"
+            },
+            {
+              "slug": "structure",
+              "score": "2",
+              "rationale": "No close.",
+              "evidence": "so yeah"
+            }
+          ],
+          "strengths": [
+            {
+              "statement": "Names durable acceptance."
+            },
+            {
+              "statement": "Uses the right vocabulary."
+            }
+          ],
+          "corrections": [
+            {
+              "statement": "Close with a decision.",
+              "instruction": "End with the next action."
+            },
+            {
+              "statement": "Name the retry policy.",
+              "instruction": "State backoff and jitter."
+            }
+          ],
+          "next_practice": "Answer aloud in ninety seconds."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "one-correction-only",
+      "block": {
+        "stable_id": "p1-w01-d01-roadmap",
+        "objective": "Explain webhook delivery and retries.",
+        "required_output": [
+          "A committed recall note."
+        ],
+        "pass_criteria": [
+          "Explain the concept accurately."
+        ]
+      },
+      "dimensions": [
+        {
+          "slug": "correctness",
+          "name": "Correctness",
+          "maximum": 4
+        },
+        {
+          "slug": "structure",
+          "name": "Structure",
+          "maximum": 4
+        }
+      ],
+      "committed_attempt": "Webhooks deliver events over HTTP; 200 means accepted.",
+      "answers": [
+        {
+          "verdict": "Correct, with a weak close.",
+          "dimensions": [
+            {
+              "slug": "correctness",
+              "score": "3.5",
+              "rationale": "Names the rule.",
+              "evidence": "200 means accepted"
+            },
+            {
+              "slug": "structure",
+              "score": "2",
+              "rationale": "No close.",
+              "evidence": "so yeah"
+            }
+          ],
+          "strengths": [
+            {
+              "statement": "Names durable acceptance."
+            },
+            {
+              "statement": "Uses the right vocabulary."
+            }
+          ],
+          "corrections": [
+            {
+              "statement": "Close with a decision.",
+              "instruction": "End with the next action."
+            }
+          ],
+          "next_practice": "Answer aloud in ninety seconds."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "duplicate-strengths",
+      "block": {
+        "stable_id": "p1-w01-d01-roadmap",
+        "objective": "Explain webhook delivery and retries.",
+        "required_output": [
+          "A committed recall note."
+        ],
+        "pass_criteria": [
+          "Explain the concept accurately."
+        ]
+      },
+      "dimensions": [
+        {
+          "slug": "correctness",
+          "name": "Correctness",
+          "maximum": 4
+        },
+        {
+          "slug": "structure",
+          "name": "Structure",
+          "maximum": 4
+        }
+      ],
+      "committed_attempt": "Webhooks deliver events over HTTP; 200 means accepted.",
+      "answers": [
+        {
+          "verdict": "Correct, with a weak close.",
+          "dimensions": [
+            {
+              "slug": "correctness",
+              "score": "3.5",
+              "rationale": "Names the rule.",
+              "evidence": "200 means accepted"
+            },
+            {
+              "slug": "structure",
+              "score": "2",
+              "rationale": "No close.",
+              "evidence": "so yeah"
+            }
+          ],
+          "strengths": [
+            {
+              "statement": "Names durable acceptance."
+            },
+            {
+              "statement": "Names durable acceptance."
+            }
+          ],
+          "corrections": [
+            {
+              "statement": "Close with a decision.",
+              "instruction": "End with the next action."
+            },
+            {
+              "statement": "Name the retry policy.",
+              "instruction": "State backoff and jitter."
+            }
+          ],
+          "next_practice": "Answer aloud in ninety seconds."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "repaired-after-one-refusal",
+      "block": {
+        "stable_id": "p1-w01-d01-roadmap",
+        "objective": "Explain webhook delivery and retries.",
+        "required_output": [
+          "A committed recall note."
+        ],
+        "pass_criteria": [
+          "Explain the concept accurately."
+        ]
+      },
+      "dimensions": [
+        {
+          "slug": "correctness",
+          "name": "Correctness",
+          "maximum": 4
+        },
+        {
+          "slug": "structure",
+          "name": "Structure",
+          "maximum": 4
+        }
+      ],
+      "committed_attempt": "Webhooks deliver events over HTTP; 200 means accepted.",
+      "answers": [
+        {
+          "verdict": "I marked this block as done.",
+          "dimensions": [
+            {
+              "slug": "correctness",
+              "score": "3.5",
+              "rationale": "Names the rule.",
+              "evidence": "200 means accepted"
+            },
+            {
+              "slug": "structure",
+              "score": "2",
+              "rationale": "No close.",
+              "evidence": "so yeah"
+            }
+          ],
+          "strengths": [
+            {
+              "statement": "Names durable acceptance."
+            },
+            {
+              "statement": "Uses the right vocabulary."
+            }
+          ],
+          "corrections": [
+            {
+              "statement": "Close with a decision.",
+              "instruction": "End with the next action."
+            },
+            {
+              "statement": "Name the retry policy.",
+              "instruction": "State backoff and jitter."
+            }
+          ],
+          "next_practice": "Answer aloud in ninety seconds."
+        },
+        {
+          "verdict": "Correct, with a weak close.",
+          "dimensions": [
+            {
+              "slug": "correctness",
+              "score": "3.5",
+              "rationale": "Names the rule.",
+              "evidence": "200 means accepted"
+            },
+            {
+              "slug": "structure",
+              "score": "2",
+              "rationale": "No close.",
+              "evidence": "so yeah"
+            }
+          ],
+          "strengths": [
+            {
+              "statement": "Names durable acceptance."
+            },
+            {
+              "statement": "Uses the right vocabulary."
+            }
+          ],
+          "corrections": [
+            {
+              "statement": "Close with a decision.",
+              "instruction": "End with the next action."
+            },
+            {
+              "statement": "Name the retry policy.",
+              "instruction": "State backoff and jitter."
+            }
+          ],
+          "next_practice": "Answer aloud in ninety seconds."
+        }
+      ],
+      "expect": "accepted"
+    },
+    {
+      "case_id": "scored-in-half-points",
+      "block": {
+        "stable_id": "p1-w01-d01-roadmap",
+        "objective": "Explain webhook delivery and retries.",
+        "required_output": [
+          "A committed recall note."
+        ],
+        "pass_criteria": [
+          "Explain the concept accurately."
+        ]
+      },
+      "dimensions": [
+        {
+          "slug": "correctness",
+          "name": "Correctness",
+          "maximum": 4
+        },
+        {
+          "slug": "structure",
+          "name": "Structure",
+          "maximum": 4
+        }
+      ],
+      "committed_attempt": "Webhooks deliver events over HTTP; 200 means accepted.",
+      "answers": [
+        {
+          "verdict": "Correct, with a weak close.",
+          "dimensions": [
+            {
+              "slug": "correctness",
+              "score": "3.5",
+              "rationale": "Names the rule.",
+              "evidence": "200 means accepted"
+            },
+            {
+              "slug": "structure",
+              "score": "2",
+              "rationale": "No close.",
+              "evidence": "so yeah"
+            }
+          ],
+          "strengths": [
+            {
+              "statement": "Names durable acceptance."
+            },
+            {
+              "statement": "Uses the right vocabulary."
+            }
+          ],
+          "corrections": [
+            {
+              "statement": "Close with a decision.",
+              "instruction": "End with the next action."
+            },
+            {
+              "statement": "Name the retry policy.",
+              "instruction": "State backoff and jitter."
+            }
+          ],
+          "next_practice": "Answer aloud in ninety seconds."
+        }
+      ],
+      "expect": "accepted"
+    }
+  ]
+}

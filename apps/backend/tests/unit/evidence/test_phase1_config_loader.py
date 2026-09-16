@@ -33,7 +33,7 @@ PHASE1_RELEASE_DIR = CONFIG_DIR / "releases" / "phase-1-six-week-v1"
 EXPECTED_ROOT_SHA256 = {
     "tam-skills.yaml": "6008a4b157272d3cb62685b647f1cf3dfd889dd79014a40cc9cd86083ea4fecf",
     "tam-exercise-types.yaml": "e0275f1c546f5899954f5e9b66f2f05db5a15d24465ed367acd6f36af8ba0e78",
-    "tam-rubrics.yaml": "32767e6393475a6e1c9dda52aa5f638940a38dc7a0881657baeb4b3baba43a00",
+    "tam-rubrics.yaml": "b038d22f711bad17612b61f0d5a1a39618f53ecea946fd5887218ff37837beb5",
     "tam-roadmap-task-map.yaml": "44206a242e9c6b9219b2de7cf27ff709e96e5f553ba4c378d3a83092d03fc814",
 }
 SCORING_FILES = (

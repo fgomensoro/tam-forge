@@ -124,9 +124,7 @@ class ClaudeSubscriptionSettings(Contract):
     authorization: Literal["subscription_session"] = "subscription_session"
 
     @classmethod
-    def for_worker(
-        cls, *, environ: Mapping[str, str], stored: AttestationRecord | None
-    ) -> Self:
+    def for_worker(cls, *, environ: Mapping[str, str], stored: AttestationRecord | None) -> Self:
         """Judge the environment, then hand back the settings, or refuse.
 
         `environ` is passed in rather than read from the process, so this is decided by

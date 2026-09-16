@@ -65,6 +65,7 @@ class Settings(BaseSettings):
         "claude_enabled": "TAMFORGE_CLAUDE_ENABLED",
         "planner_model": "TAMFORGE_PLANNER_MODEL",
         "coach_model": "TAMFORGE_COACH_MODEL",
+        "reviewer_model": "TAMFORGE_REVIEWER_MODEL",
     }
 
     model_config = SettingsConfigDict(
@@ -230,6 +231,9 @@ class Settings(BaseSettings):
         max_length=64,
         pattern=r"^[a-z0-9][a-z0-9.-]*$",
         validation_alias="TAMFORGE_COACH_MODEL",
+    )
+    reviewer_model: str = Field(
+        default="claude-fable-5-1", validation_alias="TAMFORGE_REVIEWER_MODEL"
     )
     planner_model: str = Field(
         default="claude-fable-5-1",

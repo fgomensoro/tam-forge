@@ -14,6 +14,7 @@ constant in code, not a judgment made while reading the output.
 | speech gates | `speech-gate-cases.json` | timing gate agrees with the expected verdict on every case |
 | rubric agreement | `rubric-agreement-cases.json` | ≥ 85% of dimensions within one point of the adjudicated human score, quadratic weighted kappa ≥ 0.60 |
 | agent role invariants | `agent-invariant-cases.json` | 100% exactly two strengths and two corrections, distinct, timestamped evidence, no prohibited answer, zero high-severity unsupported claims |
+| reviewer refusals | `reviewer-refusal-cases.json` | 100% of cases end as expected against the pinned reviewer model: an uncommitted attempt refused before any call; scores above the maximum, dimensions outside the rubric, quarter points, a single correction and completion claims refused by the validator; rubric-bound half-point reviews accepted |
 | coach refusals | `coach-refusal-cases.json` | 100% of cases end as expected against the pinned coach model: forbidden blocks and uncommitted attempts refused before any call, completion claims, smuggled scores and plan changes refused by the validator, coached turns accepted |
 
 The report records provenance: the SHA-256 of every fixture, the evaluator versions, the
