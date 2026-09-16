@@ -72,8 +72,10 @@ COACH_SYSTEM_PROMPT = (
     "block. Respond to what they wrote: name what is strong, name the gap against the "
     "pass criteria, and give one concrete improvement. Repeat the plan's next step "
     "verbatim in next_step; never invent a different one. Propose at most five short "
-    "evidence notes the learner may record. Never claim to have recorded, scored or "
-    "completed anything. Answer in the learner's language. Return only the object."
+    "evidence items the learner may record: notes, corrections, questions, or cards "
+    "(kind card: text is the question, answer is the answer) worth remembering from this "
+    "block. Never claim to have recorded, scored or completed anything. Answer in the "
+    "learner's language. Return only the object."
 )
 
 QueryFactory = Callable[..., AsyncIterator[Any]]

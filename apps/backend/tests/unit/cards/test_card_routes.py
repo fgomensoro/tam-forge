@@ -10,6 +10,7 @@ from tamforge_backend.auth.schemas import AuthenticatedOwner
 from tamforge_backend.cards.routes import get_card_service
 from tamforge_backend.cards.schemas import (
     CardCommand,
+    CardImportResponse,
     CardPage,
     CardResponse,
     CardReviewResponse,
@@ -20,6 +21,8 @@ from tamforge_backend.cards.schemas import (
 from tamforge_backend.cards.service import CardInvalid, CardNotFound
 from tamforge_backend.config import Settings
 from tamforge_backend.main import create_app
+from tamforge_backend.roadmaps.ports import RoadmapNotFound
+from tamforge_backend.roadmaps.routes import get_roadmap_service
 
 OWNER = AuthenticatedOwner(
     owner_id=1,
@@ -100,9 +103,32 @@ class StubService:
             ),
         )
 
+    async def import_package(
+        self, *, owner_id: int, source_ref: str, files: dict[str, bytes]
+    ) -> CardImportResponse:
+        self.calls.append(("import", {"owner_id": owner_id, "source_ref": source_ref}))
+        return CardImportResponse(
+            source_ref=source_ref, created=1, existing=0, cards=(_card(self.command),)
+        )
+
     async def export(self, *, owner_id: int) -> CardsExport:
         self.calls.append(("export", {"owner_id": owner_id}))
         return CardsExport(scheduler_version="sm2-v1", cards=(_card(self.command),), reviews=())
+
+
+class StubVersion:
+    object_key = "roadmaps/7/snapshot"
+
+
+class StubRoadmaps:
+    async def get_version(self, *, owner_id: int, version_id: int) -> StubVersion:
+        if version_id != 7:
+            raise RoadmapNotFound("missing")
+        return StubVersion()
+
+    async def snapshot_files(self, object_key: str) -> dict[str, bytes]:
+        assert object_key == "roadmaps/7/snapshot"
+        return {"notes/a.md": b"---\nflashcard-source: true\n---\nQ: x\nA: y\n"}
 
 
 def _client() -> tuple[TestClient, StubService]:
@@ -117,6 +143,7 @@ def _client() -> tuple[TestClient, StubService]:
     )
     service = StubService()
     app.dependency_overrides[get_card_service] = lambda: service
+    app.dependency_overrides[get_roadmap_service] = lambda: StubRoadmaps()
     app.dependency_overrides[get_authenticated_owner] = lambda: OWNER
     app.dependency_overrides[require_csrf_owner] = lambda: OWNER
     return TestClient(app), service
@@ -193,3 +220,16 @@ def test_spoken_reviews_carry_the_recording_and_errors_are_closed_problems() -> 
     assert missing.headers["content-type"].startswith("application/problem+json")
     assert invalid.status_code == 422 and invalid.json()["code"] == "invalid_card_command"
     assert "internal card detail" not in missing.text + invalid.text
+
+
+def test_importing_a_roadmap_version_reads_its_snapshot_and_names_the_source() -> None:
+    client, service = _client()
+    with client:
+        imported = client.post("/api/v1/cards/imports/roadmap-versions/7")
+        missing = client.post("/api/v1/cards/imports/roadmap-versions/8")
+
+    assert imported.status_code == 201, imported.text
+    assert imported.json()["created"] == 1 and imported.json()["source_ref"] == "roadmap-version:7"
+    assert imported.headers["cache-control"] == "no-store"
+    assert missing.status_code == 404 and missing.json()["code"] == "card_not_found"
+    assert service.calls == [("import", {"owner_id": 1, "source_ref": "roadmap-version:7"})]

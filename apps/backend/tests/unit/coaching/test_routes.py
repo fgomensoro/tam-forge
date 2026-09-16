@@ -73,10 +73,17 @@ class StubService:
         return _thread(2)
 
     async def accept_evidence(
-        self, *, owner_id: int, activity_id: int, message_id: int, index: int
+        self,
+        *,
+        owner_id: int,
+        activity_id: int,
+        message_id: int,
+        index: int,
+        question: str = "",
+        answer: str = "",
     ) -> CoachThreadResponse:
         assert owner_id == 1 and activity_id == 41
-        self.accepted.append((message_id, index))
+        self.accepted.append((message_id, index, question, answer))
         return _thread(2)
 
 
@@ -112,7 +119,7 @@ def test_thread_read_send_and_accept_round_trip_without_caching() -> None:
     assert [item["speaker"] for item in sent.json()["messages"]] == ["learner", "coach"]
     assert sent.json()["messages"][1]["proposed_evidence"][0]["kind"] == "note"
     assert service.sent == ["hola"]
-    assert accepted.status_code == 200 and service.accepted == [(11, 0)]
+    assert accepted.status_code == 200 and service.accepted == [(11, 0, "", "")]
 
 
 def test_problems_map_to_closed_codes() -> None:

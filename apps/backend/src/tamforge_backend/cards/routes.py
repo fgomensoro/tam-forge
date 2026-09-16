@@ -12,8 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.dependencies import get_authenticated_owner, require_csrf_owner
 from ..auth.schemas import AuthenticatedOwner, ProblemResponse
 from ..database import get_db_session
+from ..roadmaps.ports import RoadmapNotFound
+from ..roadmaps.routes import get_roadmap_service
+from ..roadmaps.service import RoadmapService
 from .schemas import (
     CardCommand,
+    CardImportResponse,
     CardPage,
     CardResponse,
     CardReviewResult,
@@ -78,6 +82,29 @@ async def export_cards(
     owner: Annotated[AuthenticatedOwner, Depends(get_authenticated_owner)],
 ) -> CardsExport:
     result = await service.export(owner_id=owner.owner_id)
+    _prevent_storage(response)
+    return result
+
+
+@router.post(
+    "/imports/roadmap-versions/{version_id}", response_model=CardImportResponse, status_code=201
+)
+async def import_cards_from_roadmap_version(
+    version_id: int,
+    response: Response,
+    service: Annotated[CardService, Depends(get_card_service)],
+    roadmaps: Annotated[RoadmapService, Depends(get_roadmap_service)],
+    owner: Annotated[AuthenticatedOwner, Depends(require_csrf_owner)],
+) -> CardImportResponse:
+    """Import the cards of every vault note marked `flashcard-source: true` in a version."""
+    try:
+        version = await roadmaps.get_version(owner_id=owner.owner_id, version_id=version_id)
+        files = await roadmaps.snapshot_files(version.object_key)
+    except RoadmapNotFound:
+        raise CardNotFound("the roadmap version was not found") from None
+    result = await service.import_package(
+        owner_id=owner.owner_id, source_ref=f"roadmap-version:{version_id}", files=files
+    )
     _prevent_storage(response)
     return result
 

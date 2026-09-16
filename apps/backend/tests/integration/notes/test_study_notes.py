@@ -47,6 +47,7 @@ def test_study_note_lifecycle_on_postgres(test_database_url: str) -> None:
     from sqlalchemy.engine import make_url
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from tamforge_backend.agents.roles.coach import CoachService
+    from tamforge_backend.cards.models import Card
     from tamforge_backend.database import database_url_to_sync, transaction_scope
     from tamforge_backend.evidence.config_loader import load_config_bundle
     from tamforge_backend.learning.models import (
@@ -228,6 +229,15 @@ def test_study_note_lifecycle_on_postgres(test_database_url: str) -> None:
                         owner_id=owner_id, activity_id=coached_id
                     )
                     assert again.artifact_id == approved_note.artifact_id
+                    # The approved note's flashcards are cards now, once, with the note as source.
+                    cards = (await session.scalars(select(Card))).all()
+                    assert [(c.question, c.answer) for c in cards] == [
+                        ("What does a 200 confirm?", "Durable acceptance.")
+                    ]
+                    assert cards[0].source_kind == "study_note"
+                    assert cards[0].source_ref == f"note:{approved_note.id}"
+                    assert cards[0].assistance == approved_note.assistance
+                    await session.rollback()
                     with pytest.raises(NoteConflict, match="frozen"):
                         await service(session).save(
                             owner_id=owner_id,

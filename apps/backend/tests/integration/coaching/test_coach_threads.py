@@ -23,7 +23,10 @@ class FakeTransport:
         return {
             "message": "Your note names delivery but not retries. Add the backoff rule.",
             "next_step": next_step,
-            "proposed_evidence": [{"kind": "note", "text": "Retries use exponential backoff."}],
+            "proposed_evidence": [
+                {"kind": "note", "text": "Retries use exponential backoff."},
+                {"kind": "card", "text": "What does a 200 mean?", "answer": "Accepted."},
+            ],
         }
 
 
@@ -35,6 +38,7 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
     from sqlalchemy.engine import make_url
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from tamforge_backend.agents.roles.coach import CoachService
+    from tamforge_backend.cards.models import Card
     from tamforge_backend.coaching.models import CoachEvidence
     from tamforge_backend.coaching.service import (
         CoachingConflict,
@@ -273,6 +277,26 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
                         select(CoachEvidence.id).where(CoachEvidence.owner_id == owner_id)
                     )
                     assert count is not None
+
+                async with factory() as session:
+                    # Accepting the card proposal, edited on the way in, makes a flashcard.
+                    with_card = await service(session).accept_evidence(
+                        owner_id=owner_id,
+                        activity_id=coached_id,
+                        message_id=coach_message.id,
+                        index=1,
+                        question="What does a 200 from ingest mean?",
+                    )
+                    proposal = with_card.messages[1].proposed_evidence[1]
+                    assert proposal.kind == "card" and proposal.answer == "Accepted."
+                    assert proposal.accepted is True
+                    cards = (await session.scalars(select(Card))).all()
+                    assert [(c.question, c.answer, c.source_kind) for c in cards] == [
+                        ("What does a 200 from ingest mean?", "Accepted.", "coach")
+                    ]
+                    assert cards[0].source_ref == f"coach:{coach_message.id}:1"
+                    assert cards[0].assistance == "coached"
+                    await session.rollback()
 
                 async with factory() as session:
                     disabled = CoachThreadService(session, coach=CoachService(None, model="m"))

@@ -18,7 +18,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol, cast
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from ..runtime import (
     AgentOutputInvalid,
@@ -43,7 +43,7 @@ COACH_MAX_TURNS = 4
 COACH_WALL_TIME_SECONDS = 120.0
 COACHING_ROLES: frozenset[str] = frozenset({"coach", "tutor"})
 MAX_MESSAGE_CHARS = 2000
-EvidenceKind = Literal["note", "correction", "question"]
+EvidenceKind = Literal["note", "correction", "question", "card"]
 
 
 class CoachUnavailable(RoleContractError):
@@ -57,6 +57,15 @@ class ProposedEvidence(BaseModel):
 
     kind: EvidenceKind
     text: str = Field(min_length=1, max_length=1000)
+    answer: str = Field(default="", max_length=1000)
+
+    @model_validator(mode="after")
+    def card_needs_an_answer(self) -> ProposedEvidence:
+        if self.kind == "card" and not self.answer.strip():
+            raise ValueError("a card proposal needs an answer")
+        if self.kind != "card" and self.answer:
+            raise ValueError("only a card proposal carries an answer")
+        return self
 
 
 class CoachTurn(BaseModel):

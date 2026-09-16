@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date, datetime
 from typing import Any, cast
 from uuid import UUID
@@ -15,10 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import transaction_scope
 from ..models.base import utc_now
 from ..recordings.models import Recording
+from .importing import package_card_commands
 from .models import Card, CardReview
 from .scheduling import SM2_VERSION, CardState, new_card_state, schedule
 from .schemas import (
     CardCommand,
+    CardImportResponse,
     CardPage,
     CardResponse,
     CardReviewResponse,
@@ -76,6 +78,29 @@ class CardService:
                     for command in commands
                 ]
                 return tuple(created)
+        except SQLAlchemyError:
+            raise CardsUnavailable("the card store is unavailable") from None
+
+    async def upsert_many(
+        self, *, owner_id: int, commands: Sequence[CardCommand]
+    ) -> tuple[tuple[Card, bool], ...]:
+        """Create or find each card inside the caller's transaction: (row, created) pairs."""
+        return tuple([await self._upsert(owner_id=owner_id, command=c) for c in commands])
+
+    async def import_package(
+        self, *, owner_id: int, source_ref: str, files: Mapping[str, bytes]
+    ) -> CardImportResponse:
+        """Cards from every opted-in vault note in a package; a second import adds nothing."""
+        commands = package_card_commands(files)
+        try:
+            async with transaction_scope(self._session):
+                results = await self.upsert_many(owner_id=owner_id, commands=commands)
+                return CardImportResponse(
+                    source_ref=source_ref,
+                    created=sum(1 for _, created in results if created),
+                    existing=sum(1 for _, created in results if not created),
+                    cards=tuple(_card(card) for card, _ in results),
+                )
         except SQLAlchemyError:
             raise CardsUnavailable("the card store is unavailable") from None
 
