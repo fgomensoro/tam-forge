@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -105,6 +106,14 @@ class DebriefPracticeResponse(StrictModel):
     minutes: int
 
 
+class DebriefDimensionResponse(StrictModel):
+    slug: str
+    name: str
+    score: Decimal
+    maximum: Decimal
+    rationale: str
+
+
 class InterviewDebriefResponse(StrictModel):
     """Where the debrief stands, then what it says. It proposes; it never changes the plan."""
 
@@ -115,12 +124,69 @@ class InterviewDebriefResponse(StrictModel):
     transcript_source: Literal["recording", "transcript_only"] | None = None
     model: str | None = None
     summary: str | None = None
+    dimensions: tuple[DebriefDimensionResponse, ...] = ()
     strengths: tuple[DebriefFindingResponse, ...] = ()
     gaps: tuple[DebriefFindingResponse, ...] = ()
     skills_affected: tuple[DebriefSkillEffectResponse, ...] = ()
     next_week_practice: tuple[DebriefPracticeResponse, ...] = ()
     hiring_progression: str | None = None
     created_at: datetime | None = None
+
+
+class TimelineDimensionScore(StrictModel):
+    slug: str
+    score: Decimal
+
+
+class TimelineSkillEffect(StrictModel):
+    skill_slug: str
+    direction: Literal["up", "flat", "down"]
+
+
+class TimelineGap(StrictModel):
+    statement: str
+    skill_slug: str
+
+
+class InterviewTimelineItem(StrictModel):
+    """One interview in sequence: its record, and its debrief's scores when it has one."""
+
+    interview_id: int
+    company: str
+    role: str
+    stage: str
+    starts_at: datetime
+    status: str
+    has_debrief: bool
+    hiring_progression: str | None = None
+    dimensions: tuple[TimelineDimensionScore, ...] = ()
+    skills_affected: tuple[TimelineSkillEffect, ...] = ()
+    gaps: tuple[TimelineGap, ...] = ()
+
+
+class RecurringGap(StrictModel):
+    """A skill that showed up as a gap in more than one debriefed interview."""
+
+    skill_slug: str
+    interview_count: int
+    statements: tuple[str, ...]
+
+
+class DimensionTrend(StrictModel):
+    slug: str
+    name: str
+    scores: tuple[TimelineDimensionScore, ...]  # slug carries the interview id as text
+    latest: Decimal | None
+    delta_from_first: Decimal | None
+
+
+class InterviewTimelineResponse(StrictModel):
+    """The interviews in order, the comparison dimensions across them, the gaps that recur."""
+
+    items: tuple[InterviewTimelineItem, ...]
+    debriefed: int
+    dimension_trends: tuple[DimensionTrend, ...]
+    recurring_gaps: tuple[RecurringGap, ...]
 
 
 ReferenceKind = Literal["answer_bank", "story_catalog"]
@@ -158,7 +224,15 @@ class ReferencePage(StrictModel):
 
 __all__ = [
     "AttachRecordingCommand",
+    "DebriefDimensionResponse",
     "DebriefFindingResponse",
+    "DimensionTrend",
+    "InterviewTimelineItem",
+    "InterviewTimelineResponse",
+    "RecurringGap",
+    "TimelineDimensionScore",
+    "TimelineGap",
+    "TimelineSkillEffect",
     "DebriefPracticeResponse",
     "DebriefSkillEffectResponse",
     "InterviewDebriefResponse",

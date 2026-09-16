@@ -20,6 +20,7 @@ from .schemas import (
     InterviewDebriefResponse,
     InterviewPage,
     InterviewResponse,
+    InterviewTimelineResponse,
     InterviewTranscriptCommand,
     InterviewTranscriptResponse,
     ReferenceImportCommand,
@@ -78,6 +79,18 @@ async def list_interviews(
     owner: Annotated[AuthenticatedOwner, Depends(get_authenticated_owner)],
 ) -> InterviewPage:
     result = await service.list(owner_id=owner.owner_id)
+    _prevent_storage(response)
+    return result
+
+
+@router.get("/timeline", response_model=InterviewTimelineResponse)
+async def read_interview_timeline(
+    response: Response,
+    service: Annotated[InterviewDebriefService, Depends(get_debrief_service)],
+    owner: Annotated[AuthenticatedOwner, Depends(get_authenticated_owner)],
+) -> InterviewTimelineResponse:
+    """The interviews in sequence with their debrief scores, and the gaps that recur."""
+    result = await service.timeline(owner_id=owner.owner_id)
     _prevent_storage(response)
     return result
 

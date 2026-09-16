@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,12 @@ class FakeDebriefTransport:
         skills = [s.slug for s in request.skills]  # type: ignore[attr-defined]
         return {
             "summary": "Names the cause; says nothing about the customer's cost.",
+            "dimensions": [
+                {"slug": "answer_clarity", "score": "3.0", "rationale": "Ordered."},
+                {"slug": "technical_examples", "score": "2.5", "rationale": "Thin."},
+                {"slug": "english_accuracy", "score": "3.5", "rationale": "Clean."},
+                {"slug": "follow_up_handling", "score": "2.0", "rationale": "Short."},
+            ],
             "strengths": [
                 {"statement": "Names the cause.", "evidence": "Short.", "skill_slug": skills[0]},
                 {"statement": "Stays concrete.", "evidence": "short", "skill_slug": skills[1]},
@@ -193,6 +200,17 @@ def test_transcript_only_interview_and_reference_import(test_database_url: str) 
                     assert len(ready.strengths) == 2 and len(ready.gaps) == 2
                     assert ready.skills_affected[0].skill_name
                     assert ready.next_week_practice[0].minutes == 20
+                    assert [d.slug for d in ready.dimensions] == [
+                        "answer_clarity",
+                        "technical_examples",
+                        "english_accuracy",
+                        "follow_up_handling",
+                    ]
+                    timeline = await service.timeline(owner_id=owner_id)
+                    assert timeline.debriefed == 1 and len(timeline.items) == 1
+                    assert timeline.items[0].dimensions[0].score == Decimal("3.0")
+                    assert timeline.dimension_trends[0].latest == Decimal("3.0")
+                    assert timeline.recurring_gaps == ()
                     with pytest.raises(InterviewConflict):
                         await service.request(owner_id=owner_id, interview_id=created.id)
                     transport = debriefer._transport  # type: ignore[attr-defined]

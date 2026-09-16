@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..agents.roles.contracts import RoleContractError
 from ..agents.roles.debrief import (
     DEBRIEF_PROMPT_VERSION,
+    DIMENSION_MAXIMUM,
+    TRACKER_DIMENSIONS,
     DebriefInterview,
     DebriefOutcome,
     DebriefRequest,
@@ -35,10 +37,18 @@ from ..speech.models import SpeechAnalysis
 from ..today.models import Interview
 from .models import InterviewDebrief, InterviewTranscript
 from .schemas import (
+    DebriefDimensionResponse,
     DebriefFindingResponse,
     DebriefPracticeResponse,
     DebriefSkillEffectResponse,
+    DimensionTrend,
     InterviewDebriefResponse,
+    InterviewTimelineItem,
+    InterviewTimelineResponse,
+    RecurringGap,
+    TimelineDimensionScore,
+    TimelineGap,
+    TimelineSkillEffect,
 )
 from .service import (
     InterviewConflict,
@@ -204,6 +214,29 @@ class InterviewDebriefService:
         except SQLAlchemyError:
             raise InterviewsUnavailable("the interview store is unavailable") from None
 
+    async def timeline(self, *, owner_id: int) -> InterviewTimelineResponse:
+        """Every interview in order with its debrief's scores, and what recurs across them."""
+        try:
+            try:
+                rows = (
+                    await self._session.execute(
+                        select(Interview, InterviewDebrief)
+                        .outerjoin(
+                            InterviewDebrief,
+                            (InterviewDebrief.owner_id == Interview.owner_id)
+                            & (InterviewDebrief.interview_id == Interview.id),
+                        )
+                        .where(Interview.owner_id == owner_id)
+                        .order_by(Interview.starts_at, Interview.id)
+                        .limit(200)
+                    )
+                ).all()
+                return build_timeline([(i, d.outcome if d else None) for i, d in rows])
+            finally:
+                await self._session.rollback()
+        except SQLAlchemyError:
+            raise InterviewsUnavailable("the interview store is unavailable") from None
+
     async def _interview(self, owner_id: int, interview_id: int, *, lock: bool) -> Interview:
         statement = (
             select(Interview)
@@ -260,6 +293,82 @@ class InterviewDebriefService:
         return tuple(DebriefSkill(slug=s.slug, name=s.name) for s in bundle.skills)
 
 
+def build_timeline(
+    rows: list[tuple[Interview, dict[str, Any] | None]],
+) -> InterviewTimelineResponse:
+    """Pure: the sequence, per-dimension trends, and gaps that recur across debriefs."""
+    items: list[InterviewTimelineItem] = []
+    per_dimension: dict[str, list[TimelineDimensionScore]] = {
+        slug: [] for slug, _ in TRACKER_DIMENSIONS
+    }
+    gap_interviews: dict[str, set[int]] = {}
+    gap_statements: dict[str, list[str]] = {}
+    debriefed = 0
+    for interview, payload in rows:
+        outcome = DebriefOutcome.model_validate(payload) if payload else None
+        if outcome is not None:
+            debriefed += 1
+            for d in outcome.dimensions:
+                per_dimension.setdefault(d.slug, []).append(
+                    TimelineDimensionScore(slug=str(interview.id), score=d.score)
+                )
+            for gap in outcome.gaps:
+                gap_interviews.setdefault(gap.skill_slug, set()).add(interview.id)
+                gap_statements.setdefault(gap.skill_slug, []).append(gap.statement)
+        items.append(
+            InterviewTimelineItem(
+                interview_id=interview.id,
+                company=interview.company,
+                role=interview.role,
+                stage=interview.stage,
+                starts_at=interview.starts_at,
+                status=interview.status,
+                has_debrief=outcome is not None,
+                hiring_progression=outcome.hiring_progression if outcome else None,
+                dimensions=tuple(
+                    TimelineDimensionScore(slug=d.slug, score=d.score) for d in outcome.dimensions
+                )
+                if outcome
+                else (),
+                skills_affected=tuple(
+                    TimelineSkillEffect(skill_slug=e.skill_slug, direction=e.direction)
+                    for e in outcome.skills_affected
+                )
+                if outcome
+                else (),
+                gaps=tuple(
+                    TimelineGap(statement=g.statement, skill_slug=g.skill_slug)
+                    for g in outcome.gaps
+                )
+                if outcome
+                else (),
+            )
+        )
+    names = dict(TRACKER_DIMENSIONS)
+    trends = tuple(
+        DimensionTrend(
+            slug=slug,
+            name=names.get(slug, slug),
+            scores=tuple(scores),
+            latest=scores[-1].score if scores else None,
+            delta_from_first=(scores[-1].score - scores[0].score) if len(scores) > 1 else None,
+        )
+        for slug, scores in per_dimension.items()
+    )
+    recurring = tuple(
+        RecurringGap(
+            skill_slug=slug,
+            interview_count=len(ids),
+            statements=tuple(dict.fromkeys(gap_statements[slug]))[:3],
+        )
+        for slug, ids in sorted(gap_interviews.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+        if len(ids) >= 2
+    )
+    return InterviewTimelineResponse(
+        items=tuple(items), debriefed=debriefed, dimension_trends=trends, recurring_gaps=recurring
+    )
+
+
 def _status(job: BackgroundJob | None, row: InterviewDebrief | None) -> str:
     if row is not None and (job is None or job.state == "succeeded"):
         return "ready"
@@ -295,6 +404,16 @@ def _response(
         transcript_source=cast(Any, row.transcript_source),
         model=row.model,
         summary=outcome.summary,
+        dimensions=tuple(
+            DebriefDimensionResponse(
+                slug=d.slug,
+                name=dict(TRACKER_DIMENSIONS).get(d.slug, d.slug),
+                score=d.score,
+                maximum=DIMENSION_MAXIMUM,
+                rationale=d.rationale,
+            )
+            for d in outcome.dimensions
+        ),
         strengths=tuple(
             DebriefFindingResponse(
                 statement=f.statement, evidence=f.evidence, skill_slug=f.skill_slug
@@ -330,6 +449,7 @@ def _response(
 __all__ = [
     "DEBRIEF_JOB_KIND",
     "InterviewDebriefService",
+    "build_timeline",
     "debrief_idempotency_key",
     "render_turns",
 ]

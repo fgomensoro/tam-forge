@@ -26,6 +26,12 @@ SKILLS = (
 def _payload(**overrides: object) -> dict[str, object]:
     base: dict[str, object] = {
         "summary": "Clear root cause; no customer impact stated.",
+        "dimensions": [
+            {"slug": "answer_clarity", "score": "3.0", "rationale": "Ordered."},
+            {"slug": "technical_examples", "score": "3.5", "rationale": "Concrete."},
+            {"slug": "english_accuracy", "score": "3.0", "rationale": "Clean."},
+            {"slug": "follow_up_handling", "score": "2.5", "rationale": "Short."},
+        ],
         "strengths": [
             {
                 "statement": "Names the root cause.",
@@ -138,3 +144,34 @@ def test_the_prompt_carries_the_record_catalog_transcript_and_source_caveat() ->
         DebriefRequest(interview=request.interview, transcript=TRANSCRIPT, skills=SKILLS)
     )
     assert "comes from a recording" in recorded and "Reference material" not in recorded
+
+
+def test_the_four_tracker_dimensions_are_scored_in_half_points() -> None:
+    quarter = _payload(
+        dimensions=[
+            {"slug": "answer_clarity", "score": "2.75", "rationale": "x"},
+            {"slug": "technical_examples", "score": "3", "rationale": "x"},
+            {"slug": "english_accuracy", "score": "3", "rationale": "x"},
+            {"slug": "follow_up_handling", "score": "3", "rationale": "x"},
+        ]
+    )
+    assert "half points" in validate_debrief(quarter, transcript=TRANSCRIPT, skills=SKILLS)[0]
+    wrong = _payload(
+        dimensions=[
+            {"slug": "charisma", "score": "3", "rationale": "x"},
+            {"slug": "technical_examples", "score": "3", "rationale": "x"},
+            {"slug": "english_accuracy", "score": "3", "rationale": "x"},
+            {"slug": "follow_up_handling", "score": "3", "rationale": "x"},
+        ]
+    )
+    assert "tracker dimensions" in validate_debrief(wrong, transcript=TRANSCRIPT, skills=SKILLS)[0]
+    prompt = render_debrief_prompt(
+        DebriefRequest(
+            interview=DebriefInterview(
+                "C", "R", "s", datetime(2026, 9, 10, tzinfo=UTC), "completed"
+            ),
+            transcript=TRANSCRIPT,
+            skills=SKILLS,
+        )
+    )
+    assert "- answer_clarity: Answer clarity and structure" in prompt

@@ -9,7 +9,13 @@ struct InterviewsView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
             list.frame(width: 280)
-            ScrollView { editor.padding() }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    editor
+                    timelineSection
+                }
+                .padding()
+            }
         }
         .padding()
         .task { await model.load() }
@@ -39,6 +45,67 @@ struct InterviewsView: View {
             }
             .accessibilityIdentifier("interviewList")
         }
+    }
+
+    /// The sequence of interviews on Frank's four comparison dimensions, and the gaps that
+    /// keep coming back. Hiring progression sits apart: advancing is not proof of better
+    /// communication.
+    private var timelineSection: some View {
+        GroupBox("Interview timeline") {
+            VStack(alignment: .leading, spacing: 10) {
+                let debriefed = model.timeline.items.filter(\.hasDebrief)
+                if debriefed.isEmpty {
+                    Text("Debrief an interview to see it here.").foregroundStyle(.secondary)
+                        .accessibilityIdentifier("interviewTimelineEmpty")
+                } else {
+                    HStack(spacing: 8) {
+                        Text("Interview").font(.caption.weight(.semibold)).frame(width: 150, alignment: .leading)
+                        ForEach(model.timelineColumns) { trend in
+                            Text(trend.name).font(.caption.weight(.semibold)).frame(width: 90, alignment: .leading).lineLimit(2)
+                        }
+                        Text("Hiring").font(.caption.weight(.semibold)).frame(minWidth: 100, alignment: .leading)
+                    }
+                    ForEach(debriefed) { item in
+                        HStack(spacing: 8) {
+                            VStack(alignment: .leading) {
+                                Text("\(item.company) · \(item.stage)").font(.body.weight(.medium)).lineLimit(1)
+                                Text(item.startsAt, style: .date).font(.caption).foregroundStyle(.secondary)
+                            }
+                            .frame(width: 150, alignment: .leading)
+                            ForEach(model.timelineColumns) { trend in
+                                Text(item.score(trend.slug).map { "\($0)" } ?? "–")
+                                    .font(.body.monospacedDigit()).frame(width: 90, alignment: .leading)
+                            }
+                            Text(item.hiringProgression ?? "").font(.caption).foregroundStyle(.secondary)
+                                .frame(minWidth: 100, alignment: .leading).lineLimit(2)
+                        }
+                        .accessibilityIdentifier("interviewTimelineRow-\(item.interviewID)")
+                    }
+                    HStack(spacing: 8) {
+                        Text("Change since first").font(.caption).frame(width: 150, alignment: .leading)
+                        ForEach(model.timelineColumns) { trend in
+                            Text(trend.deltaFromFirst.map { delta in (delta >= 0 ? "+" : "") + "\(delta)" } ?? "–")
+                                .font(.caption.monospacedDigit()).frame(width: 90, alignment: .leading)
+                        }
+                    }
+                }
+                if !model.timeline.recurringGaps.isEmpty {
+                    Text("Recurring gaps").font(.subheadline.weight(.medium))
+                    ForEach(model.timeline.recurringGaps) { gap in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(gap.skillSlug.replacingOccurrences(of: "_", with: " ")) · \(gap.interviewCount) interviews")
+                                .font(.body.weight(.medium))
+                            ForEach(gap.statements, id: \.self) { statement in
+                                Text(statement).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .accessibilityIdentifier("interviewRecurringGap-\(gap.skillSlug)")
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityIdentifier("interviewTimeline")
     }
 
     private var editor: some View {

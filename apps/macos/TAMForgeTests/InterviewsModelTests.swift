@@ -3,6 +3,33 @@ import XCTest
 
 @MainActor
 final class InterviewsModelTests: XCTestCase {
+    func testTheTimelineDecodesScoresTrendsAndRecurringGaps() async throws {
+        let api = FakeInterviewAPI(records: [record(id: 1, company: "Acme")])
+        api.timelineJSON = """
+        {"items": [
+           {"interview_id": 1, "company": "Acme", "role": "TAM", "stage": "screen", "starts_at": "2026-09-01T17:00:00Z",
+            "status": "completed", "has_debrief": true, "hiring_progression": "Advanced.",
+            "dimensions": [{"slug": "answer_clarity", "score": "2.5"}, {"slug": "technical_examples", "score": "3"}],
+            "skills_affected": [{"skill_slug": "business_value_framing", "direction": "flat"}],
+            "gaps": [{"statement": "No impact stated.", "skill_slug": "business_value_framing"}]},
+           {"interview_id": 2, "company": "Beta", "role": "TAM", "stage": "panel", "starts_at": "2026-09-08T17:00:00Z",
+            "status": "completed", "has_debrief": false, "hiring_progression": null, "dimensions": [], "skills_affected": [], "gaps": []}],
+         "debriefed": 1,
+         "dimension_trends": [{"slug": "answer_clarity", "name": "Answer clarity and structure",
+            "scores": [{"slug": "1", "score": "2.5"}], "latest": "2.5", "delta_from_first": null}],
+         "recurring_gaps": [{"skill_slug": "business_value_framing", "interview_count": 2, "statements": ["No impact stated."]}]}
+        """
+        let model = InterviewsModel(api: api)
+        await model.load()
+        XCTAssertEqual(api.calls, ["list", "timeline"])
+        XCTAssertEqual(model.timeline.debriefed, 1)
+        XCTAssertEqual(model.timeline.items[0].score("answer_clarity"), Decimal(string: "2.5"))
+        XCTAssertNil(model.timeline.items[1].hiringProgression)
+        XCTAssertEqual(model.timelineColumns.map(\.slug), ["answer_clarity"])
+        XCTAssertNil(model.timelineColumns[0].deltaFromFirst)
+        XCTAssertEqual(model.timeline.recurringGaps.first?.interviewCount, 2)
+    }
+
     func testLoadListsRecordsAndSelectingOneFillsTheDraft() async {
         let api = FakeInterviewAPI(records: [record(id: 1, company: "Acme")])
         let model = InterviewsModel(api: api)
@@ -81,10 +108,20 @@ private final class FakeInterviewAPI: InterviewAPI {
         self.records = records
     }
 
+    var timelineJSON = """
+    {"items": [], "debriefed": 0, "dimension_trends": [], "recurring_gaps": []}
+    """
+
     func list() async throws -> [InterviewRecord] {
         calls.append("list")
         if let failure { throw failure }
         return records
+    }
+
+    func timeline() async throws -> InterviewTimeline {
+        calls.append("timeline")
+        if let failure { throw failure }
+        return try NativeJSONCodec.decode(InterviewTimeline.self, from: Data(timelineJSON.utf8))
     }
 
     func create(_ draft: InterviewDraft) async throws -> InterviewRecord {

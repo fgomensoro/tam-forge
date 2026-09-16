@@ -7,6 +7,7 @@ final class InterviewsModel: ObservableObject {
     @Published private(set) var selectedID: Int?
     @Published var draft = InterviewDraft.empty()
     @Published private(set) var analyses: [UUID: RecordingAnalysis] = [:]
+    @Published private(set) var timeline: InterviewTimeline = .empty
     @Published private(set) var isBusy = false
     @Published private(set) var errorMessage: String?
 
@@ -21,8 +22,14 @@ final class InterviewsModel: ObservableObject {
     var canSave: Bool { draft.isValid && !isBusy }
 
     func load() async {
-        await perform { self.interviews = try await self.api.list() }
+        await perform {
+            self.interviews = try await self.api.list()
+            self.timeline = try await self.api.timeline()
+        }
     }
+
+    /// The comparison dimensions in tracker order, for the timeline table's columns.
+    var timelineColumns: [DimensionTrend] { timeline.dimensionTrends }
 
     func startNew() {
         selectedID = nil

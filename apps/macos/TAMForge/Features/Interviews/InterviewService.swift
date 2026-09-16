@@ -8,6 +8,7 @@ protocol InterviewAPI {
     func update(id: Int, draft: InterviewDraft) async throws -> InterviewRecord
     func attach(recordingID: UUID, to id: Int) async throws -> InterviewRecord
     func analysis(recordingID: UUID) async throws -> RecordingAnalysis
+    func timeline() async throws -> InterviewTimeline
 }
 
 @MainActor
@@ -46,6 +47,10 @@ final class LiveInterviewAPI: InterviewAPI {
         } catch {
             throw InterviewAPIError.network
         }
+    }
+
+    func timeline() async throws -> InterviewTimeline {
+        try await request(.get, path: "/api/v1/interviews/timeline", as: InterviewTimeline.self)
     }
 
     private func request<Value: Decodable & Sendable>(

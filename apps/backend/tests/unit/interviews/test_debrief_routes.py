@@ -97,3 +97,61 @@ def test_turns_render_with_or_without_timestamps() -> None:
     ]
     assert render_turns(turns, with_time=True) == "[0] Interviewer: Hi.\n[1200] Learner: Hello."
     assert render_turns(turns, with_time=False) == "Interviewer: Hi.\nLearner: Hello."
+
+
+def test_the_timeline_orders_interviews_and_finds_recurring_gaps() -> None:
+    from decimal import Decimal
+    from types import SimpleNamespace
+
+    from tamforge_backend.interviews.debriefs import build_timeline
+
+    def outcome(clarity: str, gap_skill: str) -> dict[str, object]:
+        return {
+            "summary": "s",
+            "dimensions": [
+                {"slug": "answer_clarity", "score": clarity, "rationale": "x"},
+                {"slug": "technical_examples", "score": "3", "rationale": "x"},
+                {"slug": "english_accuracy", "score": "3", "rationale": "x"},
+                {"slug": "follow_up_handling", "score": "2.5", "rationale": "x"},
+            ],
+            "strengths": [
+                {"statement": "a", "evidence": "q", "skill_slug": "x"},
+                {"statement": "b", "evidence": "q", "skill_slug": "x"},
+            ],
+            "gaps": [
+                {"statement": "No impact stated.", "evidence": "q", "skill_slug": gap_skill},
+                {"statement": "No close.", "evidence": "q", "skill_slug": "structure"},
+            ],
+            "skills_affected": [{"skill_slug": gap_skill, "direction": "flat", "evidence": "q"}],
+            "next_week_practice": [{"description": "d", "skill_slug": gap_skill, "minutes": 20}],
+            "hiring_progression": "Advanced.",
+        }
+
+    def interview(id_: int, company: str) -> SimpleNamespace:
+        return SimpleNamespace(
+            id=id_,
+            company=company,
+            role="TAM",
+            stage="screen",
+            starts_at=datetime(2026, 9, id_, tzinfo=UTC),
+            status="completed",
+        )
+
+    timeline = build_timeline(
+        [
+            (interview(1, "Acme"), outcome("2.5", "business_value_framing")),  # type: ignore[list-item]
+            (interview(2, "Beta"), None),  # type: ignore[list-item]
+            (interview(3, "Coframe"), outcome("3.5", "business_value_framing")),  # type: ignore[list-item]
+        ]
+    )
+    assert [i.company for i in timeline.items] == ["Acme", "Beta", "Coframe"]
+    assert timeline.debriefed == 2 and timeline.items[1].has_debrief is False
+    clarity = next(t for t in timeline.dimension_trends if t.slug == "answer_clarity")
+    assert clarity.latest == Decimal("3.5") and clarity.delta_from_first == Decimal("1.0")
+    assert [s.slug for s in clarity.scores] == ["1", "3"]
+    assert [g.skill_slug for g in timeline.recurring_gaps] == [
+        "business_value_framing",
+        "structure",
+    ]
+    assert timeline.recurring_gaps[0].interview_count == 2
+    assert timeline.recurring_gaps[0].statements == ("No impact stated.",)

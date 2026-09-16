@@ -117,3 +117,157 @@ enum InterviewAPIError: Error, Equatable {
         }
     }
 }
+
+// MARK: - Timeline
+
+/// One comparison score; in a trend the `slug` carries the interview id as text.
+struct TimelineDimensionScore: Equatable, Sendable, Identifiable {
+    let slug: String
+    let score: Decimal
+    var id: String { slug }
+}
+
+struct TimelineSkillEffect: Codable, Equatable, Sendable, Identifiable {
+    let skillSlug: String
+    let direction: String
+    var id: String { skillSlug }
+
+    enum CodingKeys: String, CodingKey {
+        case direction
+        case skillSlug = "skill_slug"
+    }
+}
+
+struct TimelineGap: Codable, Equatable, Sendable, Identifiable {
+    let statement: String
+    let skillSlug: String
+    var id: String { skillSlug + statement }
+
+    enum CodingKeys: String, CodingKey {
+        case statement
+        case skillSlug = "skill_slug"
+    }
+}
+
+/// One interview in sequence with its debrief's scores when it has one.
+struct InterviewTimelineItem: Equatable, Sendable, Identifiable {
+    let interviewID: Int
+    let company: String
+    let role: String
+    let stage: String
+    let startsAt: Date
+    let status: String
+    let hasDebrief: Bool
+    let hiringProgression: String?
+    let dimensions: [TimelineDimensionScore]
+    let skillsAffected: [TimelineSkillEffect]
+    let gaps: [TimelineGap]
+    var id: Int { interviewID }
+
+    func score(_ slug: String) -> Decimal? { dimensions.first { $0.slug == slug }?.score }
+}
+
+struct RecurringGap: Codable, Equatable, Sendable, Identifiable {
+    let skillSlug: String
+    let interviewCount: Int
+    let statements: [String]
+    var id: String { skillSlug }
+
+    enum CodingKeys: String, CodingKey {
+        case statements
+        case skillSlug = "skill_slug"
+        case interviewCount = "interview_count"
+    }
+}
+
+struct DimensionTrend: Equatable, Sendable, Identifiable {
+    let slug: String
+    let name: String
+    let scores: [TimelineDimensionScore]
+    let latest: Decimal?
+    let deltaFromFirst: Decimal?
+    var id: String { slug }
+}
+
+struct InterviewTimeline: Equatable, Sendable {
+    let items: [InterviewTimelineItem]
+    let debriefed: Int
+    let dimensionTrends: [DimensionTrend]
+    let recurringGaps: [RecurringGap]
+
+    static let empty = InterviewTimeline(items: [], debriefed: 0, dimensionTrends: [], recurringGaps: [])
+}
+
+private enum TimelineDecimal {
+    static func decode<Keys: CodingKey>(_ container: KeyedDecodingContainer<Keys>, _ key: Keys) throws -> Decimal {
+        if let text = try? container.decode(String.self, forKey: key), let value = Decimal(string: text) {
+            return value
+        }
+        return try container.decode(Decimal.self, forKey: key)
+    }
+
+    static func decodeIfPresent<Keys: CodingKey>(_ container: KeyedDecodingContainer<Keys>, _ key: Keys) throws -> Decimal? {
+        if try container.decodeNil(forKey: key) { return nil }
+        return try decode(container, key)
+    }
+}
+
+extension TimelineDimensionScore: Decodable {
+    enum CodingKeys: String, CodingKey { case slug, score }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        slug = try container.decode(String.self, forKey: .slug)
+        score = try TimelineDecimal.decode(container, .score)
+    }
+}
+
+extension InterviewTimelineItem: Decodable {
+    enum CodingKeys: String, CodingKey {
+        case company, role, stage, status, dimensions, gaps
+        case interviewID = "interview_id"
+        case startsAt = "starts_at"
+        case hasDebrief = "has_debrief"
+        case hiringProgression = "hiring_progression"
+        case skillsAffected = "skills_affected"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        interviewID = try container.decode(Int.self, forKey: .interviewID)
+        company = try container.decode(String.self, forKey: .company)
+        role = try container.decode(String.self, forKey: .role)
+        stage = try container.decode(String.self, forKey: .stage)
+        startsAt = try container.decode(Date.self, forKey: .startsAt)
+        status = try container.decode(String.self, forKey: .status)
+        hasDebrief = try container.decode(Bool.self, forKey: .hasDebrief)
+        hiringProgression = try container.decodeIfPresent(String.self, forKey: .hiringProgression)
+        dimensions = try container.decodeIfPresent([TimelineDimensionScore].self, forKey: .dimensions) ?? []
+        skillsAffected = try container.decodeIfPresent([TimelineSkillEffect].self, forKey: .skillsAffected) ?? []
+        gaps = try container.decodeIfPresent([TimelineGap].self, forKey: .gaps) ?? []
+    }
+}
+
+extension DimensionTrend: Decodable {
+    enum CodingKeys: String, CodingKey {
+        case slug, name, scores, latest
+        case deltaFromFirst = "delta_from_first"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        slug = try container.decode(String.self, forKey: .slug)
+        name = try container.decode(String.self, forKey: .name)
+        scores = try container.decode([TimelineDimensionScore].self, forKey: .scores)
+        latest = try TimelineDecimal.decodeIfPresent(container, .latest)
+        deltaFromFirst = try TimelineDecimal.decodeIfPresent(container, .deltaFromFirst)
+    }
+}
+
+extension InterviewTimeline: Decodable {
+    enum CodingKeys: String, CodingKey {
+        case items, debriefed
+        case dimensionTrends = "dimension_trends"
+        case recurringGaps = "recurring_gaps"
+    }
+}

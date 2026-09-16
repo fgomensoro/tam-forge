@@ -29,6 +29,7 @@ def test_the_fixture_pins_the_debrief_model_and_covers_every_refusal() -> None:
         "invented-quote",
         "skill-outside-catalog",
         "plan-change-claim",
+        "quarter-point-dimension",
         "quoted-and-bounded",
     }
 

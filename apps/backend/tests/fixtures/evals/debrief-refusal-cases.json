@@ -72,7 +72,29 @@
               "minutes": 20
             }
           ],
-          "hiring_progression": "Moved to the hiring manager round."
+          "hiring_progression": "Moved to the hiring manager round.",
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "rationale": "Ordered."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "3.5",
+              "rationale": "Concrete."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.0",
+              "rationale": "Clean."
+            },
+            {
+              "slug": "follow_up_handling",
+              "score": "2.5",
+              "rationale": "Short."
+            }
+          ]
         }
       ],
       "expect": "refused_by_contract"
@@ -134,7 +156,29 @@
               "minutes": 20
             }
           ],
-          "hiring_progression": "Moved to the hiring manager round."
+          "hiring_progression": "Moved to the hiring manager round.",
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "rationale": "Ordered."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "3.5",
+              "rationale": "Concrete."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.0",
+              "rationale": "Clean."
+            },
+            {
+              "slug": "follow_up_handling",
+              "score": "2.5",
+              "rationale": "Short."
+            }
+          ]
         }
       ],
       "expect": "refused_by_contract"
@@ -209,7 +253,29 @@
               "minutes": 20
             }
           ],
-          "hiring_progression": "Moved to the hiring manager round."
+          "hiring_progression": "Moved to the hiring manager round.",
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "rationale": "Ordered."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "3.5",
+              "rationale": "Concrete."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.0",
+              "rationale": "Clean."
+            },
+            {
+              "slug": "follow_up_handling",
+              "score": "2.5",
+              "rationale": "Short."
+            }
+          ]
         }
       ],
       "expect": "refused_by_validator"
@@ -279,7 +345,29 @@
               "minutes": 20
             }
           ],
-          "hiring_progression": "Moved to the hiring manager round."
+          "hiring_progression": "Moved to the hiring manager round.",
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "rationale": "Ordered."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "3.5",
+              "rationale": "Concrete."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.0",
+              "rationale": "Clean."
+            },
+            {
+              "slug": "follow_up_handling",
+              "score": "2.5",
+              "rationale": "Short."
+            }
+          ]
         }
       ],
       "expect": "refused_by_validator"
@@ -354,7 +442,29 @@
               "minutes": 20
             }
           ],
-          "hiring_progression": "Moved to the hiring manager round."
+          "hiring_progression": "Moved to the hiring manager round.",
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "rationale": "Ordered."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "3.5",
+              "rationale": "Concrete."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.0",
+              "rationale": "Clean."
+            },
+            {
+              "slug": "follow_up_handling",
+              "score": "2.5",
+              "rationale": "Short."
+            }
+          ]
         }
       ],
       "expect": "refused_by_validator"
@@ -424,7 +534,29 @@
               "minutes": 20
             }
           ],
-          "hiring_progression": "Moved to the hiring manager round."
+          "hiring_progression": "Moved to the hiring manager round.",
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "rationale": "Ordered."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "3.5",
+              "rationale": "Concrete."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.0",
+              "rationale": "Clean."
+            },
+            {
+              "slug": "follow_up_handling",
+              "score": "2.5",
+              "rationale": "Short."
+            }
+          ]
         }
       ],
       "expect": "refused_by_validator"
@@ -499,7 +631,29 @@
               "minutes": 20
             }
           ],
-          "hiring_progression": "Moved to the hiring manager round."
+          "hiring_progression": "Moved to the hiring manager round.",
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "rationale": "Ordered."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "3.5",
+              "rationale": "Concrete."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.0",
+              "rationale": "Clean."
+            },
+            {
+              "slug": "follow_up_handling",
+              "score": "2.5",
+              "rationale": "Short."
+            }
+          ]
         },
         {
           "summary": "Clear escalation story with a concrete fix; the onboarding answer was short.",
@@ -546,7 +700,29 @@
               "minutes": 20
             }
           ],
-          "hiring_progression": "Moved to the hiring manager round."
+          "hiring_progression": "Moved to the hiring manager round.",
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "rationale": "Ordered."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "3.5",
+              "rationale": "Concrete."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.0",
+              "rationale": "Clean."
+            },
+            {
+              "slug": "follow_up_handling",
+              "score": "2.5",
+              "rationale": "Short."
+            }
+          ]
         }
       ],
       "expect": "accepted"
@@ -621,10 +797,226 @@
               "minutes": 20
             }
           ],
-          "hiring_progression": "Moved to the hiring manager round."
+          "hiring_progression": "Moved to the hiring manager round.",
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "rationale": "Ordered."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "3.5",
+              "rationale": "Concrete."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.0",
+              "rationale": "Clean."
+            },
+            {
+              "slug": "follow_up_handling",
+              "score": "2.5",
+              "rationale": "Short."
+            }
+          ]
         }
       ],
       "expect": "accepted"
+    },
+    {
+      "case_id": "quarter-point-dimension",
+      "interview": {
+        "company": "Coframe",
+        "role": "TAM",
+        "stage": "screen",
+        "starts_at": "2026-09-10T17:00:00+00:00",
+        "status": "completed"
+      },
+      "skills": [
+        {
+          "slug": "structured_troubleshooting",
+          "name": "Structured troubleshooting"
+        },
+        {
+          "slug": "business_value_framing",
+          "name": "Business value framing"
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English"
+        }
+      ],
+      "transcript": "[0] Interviewer: Walk me through an escalation you owned.\n[4200] Learner: A payments customer saw duplicate webhooks. I traced the retries to their idempotency key and wrote the runbook.\n[30100] Interviewer: What would you change in onboarding?\n[33000] Learner: Add the key check to onboarding so the duplicate never reaches the ledger.",
+      "answers": [
+        {
+          "summary": "Clear escalation story with a concrete fix; the onboarding answer was short.",
+          "strengths": [
+            {
+              "statement": "Names the root cause.",
+              "evidence": "I traced the retries to their idempotency key",
+              "skill_slug": "structured_troubleshooting"
+            },
+            {
+              "statement": "Closes with an action.",
+              "evidence": "wrote the runbook",
+              "skill_slug": "business_value_framing"
+            }
+          ],
+          "gaps": [
+            {
+              "statement": "No customer impact stated.",
+              "evidence": "saw duplicate webhooks",
+              "skill_slug": "business_value_framing"
+            },
+            {
+              "statement": "Onboarding answer lacks a metric.",
+              "evidence": "Add the key check to onboarding",
+              "skill_slug": "structured_troubleshooting"
+            }
+          ],
+          "skills_affected": [
+            {
+              "skill_slug": "structured_troubleshooting",
+              "direction": "up",
+              "evidence": "traced the retries"
+            },
+            {
+              "skill_slug": "business_value_framing",
+              "direction": "flat",
+              "evidence": "duplicate webhooks"
+            }
+          ],
+          "next_week_practice": [
+            {
+              "description": "Retell the escalation with the customer's cost in the first sentence.",
+              "skill_slug": "business_value_framing",
+              "minutes": 20
+            }
+          ],
+          "hiring_progression": "Moved to the hiring manager round.",
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "2.75",
+              "rationale": "Ordered."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "3.5",
+              "rationale": "Concrete."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.0",
+              "rationale": "Clean."
+            },
+            {
+              "slug": "follow_up_handling",
+              "score": "2.5",
+              "rationale": "Short."
+            }
+          ]
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "missing-dimension",
+      "interview": {
+        "company": "Coframe",
+        "role": "TAM",
+        "stage": "screen",
+        "starts_at": "2026-09-10T17:00:00+00:00",
+        "status": "completed"
+      },
+      "skills": [
+        {
+          "slug": "structured_troubleshooting",
+          "name": "Structured troubleshooting"
+        },
+        {
+          "slug": "business_value_framing",
+          "name": "Business value framing"
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English"
+        }
+      ],
+      "transcript": "[0] Interviewer: Walk me through an escalation you owned.\n[4200] Learner: A payments customer saw duplicate webhooks. I traced the retries to their idempotency key and wrote the runbook.\n[30100] Interviewer: What would you change in onboarding?\n[33000] Learner: Add the key check to onboarding so the duplicate never reaches the ledger.",
+      "answers": [
+        {
+          "summary": "Clear escalation story with a concrete fix; the onboarding answer was short.",
+          "strengths": [
+            {
+              "statement": "Names the root cause.",
+              "evidence": "I traced the retries to their idempotency key",
+              "skill_slug": "structured_troubleshooting"
+            },
+            {
+              "statement": "Closes with an action.",
+              "evidence": "wrote the runbook",
+              "skill_slug": "business_value_framing"
+            }
+          ],
+          "gaps": [
+            {
+              "statement": "No customer impact stated.",
+              "evidence": "saw duplicate webhooks",
+              "skill_slug": "business_value_framing"
+            },
+            {
+              "statement": "Onboarding answer lacks a metric.",
+              "evidence": "Add the key check to onboarding",
+              "skill_slug": "structured_troubleshooting"
+            }
+          ],
+          "skills_affected": [
+            {
+              "skill_slug": "structured_troubleshooting",
+              "direction": "up",
+              "evidence": "traced the retries"
+            },
+            {
+              "skill_slug": "business_value_framing",
+              "direction": "flat",
+              "evidence": "duplicate webhooks"
+            }
+          ],
+          "next_week_practice": [
+            {
+              "description": "Retell the escalation with the customer's cost in the first sentence.",
+              "skill_slug": "business_value_framing",
+              "minutes": 20
+            }
+          ],
+          "hiring_progression": "Moved to the hiring manager round.",
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "rationale": "Ordered."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "3.5",
+              "rationale": "Concrete."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.0",
+              "rationale": "Clean."
+            },
+            {
+              "slug": "charisma",
+              "score": "3.0",
+              "rationale": "Ordered."
+            }
+          ]
+        }
+      ],
+      "expect": "refused_by_validator"
     }
   ]
 }
