@@ -41,6 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.models import Owner
 from ..database import transaction_scope
+from ..learning.models import ActivityInstance
 from ..models.base import utc_now
 from .contracts import timeline_sha256
 from .models import Recording, RecordingGap, RecordingPart, RecordingTrack
@@ -57,7 +58,12 @@ from .schemas import (
     RecordingTrackStatus,
     TrackKind,
 )
-from .service import RecordingConflict, RecordingNotFound, RecordingUnavailable
+from .service import (
+    RecordingConflict,
+    RecordingInvalidRequest,
+    RecordingNotFound,
+    RecordingUnavailable,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +168,14 @@ class SqlAlchemyRecordingRepository:
                         existing.create_result_json
                     ).model_copy(update={"replayed": True})
 
+                if command.activity_id is not None:
+                    activity = await self._session.scalar(
+                        select(ActivityInstance.id)
+                        .where(ActivityInstance.owner_id == owner_id)
+                        .where(ActivityInstance.id == command.activity_id)
+                    )
+                    if activity is None:
+                        raise RecordingInvalidRequest("recording activity was not found")
                 result = RecordingCreateResponse(
                     recording_id=command.recording_id,
                     state="reserved",
@@ -173,6 +187,7 @@ class SqlAlchemyRecordingRepository:
                     schema_version=command.schema_version,
                     state="reserved",
                     started_at=command.started_at,
+                    activity_instance_id=command.activity_id,
                     create_idempotency_key=idempotency_key,
                     create_request_hash=request_hash,
                     create_result_json=result.model_dump(mode="json"),
@@ -249,8 +264,7 @@ class SqlAlchemyRecordingRepository:
                     .where(RecordingPart.recording_id == recording.id)
                     .where(RecordingPart.track_id == track.id)
                     .where(
-                        RecordingPart.sample_start
-                        < metadata.sample_start + metadata.sample_count
+                        RecordingPart.sample_start < metadata.sample_start + metadata.sample_count
                     )
                     .where(
                         RecordingPart.sample_start + RecordingPart.sample_count
@@ -603,6 +617,25 @@ class SqlAlchemyRecordingRepository:
                 await self._session.flush()
                 return result
 
+    async def for_activity(
+        self, *, owner_id: int, activity_id: int
+    ) -> tuple[RecordingStatusResponse, ...]:
+        """Every recording made for one activity, oldest first."""
+        async with _unavailable_on_database_error():
+            recordings = (
+                await self._session.scalars(
+                    select(Recording)
+                    .where(Recording.owner_id == owner_id)
+                    .where(Recording.activity_instance_id == activity_id)
+                    .order_by(Recording.started_at, Recording.id)
+                )
+            ).all()
+            statuses = [
+                await self.status(owner_id=owner_id, recording_id=item.client_recording_id)
+                for item in recordings
+            ]
+            return tuple(statuses)
+
     async def status(self, *, owner_id: int, recording_id: UUID) -> RecordingStatusResponse:
         async with _unavailable_on_database_error():
             recording = await self._session.scalar(
@@ -768,6 +801,8 @@ class SqlAlchemyRecordingRepository:
             ),
             audio_created_on_server=recording.audio_created_on_server,
             transcript_lineage_accepted=recording.transcript_lineage_accepted,
+            activity_id=recording.activity_instance_id,
+            started_at=recording.started_at,
         )
 
 

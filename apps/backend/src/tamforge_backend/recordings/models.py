@@ -183,6 +183,7 @@ class Recording(Base):
     audio_created_on_server: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false"), nullable=False
     )
+    activity_instance_id: Mapped[int | None] = mapped_column(BigInteger)
     transcript_lineage_accepted: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false"), nullable=False
     )
@@ -232,7 +233,7 @@ class RecordingTrack(Base):
         CheckConstraint("schema_version = 1", name="schema_version_supported"),
         CheckConstraint("kind IN ('microphone', 'system_audio')", name="kind_allowed"),
         CheckConstraint(
-            "sample_encoding = 'pcm_s16le' AND sample_rate_hz = 48000 " "AND interleaved",
+            "sample_encoding = 'pcm_s16le' AND sample_rate_hz = 48000 AND interleaved",
             name="canonical_pcm16_48khz",
         ),
         CheckConstraint(

@@ -22,6 +22,7 @@ from ..auth.dependencies import get_bearer_authenticated_owner
 from ..auth.schemas import AuthenticatedOwner, ProblemResponse
 from ..database import get_db_session
 from ..recordings.schemas import IdempotencyKey
+from .analysis import SpeechAnalysisError, SpeechAnalysisService
 from .contracts import (
     TranscriptConflict,
     TranscriptError,
@@ -31,6 +32,7 @@ from .contracts import (
 )
 from .repository import SqlAlchemyTranscriptRepository
 from .schemas import (
+    SpeechAnalysisResponse,
     Track,
     TranscriptCorrectionCommand,
     TranscriptCorrectionResponse,
@@ -47,9 +49,7 @@ def _transcript_problem_response_schema(description: str) -> dict[str, Any]:
     return {
         "description": description,
         "content": {
-            "application/problem+json": {
-                "schema": {"$ref": "#/components/schemas/ProblemResponse"}
-            }
+            "application/problem+json": {"schema": {"$ref": "#/components/schemas/ProblemResponse"}}
         },
     }
 
@@ -96,7 +96,20 @@ def get_transcript_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     repository: Annotated[SqlAlchemyTranscriptRepository, Depends(get_transcript_repository)],
 ) -> TranscriptService:
-    return TranscriptService(session, repository)
+    analysis = SpeechAnalysisService(session)
+
+    async def enqueue(owner_id: int, recording_pk: int, transcript_id: int) -> object:
+        return await analysis.enqueue(
+            owner_id=owner_id, recording_pk=recording_pk, transcript_id=transcript_id
+        )
+
+    return TranscriptService(session, repository, on_stored=enqueue)
+
+
+def get_speech_analysis_service(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> SpeechAnalysisService:
+    return SpeechAnalysisService(session)
 
 
 @router.post(
@@ -139,6 +152,30 @@ async def list_transcripts(
     service: Annotated[TranscriptService, Depends(get_transcript_service)],
 ) -> TranscriptPage:
     result = await service.list_for_recording(owner_id=owner.owner_id, recording_id=recording_id)
+    _prevent_storage(response)
+    return result
+
+
+@router.get(
+    "/{recording_id}/analysis",
+    response_model=SpeechAnalysisResponse,
+    responses=TRANSCRIPT_LIST_RESPONSES,
+)
+async def read_analysis(
+    recording_id: UUID,
+    response: Response,
+    owner: Annotated[AuthenticatedOwner, Depends(get_bearer_authenticated_owner)],
+    transcripts: Annotated[TranscriptService, Depends(get_transcript_service)],
+    analysis: Annotated[SpeechAnalysisService, Depends(get_speech_analysis_service)],
+) -> SpeechAnalysisResponse:
+    """The recording's speaker turns and metrics, and where the analysis job stands."""
+    recording_pk = await transcripts.recording_pk(
+        owner_id=owner.owner_id, recording_id=recording_id
+    )
+    try:
+        result = await analysis.read(owner_id=owner.owner_id, recording_pk=recording_pk)
+    except SpeechAnalysisError:
+        raise TranscriptUnavailable() from None
     _prevent_storage(response)
     return result
 

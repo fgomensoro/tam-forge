@@ -86,6 +86,13 @@ class StubRecordingService:
         self.owner_ids.append(owner_id)
         return ()
 
+    async def for_activity(
+        self, *, owner_id: int, activity_id: int
+    ) -> tuple[RecordingStatusResponse, ...]:
+        self.owner_ids.append(owner_id)
+        assert activity_id == 41
+        return ()
+
 
 def owner(method: str = "bearer", owner_id: int = 7) -> AuthenticatedOwner:
     return AuthenticatedOwner(
@@ -232,6 +239,7 @@ def test_recording_auth_precedes_service_resolution_for_every_route() -> None:
         recording_routes.upload_recording_part,
         recording_routes.seal_recording,
         recording_routes.recording_status,
+        recording_routes.recordings_for_activity,
     ):
         parameters = tuple(inspect.signature(endpoint).parameters)
         assert parameters.index("owner") < parameters.index("service")
@@ -307,9 +315,7 @@ def test_recording_routes_document_bearer_only_auth_and_typed_problem_responses(
         operation = schema["paths"][path][method]
         parameters = operation.get("parameters", [])
         assert operation["security"] == [{"NativeBearer": []}]
-        assert not any(
-            parameter["name"].lower() == "authorization" for parameter in parameters
-        )
+        assert not any(parameter["name"].lower() == "authorization" for parameter in parameters)
         assert not any(parameter["in"] == "cookie" for parameter in parameters)
         assert expected_statuses <= operation["responses"].keys()
         for status in expected_statuses:
@@ -409,3 +415,27 @@ def test_noncanonical_part_key_last_character_returns_a_generic_problem() -> Non
     assert response.headers["content-type"].startswith("application/problem+json")
     assert response.json()["code"] == "invalid_recording_request"
     assert noncanonical_key not in response.text
+
+
+def test_a_recording_can_carry_its_activity_and_be_listed_by_it() -> None:
+    client, service = client_for(owner())
+    with client:
+        created = client.post(
+            "/api/v1/recordings",
+            json={**create_payload(), "activity_id": 41},
+            headers={"Authorization": "Bearer test-token", "Idempotency-Key": "create-1"},
+        )
+        listed = client.get(
+            "/api/v1/recordings/by-activity/41",
+            headers={"Authorization": "Bearer test-token"},
+        )
+        rejected = client.post(
+            "/api/v1/recordings",
+            json={**create_payload(), "activity_id": 0},
+            headers={"Authorization": "Bearer test-token", "Idempotency-Key": "create-1"},
+        )
+
+    assert created.status_code == 201
+    assert listed.status_code == 200 and listed.json() == {"items": []}
+    assert listed.headers["cache-control"] == "no-store"
+    assert rejected.status_code == 422

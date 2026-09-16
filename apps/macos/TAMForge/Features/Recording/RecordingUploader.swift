@@ -10,6 +10,9 @@ struct RecordingServerStatus: Equatable, Sendable {
     let recordingID: UUID
     let audioCreatedOnServer: Bool
     let transcriptLineageAccepted: Bool
+    var state: String = "reserved"
+    var activityID: Int? = nil
+    var startedAt: Date? = nil
 }
 
 protocol RecordingServerServicing: Sendable {
@@ -20,6 +23,15 @@ protocol RecordingServerServicing: Sendable {
     func submitTranscript(_ command: TranscriptSubmitPayload, idempotencyKey: String) async throws
         -> RecordingServerStatus
     func status(recordingID: UUID) async throws -> RecordingServerStatus
+    /// Every recording made for one Today block, oldest first.
+    func recordings(activityID: Int) async throws -> [RecordingServerStatus]
+    /// The server's speaker turns and the state of the analysis job.
+    func analysis(recordingID: UUID) async throws -> RecordingAnalysis
+}
+
+extension RecordingServerServicing {
+    func recordings(activityID: Int) async throws -> [RecordingServerStatus] { [] }
+    func analysis(recordingID: UUID) async throws -> RecordingAnalysis { .notRequested }
 }
 
 struct LiveRecordingServerClient: RecordingServerServicing, @unchecked Sendable {
@@ -157,6 +169,30 @@ struct LiveRecordingServerClient: RecordingServerServicing, @unchecked Sendable 
             throw RecordingUploadError.invalidResponse
         }
         return status
+    }
+
+    func recordings(activityID: Int) async throws -> [RecordingServerStatus] {
+        let data = try await sendJSON(
+            method: "GET",
+            path: "/api/v1/recordings/by-activity/\(activityID)",
+            body: nil,
+            idempotencyKey: nil,
+            expectedStatus: 200
+        )
+        _ = try decodeGenerated(Components.Schemas.PendingRecordingPage.self, data: data)
+        let page = try decode(RecordingServerStatusPagePayload.self, data: data)
+        return try page.items.map { try $0.status }
+    }
+
+    func analysis(recordingID: UUID) async throws -> RecordingAnalysis {
+        let data = try await sendJSON(
+            method: "GET",
+            path: "/api/v1/recordings/\(recordingID.uuidString.lowercased())/analysis",
+            body: nil,
+            idempotencyKey: nil,
+            expectedStatus: 200
+        )
+        return try decode(RecordingAnalysis.self, data: data)
     }
 
     private func sendJSON(
@@ -375,7 +411,10 @@ actor RecordingUploadPipeline: RecordingUploading {
                 .init(
                     recordingID: recordingID.uuidString.lowercased(),
                     startedAt: NativeJSONCodec.timestamp(startedAt),
-                    tracks: tracks
+                    tracks: tracks,
+                    activityID: RecordingActivityLink.read(
+                        recordingID: recordingID, rootURL: spoolFactory.rootURL
+                    )
                 ),
                 idempotencyKey: "recording.create.\(recordingID.uuidString.lowercased())"
             )
@@ -614,13 +653,19 @@ private struct TranscriptResponsePayload: Decodable {
 
 private struct RecordingServerStatusPayload: Decodable {
     let recordingID: String
+    let state: String
     let audioCreatedOnServer: Bool
     let transcriptLineageAccepted: Bool
+    let activityID: Int?
+    let startedAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case recordingID = "recording_id"
+        case state
         case audioCreatedOnServer = "audio_created_on_server"
         case transcriptLineageAccepted = "transcript_lineage_accepted"
+        case activityID = "activity_id"
+        case startedAt = "started_at"
     }
 
     var status: RecordingServerStatus {
@@ -631,10 +676,17 @@ private struct RecordingServerStatusPayload: Decodable {
             return .init(
                 recordingID: id,
                 audioCreatedOnServer: audioCreatedOnServer,
-                transcriptLineageAccepted: transcriptLineageAccepted
+                transcriptLineageAccepted: transcriptLineageAccepted,
+                state: state,
+                activityID: activityID,
+                startedAt: startedAt
             )
         }
     }
+}
+
+private struct RecordingServerStatusPagePayload: Decodable {
+    let items: [RecordingServerStatusPayload]
 }
 
 extension SHA256.Digest {

@@ -39,6 +39,7 @@ primary key rather than reusing the (possibly expired) `recording` object.
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable
 from typing import cast
 from uuid import UUID
 
@@ -118,12 +119,28 @@ def _correction_response(
     )
 
 
-class TranscriptService:
-    """Coordinates owner-scoped transcript persistence and the lineage flag."""
+StoredHook = Callable[[int, int, int], Awaitable[object]]
 
-    def __init__(self, session: AsyncSession, repository: SqlAlchemyTranscriptRepository) -> None:
+
+class TranscriptService:
+    """Coordinates owner-scoped transcript persistence and the lineage flag.
+
+    `on_stored(owner_id, recording_pk, transcript_id)` runs after a transcript is
+    durable; production enqueues the speech analysis there. A failure in the hook
+    surfaces as `TranscriptUnavailable`, so the client retries the submission (which
+    replays by content hash) rather than losing the analysis.
+    """
+
+    def __init__(
+        self,
+        session: AsyncSession,
+        repository: SqlAlchemyTranscriptRepository,
+        *,
+        on_stored: StoredHook | None = None,
+    ) -> None:
         self._session = session
         self._repository = repository
+        self._on_stored = on_stored
 
     async def submit(
         self, *, owner_id: int, recording_id: UUID, command: TranscriptSubmitCommand
@@ -139,12 +156,22 @@ class TranscriptService:
             body=command.model_dump(mode="json"),
         )
         await self._accept_lineage(recording_pk)
+        if self._on_stored is not None:
+            try:
+                await self._on_stored(owner_id, recording_pk, stored.row.id)
+            except SQLAlchemyError:
+                raise TranscriptUnavailable() from None
         return await self._to_response(
             owner_id=owner_id,
             recording_id=recording_id,
             transcript=stored.row,
             replayed=stored.replayed,
         )
+
+    async def recording_pk(self, *, owner_id: int, recording_id: UUID) -> int:
+        """The owner's recording row id, or `TranscriptNotFound`."""
+        recording = await self._resolve_recording(owner_id=owner_id, recording_id=recording_id)
+        return recording.id
 
     async def list_for_recording(self, *, owner_id: int, recording_id: UUID) -> TranscriptPage:
         recording = await self._resolve_recording(owner_id=owner_id, recording_id=recording_id)

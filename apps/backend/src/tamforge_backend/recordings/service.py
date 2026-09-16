@@ -315,6 +315,11 @@ class RecordingService:
     async def status(self, *, owner_id: int, recording_id: UUID) -> RecordingStatusResponse:
         return await self._repository.status(owner_id=owner_id, recording_id=recording_id)
 
+    async def for_activity(
+        self, *, owner_id: int, activity_id: int
+    ) -> tuple[RecordingStatusResponse, ...]:
+        return await self._repository.for_activity(owner_id=owner_id, activity_id=activity_id)
+
     async def pending(self, *, owner_id: int) -> tuple[RecordingStatusResponse, ...]:
         return await self._repository.pending(owner_id=owner_id)
 
