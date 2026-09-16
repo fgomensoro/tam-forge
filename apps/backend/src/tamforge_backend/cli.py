@@ -33,6 +33,7 @@ def _parser() -> argparse.ArgumentParser:
     probe = commands.add_parser("claude-probe")
     probe.add_argument("--database-url", required=True)
     probe.add_argument("--model", default=None)
+    commands.add_parser("send-test-email")
     attest = commands.add_parser("record-attestation")
     attest.add_argument("--database-url", required=True)
     attest.add_argument("--policy-version", required=True)
@@ -46,6 +47,25 @@ def _async_url(raw_url: str) -> str:
     if url.drivername not in {"postgresql", "postgresql+asyncpg", "postgresql+psycopg"}:
         raise SeedConfigError("seed apply requires PostgreSQL")
     return url.set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
+
+
+async def _send_test_email() -> dict[str, object]:
+    """One bounded message to the configured recipient; proves the channel end to end."""
+    from .reports.delivery import NullReportSender
+    from .reports.resend import build_report_sender
+
+    sender = build_report_sender(os.environ)
+    if isinstance(sender, NullReportSender):
+        return {
+            "status": "skipped",
+            "detail": "TAMFORGE_RESEND_API_KEY or TAMFORGE_REPORT_TO unset",
+        }
+    delivery = await sender.send(
+        owner_id=0,
+        subject="TAM Forge test message",
+        body="The report channel works. Weekly and monthly reports will arrive here.",
+    )
+    return {"status": delivery.status, "detail": delivery.detail}
 
 
 async def _apply(config_dir: Path, raw_url: str) -> SeedResult:
@@ -184,6 +204,8 @@ def main(argv: list[str] | None = None) -> int:
                 "coverage_requirements": len(coverage.requirements),
                 "coverage_assignments": len(coverage.assignments),
             }
+        elif args.command == "send-test-email":
+            payload = asyncio.run(_send_test_email())
         elif args.command == "claude-probe":
             payload = asyncio.run(_claude_probe(args.database_url, args.model))
         elif args.command == "record-attestation":

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 
@@ -26,6 +27,7 @@ from .observability.logging import AccessLogFilter, ServerErrorFilter
 from .observability.metrics import Metrics
 from .observability.middleware import OperationalMiddleware
 from .observability.routes import router as operational_router
+from .reports.resend import build_report_sender
 from .storage.dependencies import create_object_store
 from .storage.models import build_object_key
 from .storage.ports import ObjectStore
@@ -73,6 +75,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.debrief_transport = app.state.planner_transport
             app.state.class_analysis_transport = app.state.planner_transport
             app.state.report_transport = app.state.planner_transport
+            app.state.report_sender = build_report_sender(os.environ)
 
             async def probe_ingest() -> None:
                 # Built here rather than at startup on purpose. The store is

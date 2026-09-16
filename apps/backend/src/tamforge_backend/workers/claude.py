@@ -37,6 +37,7 @@ from ..agents.runtime import (
     PreparedAgentRun,
     ValidatedAgentResult,
 )
+from ..reports.resend import build_report_sender
 
 CLAUDE_JOB_TYPES: tuple[str, ...] = (
     "claude.review",
@@ -409,6 +410,8 @@ async def weekly_report_step(
 
     if analyst is None:
         analyst = WeeklyReportService(AgentSdkRuntime(), model=WorkerSettings().report_model)
+    if sender is None:
+        sender = build_report_sender(os.environ)
     async with sessions() as session:
         await WeeklyReportQueue(session, analyst=analyst, sender=sender).schedule_due(now=now)
     async with sessions() as session:
@@ -471,6 +474,8 @@ async def monthly_report_step(
 
     if analyst is None:
         analyst = MonthlyReportService(AgentSdkRuntime(), model=WorkerSettings().report_model)
+    if sender is None:
+        sender = build_report_sender(os.environ)
     async with sessions() as session:
         await MonthlyReportQueue(session, analyst=analyst, sender=sender).schedule_due(now=now)
     async with sessions() as session:
