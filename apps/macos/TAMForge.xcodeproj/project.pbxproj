@@ -215,6 +215,15 @@
 		FB4000000000000000000007 /* CardsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4000000000000000001007 /* CardsView.swift */; };
 		FB4000000000000000000008 /* CardsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4000000000000000001007 /* CardsView.swift */; };
 		FB4000000000000000000009 /* CardsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4000000000000000001009 /* CardsModelTests.swift */; };
+		FB5000000000000000000001 /* ProgressModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5000000000000000001001 /* ProgressModels.swift */; };
+		FB5000000000000000000002 /* ProgressModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5000000000000000001001 /* ProgressModels.swift */; };
+		FB5000000000000000000003 /* ProgressService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5000000000000000001003 /* ProgressService.swift */; };
+		FB5000000000000000000004 /* ProgressService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5000000000000000001003 /* ProgressService.swift */; };
+		FB5000000000000000000005 /* ProgressModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5000000000000000001005 /* ProgressModel.swift */; };
+		FB5000000000000000000006 /* ProgressModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5000000000000000001005 /* ProgressModel.swift */; };
+		FB5000000000000000000007 /* ProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5000000000000000001007 /* ProgressView.swift */; };
+		FB5000000000000000000008 /* ProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5000000000000000001007 /* ProgressView.swift */; };
+		FB5000000000000000000009 /* ProgressModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5000000000000000001009 /* ProgressModelTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -373,6 +382,11 @@
 		FB4000000000000000001005 /* CardsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardsModel.swift; sourceTree = "<group>"; };
 		FB4000000000000000001007 /* CardsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardsView.swift; sourceTree = "<group>"; };
 		FB4000000000000000001009 /* CardsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardsModelTests.swift; sourceTree = "<group>"; };
+		FB5000000000000000001001 /* ProgressModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressModels.swift; sourceTree = "<group>"; };
+		FB5000000000000000001003 /* ProgressService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressService.swift; sourceTree = "<group>"; };
+		FB5000000000000000001005 /* ProgressModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressModel.swift; sourceTree = "<group>"; };
+		FB5000000000000000001007 /* ProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressView.swift; sourceTree = "<group>"; };
+		FB5000000000000000001009 /* ProgressModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressModelTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -471,6 +485,7 @@
 				FB200000000000000001009 /* InterviewsModelTests.swift */,
 				FB300000000000000001009 /* ClassesModelTests.swift */,
 				FB4000000000000000001009 /* CardsModelTests.swift */,
+				FB5000000000000000001009 /* ProgressModelTests.swift */,
 				F80000000000000000001002 /* InterviewerTurnTests.swift */,
 				E20000000000000000000078 /* ActivityWorkspaceTests.swift */,
 			);
@@ -563,6 +578,7 @@
 				FB200000000000000002001 /* Interviews */,
 				FB300000000000000002001 /* Classes */,
 				FB4000000000000000002001 /* Cards */,
+				FB5000000000000000002001 /* Progress */,
 				F80000000000000000002001 /* Interviewer */,
 			);
 			path = Features;
@@ -733,6 +749,17 @@
 				FB4000000000000000001007 /* CardsView.swift */,
 			);
 			path = Cards;
+			sourceTree = "<group>";
+		};
+		FB5000000000000000002001 /* Progress */ = {
+			isa = PBXGroup;
+			children = (
+				FB5000000000000000001001 /* ProgressModels.swift */,
+				FB5000000000000000001003 /* ProgressService.swift */,
+				FB5000000000000000001005 /* ProgressModel.swift */,
+				FB5000000000000000001007 /* ProgressView.swift */,
+			);
+			path = Progress;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -928,6 +955,10 @@
 				FB4000000000000000000003 /* CardService.swift in Sources */,
 				FB4000000000000000000005 /* CardsModel.swift in Sources */,
 				FB4000000000000000000007 /* CardsView.swift in Sources */,
+				FB5000000000000000000001 /* ProgressModels.swift in Sources */,
+				FB5000000000000000000003 /* ProgressService.swift in Sources */,
+				FB5000000000000000000005 /* ProgressModel.swift in Sources */,
+				FB5000000000000000000007 /* ProgressView.swift in Sources */,
 				F80000000000000000000001 /* InterviewerTurn.swift in Sources */,
 				F6000000000000000000000C /* RecordingAudioReading.swift in Sources */,
 				E30000000000000000000001 /* EvidenceModels.swift in Sources */,
@@ -1016,6 +1047,10 @@
 				FB4000000000000000000004 /* CardService.swift in Sources */,
 				FB4000000000000000000006 /* CardsModel.swift in Sources */,
 				FB4000000000000000000008 /* CardsView.swift in Sources */,
+				FB5000000000000000000002 /* ProgressModels.swift in Sources */,
+				FB5000000000000000000004 /* ProgressService.swift in Sources */,
+				FB5000000000000000000006 /* ProgressModel.swift in Sources */,
+				FB5000000000000000000008 /* ProgressView.swift in Sources */,
 				F80000000000000000000002 /* InterviewerTurn.swift in Sources */,
 				F6000000000000000000000D /* RecordingAudioReading.swift in Sources */,
 				F30000000000000000000021 /* RecordingFeatureTests.swift in Sources */,
@@ -1085,6 +1120,7 @@
 				FB200000000000000000009 /* InterviewsModelTests.swift in Sources */,
 				FB300000000000000000009 /* ClassesModelTests.swift in Sources */,
 				FB4000000000000000000009 /* CardsModelTests.swift in Sources */,
+				FB5000000000000000000009 /* ProgressModelTests.swift in Sources */,
 				F80000000000000000000003 /* InterviewerTurnTests.swift in Sources */,
 				E20000000000000000000048 /* ActivityWorkspaceTests.swift in Sources */,
 			);

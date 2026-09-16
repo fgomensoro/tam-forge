@@ -34,6 +34,9 @@ from .notes.service import NotesError
 from .notifications.routes import notification_exception_handler
 from .notifications.routes import router as notification_router
 from .notifications.service import NotificationError
+from .progress.routes import progress_exception_handler
+from .progress.routes import router as progress_router
+from .progress.service import ProgressUnavailable
 from .recordings.routes import recording_exception_handler
 from .recordings.routes import router as recording_router
 from .recordings.service import RecordingError
@@ -65,6 +68,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(interviews_router)
     app.include_router(classes_router)
     app.include_router(cards_router)
+    app.include_router(progress_router)
     app.include_router(reviews_router)
     app.include_router(evidence_router)
     app.include_router(analysis_router)
@@ -83,6 +87,7 @@ def register_routes(app: FastAPI) -> None:
     app.add_exception_handler(InterviewsError, interviews_exception_handler)
     app.add_exception_handler(ClassesError, classes_exception_handler)
     app.add_exception_handler(CardsError, cards_exception_handler)
+    app.add_exception_handler(ProgressUnavailable, progress_exception_handler)
     app.add_exception_handler(ReviewsError, reviews_exception_handler)
     app.add_exception_handler(EvidenceError, evidence_exception_handler)
     app.add_exception_handler(FeedbackError, feedback_exception_handler)
