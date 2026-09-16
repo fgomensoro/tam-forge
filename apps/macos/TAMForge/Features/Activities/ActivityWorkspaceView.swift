@@ -17,11 +17,12 @@ struct ActivityWorkspaceView: View {
     private let note: StudyNoteModel?
     private let spoken: SpokenAttemptModel?
     private let aiReview: ReviewModel?
+    private let cards: CardsModel?
 
     init(
         model: ActivityWorkspaceModel, uploader: ActivityArtifactUploader, focusSelfReview: Bool = false,
         coach: CoachThreadModel? = nil, note: StudyNoteModel? = nil, spoken: SpokenAttemptModel? = nil,
-        aiReview: ReviewModel? = nil
+        aiReview: ReviewModel? = nil, cards: CardsModel? = nil
     ) {
         self.model = model
         self.uploader = uploader
@@ -30,6 +31,7 @@ struct ActivityWorkspaceView: View {
         self.note = note
         self.spoken = spoken
         self.aiReview = aiReview
+        self.cards = cards
     }
 
     var body: some View {
@@ -69,6 +71,10 @@ struct ActivityWorkspaceView: View {
         }
     }
 
+    static func hasRetrievalPhase(_ activity: ActivityDetail) -> Bool {
+        activity.taskContract.procedure.contains { $0.phase == "retrieval" }
+    }
+
     private func content(for activity: ActivityDetail) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -77,6 +83,10 @@ struct ActivityWorkspaceView: View {
                     status(activity)
                     if let spoken, activity.taskContract.block == .communicationSpoken {
                         SpokenAttemptPanel(model: spoken)
+                    }
+                    if let cards, activity.state.isEditable, Self.hasRetrievalPhase(activity) {
+                        // The retrieval phase runs the due cards here, so its minutes count in the block.
+                        CardsPanel(model: cards).id("activityRetrievalCards")
                     }
                     if model.canRetry {
                         Button("Retry server sync") { Task { await model.open() } }
