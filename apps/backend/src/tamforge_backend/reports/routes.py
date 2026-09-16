@@ -9,12 +9,21 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..agents.roles.monthly_report import MonthlyReportService
 from ..agents.roles.weekly_report import WeeklyReportService
 from ..auth.dependencies import get_authenticated_owner, require_csrf_owner
 from ..auth.schemas import AuthenticatedOwner, ProblemResponse
 from ..config import Settings
 from ..database import get_db_session
-from .schemas import WeeklyReportPage, WeeklyReportRequestCommand, WeeklyReportResponse
+from .monthly import MonthlyReportQueue
+from .schemas import (
+    MonthlyReportPage,
+    MonthlyReportRequestCommand,
+    MonthlyReportResponse,
+    WeeklyReportPage,
+    WeeklyReportRequestCommand,
+    WeeklyReportResponse,
+)
 from .service import (
     ReportConflict,
     ReportInvalid,
@@ -24,6 +33,7 @@ from .service import (
 )
 
 router = APIRouter(prefix="/api/v1/reports/weekly", tags=["reports"])
+monthly_router = APIRouter(prefix="/api/v1/reports/monthly", tags=["reports"])
 
 
 def _prevent_storage(response: Response) -> None:
@@ -46,6 +56,58 @@ def get_weekly_report_queue(
         analyst=WeeklyReportService(transport, model=settings.report_model),
         sender=sender,
     )
+
+
+def get_monthly_report_queue(
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> MonthlyReportQueue:
+    settings = cast(Settings, request.app.state.settings)
+    transport = getattr(request.app.state, "report_transport", None)
+    if not settings.claude_enabled:
+        transport = None
+    sender = getattr(request.app.state, "report_sender", None)
+    return MonthlyReportQueue(
+        session,
+        analyst=MonthlyReportService(transport, model=settings.report_model),
+        sender=sender,
+    )
+
+
+@monthly_router.get("", response_model=MonthlyReportPage)
+async def list_monthly_reports(
+    response: Response,
+    service: Annotated[MonthlyReportQueue, Depends(get_monthly_report_queue)],
+    owner: Annotated[AuthenticatedOwner, Depends(get_authenticated_owner)],
+) -> MonthlyReportPage:
+    result = await service.list(owner_id=owner.owner_id)
+    _prevent_storage(response)
+    return result
+
+
+@monthly_router.post("", response_model=MonthlyReportResponse, status_code=202)
+async def request_monthly_report(
+    command: MonthlyReportRequestCommand,
+    response: Response,
+    service: Annotated[MonthlyReportQueue, Depends(get_monthly_report_queue)],
+    owner: Annotated[AuthenticatedOwner, Depends(require_csrf_owner)],
+) -> MonthlyReportResponse:
+    """Ask for a month's report now; the worker composes it."""
+    result = await service.request(owner_id=owner.owner_id, month_start=command.month_start)
+    _prevent_storage(response)
+    return result
+
+
+@monthly_router.get("/{month_start}", response_model=MonthlyReportResponse)
+async def read_monthly_report(
+    month_start: date,
+    response: Response,
+    service: Annotated[MonthlyReportQueue, Depends(get_monthly_report_queue)],
+    owner: Annotated[AuthenticatedOwner, Depends(get_authenticated_owner)],
+) -> MonthlyReportResponse:
+    result = await service.read(owner_id=owner.owner_id, month_start=month_start)
+    _prevent_storage(response)
+    return result
 
 
 @router.get("", response_model=WeeklyReportPage)
@@ -110,4 +172,10 @@ async def reports_exception_handler(request: Request, exc: Exception) -> JSONRes
     return response
 
 
-__all__ = ["get_weekly_report_queue", "reports_exception_handler", "router"]
+__all__ = [
+    "get_monthly_report_queue",
+    "get_weekly_report_queue",
+    "monthly_router",
+    "reports_exception_handler",
+    "router",
+]

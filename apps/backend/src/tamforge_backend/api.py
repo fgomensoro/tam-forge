@@ -46,7 +46,7 @@ from .progress.service import ProgressUnavailable
 from .recordings.routes import recording_exception_handler
 from .recordings.routes import router as recording_router
 from .recordings.service import RecordingError
-from .reports.routes import reports_exception_handler
+from .reports.routes import monthly_router, reports_exception_handler
 from .reports.routes import router as reports_router
 from .reports.service import ReportsError
 from .reviews.routes import reviews_exception_handler
@@ -82,6 +82,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(assessments_router)
     app.include_router(coverage_router)
     app.include_router(reports_router)
+    app.include_router(monthly_router)
     app.include_router(reviews_router)
     app.include_router(evidence_router)
     app.include_router(analysis_router)

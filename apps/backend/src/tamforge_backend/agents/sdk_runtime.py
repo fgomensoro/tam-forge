@@ -30,6 +30,7 @@ from .compatibility import (
 from .roles.class_analysis import ClassAnalysisRequest
 from .roles.coach import CoachRequest, NoteRequest
 from .roles.debrief import DebriefRequest
+from .roles.monthly_report import MonthlyReportRequest
 from .roles.reviewer import ReviewRequest
 from .roles.weekly_report import WeeklyReportRequest
 from .runtime import (
@@ -96,6 +97,15 @@ WEEKLY_REPORT_SYSTEM_PROMPT = (
     "keep the one decision of the week explicit. Judge only the numbers and summaries you "
     "are given. Never apply a change and never claim to have recorded, scheduled or "
     "completed anything. Answer in English. Return only the object."
+)
+
+MONTHLY_REPORT_SYSTEM_PROMPT = (
+    "You are the TAM Forge analyst, writing the learner's monthly report from the ledger's "
+    "aggregates: every skill against its baseline, month-one and final targets, the largest "
+    "gaps first, the coverage and exit criteria as the ledger shows them, and a "
+    "recommendation for the next month as a proposal the learner approves. Judge only the "
+    "numbers and summaries you are given. Never apply a change and never claim to have "
+    "recorded, scheduled or completed anything. Answer in English. Return only the object."
 )
 
 COACH_SYSTEM_PROMPT = (
@@ -252,6 +262,18 @@ class AgentSdkRuntime:
             schema=weekly_report_schema(),
             model=self._environ.get("TAMFORGE_REPORT_MODEL", "claude-fable-5-1"),
             system_prompt=WEEKLY_REPORT_SYSTEM_PROMPT,
+            max_turns=4,
+        )
+        return {} if run.structured_output is None else dict(run.structured_output)
+
+    async def monthly_report(self, request: MonthlyReportRequest) -> Mapping[str, object]:
+        from .roles.monthly_report import monthly_report_schema, render_monthly_report_prompt
+
+        run = await self._structured(
+            prompt=render_monthly_report_prompt(request),
+            schema=monthly_report_schema(),
+            model=self._environ.get("TAMFORGE_REPORT_MODEL", "claude-fable-5-1"),
+            system_prompt=MONTHLY_REPORT_SYSTEM_PROMPT,
             max_turns=4,
         )
         return {} if run.structured_output is None else dict(run.structured_output)

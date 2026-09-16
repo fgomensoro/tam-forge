@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..agents.roles.class_analysis import ClassAnalysisService
 from ..agents.roles.debrief import DebriefService
+from ..agents.roles.monthly_report import MonthlyReportService
 from ..agents.roles.reviewer import ReviewerService
 from ..agents.roles.weekly_report import WeeklyReportService
 from ..agents.runtime import (
@@ -175,6 +176,7 @@ async def gate_step(sessions: async_sessionmaker[AsyncSession]) -> str | None:
     await debrief_step(sessions)
     await class_analysis_step(sessions)
     await weekly_report_step(sessions)
+    await monthly_report_step(sessions)
     return None
 
 
@@ -421,6 +423,70 @@ async def weekly_report_step(
         try:
             await service.process(
                 owner_id=job.owner_id, week_start=date.fromordinal(job.payload.subject_id)
+            )
+        except ReportInvalid:
+            category = "invalid_input"
+        except ReportsUnavailable as exc:
+            text = str(exc).lower()
+            if "quota" in text:
+                category = "resource_exhausted"
+            elif "credential" in text or "authentication" in text:
+                category = "permission_required"
+            else:
+                category = "transient_dependency"
+        except Exception:  # noqa: BLE001 - a job must always end in a closed state
+            await session.rollback()
+            category = "processing_failure"
+        if category is None:
+            await jobs.complete(job_id=job.id, command=CompleteJobCommand(worker_id=worker_id))
+            return 1
+        await session.rollback()
+        await jobs.retry(
+            job_id=job.id,
+            command=RetryJobCommand(
+                worker_id=worker_id, failure=JobFailure(category=cast(Any, category))
+            ),
+        )
+        return 0
+
+
+async def monthly_report_step(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    analyst: MonthlyReportService | None = None,
+    sender: Any = None,
+    now: datetime | None = None,
+    worker_id: str = "claude-monthly-report",
+) -> int:
+    """Queue the due month for every learner, then compose one report; failures close."""
+    from datetime import date
+
+    from ..agents.sdk_runtime import AgentSdkRuntime
+    from ..jobs.repository import SqlAlchemyJobRepository
+    from ..jobs.schemas import ClaimJobCommand, CompleteJobCommand, JobFailure, RetryJobCommand
+    from ..jobs.service import JobService
+    from ..reports.monthly import MONTHLY_REPORT_JOB_KIND, MonthlyReportQueue
+    from ..reports.service import ReportInvalid, ReportsUnavailable
+    from .settings import WorkerSettings
+
+    if analyst is None:
+        analyst = MonthlyReportService(AgentSdkRuntime(), model=WorkerSettings().report_model)
+    async with sessions() as session:
+        await MonthlyReportQueue(session, analyst=analyst, sender=sender).schedule_due(now=now)
+    async with sessions() as session:
+        jobs = JobService(SqlAlchemyJobRepository(session))
+        job = await jobs.claim(
+            ClaimJobCommand(
+                worker_id=worker_id, kinds=(MONTHLY_REPORT_JOB_KIND,), lease_seconds=900
+            )
+        )
+        if job is None:
+            return 0
+        service = MonthlyReportQueue(session, analyst=analyst, sender=sender)
+        category: str | None = None
+        try:
+            await service.process(
+                owner_id=job.owner_id, month_start=date.fromordinal(job.payload.subject_id)
             )
         except ReportInvalid:
             category = "invalid_input"

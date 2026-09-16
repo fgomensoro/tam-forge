@@ -1,0 +1,585 @@
+{
+  "fixture_version": "monthly-report-refusals-v1",
+  "model": "claude-fable-5-1",
+  "cases": [
+    {
+      "case_id": "no-skill-catalog",
+      "month_start": "2026-09-01",
+      "skills": [],
+      "answers": [
+        {
+          "headline": "SQL moved; English did not.",
+          "trajectory": [
+            {
+              "skill_slug": "sql_reconciliation",
+              "status": "behind",
+              "note": "Half a point short."
+            },
+            {
+              "skill_slug": "tam_english",
+              "status": "behind",
+              "note": "No assessed speech."
+            },
+            {
+              "skill_slug": "structured_troubleshooting",
+              "status": "ahead",
+              "note": "Past the month-one target."
+            }
+          ],
+          "largest_gaps": [
+            "sql_reconciliation",
+            "tam_english"
+          ],
+          "coverage_verdict": "Twelve of twenty required items covered.",
+          "exit_criteria_verdict": "Not yet met with evidence.",
+          "best_evidence": [
+            "The webhook case on 2026-09-12."
+          ],
+          "recommendation": "reforecast",
+          "recommendation_reasoning": "Two skills sit half a point short with evidence to show for it.",
+          "next_month_priorities": [
+            "One spoken SQL explanation per week."
+          ]
+        }
+      ],
+      "expect": "refused_by_contract"
+    },
+    {
+      "case_id": "skill-missing",
+      "month_start": "2026-09-01",
+      "skills": [
+        {
+          "slug": "sql_reconciliation",
+          "name": "SQL reconciliation",
+          "baseline": "2",
+          "month_one_target": "3",
+          "final_target": "3.5",
+          "level_at_start": "2",
+          "level_at_end": "2.5",
+          "events_this_month": 6
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English",
+          "baseline": "2",
+          "month_one_target": "2.5",
+          "final_target": "3",
+          "level_at_start": "2",
+          "level_at_end": "2",
+          "events_this_month": 1
+        },
+        {
+          "slug": "structured_troubleshooting",
+          "name": "Structured troubleshooting",
+          "baseline": "2",
+          "month_one_target": "2.5",
+          "final_target": "3",
+          "level_at_start": "2",
+          "level_at_end": "2.75",
+          "events_this_month": 4
+        }
+      ],
+      "answers": [
+        {
+          "headline": "SQL moved; English did not.",
+          "trajectory": [
+            {
+              "skill_slug": "sql_reconciliation",
+              "status": "behind",
+              "note": "Half a point short."
+            },
+            {
+              "skill_slug": "tam_english",
+              "status": "behind",
+              "note": "No assessed speech."
+            }
+          ],
+          "largest_gaps": [
+            "sql_reconciliation",
+            "tam_english"
+          ],
+          "coverage_verdict": "Twelve of twenty required items covered.",
+          "exit_criteria_verdict": "Not yet met with evidence.",
+          "best_evidence": [
+            "The webhook case on 2026-09-12."
+          ],
+          "recommendation": "reforecast",
+          "recommendation_reasoning": "Two skills sit half a point short with evidence to show for it.",
+          "next_month_priorities": [
+            "One spoken SQL explanation per week."
+          ]
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "gaps-out-of-order",
+      "month_start": "2026-09-01",
+      "skills": [
+        {
+          "slug": "sql_reconciliation",
+          "name": "SQL reconciliation",
+          "baseline": "2",
+          "month_one_target": "3",
+          "final_target": "3.5",
+          "level_at_start": "2",
+          "level_at_end": "2.5",
+          "events_this_month": 6
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English",
+          "baseline": "2",
+          "month_one_target": "2.5",
+          "final_target": "3",
+          "level_at_start": "2",
+          "level_at_end": "2",
+          "events_this_month": 1
+        },
+        {
+          "slug": "structured_troubleshooting",
+          "name": "Structured troubleshooting",
+          "baseline": "2",
+          "month_one_target": "2.5",
+          "final_target": "3",
+          "level_at_start": "2",
+          "level_at_end": "2.75",
+          "events_this_month": 4
+        }
+      ],
+      "answers": [
+        {
+          "headline": "SQL moved; English did not.",
+          "trajectory": [
+            {
+              "skill_slug": "sql_reconciliation",
+              "status": "behind",
+              "note": "Half a point short."
+            },
+            {
+              "skill_slug": "tam_english",
+              "status": "behind",
+              "note": "No assessed speech."
+            },
+            {
+              "skill_slug": "structured_troubleshooting",
+              "status": "ahead",
+              "note": "Past the month-one target."
+            }
+          ],
+          "largest_gaps": [
+            "tam_english",
+            "sql_reconciliation"
+          ],
+          "coverage_verdict": "Twelve of twenty required items covered.",
+          "exit_criteria_verdict": "Not yet met with evidence.",
+          "best_evidence": [
+            "The webhook case on 2026-09-12."
+          ],
+          "recommendation": "reforecast",
+          "recommendation_reasoning": "Two skills sit half a point short with evidence to show for it.",
+          "next_month_priorities": [
+            "One spoken SQL explanation per week."
+          ]
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "gap-outside-catalog",
+      "month_start": "2026-09-01",
+      "skills": [
+        {
+          "slug": "sql_reconciliation",
+          "name": "SQL reconciliation",
+          "baseline": "2",
+          "month_one_target": "3",
+          "final_target": "3.5",
+          "level_at_start": "2",
+          "level_at_end": "2.5",
+          "events_this_month": 6
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English",
+          "baseline": "2",
+          "month_one_target": "2.5",
+          "final_target": "3",
+          "level_at_start": "2",
+          "level_at_end": "2",
+          "events_this_month": 1
+        },
+        {
+          "slug": "structured_troubleshooting",
+          "name": "Structured troubleshooting",
+          "baseline": "2",
+          "month_one_target": "2.5",
+          "final_target": "3",
+          "level_at_start": "2",
+          "level_at_end": "2.75",
+          "events_this_month": 4
+        }
+      ],
+      "answers": [
+        {
+          "headline": "SQL moved; English did not.",
+          "trajectory": [
+            {
+              "skill_slug": "sql_reconciliation",
+              "status": "behind",
+              "note": "Half a point short."
+            },
+            {
+              "skill_slug": "tam_english",
+              "status": "behind",
+              "note": "No assessed speech."
+            },
+            {
+              "skill_slug": "structured_troubleshooting",
+              "status": "ahead",
+              "note": "Past the month-one target."
+            }
+          ],
+          "largest_gaps": [
+            "charisma"
+          ],
+          "coverage_verdict": "Twelve of twenty required items covered.",
+          "exit_criteria_verdict": "Not yet met with evidence.",
+          "best_evidence": [
+            "The webhook case on 2026-09-12."
+          ],
+          "recommendation": "reforecast",
+          "recommendation_reasoning": "Two skills sit half a point short with evidence to show for it.",
+          "next_month_priorities": [
+            "One spoken SQL explanation per week."
+          ]
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "plan-applied-claim",
+      "month_start": "2026-09-01",
+      "skills": [
+        {
+          "slug": "sql_reconciliation",
+          "name": "SQL reconciliation",
+          "baseline": "2",
+          "month_one_target": "3",
+          "final_target": "3.5",
+          "level_at_start": "2",
+          "level_at_end": "2.5",
+          "events_this_month": 6
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English",
+          "baseline": "2",
+          "month_one_target": "2.5",
+          "final_target": "3",
+          "level_at_start": "2",
+          "level_at_end": "2",
+          "events_this_month": 1
+        },
+        {
+          "slug": "structured_troubleshooting",
+          "name": "Structured troubleshooting",
+          "baseline": "2",
+          "month_one_target": "2.5",
+          "final_target": "3",
+          "level_at_start": "2",
+          "level_at_end": "2.75",
+          "events_this_month": 4
+        }
+      ],
+      "answers": [
+        {
+          "headline": "SQL moved; English did not.",
+          "trajectory": [
+            {
+              "skill_slug": "sql_reconciliation",
+              "status": "behind",
+              "note": "Half a point short."
+            },
+            {
+              "skill_slug": "tam_english",
+              "status": "behind",
+              "note": "No assessed speech."
+            },
+            {
+              "skill_slug": "structured_troubleshooting",
+              "status": "ahead",
+              "note": "Past the month-one target."
+            }
+          ],
+          "largest_gaps": [
+            "sql_reconciliation",
+            "tam_english"
+          ],
+          "coverage_verdict": "Twelve of twenty required items covered.",
+          "exit_criteria_verdict": "Not yet met with evidence.",
+          "best_evidence": [
+            "The webhook case on 2026-09-12."
+          ],
+          "recommendation": "reforecast",
+          "recommendation_reasoning": "I rescheduled the whole scheme.",
+          "next_month_priorities": [
+            "One spoken SQL explanation per week."
+          ]
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "repaired-once",
+      "month_start": "2026-09-01",
+      "skills": [
+        {
+          "slug": "sql_reconciliation",
+          "name": "SQL reconciliation",
+          "baseline": "2",
+          "month_one_target": "3",
+          "final_target": "3.5",
+          "level_at_start": "2",
+          "level_at_end": "2.5",
+          "events_this_month": 6
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English",
+          "baseline": "2",
+          "month_one_target": "2.5",
+          "final_target": "3",
+          "level_at_start": "2",
+          "level_at_end": "2",
+          "events_this_month": 1
+        },
+        {
+          "slug": "structured_troubleshooting",
+          "name": "Structured troubleshooting",
+          "baseline": "2",
+          "month_one_target": "2.5",
+          "final_target": "3",
+          "level_at_start": "2",
+          "level_at_end": "2.75",
+          "events_this_month": 4
+        }
+      ],
+      "answers": [
+        {
+          "headline": "SQL moved; English did not.",
+          "trajectory": [
+            {
+              "skill_slug": "sql_reconciliation",
+              "status": "behind",
+              "note": "Half a point short."
+            },
+            {
+              "skill_slug": "tam_english",
+              "status": "behind",
+              "note": "No assessed speech."
+            },
+            {
+              "skill_slug": "structured_troubleshooting",
+              "status": "ahead",
+              "note": "Past the month-one target."
+            }
+          ],
+          "largest_gaps": [
+            "tam_english"
+          ],
+          "coverage_verdict": "Twelve of twenty required items covered.",
+          "exit_criteria_verdict": "Not yet met with evidence.",
+          "best_evidence": [
+            "The webhook case on 2026-09-12."
+          ],
+          "recommendation": "reforecast",
+          "recommendation_reasoning": "Two skills sit half a point short with evidence to show for it.",
+          "next_month_priorities": [
+            "One spoken SQL explanation per week."
+          ]
+        },
+        {
+          "headline": "SQL moved; English did not.",
+          "trajectory": [
+            {
+              "skill_slug": "sql_reconciliation",
+              "status": "behind",
+              "note": "Half a point short."
+            },
+            {
+              "skill_slug": "tam_english",
+              "status": "behind",
+              "note": "No assessed speech."
+            },
+            {
+              "skill_slug": "structured_troubleshooting",
+              "status": "ahead",
+              "note": "Past the month-one target."
+            }
+          ],
+          "largest_gaps": [
+            "sql_reconciliation",
+            "tam_english"
+          ],
+          "coverage_verdict": "Twelve of twenty required items covered.",
+          "exit_criteria_verdict": "Not yet met with evidence.",
+          "best_evidence": [
+            "The webhook case on 2026-09-12."
+          ],
+          "recommendation": "reforecast",
+          "recommendation_reasoning": "Two skills sit half a point short with evidence to show for it.",
+          "next_month_priorities": [
+            "One spoken SQL explanation per week."
+          ]
+        }
+      ],
+      "expect": "accepted"
+    },
+    {
+      "case_id": "gaps-in-ledger-order",
+      "month_start": "2026-09-01",
+      "skills": [
+        {
+          "slug": "sql_reconciliation",
+          "name": "SQL reconciliation",
+          "baseline": "2",
+          "month_one_target": "3",
+          "final_target": "3.5",
+          "level_at_start": "2",
+          "level_at_end": "2.5",
+          "events_this_month": 6
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English",
+          "baseline": "2",
+          "month_one_target": "2.5",
+          "final_target": "3",
+          "level_at_start": "2",
+          "level_at_end": "2",
+          "events_this_month": 1
+        },
+        {
+          "slug": "structured_troubleshooting",
+          "name": "Structured troubleshooting",
+          "baseline": "2",
+          "month_one_target": "2.5",
+          "final_target": "3",
+          "level_at_start": "2",
+          "level_at_end": "2.75",
+          "events_this_month": 4
+        }
+      ],
+      "answers": [
+        {
+          "headline": "SQL moved; English did not.",
+          "trajectory": [
+            {
+              "skill_slug": "sql_reconciliation",
+              "status": "behind",
+              "note": "Half a point short."
+            },
+            {
+              "skill_slug": "tam_english",
+              "status": "behind",
+              "note": "No assessed speech."
+            },
+            {
+              "skill_slug": "structured_troubleshooting",
+              "status": "ahead",
+              "note": "Past the month-one target."
+            }
+          ],
+          "largest_gaps": [
+            "sql_reconciliation",
+            "tam_english"
+          ],
+          "coverage_verdict": "Twelve of twenty required items covered.",
+          "exit_criteria_verdict": "Not yet met with evidence.",
+          "best_evidence": [
+            "The webhook case on 2026-09-12."
+          ],
+          "recommendation": "reforecast",
+          "recommendation_reasoning": "Two skills sit half a point short with evidence to show for it.",
+          "next_month_priorities": [
+            "One spoken SQL explanation per week."
+          ]
+        }
+      ],
+      "expect": "accepted"
+    },
+    {
+      "case_id": "one-gap-named",
+      "month_start": "2026-09-01",
+      "skills": [
+        {
+          "slug": "sql_reconciliation",
+          "name": "SQL reconciliation",
+          "baseline": "2",
+          "month_one_target": "3",
+          "final_target": "3.5",
+          "level_at_start": "2",
+          "level_at_end": "2.5",
+          "events_this_month": 6
+        },
+        {
+          "slug": "tam_english",
+          "name": "TAM English",
+          "baseline": "2",
+          "month_one_target": "2.5",
+          "final_target": "3",
+          "level_at_start": "2",
+          "level_at_end": "2",
+          "events_this_month": 1
+        },
+        {
+          "slug": "structured_troubleshooting",
+          "name": "Structured troubleshooting",
+          "baseline": "2",
+          "month_one_target": "2.5",
+          "final_target": "3",
+          "level_at_start": "2",
+          "level_at_end": "2.75",
+          "events_this_month": 4
+        }
+      ],
+      "answers": [
+        {
+          "headline": "SQL moved; English did not.",
+          "trajectory": [
+            {
+              "skill_slug": "sql_reconciliation",
+              "status": "behind",
+              "note": "Half a point short."
+            },
+            {
+              "skill_slug": "tam_english",
+              "status": "behind",
+              "note": "No assessed speech."
+            },
+            {
+              "skill_slug": "structured_troubleshooting",
+              "status": "ahead",
+              "note": "Past the month-one target."
+            }
+          ],
+          "largest_gaps": [
+            "sql_reconciliation"
+          ],
+          "coverage_verdict": "Twelve of twenty required items covered.",
+          "exit_criteria_verdict": "Not yet met with evidence.",
+          "best_evidence": [
+            "The webhook case on 2026-09-12."
+          ],
+          "recommendation": "reforecast",
+          "recommendation_reasoning": "Two skills sit half a point short with evidence to show for it.",
+          "next_month_priorities": [
+            "One spoken SQL explanation per week."
+          ]
+        }
+      ],
+      "expect": "accepted"
+    }
+  ]
+}
