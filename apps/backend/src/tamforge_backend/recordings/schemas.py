@@ -88,6 +88,8 @@ class RecordingCreateCommand(StrictModel):
     recording_id: UUID
     started_at: datetime
     tracks: Annotated[tuple[RecordingTrackDeclaration, ...], Field(min_length=2, max_length=2)]
+    # The Today block this recording is a spoken attempt for; absent for free recordings.
+    activity_id: Annotated[int | None, Field(gt=0)] = None
 
     @model_validator(mode="after")
     def validate_tracks(self) -> Self:
@@ -326,6 +328,8 @@ class RecordingStatusResponse(StrictModel):
     tracks: Annotated[tuple[RecordingTrackStatus, ...], Field(min_length=2, max_length=2)]
     audio_created_on_server: bool
     transcript_lineage_accepted: bool
+    activity_id: Annotated[int | None, Field(gt=0)] = None
+    started_at: datetime | None = None
 
     @model_validator(mode="after")
     def validate_tracks(self) -> Self:

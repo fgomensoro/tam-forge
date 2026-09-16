@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Final, Literal, Self
+from typing import Annotated, Any, Final, Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -249,6 +249,36 @@ class TranscriptPage(StrictModel):
     items: Annotated[tuple[TranscriptResponse, ...], Field(max_length=100)]
 
 
+class SpeechTurnResponse(StrictModel):
+    speaker: Literal["learner", "other"]
+    start_ms: Annotated[int, Field(ge=0)]
+    end_ms: Annotated[int, Field(ge=0)]
+    text: str
+
+
+class SpeechAnalysisResponse(StrictModel):
+    """Turns with timestamps and the metrics, plus where the analysis job stands."""
+
+    status: Literal[
+        "not_requested", "queued", "running", "published", "needs_attention", "canceled"
+    ]
+    failure_category: (
+        Literal[
+            "transient_dependency",
+            "resource_exhausted",
+            "invalid_input",
+            "permission_required",
+            "processing_failure",
+            "internal_error",
+        ]
+        | None
+    ) = None
+    analysis_version: str | None = None
+    turns: Annotated[tuple[SpeechTurnResponse, ...], Field(max_length=8000)] = ()
+    metrics: dict[str, Any] = {}
+    updated_at: datetime | None = None
+
+
 SPEECH_OPENAPI_MODELS: tuple[type[StrictModel], ...] = (
     TranscriptWord,
     TranscriptSegment,
@@ -265,6 +295,8 @@ SPEECH_OPENAPI_MODELS: tuple[type[StrictModel], ...] = (
 
 
 __all__ = [
+    "SpeechAnalysisResponse",
+    "SpeechTurnResponse",
     "MAX_CORRECTIONS_PER_TRANSCRIPT",
     "MAX_CORRECTION_TEXT_LENGTH",
     "MAX_DERIVATION_GAPS",

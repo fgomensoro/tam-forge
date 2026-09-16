@@ -176,6 +176,9 @@
 		FE000000000000000000007 /* StudyNotePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000001007 /* StudyNotePanel.swift */; };
 		FE000000000000000000008 /* StudyNotePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000001007 /* StudyNotePanel.swift */; };
 		FE000000000000000000009 /* StudyNoteModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000001009 /* StudyNoteModelTests.swift */; };
+		FF000000000000000000001 /* SpokenAttemptPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF000000000000000001001 /* SpokenAttemptPanel.swift */; };
+		FF000000000000000000002 /* SpokenAttemptPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF000000000000000001001 /* SpokenAttemptPanel.swift */; };
+		FF000000000000000000003 /* SpokenAttemptModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF000000000000000001002 /* SpokenAttemptModelTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -312,6 +315,8 @@
 		FE000000000000000001005 /* StudyNoteModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudyNoteModel.swift; sourceTree = "<group>"; };
 		FE000000000000000001007 /* StudyNotePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudyNotePanel.swift; sourceTree = "<group>"; };
 		FE000000000000000001009 /* StudyNoteModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudyNoteModelTests.swift; sourceTree = "<group>"; };
+		FF000000000000000001001 /* SpokenAttemptPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpokenAttemptPanel.swift; sourceTree = "<group>"; };
+		FF000000000000000001002 /* SpokenAttemptModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpokenAttemptModelTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -405,6 +410,7 @@
 				FC000000000000000000001002 /* RecordingFormatPolicyTests.swift */,
 				FD000000000000000001009 /* CoachThreadModelTests.swift */,
 				FE000000000000000001009 /* StudyNoteModelTests.swift */,
+				FF000000000000000001002 /* SpokenAttemptModelTests.swift */,
 				F80000000000000000001002 /* InterviewerTurnTests.swift */,
 				E20000000000000000000078 /* ActivityWorkspaceTests.swift */,
 			);
@@ -574,6 +580,7 @@
 			isa = PBXGroup;
 			children = (
 				E2000000000000000000006A /* ActivityModels.swift */,
+				FF000000000000000001001 /* SpokenAttemptPanel.swift */,
 				F50000000000000000000063 /* SqlExecutionPanel.swift */,
 				F50000000000000000000062 /* SqlExecutionModel.swift */,
 				F50000000000000000000061 /* SqlExecutionModels.swift */,
@@ -796,6 +803,7 @@
 				FE000000000000000000003 /* StudyNoteService.swift in Sources */,
 				FE000000000000000000005 /* StudyNoteModel.swift in Sources */,
 				FE000000000000000000007 /* StudyNotePanel.swift in Sources */,
+				FF000000000000000000001 /* SpokenAttemptPanel.swift in Sources */,
 				F80000000000000000000001 /* InterviewerTurn.swift in Sources */,
 				F6000000000000000000000C /* RecordingAudioReading.swift in Sources */,
 				E30000000000000000000001 /* EvidenceModels.swift in Sources */,
@@ -867,6 +875,7 @@
 				FE000000000000000000004 /* StudyNoteService.swift in Sources */,
 				FE000000000000000000006 /* StudyNoteModel.swift in Sources */,
 				FE000000000000000000008 /* StudyNotePanel.swift in Sources */,
+				FF000000000000000000002 /* SpokenAttemptPanel.swift in Sources */,
 				F80000000000000000000002 /* InterviewerTurn.swift in Sources */,
 				F6000000000000000000000D /* RecordingAudioReading.swift in Sources */,
 				F30000000000000000000021 /* RecordingFeatureTests.swift in Sources */,
@@ -931,6 +940,7 @@
 				FC000000000000000000000003 /* RecordingFormatPolicyTests.swift in Sources */,
 				FD000000000000000000009 /* CoachThreadModelTests.swift in Sources */,
 				FE000000000000000000009 /* StudyNoteModelTests.swift in Sources */,
+				FF000000000000000000003 /* SpokenAttemptModelTests.swift in Sources */,
 				F80000000000000000000003 /* InterviewerTurnTests.swift in Sources */,
 				E20000000000000000000048 /* ActivityWorkspaceTests.swift in Sources */,
 			);

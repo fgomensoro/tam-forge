@@ -48,9 +48,7 @@ def _recording_problem_response_schema(description: str) -> dict[str, Any]:
     return {
         "description": description,
         "content": {
-            "application/problem+json": {
-                "schema": {"$ref": "#/components/schemas/ProblemResponse"}
-            }
+            "application/problem+json": {"schema": {"$ref": "#/components/schemas/ProblemResponse"}}
         },
     }
 
@@ -152,6 +150,25 @@ async def pending_recordings(
     service: Annotated[RecordingService, Depends(get_recording_service)],
 ) -> PendingRecordingPage:
     result = PendingRecordingPage(items=await service.pending(owner_id=owner.owner_id))
+    _prevent_storage(response)
+    return result
+
+
+@router.get(
+    "/by-activity/{activity_id}",
+    response_model=PendingRecordingPage,
+    responses=RECORDING_PENDING_RESPONSES,
+)
+async def recordings_for_activity(
+    activity_id: int,
+    response: Response,
+    owner: Annotated[AuthenticatedOwner, Depends(get_bearer_authenticated_owner)],
+    service: Annotated[RecordingService, Depends(get_recording_service)],
+) -> PendingRecordingPage:
+    """Every recording made from one Today block, oldest first."""
+    result = PendingRecordingPage(
+        items=await service.for_activity(owner_id=owner.owner_id, activity_id=activity_id)
+    )
     _prevent_storage(response)
     return result
 

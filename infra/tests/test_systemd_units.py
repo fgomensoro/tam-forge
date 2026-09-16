@@ -104,6 +104,15 @@ def test_the_general_worker_runs_the_general_entrypoint_from_the_immutable_relea
     assert values["WorkingDirectory"] == ["/opt/tamforge/current"]
 
 
+def test_the_speech_worker_runs_the_speech_entrypoint_with_a_writable_home() -> None:
+    values = parse(REPO / "infra" / "systemd" / "tamforge-speech-worker.service")
+    assert values["ExecStart"] == [
+        "/opt/tamforge/current/.venv/bin/python -m tamforge_backend.workers.speech"
+    ]
+    assert values["Environment"] == ["HOME=%S/tamforge/speech"]
+    assert values["StateDirectory"] == ["tamforge/speech"]
+
+
 def test_the_api_binds_to_loopback_only() -> None:
     values = parse(REPO / "infra" / "systemd" / "tamforge-api.service")
     assert "--host 127.0.0.1" in values["ExecStart"][0]

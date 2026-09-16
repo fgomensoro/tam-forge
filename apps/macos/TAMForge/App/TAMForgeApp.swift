@@ -164,6 +164,7 @@ private struct NativeFeatureServices {
     let evidence: any EvidenceServicing
     let coaching: any CoachAPI
     let notes: any StudyNoteAPI
+    let recordings: any RecordingServerServicing
 }
 
 @MainActor
@@ -217,6 +218,12 @@ private final class NativeShellComposition: ObservableObject {
             environment: dependencies.environment, bearerToken: bearerToken,
             session: httpSession, onUnauthorizedForRequest: onUnauthorizedForRequest
         )
+        let recordingServer = LiveRecordingServerClient(
+            baseURL: dependencies.environment.apiBaseURL,
+            bearerToken: recordingBearerToken,
+            refreshBearer: refreshBearer,
+            session: httpSession
+        )
         services = NativeFeatureServices(
             today: NativeTodayAPIClient(transport: transport),
             notifications: NativeNotificationAPIClient(transport: transport),
@@ -227,7 +234,8 @@ private final class NativeShellComposition: ObservableObject {
             activities: LiveActivityAPI(transport: transport),
             evidence: LiveEvidenceAPI(transport: transport),
             coaching: LiveCoachAPI(transport: transport),
-            notes: LiveStudyNoteAPI(transport: transport)
+            notes: LiveStudyNoteAPI(transport: transport),
+            recordings: recordingServer
         )
         #if DEBUG
             let isUITest = ProcessInfo.processInfo.arguments.contains("-ui-test-signed-out")
@@ -244,12 +252,7 @@ private final class NativeShellComposition: ObservableObject {
         #else
             let recordingSpool = EncryptedRecordingSpoolFactory()
         #endif
-        let recordingServer = LiveRecordingServerClient(
-            baseURL: dependencies.environment.apiBaseURL,
-            bearerToken: recordingBearerToken,
-            refreshBearer: refreshBearer,
-            session: httpSession
-        )
+
         // `try?` means a missing or unreadable model just switches transcription
         // off instead of failing app launch. CI and UI-test runners never have
         // the model installed (only scripts/dev/fetch_whisper_framework.sh runs
@@ -282,6 +285,11 @@ private final class NativeShellComposition: ObservableObject {
             audioReader: recordingSpool,
             transcriber: transcriber
         )
+        recording.activityLinkWriter = { [rootURL = recordingSpool.rootURL] recordingID, activityID in
+            try RecordingActivityLink.write(
+                activityID: activityID, recordingID: recordingID, rootURL: rootURL
+            )
+        }
     }
 
     private static func liveSession(
@@ -518,7 +526,8 @@ private struct NativeWorkspaceView: View {
         case .activity(let identifier) where dependencies.nativeFeatures.contains(.today):
             NativeActivityScreen(
                 activityID: identifier, api: services.activities, coaching: services.coaching,
-                notes: services.notes, drafts: state.drafts, timerJournal: state.timerJournal,
+                notes: services.notes, recordings: services.recordings, recording: recording,
+                drafts: state.drafts, timerJournal: state.timerJournal,
                 focusSelfReview: focusSelfReview
             )
             .id(identifier)
@@ -546,10 +555,12 @@ private struct NativeActivityScreen: View {
     @StateObject private var uploader: ActivityArtifactUploader
     @StateObject private var coach: CoachThreadModel
     @StateObject private var note: StudyNoteModel
+    @StateObject private var spoken: SpokenAttemptModel
     let focusSelfReview: Bool
 
     init(
         activityID: Int, api: any ActivityAPI, coaching: any CoachAPI, notes: any StudyNoteAPI,
+        recordings: any RecordingServerServicing, recording: RecordingCoordinator,
         drafts: any ActivityDraftStoring, timerJournal: any ActivityTimerJournaling, focusSelfReview: Bool
     ) {
         _model = StateObject(
@@ -559,12 +570,17 @@ private struct NativeActivityScreen: View {
         _uploader = StateObject(wrappedValue: ActivityArtifactUploader(api: api))
         _coach = StateObject(wrappedValue: CoachThreadModel(activityID: activityID, api: coaching))
         _note = StateObject(wrappedValue: StudyNoteModel(activityID: activityID, api: notes))
+        _spoken = StateObject(
+            wrappedValue: SpokenAttemptModel(
+                activityID: activityID, coordinator: recording, server: recordings
+            ))
         self.focusSelfReview = focusSelfReview
     }
 
     var body: some View {
         ActivityWorkspaceView(
-            model: model, uploader: uploader, focusSelfReview: focusSelfReview, coach: coach, note: note
+            model: model, uploader: uploader, focusSelfReview: focusSelfReview, coach: coach, note: note,
+            spoken: spoken
         )
     }
 }

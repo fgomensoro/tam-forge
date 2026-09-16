@@ -16,7 +16,7 @@ ExecStart=/opt/tamforge/current/.venv/bin/python -m tamforge_backend.workers.spe
 EnvironmentFile=/etc/tamforge/speech-worker.env
 # ProtectHome makes /home unreadable, and asyncpg probes ~/.postgresql before every
 # connection; a readable HOME keeps that probe a clean miss.
-Environment=HOME=%S/tamforge/speech-worker
+Environment=HOME=%S/tamforge/speech
 LoadCredential=recording-manifest-keyring.json:/etc/tamforge/secrets/recording-manifest-keyring.json
 Restart=on-failure
 RestartSec=5s

@@ -15,16 +15,18 @@ struct ActivityWorkspaceView: View {
     private let focusSelfReview: Bool
     private let coach: CoachThreadModel?
     private let note: StudyNoteModel?
+    private let spoken: SpokenAttemptModel?
 
     init(
         model: ActivityWorkspaceModel, uploader: ActivityArtifactUploader, focusSelfReview: Bool = false,
-        coach: CoachThreadModel? = nil, note: StudyNoteModel? = nil
+        coach: CoachThreadModel? = nil, note: StudyNoteModel? = nil, spoken: SpokenAttemptModel? = nil
     ) {
         self.model = model
         self.uploader = uploader
         self.focusSelfReview = focusSelfReview
         self.coach = coach
         self.note = note
+        self.spoken = spoken
     }
 
     var body: some View {
@@ -70,6 +72,9 @@ struct ActivityWorkspaceView: View {
                 LazyVStack(alignment: .leading, spacing: 20) {
                     header(activity)
                     status(activity)
+                    if let spoken, activity.taskContract.block == .communicationSpoken {
+                        SpokenAttemptPanel(model: spoken)
+                    }
                     if model.canRetry {
                         Button("Retry server sync") { Task { await model.open() } }
                     }

@@ -223,12 +223,88 @@ struct RecordingCreatePayload: Codable, Equatable, Sendable {
     let recordingID: String
     let startedAt: String
     let tracks: [RecordingTrackDeclarationPayload]
+    /// The Today block this recording is a spoken attempt for; omitted for free recordings.
+    let activityID: Int?
+
+    init(
+        recordingID: String, startedAt: String, tracks: [RecordingTrackDeclarationPayload],
+        activityID: Int? = nil
+    ) {
+        self.recordingID = recordingID
+        self.startedAt = startedAt
+        self.tracks = tracks
+        self.activityID = activityID
+    }
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
         case recordingID = "recording_id"
         case startedAt = "started_at"
         case tracks
+        case activityID = "activity_id"
+    }
+}
+
+/// The activity a recording was started for, kept as a small sidecar file beside the
+/// encrypted spool so the upload, which may run in a later launch, can carry it. It is
+/// not secret and not part of the authenticated spool format.
+enum RecordingActivityLink {
+    private struct Payload: Codable {
+        let activityID: Int
+        enum CodingKeys: String, CodingKey { case activityID = "activity_id" }
+    }
+
+    static func url(recordingID: UUID, rootURL: URL) -> URL {
+        rootURL.appendingPathComponent(recordingID.uuidString, isDirectory: true)
+            .appendingPathComponent("activity-link.json", isDirectory: false)
+    }
+
+    static func write(activityID: Int, recordingID: UUID, rootURL: URL) throws {
+        let data = try JSONEncoder().encode(Payload(activityID: activityID))
+        try data.write(to: url(recordingID: recordingID, rootURL: rootURL), options: .atomic)
+    }
+
+    static func read(recordingID: UUID, rootURL: URL) -> Int? {
+        guard let data = try? Data(contentsOf: url(recordingID: recordingID, rootURL: rootURL)),
+              let payload = try? JSONDecoder().decode(Payload.self, from: data),
+              payload.activityID > 0
+        else { return nil }
+        return payload.activityID
+    }
+}
+
+/// One speaker turn of the server's analysis, in the recording's own clock.
+struct RecordingTurn: Codable, Equatable, Sendable, Identifiable {
+    let speaker: String
+    let startMS: Int
+    let endMS: Int
+    let text: String
+
+    var id: String { "\(speaker)-\(startMS)" }
+    var isLearner: Bool { speaker == "learner" }
+
+    enum CodingKeys: String, CodingKey {
+        case speaker, text
+        case startMS = "start_ms"
+        case endMS = "end_ms"
+    }
+}
+
+/// The server's speech analysis for a recording and where its job stands.
+struct RecordingAnalysis: Codable, Equatable, Sendable {
+    let status: String
+    let failureCategory: String?
+    let analysisVersion: String?
+    let turns: [RecordingTurn]
+
+    static let notRequested = RecordingAnalysis(
+        status: "not_requested", failureCategory: nil, analysisVersion: nil, turns: []
+    )
+
+    enum CodingKeys: String, CodingKey {
+        case status, turns
+        case failureCategory = "failure_category"
+        case analysisVersion = "analysis_version"
     }
 }
 

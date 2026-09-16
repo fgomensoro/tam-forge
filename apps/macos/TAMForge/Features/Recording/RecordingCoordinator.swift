@@ -240,8 +240,15 @@ final class RecordingCoordinator: ObservableObject {
 
     var requiresStopBeforeSignOut: Bool { phase.isActive }
 
-    func start() async {
+    /// Writes the activity link beside the spool once the recording exists; injected so
+    /// the coordinator never learns the spool root, and tests can observe the link.
+    var activityLinkWriter: ((UUID, Int) throws -> Void)?
+    /// The activity the recording in flight (or the last one) was started for.
+    @Published private(set) var activityID: Int?
+
+    func start(activityID: Int? = nil) async {
         guard !phase.isActive else { return }
+        self.activityID = activityID
         await pauseUploadsForCapture()
         defer {
             if !phase.isActive { enqueueAllPendingUploads() }
@@ -267,6 +274,9 @@ final class RecordingCoordinator: ObservableObject {
             let spool = try await spoolFactory.create(recordingID: recordingID)
             self.spool = spool
             createdSpool = true
+            if let activityID, let activityLinkWriter {
+                try activityLinkWriter(recordingID, activityID)
+            }
             let pendingGapWrites = PendingGapWrites()
             self.pendingGapWrites = pendingGapWrites
             let (stream, continuation) = AsyncStream.makeStream(
