@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -38,6 +39,36 @@ class EnglishClassResponse(StrictModel):
     updated_at: datetime
 
 
+class ClassAspectResponse(StrictModel):
+    score: Decimal
+    rationale: str
+    evidence: str
+
+
+class ClassRecurringErrorResponse(StrictModel):
+    pattern: str
+    example: str
+    correction: str
+
+
+class ClassAnalysisResponse(StrictModel):
+    """Where the analysis stands, then what it says about this class and the ones before."""
+
+    class_id: int
+    status: Literal["not_requested", "queued", "running", "ready", "needs_attention"]
+    failure_category: str | None = None
+    analysis_id: int | None = None
+    model: str | None = None
+    fluency: ClassAspectResponse | None = None
+    vocabulary: ClassAspectResponse | None = None
+    recurring_errors: tuple[ClassRecurringErrorResponse, ...] = ()
+    progress_direction: Literal["up", "flat", "down", "first_class"] | None = None
+    progress_statement: str | None = None
+    next_focus: str | None = None
+    previous_classes: int = 0
+    created_at: datetime | None = None
+
+
 class EnglishClassPage(StrictModel):
     items: tuple[EnglishClassResponse, ...]
 
@@ -47,6 +78,9 @@ class AttachClassRecordingCommand(StrictModel):
 
 
 __all__ = [
+    "ClassAnalysisResponse",
+    "ClassAspectResponse",
+    "ClassRecurringErrorResponse",
     "AttachClassRecordingCommand",
     "ClassRecordingSummary",
     "EnglishClassCommand",

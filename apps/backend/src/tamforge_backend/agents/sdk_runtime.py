@@ -27,6 +27,7 @@ from .compatibility import (
     ProbeObservation,
     ProbeQuotaExhausted,
 )
+from .roles.class_analysis import ClassAnalysisRequest
 from .roles.coach import CoachRequest, NoteRequest
 from .roles.debrief import DebriefRequest
 from .roles.reviewer import ReviewRequest
@@ -75,6 +76,15 @@ DEBRIEF_SYSTEM_PROMPT = (
     "week. Keep the hiring outcome separate from the communication judgment: advancing is "
     "good news, not proof of better communication. Judge only what is in the transcript. "
     "Never change the plan and never claim to have recorded, scheduled or completed "
+    "anything. Answer in English. Return only the object."
+)
+
+CLASS_ANALYSIS_SYSTEM_PROMPT = (
+    "You are the TAM Forge reviewer, analysing one English class from its recording's "
+    "transcript and measured speech metrics. Score fluency and vocabulary in half points on "
+    "the TAM English scale with a verbatim quote each, name recurring errors with an example "
+    "and a correction, and compare the class with the previous ones you are shown. Judge "
+    "only what is on the page. Never claim to have recorded, scheduled or completed "
     "anything. Answer in English. Return only the object."
 )
 
@@ -208,6 +218,18 @@ class AgentSdkRuntime:
             schema=debrief_schema(),
             model=self._environ.get("TAMFORGE_DEBRIEF_MODEL", "claude-opus-5"),
             system_prompt=DEBRIEF_SYSTEM_PROMPT,
+            max_turns=4,
+        )
+        return {} if run.structured_output is None else dict(run.structured_output)
+
+    async def analyse_class(self, request: ClassAnalysisRequest) -> Mapping[str, object]:
+        from .roles.class_analysis import class_analysis_schema, render_class_analysis_prompt
+
+        run = await self._structured(
+            prompt=render_class_analysis_prompt(request),
+            schema=class_analysis_schema(),
+            model=self._environ.get("TAMFORGE_REVIEWER_MODEL", "claude-fable-5-1"),
+            system_prompt=CLASS_ANALYSIS_SYSTEM_PROMPT,
             max_turns=4,
         )
         return {} if run.structured_output is None else dict(run.structured_output)

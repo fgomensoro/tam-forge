@@ -35,6 +35,10 @@ class ClassConflict(ClassesError):
     """The recording already belongs to another class."""
 
 
+class ClassInvalid(ClassesError):
+    """The command carries nothing usable."""
+
+
 class ClassesUnavailable(ClassesError):
     """The store cannot answer right now."""
 

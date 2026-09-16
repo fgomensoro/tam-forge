@@ -1,0 +1,460 @@
+{
+  "fixture_version": "class-analysis-refusals-v1",
+  "model": "claude-fable-5-1",
+  "cases": [
+    {
+      "case_id": "no-transcript",
+      "record": {
+        "teacher": "Maria",
+        "starts_at": "2026-09-18T18:00:00+00:00",
+        "expected_duration_minutes": 60,
+        "notes": "Past tense."
+      },
+      "transcript": "  ",
+      "previous": [
+        {
+          "starts_at": "2026-09-11T18:00:00+00:00",
+          "fluency_score": "2.5",
+          "vocabulary_score": "2.0",
+          "recurring_errors": [
+            "present perfect for finished past"
+          ]
+        }
+      ],
+      "answers": [
+        {
+          "fluency": {
+            "score": "3.0",
+            "rationale": "Keeps going without long pauses.",
+            "evidence": "I have worked on the webhook runbook"
+          },
+          "vocabulary": {
+            "score": "2.5",
+            "rationale": "Work vocabulary is precise; little variety.",
+            "evidence": "webhook runbook"
+          },
+          "recurring_errors": [
+            {
+              "pattern": "present perfect for finished past",
+              "example": "I have worked on the webhook runbook",
+              "correction": "I worked on the webhook runbook"
+            },
+            {
+              "pattern": "subject-verb agreement",
+              "example": "The customer were happy",
+              "correction": "The customer was happy"
+            }
+          ],
+          "progress_direction": "up",
+          "progress_statement": "Fluency rose half a point; the past tense error persists.",
+          "next_focus": "Narrate last week in the simple past only."
+        }
+      ],
+      "expect": "refused_by_contract"
+    },
+    {
+      "case_id": "quarter-point-score",
+      "record": {
+        "teacher": "Maria",
+        "starts_at": "2026-09-18T18:00:00+00:00",
+        "expected_duration_minutes": 60,
+        "notes": "Past tense."
+      },
+      "transcript": "[0] Teacher: How was your week?\n[2100] Learner: It was good, I have worked on the webhook runbook and I explain it to my team.\n[9000] Teacher: You explained it. Past tense.\n[11000] Learner: Yes, I explained it. The customer were happy with the fix.",
+      "previous": [
+        {
+          "starts_at": "2026-09-11T18:00:00+00:00",
+          "fluency_score": "2.5",
+          "vocabulary_score": "2.0",
+          "recurring_errors": [
+            "present perfect for finished past"
+          ]
+        }
+      ],
+      "answers": [
+        {
+          "fluency": {
+            "score": "2.75",
+            "rationale": "x",
+            "evidence": "webhook runbook"
+          },
+          "vocabulary": {
+            "score": "2.5",
+            "rationale": "Work vocabulary is precise; little variety.",
+            "evidence": "webhook runbook"
+          },
+          "recurring_errors": [
+            {
+              "pattern": "present perfect for finished past",
+              "example": "I have worked on the webhook runbook",
+              "correction": "I worked on the webhook runbook"
+            },
+            {
+              "pattern": "subject-verb agreement",
+              "example": "The customer were happy",
+              "correction": "The customer was happy"
+            }
+          ],
+          "progress_direction": "up",
+          "progress_statement": "Fluency rose half a point; the past tense error persists.",
+          "next_focus": "Narrate last week in the simple past only."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "invented-example",
+      "record": {
+        "teacher": "Maria",
+        "starts_at": "2026-09-18T18:00:00+00:00",
+        "expected_duration_minutes": 60,
+        "notes": "Past tense."
+      },
+      "transcript": "[0] Teacher: How was your week?\n[2100] Learner: It was good, I have worked on the webhook runbook and I explain it to my team.\n[9000] Teacher: You explained it. Past tense.\n[11000] Learner: Yes, I explained it. The customer were happy with the fix.",
+      "previous": [
+        {
+          "starts_at": "2026-09-11T18:00:00+00:00",
+          "fluency_score": "2.5",
+          "vocabulary_score": "2.0",
+          "recurring_errors": [
+            "present perfect for finished past"
+          ]
+        }
+      ],
+      "answers": [
+        {
+          "fluency": {
+            "score": "3.0",
+            "rationale": "Keeps going without long pauses.",
+            "evidence": "I have worked on the webhook runbook"
+          },
+          "vocabulary": {
+            "score": "2.5",
+            "rationale": "Work vocabulary is precise; little variety.",
+            "evidence": "webhook runbook"
+          },
+          "recurring_errors": [
+            {
+              "pattern": "articles",
+              "example": "I go to the office",
+              "correction": "I go to the office"
+            }
+          ],
+          "progress_direction": "up",
+          "progress_statement": "Fluency rose half a point; the past tense error persists.",
+          "next_focus": "Narrate last week in the simple past only."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "first-class-with-history",
+      "record": {
+        "teacher": "Maria",
+        "starts_at": "2026-09-18T18:00:00+00:00",
+        "expected_duration_minutes": 60,
+        "notes": "Past tense."
+      },
+      "transcript": "[0] Teacher: How was your week?\n[2100] Learner: It was good, I have worked on the webhook runbook and I explain it to my team.\n[9000] Teacher: You explained it. Past tense.\n[11000] Learner: Yes, I explained it. The customer were happy with the fix.",
+      "previous": [
+        {
+          "starts_at": "2026-09-11T18:00:00+00:00",
+          "fluency_score": "2.5",
+          "vocabulary_score": "2.0",
+          "recurring_errors": [
+            "present perfect for finished past"
+          ]
+        }
+      ],
+      "answers": [
+        {
+          "fluency": {
+            "score": "3.0",
+            "rationale": "Keeps going without long pauses.",
+            "evidence": "I have worked on the webhook runbook"
+          },
+          "vocabulary": {
+            "score": "2.5",
+            "rationale": "Work vocabulary is precise; little variety.",
+            "evidence": "webhook runbook"
+          },
+          "recurring_errors": [
+            {
+              "pattern": "present perfect for finished past",
+              "example": "I have worked on the webhook runbook",
+              "correction": "I worked on the webhook runbook"
+            },
+            {
+              "pattern": "subject-verb agreement",
+              "example": "The customer were happy",
+              "correction": "The customer was happy"
+            }
+          ],
+          "progress_direction": "first_class",
+          "progress_statement": "Fluency rose half a point; the past tense error persists.",
+          "next_focus": "Narrate last week in the simple past only."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "history-without-previous",
+      "record": {
+        "teacher": "Maria",
+        "starts_at": "2026-09-18T18:00:00+00:00",
+        "expected_duration_minutes": 60,
+        "notes": "Past tense."
+      },
+      "transcript": "[0] Teacher: How was your week?\n[2100] Learner: It was good, I have worked on the webhook runbook and I explain it to my team.\n[9000] Teacher: You explained it. Past tense.\n[11000] Learner: Yes, I explained it. The customer were happy with the fix.",
+      "previous": [],
+      "answers": [
+        {
+          "fluency": {
+            "score": "3.0",
+            "rationale": "Keeps going without long pauses.",
+            "evidence": "I have worked on the webhook runbook"
+          },
+          "vocabulary": {
+            "score": "2.5",
+            "rationale": "Work vocabulary is precise; little variety.",
+            "evidence": "webhook runbook"
+          },
+          "recurring_errors": [
+            {
+              "pattern": "present perfect for finished past",
+              "example": "I have worked on the webhook runbook",
+              "correction": "I worked on the webhook runbook"
+            },
+            {
+              "pattern": "subject-verb agreement",
+              "example": "The customer were happy",
+              "correction": "The customer was happy"
+            }
+          ],
+          "progress_direction": "up",
+          "progress_statement": "Fluency rose half a point; the past tense error persists.",
+          "next_focus": "Narrate last week in the simple past only."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "completion-claim",
+      "record": {
+        "teacher": "Maria",
+        "starts_at": "2026-09-18T18:00:00+00:00",
+        "expected_duration_minutes": 60,
+        "notes": "Past tense."
+      },
+      "transcript": "[0] Teacher: How was your week?\n[2100] Learner: It was good, I have worked on the webhook runbook and I explain it to my team.\n[9000] Teacher: You explained it. Past tense.\n[11000] Learner: Yes, I explained it. The customer were happy with the fix.",
+      "previous": [
+        {
+          "starts_at": "2026-09-11T18:00:00+00:00",
+          "fluency_score": "2.5",
+          "vocabulary_score": "2.0",
+          "recurring_errors": [
+            "present perfect for finished past"
+          ]
+        }
+      ],
+      "answers": [
+        {
+          "fluency": {
+            "score": "3.0",
+            "rationale": "Keeps going without long pauses.",
+            "evidence": "I have worked on the webhook runbook"
+          },
+          "vocabulary": {
+            "score": "2.5",
+            "rationale": "Work vocabulary is precise; little variety.",
+            "evidence": "webhook runbook"
+          },
+          "recurring_errors": [
+            {
+              "pattern": "present perfect for finished past",
+              "example": "I have worked on the webhook runbook",
+              "correction": "I worked on the webhook runbook"
+            },
+            {
+              "pattern": "subject-verb agreement",
+              "example": "The customer were happy",
+              "correction": "The customer was happy"
+            }
+          ],
+          "progress_direction": "up",
+          "progress_statement": "Fluency rose half a point; the past tense error persists.",
+          "next_focus": "I scheduled the next class for Thursday."
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "repaired-once",
+      "record": {
+        "teacher": "Maria",
+        "starts_at": "2026-09-18T18:00:00+00:00",
+        "expected_duration_minutes": 60,
+        "notes": "Past tense."
+      },
+      "transcript": "[0] Teacher: How was your week?\n[2100] Learner: It was good, I have worked on the webhook runbook and I explain it to my team.\n[9000] Teacher: You explained it. Past tense.\n[11000] Learner: Yes, I explained it. The customer were happy with the fix.",
+      "previous": [
+        {
+          "starts_at": "2026-09-11T18:00:00+00:00",
+          "fluency_score": "2.5",
+          "vocabulary_score": "2.0",
+          "recurring_errors": [
+            "present perfect for finished past"
+          ]
+        }
+      ],
+      "answers": [
+        {
+          "fluency": {
+            "score": "2.75",
+            "rationale": "x",
+            "evidence": "webhook runbook"
+          },
+          "vocabulary": {
+            "score": "2.5",
+            "rationale": "Work vocabulary is precise; little variety.",
+            "evidence": "webhook runbook"
+          },
+          "recurring_errors": [
+            {
+              "pattern": "present perfect for finished past",
+              "example": "I have worked on the webhook runbook",
+              "correction": "I worked on the webhook runbook"
+            },
+            {
+              "pattern": "subject-verb agreement",
+              "example": "The customer were happy",
+              "correction": "The customer was happy"
+            }
+          ],
+          "progress_direction": "up",
+          "progress_statement": "Fluency rose half a point; the past tense error persists.",
+          "next_focus": "Narrate last week in the simple past only."
+        },
+        {
+          "fluency": {
+            "score": "3.0",
+            "rationale": "Keeps going without long pauses.",
+            "evidence": "I have worked on the webhook runbook"
+          },
+          "vocabulary": {
+            "score": "2.5",
+            "rationale": "Work vocabulary is precise; little variety.",
+            "evidence": "webhook runbook"
+          },
+          "recurring_errors": [
+            {
+              "pattern": "present perfect for finished past",
+              "example": "I have worked on the webhook runbook",
+              "correction": "I worked on the webhook runbook"
+            },
+            {
+              "pattern": "subject-verb agreement",
+              "example": "The customer were happy",
+              "correction": "The customer was happy"
+            }
+          ],
+          "progress_direction": "up",
+          "progress_statement": "Fluency rose half a point; the past tense error persists.",
+          "next_focus": "Narrate last week in the simple past only."
+        }
+      ],
+      "expect": "accepted"
+    },
+    {
+      "case_id": "first-class-accepted",
+      "record": {
+        "teacher": "Maria",
+        "starts_at": "2026-09-18T18:00:00+00:00",
+        "expected_duration_minutes": 60,
+        "notes": "Past tense."
+      },
+      "transcript": "[0] Teacher: How was your week?\n[2100] Learner: It was good, I have worked on the webhook runbook and I explain it to my team.\n[9000] Teacher: You explained it. Past tense.\n[11000] Learner: Yes, I explained it. The customer were happy with the fix.",
+      "previous": [],
+      "answers": [
+        {
+          "fluency": {
+            "score": "3.0",
+            "rationale": "Keeps going without long pauses.",
+            "evidence": "I have worked on the webhook runbook"
+          },
+          "vocabulary": {
+            "score": "2.5",
+            "rationale": "Work vocabulary is precise; little variety.",
+            "evidence": "webhook runbook"
+          },
+          "recurring_errors": [
+            {
+              "pattern": "present perfect for finished past",
+              "example": "I have worked on the webhook runbook",
+              "correction": "I worked on the webhook runbook"
+            },
+            {
+              "pattern": "subject-verb agreement",
+              "example": "The customer were happy",
+              "correction": "The customer was happy"
+            }
+          ],
+          "progress_direction": "first_class",
+          "progress_statement": "First class on record.",
+          "next_focus": "Narrate last week in the simple past only."
+        }
+      ],
+      "expect": "accepted"
+    },
+    {
+      "case_id": "half-points-and-quotes",
+      "record": {
+        "teacher": "Maria",
+        "starts_at": "2026-09-18T18:00:00+00:00",
+        "expected_duration_minutes": 60,
+        "notes": "Past tense."
+      },
+      "transcript": "[0] Teacher: How was your week?\n[2100] Learner: It was good, I have worked on the webhook runbook and I explain it to my team.\n[9000] Teacher: You explained it. Past tense.\n[11000] Learner: Yes, I explained it. The customer were happy with the fix.",
+      "previous": [
+        {
+          "starts_at": "2026-09-11T18:00:00+00:00",
+          "fluency_score": "2.5",
+          "vocabulary_score": "2.0",
+          "recurring_errors": [
+            "present perfect for finished past"
+          ]
+        }
+      ],
+      "answers": [
+        {
+          "fluency": {
+            "score": "3.0",
+            "rationale": "Keeps going without long pauses.",
+            "evidence": "I have worked on the webhook runbook"
+          },
+          "vocabulary": {
+            "score": "2.5",
+            "rationale": "Work vocabulary is precise; little variety.",
+            "evidence": "webhook runbook"
+          },
+          "recurring_errors": [
+            {
+              "pattern": "present perfect for finished past",
+              "example": "I have worked on the webhook runbook",
+              "correction": "I worked on the webhook runbook"
+            },
+            {
+              "pattern": "subject-verb agreement",
+              "example": "The customer were happy",
+              "correction": "The customer was happy"
+            }
+          ],
+          "progress_direction": "up",
+          "progress_statement": "Fluency rose half a point; the past tense error persists.",
+          "next_focus": "Narrate last week in the simple past only."
+        }
+      ],
+      "expect": "accepted"
+    }
+  ]
+}
