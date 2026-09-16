@@ -27,6 +27,7 @@ from ..agents.roles.contracts import RoleContractError
 from ..cards.importing import coach_card_command, skill_slug_for
 from ..cards.service import CardService
 from ..database import transaction_scope
+from ..interviews.service import ReferenceMaterialService
 from ..learning.models import ActivityInstance, Attempt, StudyDay
 from ..learning.service import _string_items
 from ..models.base import utc_now
@@ -126,6 +127,9 @@ class CoachThreadService:
                         for item in prior[-PRIOR_MESSAGE_LIMIT:]
                     ),
                     handoff=await self._handoff(owner_id=owner_id, activity=loaded.activity),
+                    reference=await ReferenceMaterialService(self._session).citations(
+                        owner_id=owner_id, text=f"{block.objective} {text}"
+                    ),
                 )
                 try:
                     turn = await self._coach.turn(request)

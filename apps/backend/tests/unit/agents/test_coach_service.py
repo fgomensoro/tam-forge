@@ -193,3 +193,20 @@ async def test_the_coach_drafts_a_note_only_where_allowed_and_after_a_commit() -
         await CoachService(FakeNoteTransport([bad, bad]), model="m").draft_note(
             NoteRequest(block=BLOCK, committed_attempt="x")
         )
+
+
+def test_reference_citations_are_rendered_as_unverified_material() -> None:
+    from dataclasses import replace
+
+    prompt = render_coach_prompt(
+        replace(
+            _request(),
+            reference=(
+                "[answer_bank] Handling an escalation; readiness 'ready' (unverified): text",
+            ),
+        )
+    )
+    assert "Reference material the learner wrote earlier" in prompt
+    assert "never present it as demonstrated" in prompt
+    assert "- [answer_bank] Handling an escalation" in prompt
+    assert "Reference material" not in render_coach_prompt(_request())

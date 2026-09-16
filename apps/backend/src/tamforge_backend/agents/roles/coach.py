@@ -99,6 +99,7 @@ class CoachRequest:
     prior_messages: tuple[tuple[Literal["learner", "coach"], str], ...] = ()
     repair_errors: tuple[str, ...] = ()
     handoff: str | None = None
+    reference: tuple[str, ...] = ()
 
 
 class CoachTransport(Protocol):
@@ -377,6 +378,13 @@ def render_coach_prompt(request: CoachRequest) -> str:
         lines.append(
             "Where the previous study day left off (the plan's words; a coached block is "
             "not a demonstrated one):\n" + request.handoff
+        )
+    if request.reference:
+        lines.append(
+            "Reference material the learner wrote earlier (answer bank, story catalog). Cite an "
+            "entry by its heading when it helps; its readiness label is the learner's own claim, "
+            "unverified until the ledger holds evidence, so never present it as demonstrated:\n"
+            + "\n".join(f"- {item}" for item in request.reference)
         )
     for speaker, text in request.prior_messages:
         lines.append(f"{speaker}: {text}")
