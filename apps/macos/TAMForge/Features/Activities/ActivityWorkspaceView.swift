@@ -16,10 +16,12 @@ struct ActivityWorkspaceView: View {
     private let coach: CoachThreadModel?
     private let note: StudyNoteModel?
     private let spoken: SpokenAttemptModel?
+    private let aiReview: ReviewModel?
 
     init(
         model: ActivityWorkspaceModel, uploader: ActivityArtifactUploader, focusSelfReview: Bool = false,
-        coach: CoachThreadModel? = nil, note: StudyNoteModel? = nil, spoken: SpokenAttemptModel? = nil
+        coach: CoachThreadModel? = nil, note: StudyNoteModel? = nil, spoken: SpokenAttemptModel? = nil,
+        aiReview: ReviewModel? = nil
     ) {
         self.model = model
         self.uploader = uploader
@@ -27,6 +29,7 @@ struct ActivityWorkspaceView: View {
         self.coach = coach
         self.note = note
         self.spoken = spoken
+        self.aiReview = aiReview
     }
 
     var body: some View {
@@ -101,6 +104,7 @@ struct ActivityWorkspaceView: View {
                     }
                     if activity.state == .outputCommitted { selfReviewPanel(activity).id("activitySelfReview") }
                     if activity.selfReview != nil { reviewComplete(activity) }
+                    if let aiReview, activity.selfReview != nil { ReviewPanel(model: aiReview) }
                     Label("AI feedback remains unavailable until a server-backed self-review. This app cannot create an AI Attempt A.", systemImage: "lock")
                         .foregroundStyle(.secondary)
                         .accessibilityLabel("AI feedback locked until self-review")

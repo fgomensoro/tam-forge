@@ -28,6 +28,7 @@ from .compatibility import (
     ProbeQuotaExhausted,
 )
 from .roles.coach import CoachRequest, NoteRequest
+from .roles.reviewer import ReviewRequest
 from .runtime import (
     AgentAuthenticationFailed,
     AgentQuotaExhausted,
@@ -53,6 +54,17 @@ PLANNER_SYSTEM_PROMPT = (
     "a source file and heading that exist in the package, and a one-line objective. "
     "Use only the files you are given. Never invent files or headings. Return only the "
     "scheme object."
+)
+
+REVIEWER_SYSTEM_PROMPT = (
+    "You are the TAM Forge reviewer. You score one committed study attempt against the "
+    "block's rubric so the learner's skill record moves on evidence, not impressions. "
+    "Score every rubric dimension in half points with a one-sentence rationale and a short "
+    "verbatim quote as evidence. Be strict and consistent week to week: a 4 is interview-"
+    "ready, a 2 is a partial answer, a 0 is absent. Give exactly two strengths and two "
+    "corrections with an instruction each, and one next practice. Judge only what is on "
+    "the page. Never claim to have recorded, scheduled or completed anything. Answer in "
+    "English. Return only the object."
 )
 
 COACH_SYSTEM_PROMPT = (
@@ -159,6 +171,18 @@ class AgentSdkRuntime:
             schema=coach_turn_schema(),
             model=self._environ.get("TAMFORGE_COACH_MODEL", "claude-opus-5"),
             system_prompt=COACH_SYSTEM_PROMPT,
+            max_turns=4,
+        )
+        return {} if run.structured_output is None else dict(run.structured_output)
+
+    async def review(self, request: ReviewRequest) -> Mapping[str, object]:
+        from .roles.reviewer import render_review_prompt, review_schema
+
+        run = await self._structured(
+            prompt=render_review_prompt(request),
+            schema=review_schema(),
+            model=self._environ.get("TAMFORGE_REVIEWER_MODEL", "claude-fable-5-1"),
+            system_prompt=REVIEWER_SYSTEM_PROMPT,
             max_turns=4,
         )
         return {} if run.structured_output is None else dict(run.structured_output)

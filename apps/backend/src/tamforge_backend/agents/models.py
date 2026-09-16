@@ -195,9 +195,7 @@ class AnalysisPublication(RunChild):
 
     __tablename__ = "analysis_publications"
     __table_args__ = _child_checks("analysis_publications", limit=1048576) + (
-        UniqueConstraint(
-            "run_id", "analysis_kind", name="uq_analysis_publications_run_kind"
-        ),
+        UniqueConstraint("run_id", "analysis_kind", name="uq_analysis_publications_run_kind"),
         CheckConstraint(
             "analysis_kind IN ('english_analysis', 'tam_analysis')",
             name="analysis_kind_allowed",
@@ -215,9 +213,7 @@ class PrivacyAttestation(Record):
 
     __tablename__ = "privacy_attestations"
     __table_args__ = _checks("privacy_attestations", limit=16384) + (
-        UniqueConstraint(
-            "owner_id", "policy_version", name="uq_privacy_attestations_owner_policy"
-        ),
+        UniqueConstraint("owner_id", "policy_version", name="uq_privacy_attestations_owner_policy"),
         CheckConstraint(
             "policy_version ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$'",
             name="policy_version_safe",

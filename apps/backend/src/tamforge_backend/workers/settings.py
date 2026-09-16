@@ -20,6 +20,7 @@ FIELD_ENV_ALIASES: Final[dict[str, str]] = {
     "claude_enabled": "TAMFORGE_CLAUDE_ENABLED",
     "planner_model": "TAMFORGE_PLANNER_MODEL",
     "coach_model": "TAMFORGE_COACH_MODEL",
+    "reviewer_model": "TAMFORGE_REVIEWER_MODEL",
 }
 
 
@@ -33,6 +34,9 @@ class WorkerSettings(BaseSettings):
         default="claude-fable-5-1", validation_alias="TAMFORGE_PLANNER_MODEL"
     )
     coach_model: str = Field(default="claude-opus-5", validation_alias="TAMFORGE_COACH_MODEL")
+    reviewer_model: str = Field(
+        default="claude-fable-5-1", validation_alias="TAMFORGE_REVIEWER_MODEL"
+    )
 
     def __init__(self, **values: Any) -> None:
         mapped = dict(values)

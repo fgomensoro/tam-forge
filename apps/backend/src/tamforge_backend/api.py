@@ -28,6 +28,9 @@ from .notifications.service import NotificationError
 from .recordings.routes import recording_exception_handler
 from .recordings.routes import router as recording_router
 from .recordings.service import RecordingError
+from .reviews.routes import reviews_exception_handler
+from .reviews.routes import router as reviews_router
+from .reviews.service import ReviewsError
 from .roadmaps.ports import RoadmapWorkflowError
 from .roadmaps.routes import roadmap_exception_handler
 from .roadmaps.routes import router as roadmap_router
@@ -50,6 +53,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(activity_router)
     app.include_router(coaching_router)
     app.include_router(notes_router)
+    app.include_router(reviews_router)
     app.include_router(evidence_router)
     app.include_router(analysis_router)
     app.include_router(notification_router)
@@ -64,6 +68,7 @@ def register_routes(app: FastAPI) -> None:
     app.add_exception_handler(ActivityCommandError, activity_exception_handler)
     app.add_exception_handler(CoachingError, coaching_exception_handler)
     app.add_exception_handler(NotesError, notes_exception_handler)
+    app.add_exception_handler(ReviewsError, reviews_exception_handler)
     app.add_exception_handler(EvidenceError, evidence_exception_handler)
     app.add_exception_handler(FeedbackError, feedback_exception_handler)
     app.add_exception_handler(NotificationError, notification_exception_handler)

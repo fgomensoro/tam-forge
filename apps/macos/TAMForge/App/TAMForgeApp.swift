@@ -165,6 +165,7 @@ private struct NativeFeatureServices {
     let coaching: any CoachAPI
     let notes: any StudyNoteAPI
     let recordings: any RecordingServerServicing
+    let reviews: any ReviewAPI
 }
 
 @MainActor
@@ -235,7 +236,8 @@ private final class NativeShellComposition: ObservableObject {
             evidence: LiveEvidenceAPI(transport: transport),
             coaching: LiveCoachAPI(transport: transport),
             notes: LiveStudyNoteAPI(transport: transport),
-            recordings: recordingServer
+            recordings: recordingServer,
+            reviews: LiveReviewAPI(transport: transport)
         )
         #if DEBUG
             let isUITest = ProcessInfo.processInfo.arguments.contains("-ui-test-signed-out")
@@ -527,7 +529,7 @@ private struct NativeWorkspaceView: View {
             NativeActivityScreen(
                 activityID: identifier, api: services.activities, coaching: services.coaching,
                 notes: services.notes, recordings: services.recordings, recording: recording,
-                drafts: state.drafts, timerJournal: state.timerJournal,
+                reviews: services.reviews, drafts: state.drafts, timerJournal: state.timerJournal,
                 focusSelfReview: focusSelfReview
             )
             .id(identifier)
@@ -556,11 +558,12 @@ private struct NativeActivityScreen: View {
     @StateObject private var coach: CoachThreadModel
     @StateObject private var note: StudyNoteModel
     @StateObject private var spoken: SpokenAttemptModel
+    @StateObject private var review: ReviewModel
     let focusSelfReview: Bool
 
     init(
         activityID: Int, api: any ActivityAPI, coaching: any CoachAPI, notes: any StudyNoteAPI,
-        recordings: any RecordingServerServicing, recording: RecordingCoordinator,
+        recordings: any RecordingServerServicing, recording: RecordingCoordinator, reviews: any ReviewAPI,
         drafts: any ActivityDraftStoring, timerJournal: any ActivityTimerJournaling, focusSelfReview: Bool
     ) {
         _model = StateObject(
@@ -574,13 +577,14 @@ private struct NativeActivityScreen: View {
             wrappedValue: SpokenAttemptModel(
                 activityID: activityID, coordinator: recording, server: recordings
             ))
+        _review = StateObject(wrappedValue: ReviewModel(activityID: activityID, api: reviews))
         self.focusSelfReview = focusSelfReview
     }
 
     var body: some View {
         ActivityWorkspaceView(
             model: model, uploader: uploader, focusSelfReview: focusSelfReview, coach: coach, note: note,
-            spoken: spoken
+            spoken: spoken, aiReview: review
         )
     }
 }

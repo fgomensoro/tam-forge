@@ -41,6 +41,7 @@ def test_the_suite_covers_speech_agents_memory_and_rubric(report: SuiteReport) -
         "rubric",
         "agents",
         "coach",
+        "reviewer",
     }
 
 
@@ -55,6 +56,7 @@ def test_provenance_names_every_fixture_model_prompt_and_rubric_by_hash_or_versi
         "agent-invariant-cases.json",
         "speech-gate-cases.json",
         "coach-refusal-cases.json",
+        "reviewer-refusal-cases.json",
     }
     assert all(len(h) == 64 for h in p.fixtures.values())
     assert p.speech_model_filename == "ggml-small.en-q5_1.bin" and len(p.speech_model_sha256) == 64
@@ -66,6 +68,7 @@ def test_provenance_names_every_fixture_model_prompt_and_rubric_by_hash_or_versi
         "security",
         "failure_injection",
         "coach",
+        "reviewer",
     }
 
 

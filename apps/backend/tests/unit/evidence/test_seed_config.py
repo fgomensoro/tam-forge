@@ -22,8 +22,8 @@ def test_dry_run_reports_exact_validated_counts_without_database() -> None:
         len(exercise.skill_impacts) + len(exercise.allowed_selected_competencies)
         for exercise in bundle.exercise_types
     )
-    assert result.rubrics == 1
-    assert result.rubric_dimensions == 7
+    assert result.rubrics == 2
+    assert result.rubric_dimensions == 13
     assert result.roadmap_tasks == 158
 
 

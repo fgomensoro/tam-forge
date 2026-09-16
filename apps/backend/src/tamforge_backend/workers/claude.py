@@ -15,11 +15,12 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from ..agents.roles.reviewer import ReviewerService
 from ..agents.runtime import (
     AgentAuthenticationFailed,
     AgentOutputInvalid,
@@ -163,7 +164,93 @@ async def gate_step(sessions: async_sessionmaker[AsyncSession]) -> str | None:
         return "auth"
     except ClaudeWorkerConfigurationError:
         return "permission_required"
-    return await probe_step(sessions, owner_id=owner_id)
+    reason = await probe_step(sessions, owner_id=owner_id)
+    if reason is not None:
+        return reason
+    await review_step(sessions)
+    return None
+
+
+REVIEW_JOBS_PER_STEP = 3
+
+
+async def review_step(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    reviewer: ReviewerService | None = None,
+    worker_id: str = "claude-reviewer",
+) -> int:
+    """Queue reviews for self-reviewed attempts, then score up to a few of them.
+
+    Each job is one bounded reviewer turn. A refused credential or a spent quota parks
+    the job with its closed category and the heartbeat says so on the next beat; a
+    transport failure retries under the queue's policy; an attempt that cannot be
+    reviewed parks as invalid input. The activity's processing status mirrors the job.
+    """
+    from ..agents.sdk_runtime import AgentSdkRuntime
+    from ..evidence.repository import SqlAlchemyEvidenceRepository
+    from ..evidence.service import EvidenceService
+    from ..jobs.repository import SqlAlchemyJobRepository
+    from ..jobs.schemas import ClaimJobCommand, CompleteJobCommand, JobFailure, RetryJobCommand
+    from ..jobs.service import JobService
+    from ..reviews.service import (
+        REVIEW_JOB_KIND,
+        ReviewInvalid,
+        ReviewService,
+        ReviewsUnavailable,
+    )
+    from .settings import WorkerSettings
+
+    if reviewer is None:
+        reviewer = ReviewerService(AgentSdkRuntime(), model=WorkerSettings().reviewer_model)
+    async with sessions() as session:
+        await ReviewService(session, reviewer=reviewer).enqueue_pending()
+    processed = 0
+    for _ in range(REVIEW_JOBS_PER_STEP):
+        async with sessions() as session:
+            jobs = JobService(SqlAlchemyJobRepository(session))
+            job = await jobs.claim(
+                ClaimJobCommand(worker_id=worker_id, kinds=(REVIEW_JOB_KIND,), lease_seconds=600)
+            )
+            if job is None:
+                return processed
+            service = ReviewService(
+                session,
+                reviewer=reviewer,
+                evidence=EvidenceService(SqlAlchemyEvidenceRepository(session)),
+            )
+            category: str | None = None
+            try:
+                await service.process(owner_id=job.owner_id, activity_id=job.payload.subject_id)
+            except ReviewInvalid:
+                category = "invalid_input"
+            except ReviewsUnavailable as exc:
+                text = str(exc).lower()
+                if "quota" in text:
+                    category = "resource_exhausted"
+                elif "credential" in text or "authentication" in text:
+                    category = "permission_required"
+                else:
+                    category = "transient_dependency"
+            except Exception:  # noqa: BLE001 - a job must always end in a closed state
+                await session.rollback()
+                category = "processing_failure"
+            if category is None:
+                await jobs.complete(job_id=job.id, command=CompleteJobCommand(worker_id=worker_id))
+                processed += 1
+                continue
+            await session.rollback()
+            outcome = await jobs.retry(
+                job_id=job.id,
+                command=RetryJobCommand(
+                    worker_id=worker_id, failure=JobFailure(category=cast(Any, category))
+                ),
+            )
+            if outcome.job.state == "failed":
+                await service.mark_failed(
+                    owner_id=job.owner_id, activity_id=job.payload.subject_id, category=category
+                )
+    return processed
 
 
 async def probe_step(

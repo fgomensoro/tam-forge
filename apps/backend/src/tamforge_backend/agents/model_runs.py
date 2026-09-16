@@ -204,9 +204,7 @@ class ModelRunRepository:
             AuditEvent(
                 owner_id=request.owner_id,
                 actor_kind="system",
-                actor_subject_hash=sha256(
-                    f"model-submission:{request.owner_id}".encode()
-                ).digest(),
+                actor_subject_hash=sha256(f"model-submission:{request.owner_id}".encode()).digest(),
                 action="model_run.submitted" if accepted else "model_run.refused",
                 aggregate_type="activity",
                 aggregate_id=str(request.activity_id),
