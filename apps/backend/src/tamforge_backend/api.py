@@ -10,6 +10,9 @@ from .auth.crypto import InvalidOAuthState
 from .auth.routes import auth_exception_handler, request_validation_exception_handler
 from .auth.routes import router as auth_router
 from .auth.service import AuthError
+from .cards.routes import cards_exception_handler
+from .cards.routes import router as cards_router
+from .cards.service import CardsError
 from .classes.routes import classes_exception_handler
 from .classes.routes import router as classes_router
 from .classes.service import ClassesError
@@ -61,6 +64,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(notes_router)
     app.include_router(interviews_router)
     app.include_router(classes_router)
+    app.include_router(cards_router)
     app.include_router(reviews_router)
     app.include_router(evidence_router)
     app.include_router(analysis_router)
@@ -78,6 +82,7 @@ def register_routes(app: FastAPI) -> None:
     app.add_exception_handler(NotesError, notes_exception_handler)
     app.add_exception_handler(InterviewsError, interviews_exception_handler)
     app.add_exception_handler(ClassesError, classes_exception_handler)
+    app.add_exception_handler(CardsError, cards_exception_handler)
     app.add_exception_handler(ReviewsError, reviews_exception_handler)
     app.add_exception_handler(EvidenceError, evidence_exception_handler)
     app.add_exception_handler(FeedbackError, feedback_exception_handler)
