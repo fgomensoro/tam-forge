@@ -25,7 +25,7 @@ from .coaching.service import CoachingError
 from .evidence.routes import evidence_exception_handler
 from .evidence.routes import router as evidence_router
 from .evidence.service import EvidenceError
-from .interviews.routes import interviews_exception_handler
+from .interviews.routes import interviews_exception_handler, reference_router
 from .interviews.routes import router as interviews_router
 from .interviews.service import InterviewsError
 from .learning.routes import activity_exception_handler
@@ -69,6 +69,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(coaching_router)
     app.include_router(notes_router)
     app.include_router(interviews_router)
+    app.include_router(reference_router)
     app.include_router(classes_router)
     app.include_router(cards_router)
     app.include_router(progress_router)
