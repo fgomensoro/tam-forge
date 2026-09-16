@@ -247,13 +247,16 @@ final class RecordingCoordinator: ObservableObject {
     @Published private(set) var activityID: Int?
     /// The real interview the recording in flight (or the last one) was started for.
     @Published private(set) var interviewID: Int?
+    /// The English class the recording in flight (or the last one) was started for.
+    @Published private(set) var classID: Int?
     /// The most recently started recording, so a record can attach it after the fact.
     @Published private(set) var lastRecordingID: UUID?
 
-    func start(activityID: Int? = nil, interviewID: Int? = nil) async {
+    func start(activityID: Int? = nil, interviewID: Int? = nil, classID: Int? = nil) async {
         guard !phase.isActive else { return }
         self.activityID = activityID
         self.interviewID = interviewID
+        self.classID = classID
         await pauseUploadsForCapture()
         defer {
             if !phase.isActive { enqueueAllPendingUploads() }
@@ -280,7 +283,7 @@ final class RecordingCoordinator: ObservableObject {
             self.spool = spool
             createdSpool = true
             lastRecordingID = recordingID
-            let link = RecordingLink(activityID: activityID, interviewID: interviewID)
+            let link = RecordingLink(activityID: activityID, interviewID: interviewID, classID: classID)
             if !link.isEmpty, let activityLinkWriter {
                 try activityLinkWriter(recordingID, link)
             }

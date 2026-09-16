@@ -13,10 +13,10 @@ struct TAMForgeApp: App {
             let nativeFeatures: Set<NativeFeature> =
                 arguments.contains("-ui-test-signed-in")
                     && !arguments.contains("-ui-test-native-features")
-                ? [] : [.today, .roadmaps, .evidence, .recording, .interviews]
+                ? [] : [.today, .roadmaps, .evidence, .recording, .interviews, .classes]
         #else
             let nativeFeatures: Set<NativeFeature> = [
-                .today, .roadmaps, .evidence, .recording, .interviews,
+                .today, .roadmaps, .evidence, .recording, .interviews, .classes,
             ]
         #endif
         self.init(
@@ -169,6 +169,7 @@ private struct NativeFeatureServices {
     let recordings: any RecordingServerServicing
     let reviews: any ReviewAPI
     let interviews: any InterviewAPI
+    let classes: any EnglishClassAPI
 }
 
 @MainActor
@@ -241,7 +242,8 @@ private final class NativeShellComposition: ObservableObject {
             notes: LiveStudyNoteAPI(transport: transport),
             recordings: recordingServer,
             reviews: LiveReviewAPI(transport: transport),
-            interviews: LiveInterviewAPI(transport: transport, recordings: recordingServer)
+            interviews: LiveInterviewAPI(transport: transport, recordings: recordingServer),
+            classes: LiveEnglishClassAPI(transport: transport, recordings: recordingServer)
         )
         #if DEBUG
             let isUITest = ProcessInfo.processInfo.arguments.contains("-ui-test-signed-out")
@@ -346,6 +348,7 @@ private final class NativeWorkspaceState: ObservableObject {
     let roadmaps: RoadmapAdministrationModel
     let evidence: EvidenceLedgerModel
     let interviews: InterviewsModel
+    let classes: ClassesModel
     let drafts = InMemoryActivityDraftStore()
     let timerJournal: any ActivityTimerJournaling
 
@@ -363,6 +366,7 @@ private final class NativeWorkspaceState: ObservableObject {
         roadmaps = RoadmapAdministrationModel(service: services.roadmaps)
         evidence = EvidenceLedgerModel(service: services.evidence)
         interviews = InterviewsModel(api: services.interviews)
+        classes = ClassesModel(api: services.classes)
         #if DEBUG
             let arguments = ProcessInfo.processInfo.arguments
             if arguments.contains("-ui-test-signed-in") || arguments.contains("-ui-test-signed-out")
@@ -442,6 +446,14 @@ private struct NativeWorkspaceView: View {
                         Label("Interviews", systemImage: "person.2.wave.2")
                     }
                     .accessibilityIdentifier("interviewsNavigation")
+                }
+                if dependencies.nativeFeatures.contains(.classes) {
+                    Button {
+                        session.select(.classes)
+                    } label: {
+                        Label("English classes", systemImage: "character.book.closed")
+                    }
+                    .accessibilityIdentifier("classesNavigation")
                 }
             }
             .navigationTitle("TAM Forge")
@@ -529,6 +541,8 @@ private struct NativeWorkspaceView: View {
             RecordingView(coordinator: recording)
         case .interviews where dependencies.nativeFeatures.contains(.interviews):
             InterviewsView(model: state.interviews, coordinator: recording)
+        case .classes where dependencies.nativeFeatures.contains(.classes):
+            ClassesView(model: state.classes, coordinator: recording)
         case .evidence(let identifier) where dependencies.nativeFeatures.contains(.evidence):
             EvidenceLedgerView(
                 model: state.evidence,

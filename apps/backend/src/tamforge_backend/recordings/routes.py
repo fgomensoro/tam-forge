@@ -192,6 +192,25 @@ async def recordings_for_interview(
     return result
 
 
+@router.get(
+    "/by-class/{class_id}",
+    response_model=PendingRecordingPage,
+    responses=RECORDING_PENDING_RESPONSES,
+)
+async def recordings_for_class(
+    class_id: int,
+    response: Response,
+    owner: Annotated[AuthenticatedOwner, Depends(get_bearer_authenticated_owner)],
+    service: Annotated[RecordingService, Depends(get_recording_service)],
+) -> PendingRecordingPage:
+    """Every recording of one English class, oldest first."""
+    result = PendingRecordingPage(
+        items=await service.for_class(owner_id=owner.owner_id, class_id=class_id)
+    )
+    _prevent_storage(response)
+    return result
+
+
 @router.put(
     "/{recording_id}/tracks/{track_id}/parts/{sequence}",
     response_model=RecordingPartReceipt,
