@@ -81,14 +81,18 @@ def week_start_of(day: date) -> date:
     return day - timedelta(days=day.weekday())
 
 
-def due_week(now: datetime, timezone: str) -> date | None:
-    """The most recent week whose report is due: its Sunday reached 18:00 local time."""
+def due_week(now: datetime, timezone: str, *, study_start: date | None = None) -> date | None:
+    """The most recent week whose report is due: its Sunday reached 18:00 local time.
+
+    A week that ended before the learner's study started has nothing to report: None.
+    """
     local = now.astimezone(ZoneInfo(timezone))
     this_week = week_start_of(local.date())
     sunday_evening = datetime.combine(this_week + timedelta(days=6), time(DUE_HOUR), local.tzinfo)
-    if local >= sunday_evening:
-        return this_week
-    return this_week - timedelta(days=7)
+    week = this_week if local >= sunday_evening else this_week - timedelta(days=7)
+    if study_start is not None and week + timedelta(days=6) < study_start:
+        return None
+    return week
 
 
 def weekly_report_idempotency_key(*, owner_id: int, week_start: date) -> str:
@@ -116,17 +120,21 @@ class WeeklyReportQueue:
         moment = now or self._clock()
         try:
             learners = [
-                (int(owner), str(zone))
-                for owner, zone in (
+                (int(owner), str(zone), started)
+                for owner, zone, started in (
                     await self._session.execute(
-                        select(LearnerSetting.owner_id, LearnerSetting.timezone).limit(limit)
+                        select(
+                            LearnerSetting.owner_id,
+                            LearnerSetting.timezone,
+                            LearnerSetting.study_start_date,
+                        ).limit(limit)
                     )
                 ).all()
             ]
             await self._session.rollback()
             queued = 0
-            for owner_id, zone in learners:
-                week = due_week(moment, zone)
+            for owner_id, zone, started in learners:
+                week = due_week(moment, zone, study_start=started)
                 if week is None:
                     continue
                 if await self._enqueue(owner_id=owner_id, week_start=week):

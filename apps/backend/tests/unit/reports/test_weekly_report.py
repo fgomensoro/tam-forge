@@ -102,6 +102,13 @@ def test_the_due_week_turns_over_on_sunday_evening_local_time() -> None:
     assert week_start_of(date(2026, 9, 16)) == date(2026, 9, 14)
 
 
+def test_no_week_is_due_that_ended_before_the_study_started() -> None:
+    # Thursday 2026-09-17: the week of 2026-09-07 is due, and it ended on 2026-09-13.
+    now = datetime(2026, 9, 17, 12, tzinfo=UTC)
+    assert due_week(now, "UTC", study_start=date(2026, 9, 14)) is None
+    assert due_week(now, "UTC", study_start=date(2026, 9, 13)) == date(2026, 9, 7)
+
+
 def test_the_text_rendering_and_the_null_sender() -> None:
     import asyncio
 
