@@ -64,14 +64,18 @@ def previous_month(month_start: date) -> date:
     return (month_start - timedelta(days=1)).replace(day=1)
 
 
-def due_month(now: datetime, timezone: str) -> date:
-    """The most recent month whose report is due: its last day reached 18:00 local time."""
+def due_month(now: datetime, timezone: str, *, study_start: date | None = None) -> date | None:
+    """The most recent month whose report is due: its last day reached 18:00 local time.
+
+    A month that ended before the learner's study started has nothing to report: None.
+    """
     local = now.astimezone(ZoneInfo(timezone))
     this_month = month_start_of(local.date())
     last_evening = datetime.combine(month_end_of(this_month), time(DUE_HOUR), local.tzinfo)
-    if local >= last_evening:
-        return this_month
-    return previous_month(this_month)
+    month = this_month if local >= last_evening else previous_month(this_month)
+    if study_start is not None and month_end_of(month) < study_start:
+        return None
+    return month
 
 
 def monthly_report_idempotency_key(*, owner_id: int, month_start: date) -> str:
@@ -129,17 +133,24 @@ class MonthlyReportQueue:
         moment = now or self._clock()
         try:
             learners = [
-                (int(owner), str(zone))
-                for owner, zone in (
+                (int(owner), str(zone), started)
+                for owner, zone, started in (
                     await self._session.execute(
-                        select(LearnerSetting.owner_id, LearnerSetting.timezone).limit(limit)
+                        select(
+                            LearnerSetting.owner_id,
+                            LearnerSetting.timezone,
+                            LearnerSetting.study_start_date,
+                        ).limit(limit)
                     )
                 ).all()
             ]
             await self._session.rollback()
             queued = 0
-            for owner_id, zone in learners:
-                if await self._enqueue(owner_id=owner_id, month_start=due_month(moment, zone)):
+            for owner_id, zone, started in learners:
+                month = due_month(moment, zone, study_start=started)
+                if month is None:
+                    continue
+                if await self._enqueue(owner_id=owner_id, month_start=month):
                     queued += 1
             return queued
         except SQLAlchemyError:

@@ -136,6 +136,12 @@ def test_the_due_month_turns_over_on_the_last_evening_local_time() -> None:
     assert due_month(datetime(2026, 9, 16, 12, tzinfo=UTC), "UTC") == date(2026, 8, 1)
     assert due_month(datetime(2026, 9, 30, 18, tzinfo=UTC), "UTC") == date(2026, 9, 1)
     assert month_end_of(date(2026, 2, 1)) == date(2026, 2, 28)
+
+
+def test_no_month_is_due_that_ended_before_the_study_started() -> None:
+    now = datetime(2026, 9, 17, 12, tzinfo=UTC)  # August is due
+    assert due_month(now, "UTC", study_start=date(2026, 9, 1)) is None
+    assert due_month(now, "UTC", study_start=date(2026, 8, 31)) == date(2026, 8, 1)
     assert previous_month(date(2026, 1, 1)) == date(2025, 12, 1)
 
 
