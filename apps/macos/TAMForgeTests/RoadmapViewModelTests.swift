@@ -26,6 +26,10 @@ final class RoadmapViewModelTests: XCTestCase {
         await model.approve()
         XCTAssertEqual(model.version, failedMirror)
         XCTAssertEqual(model.version?.state, "approved")
+        XCTAssertEqual(
+            model.notice,
+            "Roadmap version \(failedMirror.versionKey) created. Activate Month 2 below to start using it."
+        )
         XCTAssertEqual(model.version?.mirrorStatus, "failed")
 
         await model.retryMirror()
@@ -33,6 +37,10 @@ final class RoadmapViewModelTests: XCTestCase {
         await model.activate()
         XCTAssertEqual(model.version, active)
         XCTAssertTrue(model.errorMessage == nil)
+        XCTAssertEqual(
+            model.notice,
+            "Month 2 is active. Today now follows version \(active.versionKey)."
+        )
     }
 
     func testStageRetryKeepsIdempotencyKeyAfterTransientFailure() async throws {

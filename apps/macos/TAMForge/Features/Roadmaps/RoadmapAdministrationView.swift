@@ -412,6 +412,18 @@ struct RoadmapAdministrationView: View {
     private func approvalGate(_ roadmapImport: RoadmapImport) -> some View {
         GroupBox("5. Approve, mirror, then activate") {
             VStack(alignment: .leading, spacing: 12) {
+                // The page-level error sits above the fold by the time the learner is down
+                // here, so the outcome of this block's buttons is repeated next to them.
+                if let notice = model.notice {
+                    Label(notice, systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .accessibilityIdentifier("roadmapNotice")
+                }
+                if let errorMessage = model.errorMessage {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                        .accessibilityIdentifier("roadmapApprovalError")
+                }
                 if let version = model.version {
                     versionGate(version)
                 } else {
