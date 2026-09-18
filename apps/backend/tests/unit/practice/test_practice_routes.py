@@ -7,11 +7,17 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi.testclient import TestClient
+from tamforge_backend.agents.roles.contracts import RoleContractError
+from tamforge_backend.agents.roles.interview_follow_up import (
+    FollowUpOutcome,
+    FollowUpRequest,
+    InterviewFollowUpUnavailable,
+)
 from tamforge_backend.auth.dependencies import get_authenticated_owner, require_csrf_owner
 from tamforge_backend.auth.schemas import AuthenticatedOwner
 from tamforge_backend.config import Settings
 from tamforge_backend.main import create_app
-from tamforge_backend.practice.routes import get_practice_service
+from tamforge_backend.practice.routes import get_follow_up_service, get_practice_service
 from tamforge_backend.practice.schemas import (
     PracticeAnswerCommand,
     PracticeAnswerPage,
@@ -142,3 +148,60 @@ def test_only_the_learners_turns_are_the_answer_and_the_key_follows_the_transcri
     assert learner_answer([]) == ""
     key = practice_review_idempotency_key(answer_id=4, transcript_sha256="ab" * 32)
     assert key == "claude-practice-a4-abababababababab"
+
+
+class StubFollowUps:
+    def __init__(self) -> None:
+        self.error: Exception | None = None
+        self.requests: list[FollowUpRequest] = []
+
+    async def decide(self, request: FollowUpRequest) -> FollowUpOutcome:
+        if self.error is not None:
+            raise self.error
+        self.requests.append(request)
+        return FollowUpOutcome(follow_up="What exactly was the ceiling?", reason="weak_point")
+
+
+FOLLOW_UP_BODY = {
+    "question": "Why are you leaving?",
+    "reference_answer": "Four anchors.",
+    "transcript": "I hit the ceiling of what I can learn there.",
+    "prior_follow_ups": ["Why now?"],
+}
+
+
+def test_a_follow_up_is_decided_in_the_request_and_failures_stay_closed() -> None:
+    client, _ = _client()
+    follow_ups = StubFollowUps()
+    overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
+    overrides[get_follow_up_service] = lambda: follow_ups
+    path = "/api/v1/practice-answers/follow-up"
+    with client:
+        asked = client.post(path, json=FOLLOW_UP_BODY)
+        bare = client.post(path, json={"question": "Why?", "transcript": "Because of scale."})
+        three = client.post(path, json={**FOLLOW_UP_BODY, "prior_follow_ups": ["a?", "b?", "c?"]})
+        unknown_field = client.post(path, json={**FOLLOW_UP_BODY, "recording_id": "x"})
+        follow_ups.error = RoleContractError("internal")
+        too_short = client.post(path, json=FOLLOW_UP_BODY)
+        follow_ups.error = InterviewFollowUpUnavailable("internal")
+        down = client.post(path, json=FOLLOW_UP_BODY)
+
+    assert asked.status_code == 200
+    assert asked.json() == {"follow_up": "What exactly was the ceiling?", "reason": "weak_point"}
+    assert asked.headers["cache-control"] == "no-store"
+    sent = follow_ups.requests[0]
+    assert sent.question == "Why are you leaving?" and sent.prior_follow_ups == ("Why now?",)
+    assert sent.answer_transcript == FOLLOW_UP_BODY["transcript"]
+    assert sent.reference_answer == "Four anchors."
+    assert bare.status_code == 200 and follow_ups.requests[1].prior_follow_ups == ()
+    assert three.status_code == 422 and unknown_field.status_code == 422
+    assert too_short.status_code == 422 and too_short.json()["code"] == "practice_invalid"
+    assert down.status_code == 503 and down.json()["code"] == "practice_unavailable"
+    assert "internal" not in too_short.text + down.text
+
+
+def test_with_claude_disabled_the_follow_up_is_a_503_and_the_app_moves_on() -> None:
+    client, _ = _client()
+    with client:
+        down = client.post("/api/v1/practice-answers/follow-up", json=FOLLOW_UP_BODY)
+    assert down.status_code == 503 and down.json()["code"] == "practice_unavailable"

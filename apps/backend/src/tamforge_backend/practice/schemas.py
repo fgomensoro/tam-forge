@@ -60,7 +60,27 @@ class PracticeAnswerPage(StrictModel):
     items: tuple[PracticeAnswerResponse, ...]
 
 
+class FollowUpCommand(StrictModel):
+    """The answer just given, transcribed on the Mac. The server never waits for its own
+    transcription: the learner is in front of the app."""
+
+    question: Annotated[str, Field(min_length=1, max_length=1000)]
+    reference_answer: Annotated[str, Field(default="", max_length=65536)]
+    transcript: Annotated[str, Field(min_length=1, max_length=40000)]
+    prior_follow_ups: Annotated[
+        tuple[Annotated[str, Field(min_length=1, max_length=240)], ...],
+        Field(default=(), max_length=2),
+    ]
+
+
+class FollowUpResponse(StrictModel):
+    follow_up: str | None
+    reason: Literal["weak_point", "pressure_probe"] | None
+
+
 __all__ = [
+    "FollowUpCommand",
+    "FollowUpResponse",
     "PracticeAnswerCommand",
     "PracticeAnswerPage",
     "PracticeAnswerResponse",

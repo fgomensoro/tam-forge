@@ -8,12 +8,24 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..agents.roles.contracts import RoleContractError
+from ..agents.roles.interview_follow_up import (
+    FollowUpRequest,
+    InterviewFollowUpService,
+    InterviewFollowUpUnavailable,
+)
 from ..agents.roles.practice_review import PracticeReviewService
 from ..auth.dependencies import get_authenticated_owner, require_csrf_owner
 from ..auth.schemas import AuthenticatedOwner, ProblemResponse
 from ..config import Settings
 from ..database import get_db_session
-from .schemas import PracticeAnswerCommand, PracticeAnswerPage, PracticeAnswerResponse
+from .schemas import (
+    FollowUpCommand,
+    FollowUpResponse,
+    PracticeAnswerCommand,
+    PracticeAnswerPage,
+    PracticeAnswerResponse,
+)
 from .service import (
     PracticeAnswerService,
     PracticeInvalid,
@@ -43,6 +55,14 @@ def get_practice_service(
     )
 
 
+def get_follow_up_service(request: Request) -> InterviewFollowUpService:
+    settings = cast(Settings, request.app.state.settings)
+    transport = getattr(request.app.state, "interview_follow_up_transport", None)
+    if not settings.claude_enabled:
+        transport = None
+    return InterviewFollowUpService(transport, model=settings.reviewer_model)
+
+
 @router.post("", response_model=PracticeAnswerResponse, status_code=202)
 async def submit_practice_answer(
     command: PracticeAnswerCommand,
@@ -55,6 +75,33 @@ async def submit_practice_answer(
     result = await service.submit(owner_id=owner.owner_id, command=command)
     _prevent_storage(response)
     return result
+
+
+@router.post("/follow-up", response_model=FollowUpResponse)
+async def request_follow_up(
+    command: FollowUpCommand,
+    response: Response,
+    service: Annotated[InterviewFollowUpService, Depends(get_follow_up_service)],
+    owner: Annotated[AuthenticatedOwner, Depends(require_csrf_owner)],
+) -> FollowUpResponse:
+    """Decide, inside the request, whether the interviewer follows up on this answer.
+    Nothing is stored. Any failure is a closed problem and the app moves on."""
+    del owner
+    try:
+        outcome = await service.decide(
+            FollowUpRequest(
+                question=command.question,
+                answer_transcript=command.transcript,
+                reference_answer=command.reference_answer,
+                prior_follow_ups=command.prior_follow_ups,
+            )
+        )
+    except InterviewFollowUpUnavailable as exc:
+        raise PracticeUnavailable(str(exc)) from None
+    except RoleContractError as exc:
+        raise PracticeInvalid(str(exc)) from None
+    _prevent_storage(response)
+    return FollowUpResponse(follow_up=outcome.follow_up, reason=outcome.reason)
 
 
 @router.get("", response_model=PracticeAnswerPage)
@@ -97,6 +144,7 @@ async def practice_exception_handler(request: Request, exc: Exception) -> JSONRe
 
 
 __all__ = [
+    "get_follow_up_service",
     "get_practice_service",
     "practice_exception_handler",
     "practice_problem_response",
