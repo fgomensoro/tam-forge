@@ -22,6 +22,54 @@ final class InterviewsModelTests: XCTestCase {
         XCTAssertEqual(model.references.count, 1)
     }
 
+    func testAPracticeAnswerIsRetriedUntilItsRecordingAndItsTranscriptReachTheServer() async {
+        let api = FakeInterviewAPI(records: [])
+        let model = InterviewsModel(api: api)
+        let entry = ReferenceEntry(
+            id: 5, kind: .answerBank, documentTitle: "bank", heading: "Q1. Why?", body: "Because.",
+            readinessLabel: "", readinessVerified: false
+        )
+        let answer = PracticeAnswer(question: PracticeQuestion(entry: entry, prompt: "Why?"), recordingID: UUID())
+
+        // Still uploading: the server does not know the recording, so the answer is kept.
+        await model.submitPracticeAnswer(answer)
+        XCTAssertEqual(model.unsentPracticeAnswers, [answer])
+        XCTAssertTrue(model.practiceReviews.isEmpty)
+        XCTAssertNotNil(model.errorMessage)
+
+        // Uploaded, not transcribed yet: stored and waiting.
+        api.uploadedRecordings = [answer.recordingID]
+        await model.refreshPracticeReviews()
+        XCTAssertTrue(model.unsentPracticeAnswers.isEmpty)
+        XCTAssertEqual(model.practiceReviews.map(\.status), ["awaiting_transcript"])
+        XCTAssertEqual(model.practiceReviews.first?.referenceMaterialID, 5)
+        XCTAssertNil(model.errorMessage)
+
+        // The transcript arrived: the refresh nudges the waiting answer and it queues.
+        api.transcribedRecordings = [answer.recordingID]
+        await model.refreshPracticeReviews()
+        XCTAssertEqual(model.practiceReviews.map(\.status), ["queued"])
+        XCTAssertEqual(model.practiceReviews.first?.statusLabel, "Review queued")
+    }
+
+    func testAPracticeReviewDecodesScoresSentAsStrings() throws {
+        let json = """
+        {"id": 4, "question": "Why?", "recording_id": "10F3D9DE-B6DD-48A4-8F01-BD570E17DE22",
+         "reference_material_id": null, "status": "ready", "failure_category": null, "model": "claude-fable-5-1",
+         "dimensions": [{"slug": "answer_clarity", "name": "Answer clarity and structure", "score": "3.0",
+                         "evidence": "I hit the ceiling", "note": "Direct."}],
+         "strengths": ["Opens with the number."],
+         "fixes": [{"heard": "at scale", "say_instead": "at real scale", "why": "Anchor."}],
+         "reference_coverage": "", "readiness": "drilling",
+         "created_at": "2026-09-18T00:00:00Z", "reviewed_at": "2026-09-18T00:05:00Z"}
+        """
+        let review = try NativeJSONCodec.decode(PracticeAnswerReview.self, from: Data(json.utf8))
+        XCTAssertEqual(review.dimensions.first?.score, Decimal(string: "3.0"))
+        XCTAssertEqual(review.fixes.first?.sayInstead, "at real scale")
+        XCTAssertEqual(review.statusLabel, "Reviewed · drilling")
+        XCTAssertNil(review.referenceMaterialID)
+    }
+
     func testAnEmptyReferenceDocumentIsRefusedBeforeTheNetwork() async {
         let api = FakeInterviewAPI(records: [])
         let model = InterviewsModel(api: api)
@@ -61,7 +109,7 @@ final class InterviewsModelTests: XCTestCase {
         """
         let model = InterviewsModel(api: api)
         await model.load()
-        XCTAssertEqual(api.calls, ["list", "timeline", "references"])
+        XCTAssertEqual(api.calls, ["list", "timeline", "references", "practice"])
         XCTAssertEqual(model.timeline.debriefed, 1)
         XCTAssertEqual(model.timeline.items[0].score("answer_clarity"), Decimal(string: "2.5"))
         XCTAssertNil(model.timeline.items[1].hiringProgression)
@@ -156,6 +204,30 @@ private final class FakeInterviewAPI: InterviewAPI {
         calls.append("list")
         if let failure { throw failure }
         return records
+    }
+
+    var practiceStore: [PracticeAnswerReview] = []
+    var uploadedRecordings: Set<UUID> = []
+    var transcribedRecordings: Set<UUID> = []
+
+    func practiceAnswers() async throws -> [PracticeAnswerReview] {
+        calls.append("practice")
+        if let failure { throw failure }
+        return practiceStore
+    }
+
+    func submitPracticeAnswer(question: String, recordingID: UUID, referenceID: Int?) async throws -> PracticeAnswerReview {
+        calls.append("submit:\(question)")
+        if let failure { throw failure }
+        guard uploadedRecordings.contains(recordingID) else { throw InterviewAPIError.notFound }
+        let status = transcribedRecordings.contains(recordingID) ? "queued" : "awaiting_transcript"
+        let review = PracticeAnswerReview(
+            id: 1, question: question, recordingID: recordingID, referenceMaterialID: referenceID, status: status,
+            failureCategory: nil, dimensions: [], strengths: [], fixes: [], referenceCoverage: "", readiness: nil,
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+        practiceStore = [review]
+        return review
     }
 
     var referenceEntries: [ReferenceEntry] = []

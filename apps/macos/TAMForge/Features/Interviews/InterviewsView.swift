@@ -32,6 +32,10 @@ struct InterviewsView: View {
         .padding()
         .task { await model.load() }
         .accessibilityIdentifier("interviewsScreen")
+        .onChange(of: coordinator.transcriptState) { _, state in
+            // A transcript just finished on this Mac: the answers waiting for it can queue.
+            if case .ready = state { Task { await model.refreshPracticeReviews() } }
+        }
         .fileImporter(
             isPresented: Binding(
                 get: { importingReferenceKind != nil },
@@ -55,7 +59,12 @@ struct InterviewsView: View {
                         .accessibilityIdentifier("practiceQuestion")
                     HStack {
                         if practice.isAnswering {
-                            Button("Stop, that is my answer") { Task { await practice.endAnswer() } }
+                            Button("Stop, that is my answer") {
+                                Task {
+                                    await practice.endAnswer()
+                                    if let answer = practice.answers.last { await model.submitPracticeAnswer(answer) }
+                                }
+                            }
                                 .accessibilityIdentifier("practiceEndAnswer")
                             Text("Recording. The interviewer will not interrupt.")
                                 .font(.caption).foregroundStyle(.secondary)
@@ -100,8 +109,61 @@ struct InterviewsView: View {
                     Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(Color.orange)
                         .accessibilityIdentifier("practiceMessage")
                 }
+                practiceReviews
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Each recorded answer and what the reviewer made of it.
+    @ViewBuilder
+    private var practiceReviews: some View {
+        if !model.practiceReviews.isEmpty || !model.unsentPracticeAnswers.isEmpty {
+            Divider()
+            HStack {
+                Text("Your practice answers").font(.headline)
+                Spacer()
+                Button("Refresh reviews") { Task { await model.refreshPracticeReviews() } }
+                    .disabled(model.isBusy)
+                    .accessibilityIdentifier("practiceRefresh")
+            }
+            if !model.unsentPracticeAnswers.isEmpty {
+                Text("\(model.unsentPracticeAnswers.count) answer\(model.unsentPracticeAnswers.count == 1 ? "" : "s") still uploading. Refresh in a moment.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(model.practiceReviews) { review in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(review.question).fontWeight(.medium)
+                        Spacer()
+                        Text(review.statusLabel).font(.caption).foregroundStyle(.secondary)
+                    }
+                    ForEach(review.dimensions) { dimension in
+                        HStack(alignment: .firstTextBaseline) {
+                            Text("\(dimension.name): \(NSDecimalNumber(decimal: dimension.score).stringValue) / 4")
+                                .font(.caption).monospacedDigit()
+                            Text("“\(dimension.evidence)” \(dimension.note)")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    ForEach(review.fixes) { fix in
+                        Text("Say “\(fix.sayInstead)” instead of “\(fix.heard)”. \(fix.why)")
+                            .font(.caption)
+                    }
+                    if !review.referenceCoverage.isEmpty {
+                        Text(review.referenceCoverage).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Button("Open transcript") { Task { await model.openTranscript(recordingID: review.recordingID) } }
+                        .buttonStyle(.link).font(.caption)
+                    if let analysis = model.analyses[review.recordingID] {
+                        ForEach(Array(analysis.turns.enumerated()), id: \.offset) { _, turn in
+                            Text("\(turn.speaker == "learner" ? "You" : "Interviewer"): \(turn.text)")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
+            }
         }
     }
 

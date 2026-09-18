@@ -11,6 +11,8 @@ protocol InterviewAPI {
     func timeline() async throws -> InterviewTimeline
     func references() async throws -> [ReferenceEntry]
     func importReference(kind: ReferenceKind, title: String, markdown: String) async throws -> ReferenceImportOutcome
+    func practiceAnswers() async throws -> [PracticeAnswerReview]
+    func submitPracticeAnswer(question: String, recordingID: UUID, referenceID: Int?) async throws -> PracticeAnswerReview
 }
 
 @MainActor
@@ -65,6 +67,18 @@ final class LiveInterviewAPI: InterviewAPI {
             withJSONObject: ["kind": kind.rawValue, "title": title, "markdown": markdown], options: [.sortedKeys]
         )
         return try await request(.post, path: "/api/v1/reference-material", body: body, as: ReferenceImportOutcome.self)
+    }
+
+    func practiceAnswers() async throws -> [PracticeAnswerReview] {
+        struct Page: Decodable { let items: [PracticeAnswerReview] }
+        return try await request(.get, path: "/api/v1/practice-answers", as: Page.self).items
+    }
+
+    func submitPracticeAnswer(question: String, recordingID: UUID, referenceID: Int?) async throws -> PracticeAnswerReview {
+        var payload: [String: Any] = ["question": question, "recording_id": recordingID.uuidString.lowercased()]
+        if let referenceID { payload["reference_material_id"] = referenceID }
+        let body = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+        return try await request(.post, path: "/api/v1/practice-answers", body: body, as: PracticeAnswerReview.self)
     }
 
     private func request<Value: Decodable & Sendable>(
