@@ -449,20 +449,15 @@ private struct NativeWorkspaceView: View {
                 // (task-10-brief.md, "What this plan does not cover"), so the fix stays
                 // here: let each route keep bounding and scrolling its own content inside
                 // the width-capped column below, exactly as it did under NavigationSplitView.
-                // The page padding the handoff specifies (32/36/40) is NOT applied here.
-                // Wrapping routeDetail in frames or generous padding breaks the measurement
-                // of whichever ScrollView the route owns: its scrollable range comes up short
-                // and the tail of the content becomes unreachable at any scroll position.
-                // Proven by bisection on 2026-09-18 — this minimal shape passes, and adding
-                // .frame(maxWidth: 1120) or .frame(maxWidth: .infinity) fails 3/3 with the
-                // Roadmaps approval checkbox outside the viewport (TAMForgeUITests:411),
-                // which a human cannot click either. Each screen applies its own page padding
-                // as stages 3-8 restyle it; that is where the handoff's 32/36/40 belongs.
-                VStack(alignment: .leading, spacing: Organic.Space.p12) {
-                    if let banner = session.banner { GlobalBannerView(banner: banner) }
+                VStack(alignment: .leading, spacing: Organic.Space.p24) {
+                    if let banner = session.banner { GlobalBannerView(banner: banner).organicCard(radius: Organic.Radius.r24) }
                     routeDetail
                 }
-                .padding(.leading, Organic.Space.p12)
+                .frame(maxWidth: 1120, alignment: .leading)
+                .padding(.horizontal, Organic.Space.p36)
+                .padding(.top, Organic.Space.p32)
+                .padding(.bottom, Organic.Space.p40)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .background(Organic.Color.bg)
         }
