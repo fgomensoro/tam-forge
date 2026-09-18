@@ -1494,7 +1494,7 @@ recording guard keeps working.
 - [ ] **Step 4: Re-confirm the three properties the sidebar reads**
 
 All three were verified on 2026-09-17: `CardsModel.remaining` (`queue.count`),
-`TodayModel.snapshot`, and `phase.isActive` on the recording phase, which
+`TodayViewModel.snapshot`, and `phase.isActive` on the recording phase, which
 `CardsModel.canRecord` already reads as `coordinator.map { !$0.phase.isActive }`.
 Re-run the checks in case `main` moved underneath this branch:
 
