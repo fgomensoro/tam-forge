@@ -4,12 +4,15 @@ import SwiftUI
 
 extension View {
     /// The handoff's card: a `surface` fill, a large radius and the lg shadow.
-    func organicCard(radius: CGFloat = Organic.Radius.card, padding: CGFloat = Organic.Space.p20, shadowed: Bool = true) -> some View {
+    func organicCard(radius: CGFloat = Organic.Radius.card, padding: CGFloat = Organic.Space.p20, shadowed: Bool = false) -> some View {
         let shadow = Organic.Shadow.large
         return self
             .padding(padding)
-            .background(Organic.Color.surface, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .shadow(color: shadowed ? shadow.color : .clear, radius: shadow.radius, x: shadow.x, y: shadow.y)
+            .background(
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(Organic.Color.surface)
+                    .shadow(color: shadowed ? shadow.color : .clear, radius: shadow.radius, x: shadow.x, y: shadow.y)
+            )
     }
 
     /// Focus ring: 2 pt accent, offset 2.
@@ -27,7 +30,7 @@ extension View {
 struct OrganicPrimaryButtonStyle: ButtonStyle {
     var size: CGFloat = 15
     var horizontalPadding: CGFloat = 22
-    var verticalPadding: CGFloat = 12
+    var verticalPadding: CGFloat = Organic.Space.p12
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -50,7 +53,7 @@ struct OrganicSecondaryButtonStyle: ButtonStyle {
         configuration.label
             .font(Organic.Font.figtree(.semibold, size: size))
             .foregroundStyle(Organic.Color.body)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Organic.Space.p16)
             .padding(.vertical, 9)
             .background(configuration.isPressed ? Organic.Color.fill08 : Organic.Color.fill04, in: Capsule(style: .continuous))
             .overlay(Capsule(style: .continuous).strokeBorder(Organic.Color.divider, lineWidth: 1))
@@ -82,7 +85,7 @@ struct OrganicTag: View {
         Text(text)
             .font(Organic.Font.figtree(.semibold, size: 11))
             .foregroundStyle(foreground)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Organic.Space.p8)
             .padding(.vertical, 3)
             .background(background, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
@@ -96,7 +99,7 @@ struct OrganicBadge: View {
         Text(text)
             .font(Organic.Font.figtree(.regular, size: 11))
             .foregroundStyle(Organic.Color.accent300)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Organic.Space.p8)
             .padding(.vertical, 1)
             .background(Organic.Color.accentOn, in: Capsule(style: .continuous))
     }
