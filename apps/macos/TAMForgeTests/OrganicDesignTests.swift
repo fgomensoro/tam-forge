@@ -55,6 +55,10 @@ final class OrganicDesignTests: XCTestCase {
 
     func testTabularFontGivesEveryDigitTheSameAdvance() {
         let font = Organic.Font.coreText(.semibold, size: 20, tabular: true)
+        XCTAssertEqual(
+            CTFontCopyPostScriptName(font) as String, Organic.Font.Weight.semibold.rawValue,
+            "tabular advances mean nothing if the font was substituted"
+        )
         let advances = Organic.Font.digitAdvances(in: font)
         XCTAssertEqual(advances.count, 10)
         for advance in advances {

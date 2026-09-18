@@ -65,8 +65,14 @@ extension Organic {
         private static let registerBundledFontsOnce: Void = {
             let bundle = Bundle(for: BundleToken.self)
             for weight in [Weight.regular, .semibold, .bold] {
-                guard let url = bundle.url(forResource: weight.rawValue, withExtension: "ttf") else { continue }
-                CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+                guard let url = bundle.url(forResource: weight.rawValue, withExtension: "ttf") else {
+                    assertionFailure("\(weight.rawValue).ttf is missing from the bundle")
+                    continue
+                }
+                var error: Unmanaged<CFError>?
+                if !CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error) {
+                    assertionFailure("failed to register \(weight.rawValue): \(error?.takeUnretainedValue().localizedDescription ?? "unknown error")")
+                }
             }
         }()
     }
