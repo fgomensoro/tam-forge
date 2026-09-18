@@ -243,6 +243,8 @@
 		D50000000000000000000020 /* TodayTaskStatusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000B /* TodayTaskStatusTests.swift */; };
 		D5000000000000000000001E /* TodayTaskStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000A /* TodayTaskStatus.swift */; };
 		D5000000000000000000001F /* TodayTaskStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000A /* TodayTaskStatus.swift */; };
+		D50000000000000000000032 /* OrganicSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000C /* OrganicSidebar.swift */; };
+		D50000000000000000000033 /* OrganicSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000C /* OrganicSidebar.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -417,6 +419,7 @@
 		FB5000000000000000001009 /* ProgressModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressModelTests.swift; sourceTree = "<group>"; };
 		D5000000000000000000000A /* TodayTaskStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayTaskStatus.swift; sourceTree = "<group>"; };
 		D5000000000000000000000B /* TodayTaskStatusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayTaskStatusTests.swift; sourceTree = "<group>"; };
+		D5000000000000000000000C /* OrganicSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganicSidebar.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -561,6 +564,7 @@
 			isa = PBXGroup;
 			children = (
 				D5000000000000000000000A /* TodayTaskStatus.swift */,
+				D5000000000000000000000C /* OrganicSidebar.swift */,
 			);
 			path = Shell;
 			sourceTree = "<group>";
@@ -1082,6 +1086,7 @@
 				D5000000000000000000001A /* OrganicComponents.swift in Sources */,
 				D5000000000000000000001C /* OrganicWindow.swift in Sources */,
 				D5000000000000000000001E /* TodayTaskStatus.swift in Sources */,
+				D50000000000000000000032 /* OrganicSidebar.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1215,6 +1220,7 @@
 				D5000000000000000000001D /* OrganicWindow.swift in Sources */,
 				D5000000000000000000001F /* TodayTaskStatus.swift in Sources */,
 				D50000000000000000000020 /* TodayTaskStatusTests.swift in Sources */,
+				D50000000000000000000033 /* OrganicSidebar.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
