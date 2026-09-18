@@ -64,7 +64,10 @@ def test_native_client_persists_refresh_credentials_only_as_device_keychain_item
     assert "kSecClassGenericPassword" in source
     assert "kSecAttrAccessibleWhenUnlockedThisDeviceOnly" in source
     assert "query[kSecUseDataProtectionKeychain as String] = true" in source
-    assert "status == errSecMissingEntitlement ? baseQuery" in source
+    # The standard keychain is only ever a fallback for the data-protection keychain: for a
+    # missing entitlement, and for a read or delete of an item the fallback wrote.
+    assert "status == errSecMissingEntitlement || status == errSecItemNotFound" in source
+    assert "? baseQuery(account: account)" in source
     assert "kSecAttrSynchronizable as String: false" in source
     assert "UserDefaults" not in source
     assert "write(to:" not in source
