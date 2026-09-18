@@ -11,6 +11,7 @@ from tamforge_backend.agents.roles.interview_follow_up import (
     INTERVIEW_FOLLOW_UP_PROMPT_VERSION,
     INTERVIEW_FOLLOW_UP_SCHEMA_ID,
     NO_FOLLOW_UP,
+    SHORT_ANSWER_FOLLOW_UP,
     FollowUpRequest,
     InterviewFollowUpService,
     InterviewFollowUpUnavailable,
@@ -98,7 +99,7 @@ def test_the_service_repairs_once_and_refuses_what_it_cannot_read() -> None:
     assert len(transport.requests) == 2 and transport.requests[1].repair_errors
 
     with pytest.raises(RoleContractError):
-        asyncio.run(service.decide(FollowUpRequest(question=QUESTION, answer_transcript="Yes.")))
+        asyncio.run(service.decide(FollowUpRequest(question=QUESTION, answer_transcript="...")))
     with pytest.raises(RoleContractError):
         asyncio.run(service.decide(FollowUpRequest(question="  ", answer_transcript=ANSWER)))
     with pytest.raises(InterviewFollowUpUnavailable):
@@ -135,3 +136,48 @@ def test_two_follow_ups_end_it_without_a_model_call_and_probes_obey_the_gate() -
         closed.decide(FollowUpRequest(question=SOLID_QUESTION, answer_transcript=SOLID_ANSWER))
     )
     assert dropped == NO_FOLLOW_UP
+
+
+SHORT_ANSWER = "It went fine."
+
+
+def test_a_short_answer_gets_the_fixed_follow_up_without_a_model_call() -> None:
+    idle = _Transport([])
+    outcome = asyncio.run(
+        InterviewFollowUpService(idle, model="m").decide(
+            FollowUpRequest(question=QUESTION, answer_transcript=SHORT_ANSWER)
+        )
+    )
+    assert outcome.follow_up == SHORT_ANSWER_FOLLOW_UP and outcome.reason == "weak_point"
+    assert idle.requests == []
+
+    already_asked = InterviewFollowUpService(_Transport([]), model="m")
+    repeated = asyncio.run(
+        already_asked.decide(
+            FollowUpRequest(
+                question=QUESTION,
+                answer_transcript=SHORT_ANSWER,
+                prior_follow_ups=(SHORT_ANSWER_FOLLOW_UP,),
+            )
+        )
+    )
+    assert repeated == NO_FOLLOW_UP
+
+    spent = InterviewFollowUpService(_Transport([]), model="m")
+    exhausted = asyncio.run(
+        spent.decide(
+            FollowUpRequest(
+                question=QUESTION,
+                answer_transcript=SHORT_ANSWER,
+                prior_follow_ups=("Why now?", "Why us?"),
+            )
+        )
+    )
+    assert exhausted == NO_FOLLOW_UP
+
+    with pytest.raises(InterviewFollowUpUnavailable):
+        asyncio.run(
+            InterviewFollowUpService(None, model="m").decide(
+                FollowUpRequest(question=QUESTION, answer_transcript=SHORT_ANSWER)
+            )
+        )

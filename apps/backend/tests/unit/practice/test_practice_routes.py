@@ -9,8 +9,10 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 from tamforge_backend.agents.roles.contracts import RoleContractError
 from tamforge_backend.agents.roles.interview_follow_up import (
+    SHORT_ANSWER_FOLLOW_UP,
     FollowUpOutcome,
     FollowUpRequest,
+    InterviewFollowUpService,
     InterviewFollowUpUnavailable,
 )
 from tamforge_backend.auth.dependencies import get_authenticated_owner, require_csrf_owner
@@ -184,7 +186,7 @@ def test_a_follow_up_is_decided_in_the_request_and_failures_stay_closed() -> Non
         three = client.post(path, json={**FOLLOW_UP_BODY, "prior_follow_ups": ["a?", "b?", "c?"]})
         unknown_field = client.post(path, json={**FOLLOW_UP_BODY, "recording_id": "x"})
         follow_ups.error = RoleContractError("internal")
-        too_short = client.post(path, json=FOLLOW_UP_BODY)
+        too_short = client.post(path, json={**FOLLOW_UP_BODY, "transcript": "..."})
         follow_ups.error = InterviewFollowUpUnavailable("internal")
         down = client.post(path, json=FOLLOW_UP_BODY)
 
@@ -200,6 +202,26 @@ def test_a_follow_up_is_decided_in_the_request_and_failures_stay_closed() -> Non
     assert too_short.status_code == 422 and too_short.json()["code"] == "practice_invalid"
     assert down.status_code == 503 and down.json()["code"] == "practice_unavailable"
     assert "internal" not in too_short.text + down.text
+
+
+class _UnusedTransport:
+    """A follow-up transport that must never be called."""
+
+    async def follow_up(self, request: FollowUpRequest) -> dict[str, object]:
+        raise AssertionError("the model must not be called for a short answer")
+
+
+def test_a_short_transcript_gets_the_fixed_follow_up_without_a_model_call() -> None:
+    client, _ = _client()
+    service = InterviewFollowUpService(_UnusedTransport(), model="m")
+    overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
+    overrides[get_follow_up_service] = lambda: service
+    path = "/api/v1/practice-answers/follow-up"
+    with client:
+        response = client.post(path, json={**FOLLOW_UP_BODY, "transcript": "It went fine."})
+    assert response.status_code == 200
+    assert response.json() == {"follow_up": SHORT_ANSWER_FOLLOW_UP, "reason": "weak_point"}
+    assert response.headers["cache-control"] == "no-store"
 
 
 def test_with_claude_disabled_the_follow_up_is_a_503_and_the_app_moves_on() -> None:

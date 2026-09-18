@@ -38,6 +38,9 @@ MAX_FOLLOW_UP_CHARS = 240
 MAX_FOLLOW_UP_WORDS = 30
 MINIMUM_ANSWER_WORDS = 8
 MAX_ANSWER_CHARS = 40_000
+# A real interviewer does not give up on a one-word answer; it asks the learner to say more,
+# without spending a model call on it.
+SHORT_ANSWER_FOLLOW_UP = "Can you expand on that?"
 # A solid answer is probed about one time in three, decided by the answer itself so the
 # same answer always gets the same treatment and the share stays a minority.
 PRESSURE_PROBE_ONE_IN = 3
@@ -172,7 +175,8 @@ class InterviewFollowUpService:
         """One bounded decision, or a contract error the caller renders as such."""
         if not request.question.strip():
             raise RoleContractError("the follow-up needs the question that was asked")
-        if len(_words(request.answer_transcript)) < MINIMUM_ANSWER_WORDS:
+        word_count = len(_words(request.answer_transcript))
+        if word_count == 0:
             raise RoleContractError("the answer is too short to follow up on")
         if len(request.answer_transcript) > MAX_ANSWER_CHARS:
             raise RoleContractError("the answer is longer than the interviewer may read")
@@ -182,6 +186,13 @@ class InterviewFollowUpService:
             raise InterviewFollowUpUnavailable(
                 "the follow-up needs Claude enabled on the server"
             )
+        if word_count < MINIMUM_ANSWER_WORDS:
+            # Too short to reason about; a real interviewer just asks for more, no model call.
+            if _normalize(SHORT_ANSWER_FOLLOW_UP) in {
+                _normalize(prior) for prior in request.prior_follow_ups
+            }:
+                return NO_FOLLOW_UP
+            return FollowUpOutcome(follow_up=SHORT_ANSWER_FOLLOW_UP, reason="weak_point")
         runtime = BoundedClaudeRuntime(
             _FollowUpRuntimeAdapter(self._transport, request),
             validate=lambda payload: validate_follow_up(
@@ -272,6 +283,7 @@ __all__ = [
     "INTERVIEW_FOLLOW_UP_SCHEMA_ID",
     "MAX_FOLLOW_UPS",
     "NO_FOLLOW_UP",
+    "SHORT_ANSWER_FOLLOW_UP",
     "FollowUpOutcome",
     "FollowUpRequest",
     "FollowUpTransport",
