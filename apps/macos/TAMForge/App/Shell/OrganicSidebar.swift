@@ -12,6 +12,8 @@ struct OrganicSidebar: View {
     let onSelect: (ShellRoute) -> Void
     let onSignOut: () -> Void
 
+    @State private var hoveredIdentifier: String?
+
     private struct Item {
         let feature: NativeFeature
         let route: ShellRoute
@@ -36,12 +38,15 @@ struct OrganicSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            brand.padding(.top, Organic.Window.trafficLightInset).padding(.horizontal, Organic.Space.p16)
+            brand
+                .padding(.top, Organic.Window.trafficLightInset)
+                .padding(.top, 6)
+                .padding(.horizontal, Organic.Space.p18)
+                .padding(.bottom, Organic.Space.p18)
             VStack(spacing: 2) {
                 ForEach(items, id: \.identifier) { row($0) }
             }
-            .padding(.top, Organic.Space.p24)
-            .padding(.horizontal, Organic.Space.p12)
+            .padding(.horizontal, 10)
             Spacer(minLength: 0)
             footer
         }
@@ -71,6 +76,7 @@ struct OrganicSidebar: View {
     /// Nav rows stay Buttons: TAMForgeUITests queries app.buttons["<id>Navigation"].
     private func row(_ item: Item) -> some View {
         let isSelected = isSelected(item.route)
+        let isHovered = hoveredIdentifier == item.identifier
         return Button {
             onSelect(item.route)
         } label: {
@@ -89,10 +95,11 @@ struct OrganicSidebar: View {
             .foregroundStyle(isSelected ? Organic.Color.accent300 : Organic.Color.body)
             .padding(.horizontal, Organic.Space.p12)
             .frame(height: 36)
-            .background(isSelected ? Organic.Color.accentOn : .clear, in: Capsule(style: .continuous))
+            .background(isSelected ? Organic.Color.accentOn : (isHovered ? Organic.Color.fill06 : .clear), in: Capsule(style: .continuous))
             .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
+        .onHover { hoveredIdentifier = $0 ? item.identifier : (hoveredIdentifier == item.identifier ? nil : hoveredIdentifier) }
         .accessibilityIdentifier(item.identifier)
     }
 
