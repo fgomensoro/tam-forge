@@ -31,6 +31,7 @@ from .class_analysis import CLASS_ANALYSIS_EVALUATOR_VERSION, run_class_analysis
 from .coach import COACH_EVALUATOR_VERSION, run_coach_cases
 from .debrief import DEBRIEF_EVALUATOR_VERSION, run_debrief_cases
 from .failure_injection import FAILURE_INJECTION_VERSION, run_failure_injection
+from .interview_follow_up import INTERVIEW_FOLLOW_UP_EVALUATOR_VERSION, run_follow_up_cases
 from .monthly_report import MONTHLY_REPORT_EVALUATOR_VERSION, run_monthly_report_cases
 from .practice_review import PRACTICE_REVIEW_EVALUATOR_VERSION, run_practice_review_cases
 from .reviewer import REVIEWER_EVALUATOR_VERSION, run_reviewer_cases
@@ -52,6 +53,7 @@ CLASS_ANALYSIS_REFUSALS: Final = 1.0
 WEEKLY_REPORT_REFUSALS: Final = 1.0
 MONTHLY_REPORT_REFUSALS: Final = 1.0
 PRACTICE_REVIEW_REFUSALS: Final = 1.0
+INTERVIEW_FOLLOW_UP_HELD: Final = 1.0
 UNSUPPORTED_HIGH_SEVERITY_MAX: Final = 0
 
 
@@ -179,6 +181,7 @@ async def run_suite(
     report_path = fixtures_dir / "weekly-report-refusal-cases.json"
     monthly_path = fixtures_dir / "monthly-report-refusal-cases.json"
     practice_path = fixtures_dir / "practice-review-refusal-cases.json"
+    follow_up_path = fixtures_dir / "interview-follow-up-cases.json"
     for path in (
         memory_path,
         security_path,
@@ -192,6 +195,7 @@ async def run_suite(
         report_path,
         monthly_path,
         practice_path,
+        follow_up_path,
     ):
         if not path.exists():
             raise SuiteError(f"fixture missing: {path.name}")
@@ -446,6 +450,20 @@ async def run_suite(
         )
     )
 
+    follow_ups = await run_follow_up_cases(follow_up_path)
+    follow_ups_held = follow_ups.held / len(follow_ups.outcomes) if follow_ups.outcomes else 0.0
+    parts.append(
+        PartResult(
+            "interview_follow_up",
+            "held",
+            round(follow_ups_held, 4),
+            INTERVIEW_FOLLOW_UP_HELD,
+            follow_ups.passed and follow_ups_held >= INTERVIEW_FOLLOW_UP_HELD,
+            f"{len(follow_ups.outcomes)} cases against {follow_ups.model}: one question about "
+            f"what was said, probes on {follow_ups.pressure_probe_share:.0%} of good answers",
+        )
+    )
+
     speech_models = yaml.safe_load((config_dir / "speech-models.yaml").read_text(encoding="utf-8"))
     transcription = speech_models["artifacts"]["transcription_model"]
     rubrics = yaml.safe_load((config_dir / "tam-rubrics.yaml").read_text(encoding="utf-8"))
@@ -465,6 +483,7 @@ async def run_suite(
                 report_path,
                 monthly_path,
                 practice_path,
+                follow_up_path,
             )
         },
         evaluator_versions={
@@ -479,6 +498,7 @@ async def run_suite(
             "weekly_report": WEEKLY_REPORT_EVALUATOR_VERSION,
             "monthly_report": MONTHLY_REPORT_EVALUATOR_VERSION,
             "practice_review": PRACTICE_REVIEW_EVALUATOR_VERSION,
+            "interview_follow_up": INTERVIEW_FOLLOW_UP_EVALUATOR_VERSION,
         },
         speech_model_filename=str(transcription["filename"]),
         speech_model_sha256=str(transcription["sha256"]),
