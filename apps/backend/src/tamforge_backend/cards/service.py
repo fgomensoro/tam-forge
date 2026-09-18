@@ -13,11 +13,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import transaction_scope
+from ..learning.models import LearnerSetting
 from ..models.base import utc_now
 from ..recordings.models import Recording
 from .importing import package_card_commands
 from .models import Card, CardReview
-from .scheduling import SM2_VERSION, CardState, new_card_state, schedule
+from .scheduling import SM2_VERSION, CardState, learner_local_date, new_card_state, schedule
 from .schemas import (
     CardCommand,
     CardImportResponse,
@@ -237,6 +238,9 @@ class CardService:
         if existing is not None:
             return existing, False
         now = self._clock()
+        timezone = await self._session.scalar(
+            select(LearnerSetting.timezone).where(LearnerSetting.owner_id == owner_id)
+        )
         card = Card(
             owner_id=owner_id,
             question=command.question.strip(),
@@ -248,7 +252,7 @@ class CardService:
             assistance=command.assistance,
             status="active",
             scheduler_version=SM2_VERSION,
-            **_state_columns(new_card_state(due_on=now.date())),
+            **_state_columns(new_card_state(due_on=learner_local_date(now, timezone))),
             created_at=now,
             updated_at=now,
         )

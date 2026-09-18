@@ -18,9 +18,10 @@ Rules (SuperMemo 2, Wozniak 1990, with the usual floor on the easiness factor):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Final
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 SM2_VERSION: Final = "sm2-v1"
 MINIMUM_EASINESS: Final = Decimal("1.30")
@@ -42,6 +43,17 @@ class ReviewOutcome:
     after: CardState
     grade: int
     successful: bool
+
+
+def learner_local_date(now: datetime, timezone: str | None) -> date:
+    """The calendar date the learner is living in. The app asks for due cards by local date,
+    so a card stamped with the server's UTC date can land on the learner's tomorrow."""
+    if timezone:
+        try:
+            return now.astimezone(ZoneInfo(timezone)).date()
+        except (ZoneInfoNotFoundError, ValueError):
+            pass
+    return now.astimezone(UTC).date()
 
 
 def new_card_state(*, due_on: date) -> CardState:

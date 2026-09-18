@@ -43,6 +43,19 @@ def test_cards_round_trip(test_database_url: str) -> None:
                     "VALUES (7, 'someone') RETURNING id"
                 )
             ).scalar_one()
+            west_id = connection.execute(
+                text(
+                    "INSERT INTO owners (github_user_id, github_login) "
+                    "VALUES (8, 'westcoast') RETURNING id"
+                )
+            ).scalar_one()
+            connection.execute(
+                text(
+                    "INSERT INTO learner_settings (owner_id, timezone, study_start_date) "
+                    "VALUES (:owner, 'America/Los_Angeles', '2026-09-01')"
+                ),
+                {"owner": west_id},
+            )
 
         async def exercise() -> None:
             async_url = make_url(test_database_url).set(drivername="postgresql+asyncpg")
@@ -62,6 +75,19 @@ def test_cards_round_trip(test_database_url: str) -> None:
                     created = await service.create(owner_id=owner_id, command=first)
                     assert created.due_on == date(2026, 9, 16)
                     assert created.scheduler_version == "sm2-v1"
+                # 03:00 UTC on the 18th is the evening of the 17th in Los Angeles: the card is
+                # due on the date the learner is living in, the one the app asks with.
+                async with factory() as session:
+                    late = CardService(
+                        session, clock=lambda: datetime(2026, 9, 18, 3, 0, tzinfo=UTC)
+                    )
+                    evening = await late.create(
+                        owner_id=west_id,
+                        command=first.model_copy(update={"source_ref": "note:west"}),
+                    )
+                    assert evening.due_on == date(2026, 9, 17)
+                    due_tonight = await late.due(owner_id=west_id, local_date=date(2026, 9, 17))
+                    assert [item.id for item in due_tonight.items] == [evening.id]
                     again = await service.create(
                         owner_id=owner_id,
                         command=first.model_copy(
