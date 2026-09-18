@@ -178,10 +178,12 @@ renders, and shipping them together keeps the two consistent.
   A model that outlives its route while still heartbeating could double-report
   focused time if `appear()`/`disappear()` are wired wrong. Stage 4 is
   test-driven against the heartbeat coordinator before the bar is drawn at all.
-- **Figtree has no tabular-figures guarantee across weights.** The design leans on
-  tabular numbers for clocks and scores. If the bundled weights do not deliver
-  them, the clock falls back to the system monospaced digit font, which is the
-  smaller loss.
+- ~~**Figtree has no tabular-figures guarantee.**~~ Resolved on 2026-09-17: the
+  static TTFs carry the OpenType `tnum` feature, confirmed with fontTools. The
+  design leans on tabular numbers for clocks and scores, and the token layer
+  applies `tnum` through CoreText rather than trusting `Font.monospacedDigit()`
+  to map onto a custom font's feature table. A unit test measures the digit
+  advances so a font swap cannot silently break it.
 - **Pixel-close is a claim that needs checking.** Each screen stage compares the
   built app against its section of `TAM Forge - Mac.dc.html` before it is called
   done, rather than against the written description alone.
