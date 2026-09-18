@@ -143,7 +143,16 @@ private struct NativeSessionView: View {
             }
         }
         .background(Organic.Color.bg)
-        .frame(minWidth: Organic.Window.minimumSize.width, minHeight: Organic.Window.minimumSize.height)
+        // The shell owns the whole window, title bar strip included: it clears the traffic
+        // lights itself with Organic.Window.trafficLightInset. Without .ignoresSafeArea the
+        // sidebar and toolbar start 32 pt down, leaving a band across the top of the window.
+        // Only .top, so the bottom inset below keeps holding the recording status bar out of
+        // the route's way.
+        .frame(
+            minWidth: Organic.Window.minimumSize.width,
+            minHeight: Organic.Window.minimumSize.height - Organic.Window.titleBarSafeArea
+        )
+        .ignoresSafeArea(edges: .top)
         .task {
             model.restoreRoute(from: restoredRouteID)
             await model.restore()
