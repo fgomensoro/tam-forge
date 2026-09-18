@@ -50,15 +50,18 @@ final class InterviewsModel: ObservableObject {
             for answer in self.unsentPracticeAnswers {
                 _ = try await self.api.submitPracticeAnswer(
                     question: answer.question.prompt, recordingID: answer.recordingID,
-                    referenceID: answer.question.entry.id
+                    referenceID: answer.question.entry.id,
+                    followUpQuestion: answer.followUpQuestion, parentRecordingID: answer.parentRecordingID
                 )
                 self.unsentPracticeAnswers.removeAll { $0 == answer }
             }
             let listed = try await self.api.practiceAnswers()
             for waiting in listed where waiting.isWaiting {
+                // A retry for a stored answer: the server ignores everything but the recording.
                 _ = try await self.api.submitPracticeAnswer(
                     question: waiting.question, recordingID: waiting.recordingID,
-                    referenceID: waiting.referenceMaterialID
+                    referenceID: waiting.referenceMaterialID,
+                    followUpQuestion: nil, parentRecordingID: nil
                 )
             }
             self.practiceReviews = listed.contains(where: \.isWaiting)
@@ -172,5 +175,18 @@ final class InterviewsModel: ObservableObject {
         } catch {
             errorMessage = InterviewAPIError.network.message
         }
+    }
+}
+
+/// The practice interviewer asks the server for its follow-ups through the same API. Errors
+/// are thrown to the caller and never shown: no follow-up is a normal way for a turn to end.
+extension InterviewsModel: PracticeFollowUpProviding {
+    func followUp(
+        question: String, referenceAnswer: String, transcript: String, priorFollowUps: [String]
+    ) async throws -> String? {
+        try await api.practiceFollowUp(
+            question: question, referenceAnswer: referenceAnswer,
+            transcript: transcript, priorFollowUps: priorFollowUps
+        )
     }
 }

@@ -177,6 +177,69 @@ final class InterviewsModelTests: XCTestCase {
         XCTAssertEqual(model.errorMessage, InterviewAPIError.conflict.message)
     }
 
+    func testAFollowUpAnswerIsSubmittedWithItsQuestionAndItsParentRecording() async {
+        let api = FakeInterviewAPI(records: [])
+        let model = InterviewsModel(api: api)
+        let entry = ReferenceEntry(
+            id: 5, kind: .answerBank, documentTitle: "bank", heading: "Q1. Why?", body: "Because.",
+            readinessLabel: "", readinessVerified: false
+        )
+        let question = PracticeQuestion(entry: entry, prompt: "Why?")
+        let first = PracticeAnswer(question: question, recordingID: UUID())
+        let second = PracticeAnswer(
+            question: question, recordingID: UUID(),
+            followUpQuestion: "What exactly was the ceiling?", parentRecordingID: first.recordingID
+        )
+        api.uploadedRecordings = [first.recordingID, second.recordingID]
+
+        await model.submitPracticeAnswer(first)
+        await model.submitPracticeAnswer(second)
+
+        XCTAssertTrue(model.unsentPracticeAnswers.isEmpty)
+        XCTAssertEqual(api.submissions.first, .init(recordingID: first.recordingID, followUpQuestion: nil, parentRecordingID: nil))
+        XCTAssertTrue(api.submissions.contains(.init(
+            recordingID: second.recordingID, followUpQuestion: "What exactly was the ceiling?",
+            parentRecordingID: first.recordingID
+        )))
+    }
+
+    func testTheFollowUpRequestGoesThroughTheAPIAndAnUnavailableRoleThrows() async throws {
+        let api = FakeInterviewAPI(records: [])
+        let model = InterviewsModel(api: api)
+        let provider: any PracticeFollowUpProviding = model
+
+        let asked = try await provider.followUp(
+            question: "Why?", referenceAnswer: "Because.", transcript: "I hit the ceiling there.",
+            priorFollowUps: ["Why now?"]
+        )
+        XCTAssertEqual(asked, "What exactly was the ceiling?")
+        XCTAssertEqual(api.calls.last, "followUp:Why?:1")
+
+        api.failure = .unavailable
+        do {
+            _ = try await provider.followUp(question: "Why?", referenceAnswer: "", transcript: "x", priorFollowUps: [])
+            XCTFail("an unavailable role must throw so the practice moves on")
+        } catch {
+            XCTAssertEqual(error as? InterviewAPIError, .unavailable)
+        }
+        XCTAssertNil(model.errorMessage)  // a missing follow-up is not an error on the screen
+    }
+
+    func testAReviewOfAFollowUpAnswerDecodesItsQuestionAndOldPayloadsStillDecode() throws {
+        let json = """
+        {"id": 5, "question": "Why?", "recording_id": "10F3D9DE-B6DD-48A4-8F01-BD570E17DE22",
+         "reference_material_id": null, "follow_up_of": 4, "follow_up_question": "What was the ceiling?",
+         "status": "ready", "failure_category": null, "model": "claude-fable-5-1",
+         "dimensions": [{"slug": "follow_up_handling", "name": "Follow-up handling: answers what was asked and adds to the first answer",
+                         "score": "3.0", "evidence": "renewed for two years", "note": "Answers what was asked."}],
+         "strengths": [], "fixes": [], "reference_coverage": "", "readiness": "drilling",
+         "created_at": "2026-09-18T00:00:00Z", "reviewed_at": "2026-09-18T00:05:00Z"}
+        """
+        let review = try NativeJSONCodec.decode(PracticeAnswerReview.self, from: Data(json.utf8))
+        XCTAssertEqual(review.followUpQuestion, "What was the ceiling?")
+        XCTAssertEqual(review.dimensions.first?.slug, "follow_up_handling")
+    }
+
     private func record(id: Int, company: String, recordings: [InterviewRecordingSummary] = []) -> InterviewRecord {
         InterviewRecord(
             id: id, company: company, role: "TAM", stage: "screen", startsAt: Date(timeIntervalSince1970: 100),
@@ -210,24 +273,48 @@ private final class FakeInterviewAPI: InterviewAPI {
     var uploadedRecordings: Set<UUID> = []
     var transcribedRecordings: Set<UUID> = []
 
+    struct Submission: Equatable {
+        let recordingID: UUID
+        let followUpQuestion: String?
+        let parentRecordingID: UUID?
+    }
+
+    private(set) var submissions: [Submission] = []
+    var followUpReply: String? = "What exactly was the ceiling?"
+
     func practiceAnswers() async throws -> [PracticeAnswerReview] {
         calls.append("practice")
         if let failure { throw failure }
         return practiceStore
     }
 
-    func submitPracticeAnswer(question: String, recordingID: UUID, referenceID: Int?) async throws -> PracticeAnswerReview {
+    func submitPracticeAnswer(
+        question: String, recordingID: UUID, referenceID: Int?,
+        followUpQuestion: String?, parentRecordingID: UUID?
+    ) async throws -> PracticeAnswerReview {
         calls.append("submit:\(question)")
         if let failure { throw failure }
         guard uploadedRecordings.contains(recordingID) else { throw InterviewAPIError.notFound }
+        submissions.append(Submission(
+            recordingID: recordingID, followUpQuestion: followUpQuestion, parentRecordingID: parentRecordingID
+        ))
         let status = transcribedRecordings.contains(recordingID) ? "queued" : "awaiting_transcript"
         let review = PracticeAnswerReview(
-            id: 1, question: question, recordingID: recordingID, referenceMaterialID: referenceID, status: status,
+            id: 1, question: question, recordingID: recordingID, referenceMaterialID: referenceID,
+            followUpQuestion: followUpQuestion, status: status,
             failureCategory: nil, dimensions: [], strengths: [], fixes: [], referenceCoverage: "", readiness: nil,
             createdAt: Date(timeIntervalSince1970: 0)
         )
         practiceStore = [review]
         return review
+    }
+
+    func practiceFollowUp(
+        question: String, referenceAnswer: String, transcript: String, priorFollowUps: [String]
+    ) async throws -> String? {
+        calls.append("followUp:\(question):\(priorFollowUps.count)")
+        if let failure { throw failure }
+        return followUpReply
     }
 
     var referenceEntries: [ReferenceEntry] = []
