@@ -1037,8 +1037,16 @@ handoff's prose.
 | A literal corner radius or padding number | `Organic.Radius.*`, `Organic.Space.*` |
 | A hand-rolled card, pill, tag or button background | the primitives below |
 
-A number that genuinely has no token (a one-off frame width the handoff
-specifies) is fine inline. A *color* never is.
+A number that genuinely has no token is fine inline — the handoff states a spacing
+scale of twelve rungs and a radius scale of ten, and values outside those, like the
+primary button's 22 pt horizontal padding or a one-off frame width, are meant to be
+literal. A **color** never is.
+
+Radius has no single "card" token on purpose: the handoff gives eight card sizes.
+Check the handoff for the surface you are building and pass that radius explicitly —
+`.organicCard(radius: Organic.Radius.r32)` for the Today hero card, `r36` for the
+Cards flashcard. Taking the default because it is there is how a card ships at the
+wrong size while looking like it followed the rules.
 
 ## The primitives
 
