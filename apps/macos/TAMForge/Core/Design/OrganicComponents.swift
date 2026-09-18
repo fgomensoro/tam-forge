@@ -24,7 +24,7 @@ extension View {
         overlay(
             RoundedRectangle(cornerRadius: radius, style: .continuous)
                 .strokeBorder(isFocused ? Organic.Color.accent : .clear, lineWidth: 2)
-                .padding(-2)
+                .padding(-4)
         )
     }
 }

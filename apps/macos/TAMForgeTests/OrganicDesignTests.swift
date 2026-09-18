@@ -11,6 +11,24 @@ final class OrganicDesignTests: XCTestCase {
         )
     }
 
+    /// Advance width of each digit 0-9, used by the tests to prove `tnum` applied. Shapes
+    /// each digit through `CTLine` rather than mapping characters to glyphs directly:
+    /// `CTFontGetGlyphsForCharacters` is a raw cmap lookup that never consults the font's
+    /// OpenType feature settings, so it cannot see `tnum` substitute a tabular glyph for
+    /// the default proportional one. Shaping is what actually applies GSUB features.
+    private func digitAdvances(in font: CTFont) -> [Double] {
+        "0123456789".map { digit -> Double in
+            guard let attributedString = CFAttributedStringCreate(
+                nil, String(digit) as CFString, [kCTFontAttributeName: font] as CFDictionary
+            ) else { return 0 }
+            let line = CTLineCreateWithAttributedString(attributedString)
+            guard let run = (CTLineGetGlyphRuns(line) as? [CTRun])?.first else { return 0 }
+            var advance = CGSize.zero
+            CTRunGetAdvances(run, CFRange(location: 0, length: 1), &advance)
+            return Double(advance.width)
+        }
+    }
+
     func testHexInitializerParsesSixDigitValues() {
         let parsed = components(Color(hex: "#c67139"))
         XCTAssertEqual(parsed.red, 198.0 / 255.0, accuracy: 0.001)
@@ -59,7 +77,7 @@ final class OrganicDesignTests: XCTestCase {
             CTFontCopyPostScriptName(font) as String, Organic.Font.Weight.semibold.rawValue,
             "tabular advances mean nothing if the font was substituted"
         )
-        let advances = Organic.Font.digitAdvances(in: font)
+        let advances = digitAdvances(in: font)
         XCTAssertEqual(advances.count, 10)
         for advance in advances {
             XCTAssertEqual(advance, advances[0], accuracy: 0.01, "digits are not tabular: \(advances)")
@@ -68,7 +86,7 @@ final class OrganicDesignTests: XCTestCase {
 
     func testProportionalFontDoesNotForceEqualAdvances() {
         let font = Organic.Font.coreText(.semibold, size: 20, tabular: false)
-        let advances = Organic.Font.digitAdvances(in: font)
+        let advances = digitAdvances(in: font)
         XCTAssertFalse(
             advances.allSatisfy { abs($0 - advances[0]) < 0.01 },
             "proportional digits unexpectedly all match, so the tabular test proves nothing"

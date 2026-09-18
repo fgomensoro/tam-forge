@@ -1,3 +1,4 @@
+import AppKit
 import Darwin
 import SwiftUI
 
@@ -26,7 +27,12 @@ struct TAMForgeApp: App {
             ))
     }
 
-    init(dependencies: AppDependencies) { self.dependencies = dependencies }
+    init(dependencies: AppDependencies) {
+        self.dependencies = dependencies
+        // Dark-only: the Organic palette has no light values. NSApp.appearance also
+        // covers AppKit panels (open/save) that .preferredColorScheme cannot reach.
+        NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+    }
 
     var body: some Scene {
         // One workspace owns the authenticated session and its private in-memory drafts.

@@ -40,10 +40,16 @@ enum Organic {
 
         // Accent (terracotta)
         static let accent = SwiftUI.Color(hex: "#c67139")
+        static let accent100 = SwiftUI.Color(hex: "#fff2eb")
+        static let accent200 = SwiftUI.Color(hex: "#ffe1d0")
         static let accent300 = SwiftUI.Color(hex: "#ffc6a5")
         static let accent400 = SwiftUI.Color(hex: "#f6a06b")
         static let accent500 = SwiftUI.Color(hex: "#d67f48")
-        static let accentOn = SwiftUI.Color(hex: "#c67139").opacity(0.26)
+        static let accent600 = SwiftUI.Color(hex: "#b2622d")
+        static let accent700 = SwiftUI.Color(hex: "#8c491a")
+        static let accent800 = SwiftUI.Color(hex: "#643312")
+        static let accent900 = SwiftUI.Color(hex: "#402310")
+        static let accentOn = accent.opacity(0.26)
 
         // Accent 2 (sage)
         static let accent2 = SwiftUI.Color(hex: "#7a8a5e")
@@ -71,7 +77,6 @@ enum Organic {
     /// where the design says 32.
     enum Radius {
         static let pill: CGFloat = 999
-        static let window: CGFloat = 14
         static let r20: CGFloat = 20
         static let r22: CGFloat = 22
         static let r24: CGFloat = 24
@@ -103,7 +108,5 @@ enum Organic {
         /// Handoff lg: `0 12px 32px rgba(46,43,37,.22)`. SwiftUI's radius is about
         /// half a CSS blur, so 32px blur becomes radius 16.
         static let large = (color: SwiftUI.Color(hex: "#2e2b25").opacity(0.22), radius: CGFloat(16), x: CGFloat(0), y: CGFloat(12))
-        /// Handoff window: `0 24px 64px rgba(0,0,0,.55)`. 64px blur becomes radius 32.
-        static let window = (color: SwiftUI.Color.black.opacity(0.55), radius: CGFloat(32), x: CGFloat(0), y: CGFloat(24))
     }
 }

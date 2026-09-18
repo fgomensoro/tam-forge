@@ -33,24 +33,6 @@ extension Organic {
             return CTFontCreateCopyWithAttributes(base, size, nil, descriptor)
         }
 
-        /// Advance width of each digit 0-9, used by the tests to prove `tnum` applied. Shapes
-        /// each digit through `CTLine` rather than mapping characters to glyphs directly:
-        /// `CTFontGetGlyphsForCharacters` is a raw cmap lookup that never consults the font's
-        /// OpenType feature settings, so it cannot see `tnum` substitute a tabular glyph for
-        /// the default proportional one. Shaping is what actually applies GSUB features.
-        static func digitAdvances(in font: CTFont) -> [Double] {
-            "0123456789".map { digit -> Double in
-                guard let attributedString = CFAttributedStringCreate(
-                    nil, String(digit) as CFString, [kCTFontAttributeName: font] as CFDictionary
-                ) else { return 0 }
-                let line = CTLineCreateWithAttributedString(attributedString)
-                guard let run = (CTLineGetGlyphRuns(line) as? [CTRun])?.first else { return 0 }
-                var advance = CGSize.zero
-                CTRunGetAdvances(run, CFRange(location: 0, length: 1), &advance)
-                return Double(advance.width)
-            }
-        }
-
         /// Registration is explicit on purpose; do not "fix" this by restoring
         /// `ATSApplicationFontsPath` in Info.plist. That key only registers fonts for a
         /// launched app's own main bundle, and TAMForgeTests is an unhosted logic-test
@@ -71,7 +53,7 @@ extension Organic {
                 }
                 var error: Unmanaged<CFError>?
                 if !CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error) {
-                    assertionFailure("failed to register \(weight.rawValue): \(error?.takeUnretainedValue().localizedDescription ?? "unknown error")")
+                    assertionFailure("failed to register \(weight.rawValue): \(error?.takeRetainedValue().localizedDescription ?? "unknown error")")
                 }
             }
         }()

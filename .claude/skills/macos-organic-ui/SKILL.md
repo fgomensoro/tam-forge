@@ -88,7 +88,9 @@ tests do not run, silently. Four edits per file:
 3. membership in the right `PBXGroup`
 4. membership in the build phases: app Sources `A10000000000000000000091`,
    unit-test Sources `A10000000000000000000092`, app Resources
-   `A10000000000000000000094`
+   `A10000000000000000000094`, and, when the test bundle needs the resource at
+   runtime too — as `openapi.yaml` and the Figtree fonts already do — unit-test
+   Resources `E200000000000000000000A2`
 
 Then, before building:
 
