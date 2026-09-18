@@ -71,23 +71,28 @@ enum Organic {
         static let card: CGFloat = 26
     }
 
+    /// The handoff's 12-rung spacing scale. Named by value, never by ordinal,
+    /// so `p16` cannot be misread as 16 rungs or as 4 pt.
     enum Space {
-        static let x1: CGFloat = 4
-        static let x2: CGFloat = 8
-        static let x3: CGFloat = 12
-        static let x4: CGFloat = 16
-        static let x5: CGFloat = 20
-        static let x6: CGFloat = 24
-        static let x7: CGFloat = 28
-        static let x8: CGFloat = 32
-        static let x9: CGFloat = 36
-        static let x10: CGFloat = 40
+        static let p4: CGFloat = 4
+        static let p8: CGFloat = 8
+        static let p12: CGFloat = 12
+        static let p14: CGFloat = 14
+        static let p16: CGFloat = 16
+        static let p18: CGFloat = 18
+        static let p20: CGFloat = 20
+        static let p24: CGFloat = 24
+        static let p28: CGFloat = 28
+        static let p32: CGFloat = 32
+        static let p36: CGFloat = 36
+        static let p40: CGFloat = 40
     }
 
     enum Shadow {
-        /// lg: 0 12px 32px rgba(46,43,37,.22)
+        /// Handoff lg: `0 12px 32px rgba(46,43,37,.22)`. SwiftUI's radius is about
+        /// half a CSS blur, so 32px blur becomes radius 16.
         static let large = (color: SwiftUI.Color(hex: "#2e2b25").opacity(0.22), radius: CGFloat(16), x: CGFloat(0), y: CGFloat(12))
-        /// window: 0 24px 64px rgba(0,0,0,.55)
+        /// Handoff window: `0 24px 64px rgba(0,0,0,.55)`. 64px blur becomes radius 32.
         static let window = (color: SwiftUI.Color.black.opacity(0.55), radius: CGFloat(32), x: CGFloat(0), y: CGFloat(24))
     }
 }
