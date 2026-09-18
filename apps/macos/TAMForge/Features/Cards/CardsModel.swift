@@ -17,15 +17,26 @@ final class CardsModel: ObservableObject {
     @Published var mode: Mode = .written
     @Published var draft = CardDraft.empty()
     @Published private(set) var spokenRecordingID: UUID?
+    /// Free practice: every card the learner owns, the topic chosen, and whether the queue
+    /// on screen is a practice round rather than the day's due cards.
+    @Published private(set) var library: [CardRecord] = []
+    @Published var practiceTopicID = PracticeTopic.allID
+    @Published private(set) var isPracticing = false
 
     private let api: any CardAPI
     private let coordinator: RecordingCoordinator?
     private let today: () -> String
+    private let shuffle: ([CardRecord]) -> [CardRecord]
 
-    init(api: any CardAPI, coordinator: RecordingCoordinator? = nil, today: @escaping () -> String = { CardsModel.localDate() }) {
+    init(
+        api: any CardAPI, coordinator: RecordingCoordinator? = nil,
+        today: @escaping () -> String = { CardsModel.localDate() },
+        shuffle: @escaping ([CardRecord]) -> [CardRecord] = { $0.shuffled() }
+    ) {
         self.api = api
         self.coordinator = coordinator
         self.today = today
+        self.shuffle = shuffle
     }
 
     static func localDate(now: Date = Date()) -> String {
@@ -52,6 +63,45 @@ final class CardsModel: ObservableObject {
             self.isRevealed = false
             self.spokenRecordingID = nil
         }
+    }
+
+    var practiceTopics: [PracticeTopic] { PracticeTopic.topics(for: library) }
+    var canPractice: Bool { !isBusy && !PracticeTopic.cards(for: practiceTopicID, in: library).isEmpty }
+
+    /// Every card the learner owns, for the topic picker. The due queue is untouched.
+    func loadLibrary() async {
+        await perform {
+            self.library = try await self.api.all().filter { $0.status == "active" }
+            if !self.practiceTopics.contains(where: { $0.id == self.practiceTopicID }) {
+                self.practiceTopicID = PracticeTopic.allID
+            }
+        }
+    }
+
+    /// A practice round: the chosen topic's cards, shuffled, whatever their due date. Each
+    /// grade is a real review, so a card answered well moves out and one answered badly
+    /// comes back sooner; practice and the daily queue stay one schedule.
+    func startPractice() async {
+        guard !isBusy else { return }
+        await perform {
+            self.library = try await self.api.all().filter { $0.status == "active" }
+            let cards = PracticeTopic.cards(for: self.practiceTopicID, in: self.library)
+            guard !cards.isEmpty else { return }
+            self.queue = self.shuffle(cards)
+            self.isPracticing = true
+            self.reviewedCount = 0
+            self.lastOutcome = nil
+            self.isRevealed = false
+            self.spokenRecordingID = nil
+        }
+    }
+
+    /// Back to the day's due cards.
+    func stopPractice() async {
+        isPracticing = false
+        reviewedCount = 0
+        lastOutcome = nil
+        await load()
     }
 
     func reveal() { isRevealed = true }

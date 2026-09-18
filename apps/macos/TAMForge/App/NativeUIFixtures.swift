@@ -120,6 +120,8 @@ private final class NativeUIFixtureState: @unchecked Sendable {
                 value = ["items": []]
             case "/api/v1/interviews/timeline":
                 value = ["items": [], "debriefed": 0, "dimension_trends": [], "recurring_gaps": []]
+            case "/api/v1/cards":
+                value = ["items": []]
             case "/api/v1/cards/due":
                 value = ["local_date": "2026-09-16", "items": []]
             case "/api/v1/progress":
