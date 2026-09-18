@@ -219,10 +219,21 @@ enum Organic {
         static let fill10 = text.opacity(0.10)
     }
 
+    /// The handoff's radius scale. Cards are named by value, not semantically,
+    /// because the handoff specifies eight card sizes (36/32/30/28/26/24/22/20).
+    /// There is no single "card radius", and a semantic name invites shipping 26
+    /// where the design says 32.
     enum Radius {
         static let pill: CGFloat = 999
         static let window: CGFloat = 14
-        static let card: CGFloat = 26
+        static let r20: CGFloat = 20
+        static let r22: CGFloat = 22
+        static let r24: CGFloat = 24
+        static let r26: CGFloat = 26
+        static let r28: CGFloat = 28
+        static let r30: CGFloat = 30
+        static let r32: CGFloat = 32
+        static let r36: CGFloat = 36
     }
 
     enum Space {
@@ -725,7 +736,7 @@ extension View {
     /// and the Cards flashcard); every other card specifies a radius and a fill only.
     /// It is applied to the fill shape, not chained after the background, so a card
     /// nested in another card does not re-blur the inner card's shadow into a halo.
-    func organicCard(radius: CGFloat = Organic.Radius.card, padding: CGFloat = Organic.Space.p20, shadowed: Bool = false) -> some View {
+    func organicCard(radius: CGFloat = Organic.Radius.r26, padding: CGFloat = Organic.Space.p20, shadowed: Bool = false) -> some View {
         let shadow = Organic.Shadow.large
         return self
             .padding(padding)
@@ -1651,7 +1662,7 @@ struct SignInView: View {
                 .font(Organic.Font.figtree(.regular, size: 14))
                 .foregroundStyle(Organic.Color.muted)
                 .accessibilityIdentifier("environmentLabel")
-            if let banner { GlobalBannerView(banner: banner).organicCard(radius: 24) }
+            if let banner { GlobalBannerView(banner: banner).organicCard(radius: Organic.Radius.r24) }
             Button {
                 onSignIn()
             } label: {
@@ -1781,7 +1792,7 @@ In `NativeWorkspaceView.body`, replace the entire `NavigationSplitView { ... } d
                 }
                 ScrollView {
                     VStack(alignment: .leading, spacing: Organic.Space.p24) {
-                        if let banner = session.banner { GlobalBannerView(banner: banner).organicCard(radius: 24) }
+                        if let banner = session.banner { GlobalBannerView(banner: banner).organicCard(radius: Organic.Radius.r24) }
                         routeDetail
                     }
                     .frame(maxWidth: 1120, alignment: .leading)
