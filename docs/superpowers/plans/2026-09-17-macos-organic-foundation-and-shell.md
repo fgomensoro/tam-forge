@@ -40,6 +40,8 @@ once the API it documents exists, so it ships in the same pull request.
 - **Known pbxproj IDs:** app Sources phase `A10000000000000000000091`; unit-test Sources phase `A10000000000000000000092`; app Resources phase `A10000000000000000000094`; `Core` group `A10000000000000000000048`; `TAMForgeTests` group `A10000000000000000000044`.
 - **The app is dark-only.** Tokens have no light values. The window pins `.preferredColorScheme(.dark)`.
 - **Window sizing:** 1280×820 default, 900×640 hard minimum. Layouts must survive being squeezed below the design width.
+- **Grep the live project file before minting a `D50…` ID.** The IDs written in this plan were allocated up front; a task that needs an ID the plan did not give must take one no one holds. Run `grep -o 'D50[0-9A-F]\{21\}' apps/macos/TAMForge.xcodeproj/project.pbxproj | sort -u` first. Task 2 minted `D50…0024`–`…0026` and the plan's later tasks were reassigned to `D50…0031`+ to clear the overlap.
+- **A plain `PBXGroup` does not create a subdirectory in the built bundle.** Discovered during Task 2 on 2026-09-17. Group nesting is source-tree organization only; Copy Bundle Resources flattens it. Only a folder reference (`lastKnownFileType = folder`) preserves directory structure. Do not write an `Info.plist` path, or any runtime path, that assumes a group's nesting survives the build.
 - **`-only-testing` on a class the project does not contain reports `TEST SUCCEEDED`.** Discovered during Task 1 on 2026-09-17. `xcodebuild` finds no matching test, runs zero tests, and exits zero. A red step that expects a failure from a not-yet-wired test file therefore gets a false green. Wire the test file into the project *before* the red run, so the failure is a genuine compile error, and never read `TEST SUCCEEDED` from an `-only-testing` run as evidence unless the output also shows a non-zero test count.
 - **Build and test command** (matches CI, which runs on `macos-26`):
   ```bash
@@ -427,12 +429,18 @@ Append to `apps/macos/TAMForgeTests/OrganicDesignTests.swift`, and add
 
 ```swift
     func testFigtreeWeightsAreRegisteredAndNotSubstituted() {
-        // CoreText silently substitutes a fallback when a font is missing, so assert
-        // on the resolved PostScript name rather than on the call succeeding.
-        for name in ["Figtree-Regular", "Figtree-SemiBold", "Figtree-Bold"] {
-            let font = CTFontCreateWithName(name as CFString, 16, nil)
+        // CoreText silently substitutes a fallback when a font is missing, so assert on
+        // the resolved PostScript name rather than on the call succeeding. Go through
+        // Organic.Font, not a bare CTFontCreateWithName: registration is explicit and
+        // happens inside that type, because TAMForgeTests is an unhosted logic-test
+        // bundle where ATSApplicationFontsPath is never read. See Step 4.
+        for weight in [Organic.Font.Weight.regular, .semibold, .bold] {
+            let font = Organic.Font.coreText(weight, size: 16, tabular: false)
             let resolved = CTFontCopyPostScriptName(font) as String
-            XCTAssertEqual(resolved, name, "\(name) was substituted, so it is not bundled or not registered")
+            XCTAssertEqual(
+                resolved, weight.rawValue,
+                "\(weight.rawValue) was substituted, so it is not bundled or not registered"
+            )
         }
     }
 
@@ -469,6 +477,29 @@ Create `apps/macos/TAMForge/Core/Design/OrganicFonts.swift`. Tabular figures com
 from the OpenType `tnum` feature, which Figtree ships (verified with fontTools on
 2026-09-17). Applying it through CoreText is deterministic, unlike relying on
 `Font.monospacedDigit()` to map onto a custom font's feature table.
+
+**The snippet below is the public API shape, and it is superseded in two places.**
+Task 2 found both empirically on 2026-09-17; the committed `OrganicFonts.swift` is
+authoritative. Any reimplementation must keep both fixes:
+
+1. **Explicit registration.** Nothing registers bundled fonts for this process on
+   its own (Step 5 explains why `ATSApplicationFontsPath` cannot). Without it,
+   every `Figtree-*` lookup silently resolves to Helvetica and no error is raised.
+   The file registers the three TTFs once with
+   `CTFontManagerRegisterFontsForURL(_:.process:_:)`, resolving their URLs from
+   `Bundle(for:)` on a private marker class so it finds whichever bundle the file
+   was compiled into — the app bundle in the app target, the `.xctest` bundle in
+   the test target. The once-guard is a `static let`, which Swift runs exactly
+   once and synchronously. Both `figtree(_:size:)` and `coreText(_:size:tabular:)`
+   trigger it, and `tabular(_:size:)` goes through `coreText`.
+2. **`digitAdvances` must shape the text, not look up glyphs.** The version below
+   uses `CTFontGetGlyphsForCharacters`, which is a raw `cmap` lookup and does not
+   run `GSUB` substitution — and `GSUB` substitution is exactly what `tnum` does.
+   Measured that way, a tabular request and a proportional one return identical
+   advances, so the test proves nothing. The committed version shapes each digit
+   through `CFAttributedStringCreate` + `CTLineCreateWithAttributedString` +
+   `CTRunGetAdvances`, which yields ten identical advances for the tabular font and
+   varying ones for the proportional font. Same signature, same call sites.
 
 ```swift
 import CoreText
@@ -517,18 +548,35 @@ extension Organic {
 }
 ```
 
-- [ ] **Step 5: Register the fonts in `Info.plist`**
+- [ ] **Step 5: Do not add `ATSApplicationFontsPath`**
 
-Add this key to `apps/macos/TAMForge/Info.plist`, inside the top-level `<dict>`:
+An earlier revision of this plan added `ATSApplicationFontsPath` to
+`apps/macos/TAMForge/Info.plist`. **Do not.** Task 2 proved on 2026-09-17 that it
+cannot carry this app's fonts, for two independent reasons:
 
-```xml
-	<key>ATSApplicationFontsPath</key>
-	<string>Fonts</string>
+1. The key resolves against `Resources/Fonts`, but a plain `PBXGroup` does not
+   produce a subdirectory — Copy Bundle Resources flattens the TTFs to
+   `Contents/Resources/*.ttf`, so the path names nothing.
+2. Even with the path corrected, the key is an application-bundle mechanism read
+   for a launched app's own main bundle. `TAMForgeTests` is an unhosted logic-test
+   bundle with no `TEST_HOST`, so `TAMForge.app` is never launched during
+   `xcodebuild test` and the key is never consulted. Verified by patching the key
+   and the fonts into the built `.xctest` bundle directly and re-signing: still
+   substituted.
+
+Explicit registration (Step 4) is therefore the single font mechanism, and it
+works identically in the app and in the test bundle. Two mechanisms where one
+works everywhere is the worse design even if both could be made to function.
+
+If `ATSApplicationFontsPath` is already in `Info.plist` from an earlier attempt,
+remove it, and confirm:
+
+```bash
+grep -c ATSApplicationFontsPath apps/macos/TAMForge/Info.plist
+plutil -lint apps/macos/TAMForge/Info.plist
 ```
 
-`ATSApplicationFontsPath` is relative to the bundle's `Resources` directory, so
-the value is `Fonts`, not a full path, and the copy step below must land the
-TTFs in `Resources/Fonts`.
+Expected: `0`, then `OK`.
 
 - [ ] **Step 6: Add the fonts and the source file to `project.pbxproj`**
 
@@ -584,9 +632,23 @@ Build phases: `D50000000000000000000014` into app Sources
 (`...16` through `...19`) into the app Resources phase
 `A10000000000000000000094`.
 
-The `Fonts` group's `path = Fonts` inside `Resources` is what puts the TTFs at
-`Resources/Fonts` in the built bundle, which is what `ATSApplicationFontsPath`
-expects.
+The `Fonts` group organizes the files in the project navigator. It does **not**
+create a `Resources/Fonts` directory in the built bundle: Copy Bundle Resources
+flattens group nesting, so the TTFs land at `Contents/Resources/*.ttf`. Nothing
+depends on their path, because Step 4 registers them by URL from the bundle.
+
+**The test bundle needs its own copies.** `Organic.Font` resolves font URLs from
+whichever bundle it was compiled into, and it compiles into both targets, so the
+TTFs must also be in the test target's resources phase
+`E200000000000000000000A2` — the same phase this project already uses to give
+`TAMForgeTests` its own `openapi.yaml` and `foundation-journey-v1.json`, for
+exactly this reason. Three more build files, reusing the file references above:
+
+```
+		D50000000000000000000024 /* Figtree-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000004 /* Figtree-Regular.ttf */; };
+		D50000000000000000000025 /* Figtree-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000005 /* Figtree-SemiBold.ttf */; };
+		D50000000000000000000026 /* Figtree-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000006 /* Figtree-Bold.ttf */; };
+```
 
 - [ ] **Step 7: Lint the project file**
 
@@ -602,10 +664,28 @@ Expected: `OK`.
 xcodebuild -jobs 2 -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination 'platform=macOS' test -only-testing:TAMForgeTests/OrganicDesignTests
 ```
 
-Expected: 8 tests pass. If `testFigtreeWeightsAreRegisteredAndNotSubstituted`
-fails, the fonts are in the bundle but not registered: confirm the built app has
-`Contents/Resources/Fonts/Figtree-Regular.ttf` with
-`find ~/Library/Developer/Xcode/DerivedData -name 'Figtree-Regular.ttf' -path '*TAMForge.app*'`.
+Expected: `Executed 8 tests, with 0 failures`. Read the count, not just the
+`TEST SUCCEEDED` line.
+
+If `testFigtreeWeightsAreRegisteredAndNotSubstituted` fails, the TTFs are not
+reaching the bundle the test runs in. Check both bundles, flat, not under a
+`Fonts/` subdirectory:
+
+```bash
+find ~/Library/Developer/Xcode/DerivedData -name 'Figtree-Regular.ttf' \( -path '*TAMForge.app*' -o -path '*TAMForgeTests.xctest*' \)
+```
+
+Expected: one hit in each. A miss in the `.xctest` bundle means the three build
+files in `E200000000000000000000A2` are absent.
+
+Then run the whole unit-test target once, because this task adds files to a
+resources phase ~30 other test files share:
+
+```bash
+xcodebuild -jobs 2 -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination 'platform=macOS' test -only-testing:TAMForgeTests
+```
+
+Expected: no failures, and a test count in the hundreds rather than 8.
 
 - [ ] **Step 9: Commit**
 
@@ -1219,7 +1299,7 @@ enum TodayTaskStatus: Equatable {
 Create the `Shell` group under the existing `App` group:
 
 ```
-		D50000000000000000000024 /* Shell */ = {
+		D50000000000000000000031 /* Shell */ = {
 			isa = PBXGroup;
 			children = (
 				D5000000000000000000000A /* TodayTaskStatus.swift */,
@@ -1229,7 +1309,7 @@ Create the `Shell` group under the existing `App` group:
 		};
 ```
 
-Add `D50000000000000000000024` to the `App` group's children,
+Add `D50000000000000000000031` to the `App` group's children,
 `D5000000000000000000000B` to the `TAMForgeTests` group
 `A10000000000000000000044`, `D5000000000000000000001E` to app Sources
 `A10000000000000000000091`, and both `D5000000000000000000001F` and
@@ -1460,13 +1540,13 @@ is gone. Leave the view's own definition in place; nothing else needs deleting.
 
 ```
 		D5000000000000000000000C /* OrganicSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganicSidebar.swift; sourceTree = "<group>"; };
-		D50000000000000000000025 /* OrganicSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000C /* OrganicSidebar.swift */; };
-		D50000000000000000000026 /* OrganicSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000C /* OrganicSidebar.swift */; };
+		D50000000000000000000032 /* OrganicSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000C /* OrganicSidebar.swift */; };
+		D50000000000000000000033 /* OrganicSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000C /* OrganicSidebar.swift */; };
 ```
 
-Add `D5000000000000000000000C` to the `Shell` group `D50000000000000000000024`,
-`D50000000000000000000025` to app Sources `A10000000000000000000091`,
-`D50000000000000000000026` to unit-test Sources `A10000000000000000000092`.
+Add `D5000000000000000000000C` to the `Shell` group `D50000000000000000000031`,
+`D50000000000000000000032` to app Sources `A10000000000000000000091`,
+`D50000000000000000000033` to unit-test Sources `A10000000000000000000092`.
 
 - [ ] **Step 4: Build**
 
@@ -1611,16 +1691,16 @@ button is unchanged from the handoff, and the button keeps `signInButton`.
 ```
 		D5000000000000000000000D /* OrganicToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganicToolbar.swift; sourceTree = "<group>"; };
 		D5000000000000000000000E /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
-		D50000000000000000000027 /* OrganicToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000D /* OrganicToolbar.swift */; };
-		D50000000000000000000028 /* OrganicToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000D /* OrganicToolbar.swift */; };
-		D50000000000000000000029 /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000E /* SignInView.swift */; };
-		D5000000000000000000002A /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000E /* SignInView.swift */; };
+		D50000000000000000000034 /* OrganicToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000D /* OrganicToolbar.swift */; };
+		D50000000000000000000035 /* OrganicToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000D /* OrganicToolbar.swift */; };
+		D50000000000000000000036 /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000E /* SignInView.swift */; };
+		D50000000000000000000037 /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000E /* SignInView.swift */; };
 ```
 
-Add both file references to the `Shell` group `D50000000000000000000024`;
-`D50000000000000000000027` and `D50000000000000000000029` to app Sources
-`A10000000000000000000091`; `D50000000000000000000028` and
-`D5000000000000000000002A` to unit-test Sources `A10000000000000000000092`.
+Add both file references to the `Shell` group `D50000000000000000000031`;
+`D50000000000000000000034` and `D50000000000000000000036` to app Sources
+`A10000000000000000000091`; `D50000000000000000000035` and
+`D50000000000000000000037` to unit-test Sources `A10000000000000000000092`.
 
 - [ ] **Step 4: Build**
 
