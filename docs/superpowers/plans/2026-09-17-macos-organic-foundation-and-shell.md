@@ -1154,14 +1154,16 @@ git commit -m "docs(macos): add the Organic UI skill so new views inherit the de
 
 ### Task 5: Stage 1 gate
 
-- [ ] **Step 1: Confirm the full suite is green**
+- [ ] **Step 1: Confirm the unit suite is green**
 
 ```bash
-xcodebuild -jobs 2 -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination 'platform=macOS' test 2>&1 | tail -20
+xcodebuild -jobs 2 -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination 'platform=macOS' -only-testing:TAMForgeTests test 2>&1 | tail -20
 ```
 
-Expected: `TEST SUCCEEDED`. Paste the real tail into the pull request; do not
-claim green without it.
+Expected: `TEST SUCCEEDED` with a non-zero test count. Paste the real tail into the
+pull request; do not claim green without it. `TAMForgeUITests` is in this scheme and
+takes over the cursor and keyboard of the desktop session that runs it, so it runs
+in the `native-ui` CI job, not here.
 
 - [ ] **Step 2: Confirm the UI tests were not edited**
 
@@ -1897,26 +1899,56 @@ git commit -m "feat(macos): rebuild the shell on the Organic sidebar and toolbar
 
 ### Task 10: Stage 2 gate
 
-- [ ] **Step 1: Look at the app**
+- [ ] **Step 1: Write down the handoff's numbers before the app is launched**
+
+Section 1a of `docs/design/macos-organic/TAM Forge - Mac.dc.html` states the shell's
+geometry as literal pixels in inline styles. Added down each axis, in window-local
+points:
+
+| element, as the accessibility tree exposes it | expected | where the handoff gives it |
+|---|---|---|
+| "TAM Forge" static text | x 58, y 62 | the 52 pt traffic-light strip plus the brand row's `padding:6px 18px 18px` puts the 30 pt tile at 58, and the 22 pt text centres in it; x is 18 pt padding + 30 pt tile + 10 pt gap |
+| first nav row button | x 10, y 106, 212×36 | the brand row is 6 + 30 + 18 tall; nav container `padding:0 10px`; rows `height:36px` |
+| nav row pitch | 38 | `height:36px` rows with `gap:2px` |
+| eighth nav row button | y 372 | 106 + 7 × 38 |
+| sidebar width | 232 | `width:232px`, and 212 + 2 × 10 from the rows |
+| breadcrumb static text | y 18 | 15 pt text centred in the 52 pt toolbar |
+| window floor | 900 × 640 | "current min 900×640 stays as hard minimum" |
+
+The brand tile, the toolbar bar and the nav pill backgrounds are decorative: they
+have no element in the accessibility tree, which is why the table measures the text
+and the buttons inside them. Selected-row tint, badge placement and the toolbar
+hairline are color and texture, not geometry; those stay an eye comparison against
+the same section.
+
+- [ ] **Step 2: Measure the running shell against that table**
+
+Follow "Measuring against the handoff" in
+`.claude/skills/macos-organic-ui/SKILL.md`: build, launch the Debug binary with
+`-ui-test-signed-in -ui-test-native-features`, and read window-local positions out
+of System Events. Every number above matches, or the stage is not done.
+
+**If every number is off by the same amount, that is the defect this step exists to
+catch.** The eye reads a uniform offset as correct spacing. Stage 2 originally
+shipped with the whole shell 32 pt low — brand text at 94, first nav row at 138,
+breadcrumb at 50 — through a step that said "check the row pill geometry" and
+passed. It was fixed afterwards, in `fix(macos): draw the Organic shell flush with
+the window top`.
+
+- [ ] **Step 3: Read the window floor back**
 
 ```bash
-xcodebuild -jobs 2 -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination 'platform=macOS' build
-open "$(xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -showBuildSettings 2>/dev/null | awk -F' = ' '/ BUILT_PRODUCTS_DIR/{print $2}' | head -1)/TAM Forge.app"
+osascript -e 'tell application "System Events" to tell process "TAMForge" to set size of window 1 to {900, 640}' \
+          -e 'tell application "System Events" to tell process "TAMForge" to get size of window 1'
 ```
 
-Compare the running shell against section 1 of
-`docs/design/macos-organic/TAM Forge - Mac.dc.html`, opened in a browser. Check
-the sidebar width, the row pill geometry, the selected-row tint, the badge
-placement, the footer, the toolbar hairline and the traffic-light clearance. The
-written description is not the check; the reference file is.
+Expected: `900, 640`. The request is clamped, not refused, so a window that cannot
+reach the floor answers with the floor it has, and a resize that looks like it
+worked is exactly what a wrong floor looks like — stage 2 answered `900, 672`. Then
+re-run step 2's measurement at that size and confirm the sidebar, toolbar and
+content column lay out inside it without clipping or horizontal scrolling.
 
-- [ ] **Step 2: Check the hard minimum**
-
-Resize the window to 900×640 and confirm the sidebar, toolbar and content column
-still lay out without clipping or horizontal scrolling. The handoff keeps 900×640
-as the hard floor, so a layout that only works at 1280 is not done.
-
-- [ ] **Step 3: Confirm the UI tests were not edited**
+- [ ] **Step 4: Confirm the UI tests were not edited**
 
 ```bash
 git diff --stat origin/main -- apps/macos/TAMForgeUITests/
@@ -1924,13 +1956,19 @@ git diff --stat origin/main -- apps/macos/TAMForgeUITests/
 
 Expected: empty output.
 
-- [ ] **Step 4: Confirm the full suite is green and paste the evidence**
+- [ ] **Step 5: Confirm the unit suite is green and paste the evidence**
 
 ```bash
-xcodebuild -jobs 2 -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination 'platform=macOS' test 2>&1 | tail -20
+xcodebuild -jobs 2 -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination 'platform=macOS' -only-testing:TAMForgeTests test 2>&1 | tail -20
 ```
 
-- [ ] **Step 5: Open the pull request**
+`-only-testing:TAMForgeTests` is not optional. The `TAMForge` scheme contains
+`TAMForgeUITests`, and XCUITest on macOS drives the app with real HID events: a bare
+`test` owns the cursor and the keyboard of whatever desktop session is running it.
+The UI suite's green comes from the `native-ui` job on the pull request, read after
+step 6.
+
+- [ ] **Step 6: Open the pull request**
 
 ```bash
 gh pr create --base main --title "Organic redesign stage 2: the shell" \

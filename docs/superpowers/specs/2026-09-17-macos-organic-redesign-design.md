@@ -151,6 +151,32 @@ Every stage ends with the full UI test suite green with no edits to
 identifier may move to a different view; it may not be renamed or dropped. A stage
 that cannot hold this line stops and reports rather than editing the test to match.
 
+## The geometry gate
+
+Every stage ends by measuring the built app against its section of
+`TAM Forge - Mac.dc.html`, in window-local points, against numbers written down
+before the app is launched. Putting the two side by side and judging them close is
+not that check. The first stage gated that way shipped two defects through it: the
+whole shell sat 32 pt low (brand mark at 89 against the handoff's 58, first nav row
+at 138 against 106, toolbar at 31 against 0), and the window stopped at 900×672
+instead of its stated 900×640 floor. A uniform offset applied to every element at
+once reads as correct spacing, and a resize request that gets clamped looks exactly
+like one that succeeded unless the size is read back.
+
+So the plan for each stage carries a measured step with its own expected table: the
+handful of elements the accessibility tree exposes for that screen, the number the
+handoff's inline pixels give for each, and the window floor read back after the
+resize rather than assumed from the request. The procedure — launching the Debug
+binary already signed in, the System Events query that answers, the traps around it —
+is in `.claude/skills/macos-organic-ui/SKILL.md` under "Measuring against the
+handoff". Task 10 of
+`docs/superpowers/plans/2026-09-17-macos-organic-foundation-and-shell.md` is the
+worked example to copy from.
+
+Color, weight and texture are not in the accessibility tree and stay an eye
+comparison against the handoff. Geometry is the part that can be counted, so it gets
+counted.
+
 ## Staging
 
 | Stage | Scope | Visible change |
@@ -184,6 +210,7 @@ renders, and shipping them together keeps the two consistent.
   applies `tnum` through CoreText rather than trusting `Font.monospacedDigit()`
   to map onto a custom font's feature table. A unit test measures the digit
   advances so a font swap cannot silently break it.
-- **Pixel-close is a claim that needs checking.** Each screen stage compares the
+- **Pixel-close is a claim that needs checking.** Each screen stage measures the
   built app against its section of `TAM Forge - Mac.dc.html` before it is called
-  done, rather than against the written description alone.
+  done, rather than against the written description, or against the reference by
+  eye. See "The geometry gate".

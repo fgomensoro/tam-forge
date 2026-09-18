@@ -12,8 +12,10 @@ sage accents, Figtree type, pill and over-rounded geometry. It is dark-only.
 
 `docs/design/macos-organic/README.md` is final for colors, type, spacing, radii
 and copy. `docs/design/macos-organic/TAM Forge - Mac.dc.html` is the interactive
-reference for all nine routes; open it in a browser and compare against it rather
-than against a written description. Neither file is code to port.
+reference for all nine routes, and its inline styles are where the geometry numbers
+come from. Compare against it rather than against a written description, and for
+anything with a position or a size compare measured numbers rather than an
+impression: see "Measuring against the handoff" below. Neither file is code to port.
 
 The full color ramp is transcribed into `OrganicTokens.swift`, including rungs the
 handoff's token list does not spell out. Take values from there, not from the
@@ -123,6 +125,87 @@ plutil -lint apps/macos/TAMForge.xcodeproj/project.pbxproj
 
 A malformed project file produces a confusing `xcodebuild` error; the lint says
 what is wrong.
+
+## Measuring against the handoff
+
+The eye does not see a uniform offset. Stage 2 shipped the whole shell 32 pt low —
+brand mark at 89 against the handoff's 58, first nav row at 138 against 106 — and a
+gate step that said "check the row pill geometry" passed it, because every element
+was wrong by the same amount and the spacing between them looked right. Compare
+numbers, not impressions.
+
+**The expected numbers come from the handoff's markup.** `TAM Forge - Mac.dc.html`
+states geometry as literal pixels in inline styles: the sidebar is `width:232px`,
+the traffic-light strip `height:52px`, the brand row `padding:6px 18px 18px` around
+a 30 pt tile, the nav container `padding:0 10px` with `gap:2px` around `height:36px`
+rows. Add them down the axis before launching anything — the tile at 52 + 6 = 58,
+the first nav row at 58 + 30 + 18 = 106, every next row 38 lower — so the check has
+a number it can fail against.
+
+**The measured numbers come from the accessibility tree.** Launch the Debug binary
+directly with the flags that skip sign-in, then subtract the window's own position
+to get window-local points, which compare one to one with the handoff:
+
+```bash
+xcodebuild -jobs 2 -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination 'platform=macOS' build
+PRODUCTS="$(xcodebuild -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -showBuildSettings 2>/dev/null | awk -F' = ' '/ BUILT_PRODUCTS_DIR/{print $2}' | head -1)"
+nohup "$PRODUCTS/TAMForge.app/Contents/MacOS/TAMForge" -ui-test-signed-in -ui-test-native-features >/dev/null 2>&1 &
+osascript -e 'tell application "System Events" to tell process "TAMForge" to count windows'
+```
+
+```bash
+osascript <<'MEASURE'
+tell application "System Events" to tell process "TAMForge"
+  set {wx, wy} to position of window 1
+  set {ww, wh} to size of window 1
+  set out to "window " & ww & "x" & wh & linefeed
+  repeat with e in (UI elements of (item 1 of (groups of window 1)))
+    set {ex, ey} to position of e
+    set {ew, eh} to size of e
+    set out to out & (role of e) & " " & (name of e) & " @ " & (ex - wx) & "," & (ey - wy) & " " & ew & "x" & eh & linefeed
+  end repeat
+  return out
+end tell
+MEASURE
+```
+
+Five things the run depends on:
+
+- **Retry the launch.** The app comes up with zero windows on roughly two launches
+  out of three, because it restores the window state it was closed with. `count
+  windows` says which happened; relaunch up to three times before believing an empty
+  tree.
+- **Launch it detached.** A binary started as the foreground job of a tool call dies
+  with the call. `nohup … &` outlives it.
+- **`UI elements of (item 1 of (groups of window 1))` is the query that answers.**
+  That group is the shell; the window's other children are the three traffic lights.
+  `entire contents of window 1` is slow and intermittently returns nothing at all,
+  which reads as an empty window rather than as a failed query.
+- **One instance at a time.** `tell process "TAMForge"` cannot tell two builds apart,
+  and every worktree builds its own. `pgrep -fl MacOS/TAMForge` before launching.
+- **Decorative shapes are absent from the tree.** The brand tile, the toolbar bar and
+  the nav pill backgrounds have no element; the labels inside them do. The 22 pt
+  "TAM Forge" text centres in the 30 pt tile, so text at y 62 puts the tile at 58.
+  Measure what the tree exposes and derive its expected number, rather than naming a
+  container that is not there.
+
+**A window floor is a read-back, not a request.** AppleScript's resize is clamped,
+not refused, so a floor that is wrong looks exactly like one that holds:
+
+```bash
+osascript -e 'tell application "System Events" to tell process "TAMForge" to set size of window 1 to {900, 640}' \
+          -e 'tell application "System Events" to tell process "TAMForge" to get size of window 1'
+```
+
+`900, 640`, or the floor is wrong: stage 2 answered `900, 672`, because SwiftUI adds
+the hidden title bar's 32 pt safe area to whatever minimum the content declares. Then
+re-run the measurement at that size to confirm nothing clips there.
+
+Stop the app scoped to the build under test, so a parallel worktree's app survives:
+
+```bash
+pkill -f "$PRODUCTS/TAMForge.app/Contents/MacOS/TAMForge"
+```
 
 ## Testing
 
