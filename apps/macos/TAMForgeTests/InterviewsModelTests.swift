@@ -3,6 +3,46 @@ import XCTest
 
 @MainActor
 final class InterviewsModelTests: XCTestCase {
+    func testImportingTheAnswerBankSendsTheDocumentAndListsItsEntries() async throws {
+        let api = FakeInterviewAPI(records: [])
+        let model = InterviewsModel(api: api)
+
+        await model.importReference(kind: .answerBank, title: " answer-bank ", markdown: "\n## Q1\nBecause.\n")
+        XCTAssertEqual(api.calls, ["import:answer_bank:answer-bank:14", "references"])
+        XCTAssertEqual(model.referenceOutcome?.created, 1)
+        XCTAssertEqual(model.references(of: .answerBank).map(\.heading), ["Q1. Why are you leaving?"])
+        XCTAssertTrue(model.references(of: .storyCatalog).isEmpty)
+        XCTAssertNil(model.errorMessage)
+
+        // The same document again: nothing new, and the list does not grow.
+        await model.importReference(kind: .answerBank, title: "", markdown: "## Q1\nBecause.")
+        XCTAssertEqual(api.calls.last, "references")
+        XCTAssertEqual(api.calls[2], "import:answer_bank:Answer bank:14")
+        XCTAssertEqual(model.referenceOutcome?.existing, 1)
+        XCTAssertEqual(model.references.count, 1)
+    }
+
+    func testAnEmptyReferenceDocumentIsRefusedBeforeTheNetwork() async {
+        let api = FakeInterviewAPI(records: [])
+        let model = InterviewsModel(api: api)
+
+        await model.importReference(kind: .storyCatalog, title: "stories", markdown: "  \n ")
+        XCTAssertTrue(api.calls.isEmpty)
+        XCTAssertEqual(model.errorMessage, "The document is empty or larger than the server accepts.")
+    }
+
+    func testAFailedReferenceImportKeepsTheListAndShowsTheError() async {
+        let api = FakeInterviewAPI(records: [])
+        let model = InterviewsModel(api: api)
+        await model.importReference(kind: .answerBank, title: "bank", markdown: "## Q1\nBecause.")
+        api.failure = .network
+
+        await model.importReference(kind: .answerBank, title: "bank", markdown: "## Q2\nNew.")
+        XCTAssertEqual(model.references.count, 1)
+        XCTAssertNil(model.referenceOutcome)
+        XCTAssertEqual(model.errorMessage, InterviewAPIError.network.message)
+    }
+
     func testTheTimelineDecodesScoresTrendsAndRecurringGaps() async throws {
         let api = FakeInterviewAPI(records: [record(id: 1, company: "Acme")])
         api.timelineJSON = """
@@ -21,7 +61,7 @@ final class InterviewsModelTests: XCTestCase {
         """
         let model = InterviewsModel(api: api)
         await model.load()
-        XCTAssertEqual(api.calls, ["list", "timeline"])
+        XCTAssertEqual(api.calls, ["list", "timeline", "references"])
         XCTAssertEqual(model.timeline.debriefed, 1)
         XCTAssertEqual(model.timeline.items[0].score("answer_clarity"), Decimal(string: "2.5"))
         XCTAssertNil(model.timeline.items[1].hiringProgression)
@@ -116,6 +156,26 @@ private final class FakeInterviewAPI: InterviewAPI {
         calls.append("list")
         if let failure { throw failure }
         return records
+    }
+
+    var referenceEntries: [ReferenceEntry] = []
+
+    func references() async throws -> [ReferenceEntry] {
+        calls.append("references")
+        if let failure { throw failure }
+        return referenceEntries
+    }
+
+    func importReference(kind: ReferenceKind, title: String, markdown: String) async throws -> ReferenceImportOutcome {
+        calls.append("import:\(kind.rawValue):\(title):\(markdown.count)")
+        if let failure { throw failure }
+        let entry = ReferenceEntry(
+            id: referenceEntries.count + 1, kind: kind, documentTitle: title, heading: "Q1. Why are you leaving?",
+            body: markdown, readinessLabel: "READY", readinessVerified: false
+        )
+        let known = referenceEntries.contains { $0.body == markdown && $0.kind == kind }
+        if !known { referenceEntries.append(entry) }
+        return ReferenceImportOutcome(kind: kind, created: known ? 0 : 1, existing: known ? 1 : 0, entries: [entry])
     }
 
     func timeline() async throws -> InterviewTimeline {

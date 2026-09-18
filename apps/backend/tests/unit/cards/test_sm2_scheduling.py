@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
 from tamforge_backend.cards.scheduling import (
     SM2_VERSION,
     CardState,
+    learner_local_date,
     new_card_state,
     schedule,
 )
@@ -61,3 +62,13 @@ def test_due_date_is_the_review_date_plus_the_interval_not_the_old_due_date() ->
 def test_grades_outside_zero_to_five_are_rejected() -> None:
     with pytest.raises(ValueError):
         schedule(new_card_state(due_on=DAY), grade=6, reviewed_on=DAY)
+
+
+def test_a_new_card_is_due_on_the_learners_local_date_not_the_servers() -> None:
+    # 03:00 UTC on the 18th is still the evening of the 17th in Los Angeles.
+    now = datetime(2026, 9, 18, 3, 0, tzinfo=UTC)
+    assert learner_local_date(now, "America/Los_Angeles") == date(2026, 9, 17)
+    assert learner_local_date(now, "Asia/Tokyo") == date(2026, 9, 18)
+    # No learner settings yet, or a zone the host does not know: the server's UTC date.
+    assert learner_local_date(now, None) == date(2026, 9, 18)
+    assert learner_local_date(now, "Not/AZone") == date(2026, 9, 18)
