@@ -8,6 +8,8 @@ final class InterviewsModel: ObservableObject {
     @Published var draft = InterviewDraft.empty()
     @Published private(set) var analyses: [UUID: RecordingAnalysis] = [:]
     @Published private(set) var timeline: InterviewTimeline = .empty
+    @Published private(set) var references: [ReferenceEntry] = []
+    @Published private(set) var referenceOutcome: ReferenceImportOutcome?
     @Published private(set) var isBusy = false
     @Published private(set) var errorMessage: String?
 
@@ -25,7 +27,47 @@ final class InterviewsModel: ObservableObject {
         await perform {
             self.interviews = try await self.api.list()
             self.timeline = try await self.api.timeline()
+            self.references = try await self.api.references()
         }
+    }
+
+    /// The maximum the server accepts for one reference document.
+    static let maximumReferenceCharacters = 1_048_576
+
+    func references(of kind: ReferenceKind) -> [ReferenceEntry] {
+        references.filter { $0.kind == kind }
+    }
+
+    /// Send one document (the answer bank or the story catalog) to be split into entries.
+    /// Importing the same document again adds nothing: the server matches entries by content.
+    func importReference(kind: ReferenceKind, title: String, markdown: String) async {
+        let text = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text.count <= Self.maximumReferenceCharacters else {
+            errorMessage = "The document is empty or larger than the server accepts."
+            return
+        }
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        await perform {
+            self.referenceOutcome = nil
+            let outcome = try await self.api.importReference(
+                kind: kind, title: name.isEmpty ? kind.title : name, markdown: text
+            )
+            self.referenceOutcome = outcome
+            self.references = try await self.api.references()
+        }
+    }
+
+    /// Read a chosen file inside the sandbox's security scope and import it.
+    func importReference(kind: ReferenceKind, fileURL: URL) async {
+        let isScoped = fileURL.startAccessingSecurityScopedResource()
+        defer { if isScoped { fileURL.stopAccessingSecurityScopedResource() } }
+        guard let markdown = try? String(contentsOf: fileURL, encoding: .utf8) else {
+            errorMessage = "The file could not be read as UTF-8 text."
+            return
+        }
+        await importReference(
+            kind: kind, title: fileURL.deletingPathExtension().lastPathComponent, markdown: markdown
+        )
     }
 
     /// The comparison dimensions in tracker order, for the timeline table's columns.

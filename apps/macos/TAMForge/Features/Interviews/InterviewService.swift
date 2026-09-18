@@ -9,6 +9,8 @@ protocol InterviewAPI {
     func attach(recordingID: UUID, to id: Int) async throws -> InterviewRecord
     func analysis(recordingID: UUID) async throws -> RecordingAnalysis
     func timeline() async throws -> InterviewTimeline
+    func references() async throws -> [ReferenceEntry]
+    func importReference(kind: ReferenceKind, title: String, markdown: String) async throws -> ReferenceImportOutcome
 }
 
 @MainActor
@@ -51,6 +53,18 @@ final class LiveInterviewAPI: InterviewAPI {
 
     func timeline() async throws -> InterviewTimeline {
         try await request(.get, path: "/api/v1/interviews/timeline", as: InterviewTimeline.self)
+    }
+
+    func references() async throws -> [ReferenceEntry] {
+        struct Page: Decodable { let items: [ReferenceEntry] }
+        return try await request(.get, path: "/api/v1/reference-material", as: Page.self).items
+    }
+
+    func importReference(kind: ReferenceKind, title: String, markdown: String) async throws -> ReferenceImportOutcome {
+        let body = try JSONSerialization.data(
+            withJSONObject: ["kind": kind.rawValue, "title": title, "markdown": markdown], options: [.sortedKeys]
+        )
+        return try await request(.post, path: "/api/v1/reference-material", body: body, as: ReferenceImportOutcome.self)
     }
 
     private func request<Value: Decodable & Sendable>(
