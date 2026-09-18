@@ -65,10 +65,21 @@ enum Organic {
         static let fill10 = text.opacity(0.10)
     }
 
+    /// The handoff's radius scale. Cards are named by value, not semantically,
+    /// because the handoff specifies eight card sizes (36/32/30/28/26/24/22/20).
+    /// There is no single "card radius", and a semantic name invites shipping 26
+    /// where the design says 32.
     enum Radius {
         static let pill: CGFloat = 999
         static let window: CGFloat = 14
-        static let card: CGFloat = 26
+        static let r20: CGFloat = 20
+        static let r22: CGFloat = 22
+        static let r24: CGFloat = 24
+        static let r26: CGFloat = 26
+        static let r28: CGFloat = 28
+        static let r30: CGFloat = 30
+        static let r32: CGFloat = 32
+        static let r36: CGFloat = 36
     }
 
     /// The handoff's 12-rung spacing scale. Named by value, never by ordinal,

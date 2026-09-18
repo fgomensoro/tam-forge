@@ -8,7 +8,7 @@ extension View {
     /// and the Cards flashcard); every other card specifies a radius and a fill only.
     /// It is applied to the fill shape, not chained after the background, so a card
     /// nested in another card does not re-blur the inner card's shadow into a halo.
-    func organicCard(radius: CGFloat = Organic.Radius.card, padding: CGFloat = Organic.Space.p20, shadowed: Bool = false) -> some View {
+    func organicCard(radius: CGFloat = Organic.Radius.r26, padding: CGFloat = Organic.Space.p20, shadowed: Bool = false) -> some View {
         let shadow = Organic.Shadow.large
         return self
             .padding(padding)
