@@ -293,6 +293,31 @@ final class NativeAuthenticationTests: XCTestCase {
         assertDataProtectionThenStandardQueries(security.copyQueries)
     }
 
+    func testKeychainCopyMatchingRetriesWithStandardQueryWhenDataProtectionHasNoItem() throws {
+        // On this Mac the data-protection keychain answers "not found" to a read while the
+        // write before it fell back to the standard keychain. The token is there.
+        let security = RecordingKeychainSecurityAPI(
+            copyResponses: [
+                (errSecItemNotFound, nil),
+                (errSecSuccess, Data(token("r").utf8) as CFData),
+            ]
+        )
+        let store = KeychainCredentialStore(security: security)
+
+        XCTAssertEqual(try store.activeRefreshToken(), token("r"))
+        assertDataProtectionThenStandardQueries(security.copyQueries)
+    }
+
+    func testKeychainCopyMatchingAnswersNilWhenNeitherKeychainHasTheItem() throws {
+        let security = RecordingKeychainSecurityAPI(
+            copyResponses: [(errSecItemNotFound, nil), (errSecItemNotFound, nil)]
+        )
+        let store = KeychainCredentialStore(security: security)
+
+        XCTAssertNil(try store.activeRefreshToken())
+        assertDataProtectionThenStandardQueries(security.copyQueries)
+    }
+
     func testKeychainCopyMatchingDoesNotRetryUnrelatedError() throws {
         let security = RecordingKeychainSecurityAPI(copyResponses: [(errSecParam, nil)])
         let store = KeychainCredentialStore(security: security)
@@ -359,6 +384,17 @@ final class NativeAuthenticationTests: XCTestCase {
     func testKeychainDeleteRetriesWithStandardQueryOnlyForMissingEntitlement() throws {
         let security = RecordingKeychainSecurityAPI(
             deleteStatuses: [errSecMissingEntitlement, errSecSuccess]
+        )
+        let store = KeychainCredentialStore(security: security)
+
+        try store.removeActiveRefreshToken()
+
+        assertDataProtectionThenStandardQueries(security.deleteQueries)
+    }
+
+    func testKeychainDeleteAlsoRemovesTheStandardKeychainItemWhenDataProtectionHasNone() throws {
+        let security = RecordingKeychainSecurityAPI(
+            deleteStatuses: [errSecItemNotFound, errSecSuccess]
         )
         let store = KeychainCredentialStore(security: security)
 

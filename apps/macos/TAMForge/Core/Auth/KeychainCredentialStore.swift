@@ -96,8 +96,16 @@ struct KeychainCredentialStore: RefreshCredentialStore {
         return query
     }
 
+    /// Writes fall back to the standard keychain when the data-protection keychain refuses
+    /// them for a missing entitlement, so the credential can only live there. A read of the
+    /// data-protection keychain in that state answers "not found" rather than "missing
+    /// entitlement", so "not found" must also look in the standard keychain; otherwise the
+    /// app stores a credential it can never read back and signs the learner out at the
+    /// first refresh.
     static func fallbackQuery(account: String, after status: OSStatus) -> [String: Any]? {
-        status == errSecMissingEntitlement ? baseQuery(account: account) : nil
+        status == errSecMissingEntitlement || status == errSecItemNotFound
+            ? baseQuery(account: account)
+            : nil
     }
 
     static func decodedRead(status: OSStatus, value: CFTypeRef?) throws -> String? {
