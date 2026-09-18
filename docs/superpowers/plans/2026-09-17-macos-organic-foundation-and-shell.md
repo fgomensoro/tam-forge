@@ -34,6 +34,7 @@ can see.
 - **Known pbxproj IDs:** app Sources phase `A10000000000000000000091`; unit-test Sources phase `A10000000000000000000092`; app Resources phase `A10000000000000000000094`; `Core` group `A10000000000000000000048`; `TAMForgeTests` group `A10000000000000000000044`.
 - **The app is dark-only.** Tokens have no light values. The window pins `.preferredColorScheme(.dark)`.
 - **Window sizing:** 1280×820 default, 900×640 hard minimum. Layouts must survive being squeezed below the design width.
+- **`-only-testing` on a class the project does not contain reports `TEST SUCCEEDED`.** Discovered during Task 1 on 2026-09-17. `xcodebuild` finds no matching test, runs zero tests, and exits zero. A red step that expects a failure from a not-yet-wired test file therefore gets a false green. Wire the test file into the project *before* the red run, so the failure is a genuine compile error, and never read `TEST SUCCEEDED` from an `-only-testing` run as evidence unless the output also shows a non-zero test count.
 - **Build and test command** (matches CI, which runs on `macos-26`):
   ```bash
   xcodebuild -jobs 2 -skipPackagePluginValidation \
@@ -126,7 +127,14 @@ final class OrganicDesignTests: XCTestCase {
 xcodebuild -jobs 2 -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination 'platform=macOS' test -only-testing:TAMForgeTests/OrganicDesignTests
 ```
 
-Expected: the build fails because `OrganicDesignTests.swift` is not in the project yet. That is the correct first failure; step 3 adds both the file and the implementation to the project together, because an unreferenced Swift file is invisible to `xcodebuild`.
+Expected, as written: a build failure, because `OrganicDesignTests.swift` is not
+in the project yet.
+
+**What actually happens, observed on 2026-09-17:** `TEST SUCCEEDED` with zero
+tests run. `-only-testing` against a class the project does not contain matches
+nothing and exits zero. This step cannot produce a red. Record the zero-test
+output and move on; Task 6 is written the correct way, wiring the test file in
+before the red run so the failure is a genuine compile error.
 
 - [ ] **Step 3: Write the tokens**
 
@@ -905,11 +913,24 @@ final class TodayTaskStatusTests: XCTestCase {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
+First wire **only the test file** into the project, so the red run is a real
+compile failure rather than a no-op. Add its `PBXFileReference`
+(`D5000000000000000000000B`), its `PBXBuildFile`
+(`D50000000000000000000020`), its membership in the `TAMForgeTests` group
+`A10000000000000000000044`, and that build file in the unit-test Sources phase
+`A10000000000000000000092`. Leave `TodayTaskStatus.swift` out of the project for
+now; Step 4 adds it.
+
 ```bash
+plutil -lint apps/macos/TAMForge.xcodeproj/project.pbxproj && \
 xcodebuild -jobs 2 -skipPackagePluginValidation -project apps/macos/TAMForge.xcodeproj -scheme TAMForge -destination 'platform=macOS' test -only-testing:TAMForgeTests/TodayTaskStatusTests
 ```
 
-Expected: build failure, `TodayTaskStatus` is undefined.
+Expected: a compile failure naming `TodayTaskStatus` as undefined.
+
+Do not accept `TEST SUCCEEDED` here. See the `-only-testing` warning in Global
+Constraints: if the test class is not in the project, this command reports
+success having run nothing, which looks like a pass and proves nothing.
 
 - [ ] **Step 3: Write the implementation**
 
