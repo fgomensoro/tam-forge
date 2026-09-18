@@ -11,6 +11,7 @@ struct CardsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Cards").font(.title2.weight(.semibold))
+                practice
                 CardsPanel(model: model)
                 Divider()
                 newCard
@@ -20,6 +21,35 @@ struct CardsView: View {
             .padding()
         }
         .accessibilityIdentifier("cardsScreen")
+        .task { await model.loadLibrary() }
+    }
+
+    /// Free practice: any topic, any time, whatever is due. The due queue is the minimum.
+    private var practice: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Practice whenever you want").font(.headline)
+            Text("Pick one topic or everything mixed. Cards come shuffled whatever their due date, in Written or Spoken mode, and each grade still reschedules the card.")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Picker("Topic", selection: $model.practiceTopicID) {
+                    ForEach(model.practiceTopics) { topic in
+                        Text("\(topic.title) · \(topic.count)").tag(topic.id)
+                    }
+                }
+                .frame(maxWidth: 420)
+                .disabled(model.isPracticing || model.practiceTopics.isEmpty)
+                .accessibilityIdentifier("cardsPracticeTopic")
+                if model.isPracticing {
+                    Button("Back to due cards") { Task { await model.stopPractice() } }
+                        .disabled(model.isBusy)
+                        .accessibilityIdentifier("cardsPracticeStop")
+                } else {
+                    Button("Practice") { Task { await model.startPractice() } }
+                        .disabled(!model.canPractice)
+                        .accessibilityIdentifier("cardsPracticeStart")
+                }
+            }
+        }
     }
 
     private var newCard: some View {
@@ -62,7 +92,7 @@ struct CardsPanel: View {
     @ObservedObject var model: CardsModel
 
     var body: some View {
-        GroupBox("Due today") {
+        GroupBox(model.isPracticing ? "Practice" : "Due today") {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Picker("Mode", selection: $model.mode) {
@@ -83,7 +113,9 @@ struct CardsPanel: View {
                 if let card = model.current {
                     cardBody(card)
                 } else {
-                    Text("No cards due. Come back tomorrow or add one below.")
+                    Text(model.isPracticing
+                        ? "Practice round finished. Pick another topic or go back to the due cards."
+                        : "No cards due. Practice any topic above, or add a card below.")
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("cardsEmpty")
                 }

@@ -4,6 +4,7 @@ import HTTPTypes
 @MainActor
 protocol CardAPI {
     func due(on localDate: String) async throws -> [CardRecord]
+    func all() async throws -> [CardRecord]
     func create(_ draft: CardDraft) async throws -> CardRecord
     func review(cardID: Int, grade: Int, reviewedOn: String, mode: String, recordingID: UUID?) async throws -> CardReviewOutcome
     func importRoadmapVersion(_ versionID: Int) async throws -> CardImportOutcome
@@ -20,6 +21,11 @@ final class LiveCardAPI: CardAPI {
     func due(on localDate: String) async throws -> [CardRecord] {
         struct Page: Decodable { let items: [CardRecord] }
         return try await request(.get, path: "/api/v1/cards/due?date=\(localDate)", as: Page.self).items
+    }
+
+    func all() async throws -> [CardRecord] {
+        struct Page: Decodable { let items: [CardRecord] }
+        return try await request(.get, path: "/api/v1/cards", as: Page.self).items
     }
 
     func create(_ draft: CardDraft) async throws -> CardRecord {

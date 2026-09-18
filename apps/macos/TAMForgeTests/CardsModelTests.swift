@@ -63,6 +63,60 @@ final class CardsModelTests: XCTestCase {
         XCTAssertNil(model.errorMessage)
     }
 
+    func testPracticeDrawsATopicsCardsWhateverTheirDueDateAndGradesAreRealReviews() async {
+        let api = FakeCardAPI()
+        let retries = "package:study-notes/2026-09-16 - Retries Backoff and Jitter Study Notes.md"
+        let webhooks = "package:study-notes/2026-09-09 - Webhooks Rate Limits and Recovery Study Notes.md"
+        api.library = [
+            CardRecord(id: 1, question: "q1", answer: "a1", skillSlug: "general", sourceRef: retries, dueOn: "2026-10-01"),
+            CardRecord(id: 2, question: "q2", answer: "a2", skillSlug: "general", sourceRef: webhooks, dueOn: "2026-10-02"),
+            CardRecord(id: 3, question: "q3", answer: "a3", skillSlug: "tam_english", sourceRef: webhooks, dueOn: "2026-10-03"),
+        ]
+        let model = CardsModel(api: api, today: { "2026-09-18" }, shuffle: { $0.reversed() })
+        await model.load()
+        XCTAssertNil(model.current)  // nothing is due, and that no longer stops practice
+
+        await model.loadLibrary()
+        XCTAssertEqual(
+            model.practiceTopics.map(\.title),
+            ["All cards, mixed", "General", "Tam English", "Webhooks Rate Limits and Recovery", "Retries Backoff and Jitter"]
+        )
+        XCTAssertEqual(model.practiceTopics.map(\.count), [3, 2, 1, 2, 1])
+
+        model.practiceTopicID = "source:\(webhooks)"
+        await model.startPractice()
+        XCTAssertTrue(model.isPracticing)
+        XCTAssertEqual(model.queue.map(\.id), [3, 2])  // the topic only, in the shuffled order
+
+        model.reveal()
+        await model.grade(4)
+        XCTAssertEqual(api.reviews.map(\.cardID), [3])
+        XCTAssertEqual(api.reviews[0].reviewedOn, "2026-09-18")
+        XCTAssertEqual(model.remaining, 1)
+
+        await model.stopPractice()
+        XCTAssertFalse(model.isPracticing)
+        XCTAssertNil(model.current)
+    }
+
+    func testPracticeWithNoCardsForTheTopicDoesNothing() async {
+        let api = FakeCardAPI()
+        let model = CardsModel(api: api, today: { "2026-09-18" })
+        await model.loadLibrary()
+        XCTAssertTrue(model.practiceTopics.isEmpty)
+        XCTAssertFalse(model.canPractice)
+        await model.startPractice()
+        XCTAssertFalse(model.isPracticing)
+    }
+
+    func testANoteTitleDropsThePathTheDateAndTheStudyNotesSuffix() {
+        XCTAssertEqual(
+            PracticeTopic.sourceTitle("package:study-notes/2026-09-15 - API Design Study Notes.md"), "API Design"
+        )
+        XCTAssertEqual(PracticeTopic.sourceTitle("answer-bank"), "answer-bank")
+        XCTAssertEqual(PracticeTopic.sourceTitle("note:12"), "12")
+    }
+
     func testCardPayloadsDecodeDecimalsSentAsStrings() throws {
         let json = """
         {"card": {"id": 4, "question": "q", "answer": "a", "skill_slug": "s", "source_kind": "coach",
@@ -91,7 +145,13 @@ private final class FakeCardAPI: CardAPI {
     }
 
     var due: [CardRecord] = []
+    var library: [CardRecord] = []
     var failure: CardAPIError?
+
+    func all() async throws -> [CardRecord] {
+        if let failure { throw failure }
+        return library
+    }
     private(set) var reviews: [Review] = []
 
     func due(on localDate: String) async throws -> [CardRecord] {
@@ -109,7 +169,7 @@ private final class FakeCardAPI: CardAPI {
     func review(cardID: Int, grade: Int, reviewedOn: String, mode: String, recordingID: UUID?) async throws -> CardReviewOutcome {
         if let failure { throw failure }
         reviews.append(Review(cardID: cardID, grade: grade, reviewedOn: reviewedOn, mode: mode, recordingID: recordingID))
-        let card = due.first { $0.id == cardID }!
+        let card = (due + library).first { $0.id == cardID }!
         due.removeAll { $0.id == cardID }
         return CardReviewOutcome(card: card, intervalAfter: 1, dueAfter: "2026-09-17")
     }

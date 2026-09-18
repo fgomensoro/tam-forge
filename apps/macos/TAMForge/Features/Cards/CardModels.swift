@@ -188,3 +188,63 @@ enum CardAPIError: Error, Equatable {
         }
     }
 }
+
+/// What a free practice round draws from: every card, one skill, or one source note.
+struct PracticeTopic: Equatable, Hashable, Sendable, Identifiable {
+    static let allID = "all"
+
+    let id: String
+    let title: String
+    let count: Int
+
+    /// The topics a set of cards offers, largest first within skills and within notes.
+    /// A skill is listed only when it tells cards apart; notes are listed by their title.
+    static func topics(for cards: [CardRecord]) -> [PracticeTopic] {
+        guard !cards.isEmpty else { return [] }
+        var result = [PracticeTopic(id: allID, title: "All cards, mixed", count: cards.count)]
+        let bySkill = Dictionary(grouping: cards, by: \.skillSlug)
+        if bySkill.count > 1 {
+            result += bySkill
+                .map { PracticeTopic(id: "skill:\($0.key)", title: skillTitle($0.key), count: $0.value.count) }
+                .sorted { ($0.count, $1.title) > ($1.count, $0.title) }
+        }
+        let bySource = Dictionary(grouping: cards.filter { !$0.sourceRef.isEmpty }, by: \.sourceRef)
+        if bySource.count > 1 {
+            result += bySource
+                .map { PracticeTopic(id: "source:\($0.key)", title: sourceTitle($0.key), count: $0.value.count) }
+                .sorted { ($0.count, $1.title) > ($1.count, $0.title) }
+        }
+        return result
+    }
+
+    static func cards(for topicID: String, in cards: [CardRecord]) -> [CardRecord] {
+        if let skill = topicID.removingPrefix("skill:") { return cards.filter { $0.skillSlug == skill } }
+        if let source = topicID.removingPrefix("source:") { return cards.filter { $0.sourceRef == source } }
+        return cards
+    }
+
+    static func skillTitle(_ slug: String) -> String {
+        slug.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    /// "package:study-notes/2026-09-16 - Retries Backoff and Jitter Study Notes.md" reads as
+    /// "Retries Backoff and Jitter".
+    static func sourceTitle(_ sourceRef: String) -> String {
+        var name = sourceRef.split(separator: "/").last.map(String.init) ?? sourceRef
+        if let colon = name.firstIndex(of: ":"), !name.contains("/") { name = String(name[name.index(after: colon)...]) }
+        if name.lowercased().hasSuffix(".md") { name = String(name.dropLast(3)) }
+        if let range = name.range(of: #"^\d{4}-\d{2}-\d{2}\s*-\s*"#, options: .regularExpression) {
+            name.removeSubrange(range)
+        }
+        for suffix in [" Study Notes", " Practice Notes"] where name.hasSuffix(suffix) {
+            name = String(name.dropLast(suffix.count))
+        }
+        return name.isEmpty ? sourceRef : name
+    }
+}
+
+private extension String {
+    func removingPrefix(_ prefix: String) -> String? {
+        hasPrefix(prefix) ? String(dropFirst(prefix.count)) : nil
+    }
+}
