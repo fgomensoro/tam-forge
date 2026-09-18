@@ -78,7 +78,12 @@ struct ActivityWorkspaceView: View {
     private func content(for activity: ActivityDetail) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 20) {
+                // Deliberately eager, as in RoadmapAdministrationView's diff sections.
+                // These are a fixed, small set of tall, uneven panels rather than a feed,
+                // so laziness saves nothing and costs an estimated content height: the
+                // scroll range shifted under `proxy.scrollTo` and under XCUITest, leaving
+                // the self-review editors unreachable or unfocusable.
+                VStack(alignment: .leading, spacing: 20) {
                     header(activity)
                     status(activity)
                     if let spoken, activity.taskContract.block == .communicationSpoken {
