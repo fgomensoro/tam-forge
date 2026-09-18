@@ -12,7 +12,9 @@ struct InterviewsView: View {
         self.model = model
         self.coordinator = coordinator
         _practice = StateObject(
-            wrappedValue: InterviewPracticeModel(synthesizer: SystemSpeechSynthesizer(), recorder: coordinator)
+            wrappedValue: InterviewPracticeModel(
+                synthesizer: SystemSpeechSynthesizer(), recorder: coordinator, followUps: model
+            )
         )
     }
 
@@ -53,16 +55,33 @@ struct InterviewsView: View {
     private var practiceSection: some View {
         GroupBox("Practice your answers aloud") {
             VStack(alignment: .leading, spacing: 10) {
+                Toggle("Follow-up questions", isOn: $practice.followUpsEnabled)
+                    .toggleStyle(.switch)
+                    .font(Organic.Font.figtree(.regular, size: 13))
+                    .foregroundStyle(Organic.Color.body)
+                    .accessibilityIdentifier("practiceFollowUpsToggle")
+                Text("On: after an answer the interviewer may ask up to two follow-ups, each after a wait of about ten seconds, on weak spots and sometimes on good answers too. Off: straight to the next question.")
+                    .font(Organic.Font.figtree(.regular, size: 11))
+                    .foregroundStyle(Organic.Color.muted)
                 if let question = practice.current {
                     Text(practice.progress).font(.caption).foregroundStyle(.secondary)
-                    Text(question.prompt).font(.title3).textSelection(.enabled)
+                    Text(practice.spokenPrompt ?? question.prompt).font(.title3).textSelection(.enabled)
                         .accessibilityIdentifier("practiceQuestion")
+                    if practice.currentFollowUp != nil {
+                        Text("Follow-up to: \(question.prompt)")
+                            .font(Organic.Font.figtree(.regular, size: 11))
+                            .foregroundStyle(Organic.Color.muted)
+                            .accessibilityIdentifier("practiceFollowUpContext")
+                    }
                     HStack {
                         if practice.isAnswering {
                             Button("Stop, that is my answer") {
                                 Task {
                                     await practice.endAnswer()
-                                    if let answer = practice.answers.last { await model.submitPracticeAnswer(answer) }
+                                    guard let answer = practice.answers.last else { return }
+                                    // The answer goes to the server now; the interviewer thinks meanwhile.
+                                    Task { await model.submitPracticeAnswer(answer) }
+                                    await practice.considerFollowUp()
                                 }
                             }
                                 .accessibilityIdentifier("practiceEndAnswer")
@@ -73,11 +92,17 @@ struct InterviewsView: View {
                                 .disabled(!practice.canRevealReference)
                             Button("Next question") { practice.next() }
                                 .accessibilityIdentifier("practiceNext")
+                            if practice.isPreparingFollowUp {
+                                Text("The interviewer is thinking about a follow-up. You can move on.")
+                                    .font(Organic.Font.figtree(.regular, size: 11))
+                                    .foregroundStyle(Organic.Color.muted)
+                                    .accessibilityIdentifier("practiceFollowUpPending")
+                            }
                         } else {
                             Button("Record my answer") { Task { await practice.beginAnswer() } }
                                 .disabled(!practice.canBeginAnswer || coordinator.phase.isActive)
                                 .accessibilityIdentifier("practiceBeginAnswer")
-                            Button("Repeat the question") { practice.repeatQuestion() }
+                            Button(practice.currentFollowUp == nil ? "Repeat the question" : "Repeat the follow-up") { practice.repeatQuestion() }
                         }
                         Spacer()
                         Button("End practice") { practice.stop() }.disabled(practice.isAnswering)
@@ -137,6 +162,11 @@ struct InterviewsView: View {
                         Text(review.question).fontWeight(.medium)
                         Spacer()
                         Text(review.statusLabel).font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let followUp = review.followUpQuestion {
+                        Text("Follow-up: \(followUp)")
+                            .font(Organic.Font.figtree(.regular, size: 11))
+                            .foregroundStyle(Organic.Color.body)
                     }
                     ForEach(review.dimensions) { dimension in
                         HStack(alignment: .firstTextBaseline) {

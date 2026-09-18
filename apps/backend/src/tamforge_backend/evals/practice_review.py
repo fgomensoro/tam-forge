@@ -21,7 +21,7 @@ from ..agents.roles.practice_review import (
     PracticeReviewUnavailable,
 )
 
-PRACTICE_REVIEW_EVALUATOR_VERSION: Final = "practice-review-refusals-v1"
+PRACTICE_REVIEW_EVALUATOR_VERSION: Final = "practice-review-refusals-v2"
 Outcome = Literal["refused_by_contract", "refused_by_validator", "accepted"]
 OUTCOMES: Final[frozenset[str]] = frozenset(
     {"refused_by_contract", "refused_by_validator", "accepted"}
@@ -34,6 +34,9 @@ class PracticeReviewCase:
     question: str
     answer_transcript: str
     reference_answer: str
+    follow_up_question: str
+    parent_question: str
+    parent_transcript: str
     answers: tuple[Mapping[str, object], ...]
     expect: Outcome
 
@@ -90,6 +93,9 @@ def load_practice_review_cases(path: Path) -> tuple[str, str, tuple[PracticeRevi
                 question=str(raw["question"]),
                 answer_transcript=str(raw["answer_transcript"]),
                 reference_answer=str(raw.get("reference_answer", "")),
+                follow_up_question=str(raw.get("follow_up_question", "")),
+                parent_question=str(raw.get("parent_question", "")),
+                parent_transcript=str(raw.get("parent_transcript", "")),
                 answers=tuple(raw["answers"]),
                 expect=raw["expect"],
             )
@@ -107,6 +113,9 @@ async def run_practice_review_case(
         answer_transcript=case.answer_transcript,
         reference_answer=case.reference_answer,
         speech_metrics={"speech_rate_wpm": 126, "filler_count": 3},
+        follow_up_question=case.follow_up_question,
+        parent_question=case.parent_question,
+        parent_transcript=case.parent_transcript,
     )
     try:
         await service.review(request)

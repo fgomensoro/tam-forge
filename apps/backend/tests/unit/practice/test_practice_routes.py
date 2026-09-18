@@ -7,11 +7,19 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi.testclient import TestClient
+from tamforge_backend.agents.roles.contracts import RoleContractError
+from tamforge_backend.agents.roles.interview_follow_up import (
+    SHORT_ANSWER_FOLLOW_UP,
+    FollowUpOutcome,
+    FollowUpRequest,
+    InterviewFollowUpService,
+    InterviewFollowUpUnavailable,
+)
 from tamforge_backend.auth.dependencies import get_authenticated_owner, require_csrf_owner
 from tamforge_backend.auth.schemas import AuthenticatedOwner
 from tamforge_backend.config import Settings
 from tamforge_backend.main import create_app
-from tamforge_backend.practice.routes import get_practice_service
+from tamforge_backend.practice.routes import get_follow_up_service, get_practice_service
 from tamforge_backend.practice.schemas import (
     PracticeAnswerCommand,
     PracticeAnswerPage,
@@ -45,6 +53,8 @@ def _answer(status: str) -> PracticeAnswerResponse:
         question="Why are you leaving?",
         recording_id=RECORDING,
         reference_material_id=2,
+        follow_up_of=None,
+        follow_up_question=None,
         status=status,  # type: ignore[arg-type]
         failure_category=None,
         model="claude-fable-5-1" if ready else None,
@@ -142,3 +152,103 @@ def test_only_the_learners_turns_are_the_answer_and_the_key_follows_the_transcri
     assert learner_answer([]) == ""
     key = practice_review_idempotency_key(answer_id=4, transcript_sha256="ab" * 32)
     assert key == "claude-practice-a4-abababababababab"
+
+
+class StubFollowUps:
+    def __init__(self) -> None:
+        self.error: Exception | None = None
+        self.requests: list[FollowUpRequest] = []
+
+    async def decide(self, request: FollowUpRequest) -> FollowUpOutcome:
+        if self.error is not None:
+            raise self.error
+        self.requests.append(request)
+        return FollowUpOutcome(follow_up="What exactly was the ceiling?", reason="weak_point")
+
+
+FOLLOW_UP_BODY = {
+    "question": "Why are you leaving?",
+    "reference_answer": "Four anchors.",
+    "transcript": "I hit the ceiling of what I can learn there.",
+    "prior_follow_ups": ["Why now?"],
+}
+
+
+def test_a_follow_up_is_decided_in_the_request_and_failures_stay_closed() -> None:
+    client, _ = _client()
+    follow_ups = StubFollowUps()
+    overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
+    overrides[get_follow_up_service] = lambda: follow_ups
+    path = "/api/v1/practice-answers/follow-up"
+    with client:
+        asked = client.post(path, json=FOLLOW_UP_BODY)
+        bare = client.post(path, json={"question": "Why?", "transcript": "Because of scale."})
+        three = client.post(path, json={**FOLLOW_UP_BODY, "prior_follow_ups": ["a?", "b?", "c?"]})
+        unknown_field = client.post(path, json={**FOLLOW_UP_BODY, "recording_id": "x"})
+        follow_ups.error = RoleContractError("internal")
+        too_short = client.post(path, json={**FOLLOW_UP_BODY, "transcript": "..."})
+        follow_ups.error = InterviewFollowUpUnavailable("internal")
+        down = client.post(path, json=FOLLOW_UP_BODY)
+
+    assert asked.status_code == 200
+    assert asked.json() == {"follow_up": "What exactly was the ceiling?", "reason": "weak_point"}
+    assert asked.headers["cache-control"] == "no-store"
+    sent = follow_ups.requests[0]
+    assert sent.question == "Why are you leaving?" and sent.prior_follow_ups == ("Why now?",)
+    assert sent.answer_transcript == FOLLOW_UP_BODY["transcript"]
+    assert sent.reference_answer == "Four anchors."
+    assert bare.status_code == 200 and follow_ups.requests[1].prior_follow_ups == ()
+    assert three.status_code == 422 and unknown_field.status_code == 422
+    assert too_short.status_code == 422 and too_short.json()["code"] == "practice_invalid"
+    assert down.status_code == 503 and down.json()["code"] == "practice_unavailable"
+    assert "internal" not in too_short.text + down.text
+
+
+class _UnusedTransport:
+    """A follow-up transport that must never be called."""
+
+    async def follow_up(self, request: FollowUpRequest) -> dict[str, object]:
+        raise AssertionError("the model must not be called for a short answer")
+
+
+def test_a_short_transcript_gets_the_fixed_follow_up_without_a_model_call() -> None:
+    client, _ = _client()
+    service = InterviewFollowUpService(_UnusedTransport(), model="m")
+    overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
+    overrides[get_follow_up_service] = lambda: service
+    path = "/api/v1/practice-answers/follow-up"
+    with client:
+        response = client.post(path, json={**FOLLOW_UP_BODY, "transcript": "It went fine."})
+    assert response.status_code == 200
+    assert response.json() == {"follow_up": SHORT_ANSWER_FOLLOW_UP, "reason": "weak_point"}
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_with_claude_disabled_the_follow_up_is_a_503_and_the_app_moves_on() -> None:
+    client, _ = _client()
+    with client:
+        down = client.post("/api/v1/practice-answers/follow-up", json=FOLLOW_UP_BODY)
+    assert down.status_code == 503 and down.json()["code"] == "practice_unavailable"
+
+
+def test_a_follow_up_answer_names_its_question_and_its_parent_or_neither() -> None:
+    client, service = _client()
+    parent = "7a1f6e0c-3d52-4b8e-9c11-2f4a5b6c7d8e"
+    body = {"question": "Why are you leaving?", "recording_id": str(RECORDING)}
+    linked = {**body, "follow_up_question": "What was the ceiling?"}
+    with client:
+        both = client.post(
+            "/api/v1/practice-answers", json={**linked, "follow_up_of_recording_id": parent}
+        )
+        only_question = client.post("/api/v1/practice-answers", json=linked)
+        only_parent = client.post(
+            "/api/v1/practice-answers", json={**body, "follow_up_of_recording_id": parent}
+        )
+        listed = client.get("/api/v1/practice-answers")
+
+    assert both.status_code == 202
+    assert service.submitted[0].follow_up_question == "What was the ceiling?"
+    assert str(service.submitted[0].follow_up_of_recording_id) == parent
+    assert only_question.status_code == 422 and only_parent.status_code == 422
+    item = listed.json()["items"][0]
+    assert item["follow_up_of"] is None and item["follow_up_question"] is None

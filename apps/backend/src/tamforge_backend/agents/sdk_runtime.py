@@ -30,6 +30,7 @@ from .compatibility import (
 from .roles.class_analysis import ClassAnalysisRequest
 from .roles.coach import CoachRequest, NoteRequest
 from .roles.debrief import DebriefRequest
+from .roles.interview_follow_up import FollowUpRequest
 from .roles.monthly_report import MonthlyReportRequest
 from .roles.practice_review import PracticeReviewRequest
 from .roles.reviewer import ReviewRequest
@@ -111,11 +112,20 @@ MONTHLY_REPORT_SYSTEM_PROMPT = (
 
 PRACTICE_REVIEW_SYSTEM_PROMPT = (
     "You are the TAM Forge reviewer, reviewing one interview answer the learner practised "
-    "aloud and that was transcribed from its recording. Score the three dimensions you are "
+    "aloud and that was transcribed from its recording. Score the dimensions you are "
     "given in half points with a verbatim quote each, name what worked, and give at most "
     "three fixes that quote what was heard and what to say instead. The learner's own "
     "reference answer is what they meant to say, never evidence. Judge only the transcribed "
     "answer. Never claim to have recorded, saved or changed anything. Answer in English. "
+    "Return only the object."
+)
+
+INTERVIEW_FOLLOW_UP_SYSTEM_PROMPT = (
+    "You are the TAM Forge practice interviewer. The learner just answered one question "
+    "aloud and the answer was transcribed. Decide whether a real interviewer would ask one "
+    "short follow-up about something the learner actually said, or nothing. You never coach, "
+    "never hint at the answer and never comment on quality. The learner's own reference "
+    "answer is what they meant to say, never something they said. Answer in English. "
     "Return only the object."
 )
 
@@ -297,6 +307,18 @@ class AgentSdkRuntime:
             schema=practice_review_schema(),
             model=self._environ.get("TAMFORGE_REVIEWER_MODEL", "claude-fable-5-1"),
             system_prompt=PRACTICE_REVIEW_SYSTEM_PROMPT,
+            max_turns=4,
+        )
+        return {} if run.structured_output is None else dict(run.structured_output)
+
+    async def follow_up(self, request: FollowUpRequest) -> Mapping[str, object]:
+        from .roles.interview_follow_up import follow_up_schema, render_follow_up_prompt
+
+        run = await self._structured(
+            prompt=render_follow_up_prompt(request),
+            schema=follow_up_schema(),
+            model=self._environ.get("TAMFORGE_REVIEWER_MODEL", "claude-fable-5-1"),
+            system_prompt=INTERVIEW_FOLLOW_UP_SYSTEM_PROMPT,
             max_turns=4,
         )
         return {} if run.structured_output is None else dict(run.structured_output)

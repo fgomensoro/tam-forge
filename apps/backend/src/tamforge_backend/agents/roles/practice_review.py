@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from typing import Literal, Protocol
 
@@ -35,19 +35,23 @@ from .contracts import (
     prepare_role_prompt,
 )
 
-PRACTICE_REVIEW_SCHEMA_ID = "urn:tamforge:schema:practice-review-v1"
+PRACTICE_REVIEW_SCHEMA_ID = "urn:tamforge:schema:practice-review-v2"
 PRACTICE_REVIEW_JOB_TYPE = "claude.practice_review"
 PRACTICE_REVIEW_MAX_TURNS = 4
 PRACTICE_REVIEW_WALL_TIME_SECONDS = 180.0
-PRACTICE_REVIEW_PROMPT_VERSION = "v1"
+PRACTICE_REVIEW_PROMPT_VERSION = "v2"
 MINIMUM_ANSWER_WORDS = 8
 MAX_ANSWER_CHARS = 40_000
-# The interview tracker's dimensions a single uninterrupted answer can show. Follow-up
-# handling is left out: a practice answer has no follow-up to handle.
+# The interview tracker's dimensions a single uninterrupted answer can show.
 PRACTICE_DIMENSIONS: tuple[tuple[str, str], ...] = (
     ("answer_clarity", "Answer clarity and structure"),
     ("technical_examples", "Technical examples and supporting evidence"),
     ("english_accuracy", "English accuracy visible in the transcript"),
+)
+# Scored only when the answer responds to a follow-up the interviewer asked.
+FOLLOW_UP_DIMENSION: tuple[str, str] = (
+    "follow_up_handling",
+    "Follow-up handling: answers what was asked and adds to the first answer",
 )
 COMPLETION_MARKERS = (
     "i marked",
@@ -70,7 +74,20 @@ class PracticeReviewRequest:
     answer_transcript: str
     reference_answer: str = ""
     speech_metrics: Mapping[str, object] = field(default_factory=dict)
+    # Set together when this answer responds to a follow-up: the follow-up that was asked,
+    # and the question and transcript of the answer it followed.
+    follow_up_question: str = ""
+    parent_question: str = ""
+    parent_transcript: str = ""
     repair_errors: tuple[str, ...] = ()
+
+    @property
+    def is_follow_up(self) -> bool:
+        return bool(self.follow_up_question.strip())
+
+
+def dimensions_for(*, follow_up: bool) -> tuple[tuple[str, str], ...]:
+    return (*PRACTICE_DIMENSIONS, FOLLOW_UP_DIMENSION) if follow_up else PRACTICE_DIMENSIONS
 
 
 class PracticeDimension(BaseModel):
@@ -95,7 +112,7 @@ class PracticeReviewOutcome(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    dimensions: tuple[PracticeDimension, ...] = Field(min_length=1, max_length=3)
+    dimensions: tuple[PracticeDimension, ...] = Field(min_length=1, max_length=4)
     strengths: tuple[str, ...] = Field(min_length=1, max_length=3)
     fixes: tuple[PracticeFix, ...] = Field(min_length=1, max_length=3)
     reference_coverage: str = Field(max_length=600)
@@ -111,7 +128,7 @@ def _normalize(text: str) -> str:
 
 
 def validate_practice_review(
-    payload: Mapping[str, object], *, answer_transcript: str
+    payload: Mapping[str, object], *, answer_transcript: str, follow_up: bool = False
 ) -> tuple[str, ...]:
     """Issues by name; empty means the review may be stored."""
     try:
@@ -120,7 +137,7 @@ def validate_practice_review(
         first = exc.errors()[0]
         location = ".".join(str(part) for part in first["loc"]) or "review"
         return (f"review {location}: {first['msg']}",)
-    expected = [slug for slug, _ in PRACTICE_DIMENSIONS]
+    expected = [slug for slug, _ in dimensions_for(follow_up=follow_up)]
     if sorted(d.slug for d in outcome.dimensions) != sorted(expected):
         return ("the review must score exactly these dimensions once: " + ", ".join(expected),)
     haystack = _normalize(answer_transcript)
@@ -155,14 +172,9 @@ class _PracticeReviewRuntimeAdapter:
         self, run: PreparedAgentRun, *, repair_errors: tuple[str, ...] = ()
     ) -> TransportResult:
         del run
-        request = PracticeReviewRequest(
-            question=self.request.question,
-            answer_transcript=self.request.answer_transcript,
-            reference_answer=self.request.reference_answer,
-            speech_metrics=self.request.speech_metrics,
-            repair_errors=repair_errors,
+        payload = await self.transport.review_practice(
+            replace(self.request, repair_errors=repair_errors)
         )
-        payload = await self.transport.review_practice(request)
         return TransportResult(payload=payload, turns=1)
 
 
@@ -196,12 +208,13 @@ class PracticeReviewService:
         runtime = BoundedClaudeRuntime(
             _PracticeReviewRuntimeAdapter(self._transport, request),
             validate=lambda payload: validate_practice_review(
-                payload, answer_transcript=request.answer_transcript
+                payload,
+                answer_transcript=request.answer_transcript,
+                follow_up=request.is_follow_up,
             ),
         )
-        digest = hashlib.sha256(
-            f"{request.question}:{request.answer_transcript}".encode()
-        ).hexdigest()[:24]
+        key = f"{request.question}:{request.follow_up_question}:{request.answer_transcript}"
+        digest = hashlib.sha256(key.encode()).hexdigest()[:24]
         prepared = PreparedAgentRun(
             run_key=f"practice-review:{digest}",
             job_type=PRACTICE_REVIEW_JOB_TYPE,
@@ -229,10 +242,26 @@ def render_practice_review_prompt(request: PracticeReviewRequest) -> str:
     lines: list[str] = [
         "A learner preparing for Technical Account Manager interviews practised one answer "
         "aloud, uninterrupted. This is practice, not a real interview.",
-        f"Question asked: {request.question.strip()}",
-        "The learner's answer, transcribed from the recording:\n"
-        + request.answer_transcript.strip(),
     ]
+    if request.is_follow_up:
+        lines.extend(
+            [
+                f"Earlier question: {request.parent_question.strip()}",
+                "The learner's earlier answer (context only, never quote it as evidence):\n"
+                + request.parent_transcript.strip(),
+                f"Follow-up the interviewer then asked: {request.follow_up_question.strip()}",
+                "The learner's answer to the follow-up, transcribed from the recording. "
+                "This is the answer under review:\n" + request.answer_transcript.strip(),
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                f"Question asked: {request.question.strip()}",
+                "The learner's answer, transcribed from the recording:\n"
+                + request.answer_transcript.strip(),
+            ]
+        )
     if request.reference_answer.strip():
         lines.append(
             "The learner's own reference answer (what they intended to say, not evidence of "
@@ -246,7 +275,9 @@ def render_practice_review_prompt(request: PracticeReviewRequest) -> str:
     lines.append(
         "Score exactly these dimensions, each once, in half points from 0 to 4, each with a "
         "verbatim quote of the answer as evidence and a one-line note:\n"
-        + "\n".join(f"- {slug}: {name}" for slug, name in PRACTICE_DIMENSIONS)
+        + "\n".join(
+            f"- {slug}: {name}" for slug, name in dimensions_for(follow_up=request.is_follow_up)
+        )
     )
     lines.append(
         "Then name one to three strengths; give one to three fixes, each quoting what was "
@@ -264,6 +295,7 @@ def render_practice_review_prompt(request: PracticeReviewRequest) -> str:
 
 
 __all__ = [
+    "FOLLOW_UP_DIMENSION",
     "PRACTICE_DIMENSIONS",
     "PRACTICE_REVIEW_JOB_TYPE",
     "PRACTICE_REVIEW_PROMPT_VERSION",
@@ -275,6 +307,7 @@ __all__ = [
     "PracticeReviewService",
     "PracticeReviewTransport",
     "PracticeReviewUnavailable",
+    "dimensions_for",
     "practice_review_schema",
     "render_practice_review_prompt",
     "validate_practice_review",

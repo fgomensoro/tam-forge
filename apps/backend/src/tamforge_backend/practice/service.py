@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..agents.roles.contracts import RoleContractError
 from ..agents.roles.practice_review import (
+    FOLLOW_UP_DIMENSION,
     PRACTICE_DIMENSIONS,
     PRACTICE_REVIEW_PROMPT_VERSION,
     PracticeReviewOutcome,
@@ -49,7 +50,7 @@ from .schemas import (
 PRACTICE_REVIEW_JOB_KIND = "claude_practice_review"
 PRACTICE_REVIEW_MAX_ATTEMPTS = 3
 PRACTICE_PAGE_LIMIT = 50
-_DIMENSION_NAMES = dict(PRACTICE_DIMENSIONS)
+_DIMENSION_NAMES = dict((*PRACTICE_DIMENSIONS, FOLLOW_UP_DIMENSION))
 
 
 class PracticeError(Exception):
@@ -124,12 +125,33 @@ class PracticeAnswerService:
                         if entry is None:
                             raise PracticeInvalid("the reference entry was not found")
                         reference = entry.body
+                    parent_id: int | None = None
+                    if command.follow_up_of_recording_id is not None:
+                        parent_id = await self._session.scalar(
+                            select(PracticeAnswer.id)
+                            .join(
+                                Recording,
+                                (Recording.owner_id == PracticeAnswer.owner_id)
+                                & (Recording.id == PracticeAnswer.recording_id),
+                            )
+                            .where(PracticeAnswer.owner_id == owner_id)
+                            .where(
+                                Recording.client_recording_id
+                                == command.follow_up_of_recording_id
+                            )
+                        )
+                        if parent_id is None:
+                            raise PracticeNotFound(
+                                "the parent answer has not reached the server yet"
+                            )
                     row = PracticeAnswer(
                         owner_id=owner_id,
                         recording_id=recording_pk,
                         reference_material_id=command.reference_material_id,
                         question=command.question.strip(),
                         reference_answer=reference,
+                        follow_up_of=parent_id,
+                        follow_up_question=(command.follow_up_question or "").strip() or None,
                         created_at=self._clock(),
                     )
                     self._session.add(row)
@@ -137,6 +159,14 @@ class PracticeAnswerService:
                 answer_id = row.id
                 reviewed = row.outcome is not None
                 answer = "" if reviewed else await self._answer_text(owner_id, recording_pk)
+                if answer and row.follow_up_of is not None:
+                    # The review reads the earlier answer too, so it waits for that transcript.
+                    parent = await self._session.get(PracticeAnswer, row.follow_up_of)
+                    parent_text = (
+                        await self._answer_text(owner_id, parent.recording_id) if parent else ""
+                    )
+                    if not parent_text:
+                        answer = ""
             if not reviewed and answer:
                 try:
                     await JobService(SqlAlchemyJobRepository(self._session)).enqueue(
@@ -178,6 +208,14 @@ class PracticeAnswerService:
                     .where(SpeechAnalysis.owner_id == owner_id)
                     .where(SpeechAnalysis.recording_id == row.recording_id)
                 )
+                follow_up_question = parent_question = parent_transcript = ""
+                if row.follow_up_of is not None:
+                    parent = await self._session.get(PracticeAnswer, row.follow_up_of)
+                    if parent is None or parent.owner_id != owner_id:
+                        raise PracticeInvalid("the parent answer was not found")
+                    follow_up_question = row.follow_up_question or ""
+                    parent_question = parent.follow_up_question or parent.question
+                    parent_transcript = await self._answer_text(owner_id, parent.recording_id)
                 try:
                     outcome = await self._reviewer.review(
                         PracticeReviewRequest(
@@ -185,6 +223,9 @@ class PracticeAnswerService:
                             answer_transcript=answer,
                             reference_answer=row.reference_answer,
                             speech_metrics=dict(metrics or {}),
+                            follow_up_question=follow_up_question,
+                            parent_question=parent_question,
+                            parent_transcript=parent_transcript,
                         )
                     )
                 except PracticeReviewUnavailable as exc:
@@ -285,6 +326,8 @@ def _response(
         question=row.question,
         recording_id=client_recording_id,
         reference_material_id=row.reference_material_id,
+        follow_up_of=row.follow_up_of,
+        follow_up_question=row.follow_up_question,
         status=cast(Any, status),
         failure_category=failure,
         model=row.model,

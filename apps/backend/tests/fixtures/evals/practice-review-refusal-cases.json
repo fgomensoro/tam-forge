@@ -1,5 +1,5 @@
 {
-  "fixture_version": "practice-review-refusals-v1",
+  "fixture_version": "practice-review-refusals-v2",
   "model": "claude-fable-5-1",
   "cases": [
     {
@@ -646,6 +646,53 @@
         }
       ],
       "expect": "accepted"
+    },
+    {
+      "case_id": "follow-up-handling-scored",
+      "question": "Tell me about a difficult customer.",
+      "follow_up_question": "What exactly did you change for that customer?",
+      "parent_question": "Tell me about a difficult customer.",
+      "parent_transcript": "I had a customer who was very unhappy and I worked hard with the team to improve things.",
+      "answer_transcript": "I changed the weekly meeting into a daily checkpoint and the customer renewed for two years after that",
+      "reference_answer": "",
+      "answers": [
+        {
+          "dimensions": [
+            {"slug": "answer_clarity", "score": "3.0", "evidence": "I changed the weekly meeting", "note": "One change, stated first."},
+            {"slug": "technical_examples", "score": "2.5", "evidence": "a daily checkpoint", "note": "Concrete, no number."},
+            {"slug": "english_accuracy", "score": "3.5", "evidence": "the customer renewed for two years", "note": "Accurate simple past."},
+            {"slug": "follow_up_handling", "score": "3.0", "evidence": "renewed for two years after that", "note": "Answers what was asked and adds the outcome."}
+          ],
+          "strengths": ["Names the change in the first clause."],
+          "fixes": [{"heard": "after that", "say_instead": "within the quarter", "why": "A date makes the outcome checkable."}],
+          "reference_coverage": "",
+          "readiness": "drilling"
+        }
+      ],
+      "expect": "accepted"
+    },
+    {
+      "case_id": "follow-up-handling-missing",
+      "question": "Tell me about a difficult customer.",
+      "follow_up_question": "What exactly did you change for that customer?",
+      "parent_question": "Tell me about a difficult customer.",
+      "parent_transcript": "I had a customer who was very unhappy and I worked hard with the team to improve things.",
+      "answer_transcript": "I changed the weekly meeting into a daily checkpoint and the customer renewed for two years after that",
+      "reference_answer": "",
+      "answers": [
+        {
+          "dimensions": [
+            {"slug": "answer_clarity", "score": "3.0", "evidence": "I changed the weekly meeting", "note": "One change, stated first."},
+            {"slug": "technical_examples", "score": "2.5", "evidence": "a daily checkpoint", "note": "Concrete, no number."},
+            {"slug": "english_accuracy", "score": "3.5", "evidence": "the customer renewed for two years", "note": "Accurate simple past."}
+          ],
+          "strengths": ["Names the change in the first clause."],
+          "fixes": [{"heard": "after that", "say_instead": "within the quarter", "why": "A date makes the outcome checkable."}],
+          "reference_coverage": "",
+          "readiness": "drilling"
+        }
+      ],
+      "expect": "refused_by_validator"
     }
   ]
 }

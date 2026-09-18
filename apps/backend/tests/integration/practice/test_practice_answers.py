@@ -228,3 +228,190 @@ def test_practice_answer_round_trip(test_database_url: str) -> None:
                 connection.execute(text("CREATE SCHEMA public"))
         finally:
             sync_engine.dispose()
+
+
+FOLLOW_UP_ANSWER = (
+    "I changed the weekly meeting into a daily checkpoint and the customer renewed for two years"
+)
+
+
+class FollowUpAwareTransport(FakePracticeTransport):
+    async def review_practice(self, request: object) -> Mapping[str, object]:
+        payload = dict(await super().review_practice(request))
+        if getattr(request, "is_follow_up", False):
+            payload["dimensions"] = [
+                {
+                    "slug": "answer_clarity",
+                    "score": "3.0",
+                    "evidence": "I changed the weekly meeting",
+                    "note": "One change, stated first.",
+                },
+                {
+                    "slug": "technical_examples",
+                    "score": "2.5",
+                    "evidence": "a daily checkpoint",
+                    "note": "Concrete, no number.",
+                },
+                {
+                    "slug": "english_accuracy",
+                    "score": "3.5",
+                    "evidence": "the customer renewed",
+                    "note": "Accurate simple past.",
+                },
+                {
+                    "slug": "follow_up_handling",
+                    "score": "3.0",
+                    "evidence": "renewed for two years",
+                    "note": "Answers what was asked.",
+                },
+            ]
+            payload["fixes"] = [
+                {
+                    "heard": "a daily checkpoint",
+                    "say_instead": "a fifteen minute daily checkpoint",
+                    "why": "A number makes it concrete.",
+                }
+            ]
+        return payload
+
+
+def test_a_follow_up_answer_is_linked_and_scored_on_handling(test_database_url: str) -> None:
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import create_engine, select, text
+    from sqlalchemy.engine import make_url
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from tamforge_backend.agents.roles.practice_review import PracticeReviewService
+    from tamforge_backend.database import database_url_to_sync
+    from tamforge_backend.practice.models import PracticeAnswer
+    from tamforge_backend.practice.schemas import PracticeAnswerCommand
+    from tamforge_backend.practice.service import PracticeAnswerService, PracticeNotFound
+    from tamforge_backend.recordings.models import Recording
+    from tamforge_backend.speech.analysis import SpeechAnalysisService
+    from tamforge_backend.speech.repository import SqlAlchemyTranscriptRepository
+    from tamforge_backend.speech.service import TranscriptService
+    from tamforge_backend.testing.speech import insert_stored_recording, transcript_command
+    from tamforge_backend.workers.claude import practice_review_step
+
+    config = Config("apps/backend/alembic.ini")
+    config.attributes["database_url"] = test_database_url
+    sync_engine = create_engine(database_url_to_sync(test_database_url))
+    try:
+        command.downgrade(config, "base")
+        command.upgrade(config, "head")
+        with sync_engine.begin() as connection:
+            owner_id = connection.execute(
+                text(
+                    "INSERT INTO owners (github_user_id, github_login) "
+                    "VALUES (102269369, 'fgomensoro') RETURNING id"
+                )
+            ).scalar_one()
+            first_recording = insert_stored_recording(
+                connection, owner_id=owner_id, started_at=datetime(2026, 9, 17, 17, tzinfo=UTC)
+            )
+            second_recording = insert_stored_recording(
+                connection, owner_id=owner_id, started_at=datetime(2026, 9, 17, 17, 2, tzinfo=UTC)
+            )
+
+        async def exercise() -> None:
+            async_url = make_url(test_database_url).set(drivername="postgresql+asyncpg")
+            engine = create_async_engine(async_url)
+            factory = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
+            transport = FollowUpAwareTransport()
+            reviewer = PracticeReviewService(transport, model="claude-fable-5-1")
+            now = datetime(2026, 9, 17, 17, 5, tzinfo=UTC)
+            first = PracticeAnswerCommand(
+                question="Tell me about a difficult customer.", recording_id=first_recording
+            )
+            second = PracticeAnswerCommand(
+                question="Tell me about a difficult customer.",
+                recording_id=second_recording,
+                follow_up_question="What exactly did you change?",
+                follow_up_of_recording_id=first_recording,
+            )
+
+            async def transcribe(recording_id: object, said: str) -> None:
+                async with factory() as session:
+                    transcripts = TranscriptService(
+                        session, SqlAlchemyTranscriptRepository(session)
+                    )
+                    await transcripts.submit(
+                        owner_id=owner_id,
+                        recording_id=recording_id,  # type: ignore[arg-type]
+                        command=transcript_command(
+                            track="microphone", segments=[(2000, 9000, said)]
+                        ),
+                    )
+                    recording_pk = await session.scalar(
+                        select(Recording.id).where(Recording.client_recording_id == recording_id)
+                    )
+                    await session.rollback()
+                    assert recording_pk is not None
+                    await SpeechAnalysisService(session).process(
+                        owner_id=owner_id, recording_pk=recording_pk
+                    )
+
+            try:
+                async with factory() as session:
+                    service = PracticeAnswerService(session, reviewer=reviewer, clock=lambda: now)
+                    # The follow-up cannot arrive before the answer it followed.
+                    with pytest.raises(PracticeNotFound):
+                        await service.submit(owner_id=owner_id, command=second)
+                    parent = await service.submit(owner_id=owner_id, command=first)
+                    child = await service.submit(owner_id=owner_id, command=second)
+                    assert child.follow_up_of == parent.id
+                    assert child.follow_up_question == "What exactly did you change?"
+                    assert parent.follow_up_of is None and parent.follow_up_question is None
+
+                # Only the follow-up is transcribed: its review waits for the earlier answer.
+                await transcribe(second_recording, FOLLOW_UP_ANSWER)
+                async with factory() as session:
+                    service = PracticeAnswerService(session, reviewer=reviewer, clock=lambda: now)
+                    waiting = await service.submit(owner_id=owner_id, command=second)
+                    assert waiting.status == "awaiting_transcript"
+
+                await transcribe(first_recording, ANSWER)
+                async with factory() as session:
+                    service = PracticeAnswerService(session, reviewer=reviewer, clock=lambda: now)
+                    for wanted in (first, second):
+                        queued = await service.submit(owner_id=owner_id, command=wanted)
+                        assert queued.status == "queued"
+                assert await practice_review_step(factory, reviewer=reviewer) == 1
+                assert await practice_review_step(factory, reviewer=reviewer) == 1
+
+                async with factory() as session:
+                    service = PracticeAnswerService(session, reviewer=reviewer, clock=lambda: now)
+                    page = await service.list(owner_id=owner_id)
+                    by_id = {item.id: item for item in page.items}
+                    assert [d.slug for d in by_id[parent.id].dimensions] == [
+                        "answer_clarity",
+                        "technical_examples",
+                        "english_accuracy",
+                    ]
+                    handled = by_id[child.id].dimensions[-1]
+                    assert handled.slug == "follow_up_handling"
+                    assert handled.name.startswith("Follow-up handling")
+                    versions = (
+                        await session.scalars(select(PracticeAnswer.prompt_version))
+                    ).all()
+                    await session.rollback()
+                    assert set(versions) == {"v2"}
+
+                linked = [r for r in transport.requests if getattr(r, "is_follow_up", False)]
+                assert len(linked) == 1
+                assert linked[0].answer_transcript == FOLLOW_UP_ANSWER  # type: ignore[attr-defined]
+                assert linked[0].parent_transcript == ANSWER  # type: ignore[attr-defined]
+                assert linked[0].parent_question == first.question  # type: ignore[attr-defined]
+                asked = linked[0].follow_up_question  # type: ignore[attr-defined]
+                assert asked == second.follow_up_question
+            finally:
+                await engine.dispose()
+
+        asyncio.run(exercise())
+    finally:
+        try:
+            with sync_engine.begin() as connection:
+                connection.execute(text("DROP SCHEMA public CASCADE"))
+                connection.execute(text("CREATE SCHEMA public"))
+        finally:
+            sync_engine.dispose()

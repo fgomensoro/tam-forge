@@ -1785,6 +1785,62 @@ final class RecordingFeatureTests: XCTestCase {
         XCTAssertTrue(requestedTracks.isEmpty)
     }
 
+    func testPracticeTranscriptWaitsForReadyAndIsNilWhenNothingWillArrive() async throws {
+        let micChunk = RecordingPCMChunk.fixture(
+            track: .microphone, presentationNanoseconds: 1_000_000_000, sampleCount: 16_000
+        )
+        let transcribing = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: RecoveryTrackingSpoolFactory(spool: OrderedFakeRecordingSpool()),
+                audioReader: FakeRecordingAudioReader(microphoneChunks: [micChunk]),
+                transcriber: FakeSealTranscriber(text: "I hit the ceiling there")
+            )
+        }
+        await transcribing.beginPracticeRecording()
+        await transcribing.endPracticeRecording()
+        let transcribingLastID = await MainActor.run { transcribing.lastPracticeRecordingID }
+        let recordingID = try XCTUnwrap(transcribingLastID)
+        let ready = await transcribing.practiceTranscript(for: recordingID)
+        XCTAssertEqual(ready, "I hit the ceiling there")
+        // The slot belongs to that recording: asking about any other one does not wait.
+        let other = await transcribing.practiceTranscript(for: UUID())
+        XCTAssertNil(other)
+
+        let failing = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: RecoveryTrackingSpoolFactory(spool: OrderedFakeRecordingSpool()),
+                audioReader: FakeRecordingAudioReader(microphoneChunks: [micChunk]),
+                transcriber: FakeSealTranscriber(shouldFail: true)
+            )
+        }
+        await failing.beginPracticeRecording()
+        await failing.endPracticeRecording()
+        let failingLastID = await MainActor.run { failing.lastPracticeRecordingID }
+        let failedID = try XCTUnwrap(failingLastID)
+        let failed = await failing.practiceTranscript(for: failedID)
+        XCTAssertNil(failed)
+
+        let silent = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: FakeRecordingSpoolFactory(),
+                audioReader: FakeRecordingAudioReader(microphoneChunks: []),
+                transcriber: nil
+            )
+        }
+        await silent.beginPracticeRecording()
+        await silent.endPracticeRecording()
+        let silentLastID = await MainActor.run { silent.lastPracticeRecordingID }
+        let silentID = try XCTUnwrap(silentLastID)
+        let none = await silent.practiceTranscript(for: silentID)
+        XCTAssertNil(none)  // nothing is transcribing: no wait at all
+    }
+
     func testRecordingThatNeedsAttentionNeverStartsTranscription() async throws {
         let source = FakeRecordingCaptureSource(stopFailure: .streamStopped)
         let reader = FakeRecordingAudioReader(microphoneChunks: [])

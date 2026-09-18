@@ -9,7 +9,7 @@ from pathlib import Path
 
 from tamforge_backend.recordings.schemas import RECORDING_OPENAPI_MODELS
 
-FROZEN_OPENAPI_SHA256 = "76ac3042b5a49235718d4d99cd29a1d1928604bd72c0b20eb5897569e9ba9a3b"
+FROZEN_OPENAPI_SHA256 = "4336b56a3caa50ea909156671eff2b7ce37dc30ef380a8a88353ffbb37667f6a"
 
 
 def _check_openapi_module() -> object:

@@ -12,7 +12,13 @@ protocol InterviewAPI {
     func references() async throws -> [ReferenceEntry]
     func importReference(kind: ReferenceKind, title: String, markdown: String) async throws -> ReferenceImportOutcome
     func practiceAnswers() async throws -> [PracticeAnswerReview]
-    func submitPracticeAnswer(question: String, recordingID: UUID, referenceID: Int?) async throws -> PracticeAnswerReview
+    func submitPracticeAnswer(
+        question: String, recordingID: UUID, referenceID: Int?,
+        followUpQuestion: String?, parentRecordingID: UUID?
+    ) async throws -> PracticeAnswerReview
+    func practiceFollowUp(
+        question: String, referenceAnswer: String, transcript: String, priorFollowUps: [String]
+    ) async throws -> String?
 }
 
 @MainActor
@@ -74,11 +80,40 @@ final class LiveInterviewAPI: InterviewAPI {
         return try await request(.get, path: "/api/v1/practice-answers", as: Page.self).items
     }
 
-    func submitPracticeAnswer(question: String, recordingID: UUID, referenceID: Int?) async throws -> PracticeAnswerReview {
+    func submitPracticeAnswer(
+        question: String, recordingID: UUID, referenceID: Int?,
+        followUpQuestion: String?, parentRecordingID: UUID?
+    ) async throws -> PracticeAnswerReview {
         var payload: [String: Any] = ["question": question, "recording_id": recordingID.uuidString.lowercased()]
         if let referenceID { payload["reference_material_id"] = referenceID }
+        // Both or neither: the server refuses a follow-up answer without its parent.
+        if let followUpQuestion, let parentRecordingID {
+            payload["follow_up_question"] = followUpQuestion
+            payload["follow_up_of_recording_id"] = parentRecordingID.uuidString.lowercased()
+        }
         let body = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
         return try await request(.post, path: "/api/v1/practice-answers", body: body, as: PracticeAnswerReview.self)
+    }
+
+    /// One synchronous decision on the server. A 503 (Claude disabled, runtime failure)
+    /// throws `.unavailable`; the practice session treats any throw as "no follow-up".
+    func practiceFollowUp(
+        question: String, referenceAnswer: String, transcript: String, priorFollowUps: [String]
+    ) async throws -> String? {
+        struct Decision: Decodable, Sendable {
+            let followUp: String?
+            enum CodingKeys: String, CodingKey { case followUp = "follow_up" }
+        }
+        let body = try JSONSerialization.data(
+            withJSONObject: [
+                "question": question, "reference_answer": referenceAnswer,
+                "transcript": transcript, "prior_follow_ups": priorFollowUps,
+            ] as [String: Any],
+            options: [.sortedKeys]
+        )
+        return try await request(
+            .post, path: "/api/v1/practice-answers/follow-up", body: body, as: Decision.self
+        ).followUp
     }
 
     private func request<Value: Decodable & Sendable>(

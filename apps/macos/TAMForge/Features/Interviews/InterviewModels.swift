@@ -367,6 +367,8 @@ struct PracticeAnswerReview: Codable, Equatable, Sendable, Identifiable {
     let question: String
     let recordingID: UUID
     let referenceMaterialID: Int?
+    /// What the interviewer asked, when this answer responds to a follow-up.
+    let followUpQuestion: String?
     let status: String
     let failureCategory: String?
     let dimensions: [PracticeDimensionScore]
@@ -392,6 +394,7 @@ struct PracticeAnswerReview: Codable, Equatable, Sendable, Identifiable {
         case id, question, status, dimensions, strengths, fixes, readiness
         case recordingID = "recording_id"
         case referenceMaterialID = "reference_material_id"
+        case followUpQuestion = "follow_up_question"
         case failureCategory = "failure_category"
         case referenceCoverage = "reference_coverage"
         case createdAt = "created_at"

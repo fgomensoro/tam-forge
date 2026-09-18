@@ -105,6 +105,176 @@ final class InterviewPracticeModelTests: XCTestCase {
         )
     }
 
+    private static let suite = "InterviewPracticeModelTests"
+
+    private func freshDefaults() -> UserDefaults {
+        let defaults = UserDefaults(suiteName: Self.suite)!
+        defaults.removePersistentDomain(forName: Self.suite)
+        return defaults
+    }
+
+    private func practice(
+        _ recorder: FakePracticeRecorder, _ followUps: FakeFollowUps?, voice: RecordingSynthesizer = RecordingSynthesizer(),
+        timeout: Duration = .seconds(5), defaults: UserDefaults? = nil
+    ) -> InterviewPracticeModel {
+        InterviewPracticeModel(
+            synthesizer: voice, recorder: recorder, followUps: followUps, followUpTimeout: timeout,
+            defaults: defaults ?? freshDefaults(), shuffle: { $0 }
+        )
+    }
+
+    private func answer(_ model: InterviewPracticeModel) async {
+        await model.beginAnswer()
+        await model.endAnswer()
+        await model.considerFollowUp()
+    }
+
+    func testAFollowUpIsSpokenAfterTheAnswerAndItsAnswerIsLinkedToTheFirst() async {
+        let voice = RecordingSynthesizer()
+        let recorder = FakePracticeRecorder()
+        let followUps = FakeFollowUps()
+        followUps.replies = ["What exactly did you change for that customer?", nil]
+        let model = practice(recorder, followUps, voice: voice)
+        model.start(entries: [entry(1, "Q1. Tell me about a difficult customer", body: "Four anchors."), entry(2, "Q2. Why us?")])
+
+        await model.beginAnswer()
+        await model.endAnswer()
+        model.revealReference()
+        XCTAssertEqual(model.revealedReference, "Four anchors.")
+        await model.considerFollowUp()
+
+        XCTAssertEqual(voice.utterances, ["Tell me about a difficult customer", "What exactly did you change for that customer?"])
+        XCTAssertEqual(model.currentFollowUp, "What exactly did you change for that customer?")
+        XCTAssertEqual(model.spokenPrompt, "What exactly did you change for that customer?")
+        XCTAssertEqual(model.progress, "Question 1 of 2")  // still the same question
+        XCTAssertNil(model.revealedReference)  // no reading the reference while answering the follow-up
+        XCTAssertTrue(model.canBeginAnswer)
+        XCTAssertFalse(model.canMoveOn)
+        XCTAssertEqual(followUps.requests.first, FakeFollowUps.Request(
+            question: "Tell me about a difficult customer", referenceAnswer: "Four anchors.",
+            transcript: recorder.transcript!, priorFollowUps: []
+        ))
+        XCTAssertEqual(recorder.transcriptRequests, [recorder.ids[0]])
+
+        await answer(model)  // the reply to this one is nil: no second follow-up
+        XCTAssertEqual(model.answers.count, 2)
+        XCTAssertNil(model.answers[0].followUpQuestion)
+        XCTAssertNil(model.answers[0].parentRecordingID)
+        XCTAssertEqual(model.answers[1].followUpQuestion, "What exactly did you change for that customer?")
+        XCTAssertEqual(model.answers[1].parentRecordingID, recorder.ids[0])
+        XCTAssertEqual(model.answers[1].question, model.answers[0].question)
+        XCTAssertEqual(followUps.requests[1].priorFollowUps, ["What exactly did you change for that customer?"])
+        XCTAssertTrue(model.canMoveOn)
+
+        model.next()
+        XCTAssertNil(model.currentFollowUp)
+        XCTAssertEqual(model.spokenPrompt, "Why us?")
+    }
+
+    func testFollowUpsStopAtTwoPerQuestionAndTheThirdIsNeverRequested() async {
+        let recorder = FakePracticeRecorder()
+        let followUps = FakeFollowUps()
+        followUps.replies = ["What exactly did you change?", "How do you know it improved?", "And then what happened?"]
+        let model = practice(recorder, followUps)
+        model.start(entries: [entry(1, "Q1. Tell me about a difficult customer")])
+
+        await answer(model)
+        await answer(model)
+        await answer(model)
+
+        XCTAssertEqual(followUps.requests.count, 2)
+        XCTAssertEqual(model.answers.count, 3)
+        XCTAssertEqual(model.answers[2].parentRecordingID, recorder.ids[1])  // a chain, not a star
+        XCTAssertEqual(model.turn?.followUpsRemaining, 0)
+        XCTAssertTrue(model.canMoveOn)
+    }
+
+    func testATranscriptThatNeverArrivesMovesOnAfterTheTimeout() async {
+        let recorder = FakePracticeRecorder()
+        recorder.transcriptNeverArrives = true
+        let followUps = FakeFollowUps()
+        followUps.replies = ["What exactly did you change?"]
+        let model = practice(recorder, followUps, timeout: .milliseconds(50))
+        model.start(entries: [entry(1, "Q1. Why?"), entry(2, "Q2. Why us?")])
+
+        await answer(model)
+
+        XCTAssertTrue(followUps.requests.isEmpty)
+        XCTAssertFalse(model.isPreparingFollowUp)
+        XCTAssertNil(model.currentFollowUp)
+        XCTAssertTrue(model.canMoveOn)
+        model.next()
+        XCTAssertEqual(model.spokenPrompt, "Why us?")
+        XCTAssertEqual(InterviewPracticeModel.followUpTimeout, .seconds(45))
+    }
+
+    func testAFailedTranscriptOrAFailedRequestMovesOnWithoutAFollowUp() async {
+        let recorder = FakePracticeRecorder()
+        let followUps = FakeFollowUps()
+        followUps.failure = InterviewAPIError.unavailable
+        let voice = RecordingSynthesizer()
+        let model = practice(recorder, followUps, voice: voice)
+        model.start(entries: [entry(1, "Q1. Why?"), entry(2, "Q2. Why us?")])
+
+        await answer(model)  // the role is down: a 503 surfaces as a thrown error
+        XCTAssertEqual(followUps.requests.count, 1)
+        XCTAssertNil(model.currentFollowUp)
+        XCTAssertNil(model.message)  // moving on is not an error the learner has to read
+        XCTAssertTrue(model.canMoveOn)
+
+        model.next()
+        recorder.transcript = nil  // transcription failed, or nothing is transcribing
+        followUps.failure = nil
+        followUps.replies = ["What exactly did you change?"]
+        await answer(model)
+        XCTAssertEqual(followUps.requests.count, 1)
+        XCTAssertEqual(voice.utterances, ["Why?", "Why us?"])
+        XCTAssertTrue(model.canMoveOn)
+    }
+
+    func testTheSwitchTurnsFollowUpsOffAndTheChoiceIsRemembered() async {
+        let defaults = freshDefaults()
+        let recorder = FakePracticeRecorder()
+        let followUps = FakeFollowUps()
+        followUps.replies = ["What exactly did you change?"]
+        let model = practice(recorder, followUps, defaults: defaults)
+        XCTAssertTrue(model.followUpsEnabled)  // on by default
+
+        model.followUpsEnabled = false
+        model.start(entries: [entry(1, "Q1. Why?")])
+        await answer(model)
+        XCTAssertTrue(followUps.requests.isEmpty)
+        XCTAssertTrue(recorder.transcriptRequests.isEmpty)
+        XCTAssertTrue(model.canMoveOn)
+
+        XCTAssertEqual(defaults.object(forKey: InterviewPracticeModel.followUpsEnabledKey) as? Bool, false)
+        XCTAssertFalse(practice(recorder, followUps, defaults: defaults).followUpsEnabled)
+    }
+
+    func testMovingOnWhileTheInterviewerThinksDropsTheFollowUp() async {
+        let voice = RecordingSynthesizer()
+        let recorder = FakePracticeRecorder()
+        let followUps = FakeFollowUps()
+        followUps.replies = ["What exactly did you change?"]
+        followUps.delay = .milliseconds(200)
+        let model = practice(recorder, followUps, voice: voice)
+        model.start(entries: [entry(1, "Q1. Why?"), entry(2, "Q2. Why us?")])
+        await model.beginAnswer()
+        await model.endAnswer()
+
+        let thinking = Task { await model.considerFollowUp() }
+        try? await Task.sleep(for: .milliseconds(40))
+        XCTAssertTrue(model.isPreparingFollowUp)
+        XCTAssertFalse(model.canRevealReference)
+        model.next()
+        await thinking.value
+
+        XCTAssertEqual(voice.utterances, ["Why?", "Why us?"])
+        XCTAssertNil(model.currentFollowUp)
+        XCTAssertFalse(model.isPreparingFollowUp)
+        XCTAssertTrue(model.canBeginAnswer)
+    }
+
     func testOnlyAnswerBankQuestionsAreAskedAndTheirHeadingsAreCleaned() {
         let entries = [
             entry(1, "Q1. Why are you leaving DataNest? — READY"),
@@ -170,7 +340,10 @@ final class InterviewPracticeModelTests: XCTestCase {
 @MainActor
 private final class FakePracticeRecorder: PracticeRecording {
     var refuses = false
+    var transcript: String? = "I had an unhappy customer and I worked hard to improve things for them."
+    var transcriptNeverArrives = false
     private(set) var ids: [UUID] = []
+    private(set) var transcriptRequests: [UUID] = []
     private(set) var isPracticeRecordingActive = false
     var lastPracticeRecordingID: UUID? { ids.last }
 
@@ -181,4 +354,40 @@ private final class FakePracticeRecorder: PracticeRecording {
     }
 
     func endPracticeRecording() async { isPracticeRecordingActive = false }
+
+    func practiceTranscript(for recordingID: UUID) async -> String? {
+        transcriptRequests.append(recordingID)
+        if transcriptNeverArrives {
+            try? await Task.sleep(for: .seconds(30))
+            return nil
+        }
+        return transcript
+    }
+}
+
+@MainActor
+private final class FakeFollowUps: PracticeFollowUpProviding {
+    struct Request: Equatable {
+        let question: String
+        let referenceAnswer: String
+        let transcript: String
+        let priorFollowUps: [String]
+    }
+
+    var replies: [String?] = []
+    var failure: (any Error)?
+    var delay: Duration?
+    private(set) var requests: [Request] = []
+
+    func followUp(
+        question: String, referenceAnswer: String, transcript: String, priorFollowUps: [String]
+    ) async throws -> String? {
+        requests.append(Request(
+            question: question, referenceAnswer: referenceAnswer,
+            transcript: transcript, priorFollowUps: priorFollowUps
+        ))
+        if let delay { try? await Task.sleep(for: delay) }
+        if let failure { throw failure }
+        return replies.isEmpty ? nil : replies.removeFirst()
+    }
 }
