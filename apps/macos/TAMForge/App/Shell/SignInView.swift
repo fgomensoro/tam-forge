@@ -6,7 +6,7 @@ struct SignInView: View {
     let onSignIn: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Organic.Space.p16) {
+        VStack(alignment: .leading, spacing: Organic.Space.p18) {
             Spacer(minLength: 0)
             appIcon
             Text("TAM Forge")

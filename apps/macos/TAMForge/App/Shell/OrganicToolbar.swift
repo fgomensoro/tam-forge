@@ -13,7 +13,7 @@ struct OrganicToolbar<Trailing: View>: View {
             Spacer(minLength: Organic.Space.p16)
             trailing()
         }
-        .padding(.horizontal, Organic.Space.p36)
+        .padding(.horizontal, Organic.Space.p24)
         .frame(height: 52)
         .background(Organic.Color.bg)
         .overlay(alignment: .bottom) { Rectangle().fill(Organic.Color.divider).frame(height: 1) }
