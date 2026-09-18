@@ -1,6 +1,6 @@
 # Shadowing practice
 
-Date: 2026-09-18. Status: agreed with Frank in brainstorming, pending his review of this file.
+Date: 2026-09-18. Status: agreed with Frank in brainstorming. Epic #362, tickets #363 to #369.
 
 ## Why
 
@@ -158,6 +158,20 @@ Later, as separate tickets once clips and history exist:
 9. **In your own words**: after a TAM-craft clip the model writes a question about
    it, answered in free practice.
 10. **Next clip recommendation** from weak skills.
+
+## Related work agreed in the same session
+
+Filed in M5 with their decisions recorded in the issues themselves:
+
+- #370 customer-call role-play drills (its `say_instead` fixes become cards).
+- #377 native version of a practice answer with a read-aloud drill; reuses the
+  scoring functions from ticket 5 above. It is deliberately not shadowing: copying
+  a synthetic voice trains synthetic intonation.
+- #379 recurring error patterns across all practice; shadowing reviews are one of
+  its sources.
+- #384 STAR story bank.
+- #389 cloze cards; annotations from clip preparation create cloze cards by default.
+- #390 adaptive follow-ups in the Interviewer.
 
 ## Out of scope
 
