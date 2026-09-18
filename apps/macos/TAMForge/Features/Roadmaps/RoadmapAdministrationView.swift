@@ -355,7 +355,15 @@ struct RoadmapAdministrationView: View {
         if !entries.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text(title).font(.headline)
-                LazyVStack(alignment: .leading, spacing: 8) {
+                // Deliberately eager. A collapsed section shows at most
+                // `maximumEntriesPerSection` (12) entries, so laziness saves nothing, and
+                // these rows are tall and wildly uneven (before/after text blocks). A
+                // LazyVStack sizes the rows it has not realised by estimate, so the
+                // ScrollView's content height, and with it the end of its scroll range,
+                // moved every time rows realised. Four of these sections make up most of a
+                // ~10,500pt page, and the estimate ran far enough short that the approval
+                // gate below them could not be scrolled into the viewport at all.
+                VStack(alignment: .leading, spacing: 8) {
                     ForEach(entries) { entry in
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
