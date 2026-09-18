@@ -867,3 +867,56 @@ async def test_spool_close_failure_does_not_mask_primary_integrity_error(
             content_type="application/octet-stream",
             metadata={},
         )
+
+
+@pytest.mark.anyio
+async def test_stat_accepts_provider_metadata_keys_in_any_case(moto_s3_client: Any) -> None:
+    """MinIO returns user metadata keys title-cased (`Sha256`, `Byte-Length`); S3 lowercases
+    them. The stored object is the same either way, so stat must read both."""
+    from tamforge_backend.storage.models import build_object_key
+    from tamforge_backend.storage.s3 import S3ObjectStore
+
+    class TitleCasingClient:
+        def __init__(self, inner: Any) -> None:
+            self._inner = inner
+
+        def head_object(self, **kwargs: Any) -> Any:
+            response = self._inner.head_object(**kwargs)
+            response["Metadata"] = {
+                key.title(): value for key, value in response.get("Metadata", {}).items()
+            }
+            return response
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(self._inner, name)
+
+    payload = b"title-cased-metadata"
+    digest = hashlib.sha256(payload).hexdigest()
+    key = build_object_key(
+        artifact_class="roadmap-source",
+        owner_id="1",
+        logical_id="import-title-case",
+        sha256=digest,
+    )
+    store = S3ObjectStore(
+        endpoint_url=None,
+        region="us-east-1",
+        bucket="tam-forge-test",
+        access_key="test-access",
+        secret_key="test-secret",
+        client=TitleCasingClient(moto_s3_client),
+    )
+
+    async def chunks() -> Any:
+        yield payload
+
+    stored = await store.put_immutable(
+        key=key,
+        body=chunks(),
+        sha256=digest,
+        content_type="application/zip",
+        metadata={"artifact": "roadmap-source"},
+    )
+    assert stored.sha256 == digest and stored.byte_length == len(payload)
+    assert stored.metadata["artifact"] == "roadmap-source"
+    assert await store.stat(key) == stored

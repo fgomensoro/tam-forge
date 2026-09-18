@@ -213,7 +213,11 @@ class S3ObjectStore:
         except (BotoCoreError, OSError):
             raise ObjectStoreError("object-store stat failed") from None
 
-        metadata = dict(response.get("Metadata", {}))
+        # S3 lowercases user metadata keys; MinIO returns them title-cased (`Sha256`).
+        # The keys were written lowercase, so lowercase is the stored object's shape.
+        metadata = {
+            str(name).lower(): value for name, value in response.get("Metadata", {}).items()
+        }
         digest = metadata.get(SHA256_METADATA_KEY, "")
         provider_checksum = response.get("ChecksumSHA256")
         encoded_length = metadata.get(BYTE_LENGTH_METADATA_KEY, "")
