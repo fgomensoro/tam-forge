@@ -44,10 +44,24 @@ class PracticeAnswer(Base):
             name="fk_practice_answers_reference",
             ondelete="SET NULL",
         ),
+        ForeignKeyConstraint(
+            ["follow_up_of"],
+            ["practice_answers.id"],
+            name="fk_practice_answers_follow_up_of",
+            ondelete="CASCADE",
+        ),
         CheckConstraint(
             "btrim(question) <> '' AND octet_length(question) <= 2048", name="question_bounded"
         ),
         CheckConstraint("octet_length(reference_answer) <= 65536", name="reference_bounded"),
+        CheckConstraint(
+            "(follow_up_of IS NULL) = (follow_up_question IS NULL)", name="follow_up_paired"
+        ),
+        CheckConstraint(
+            "follow_up_question IS NULL OR (btrim(follow_up_question) <> '' "
+            "AND octet_length(follow_up_question) <= 2048)",
+            name="follow_up_question_bounded",
+        ),
         CheckConstraint(
             "outcome IS NULL OR jsonb_typeof(outcome) = 'object'", name="outcome_object"
         ),
@@ -67,6 +81,10 @@ class PracticeAnswer(Base):
     reference_answer: Mapped[str] = mapped_column(
         Text, nullable=False, default="", server_default=""
     )
+    # Set together when this answer responds to a follow-up: the answer it followed, and
+    # what the interviewer asked. `question` stays the answer-bank question.
+    follow_up_of: Mapped[int | None] = mapped_column(BigInteger)
+    follow_up_question: Mapped[str | None] = mapped_column(Text)
     model: Mapped[str | None] = mapped_column(Text)
     prompt_version: Mapped[str | None] = mapped_column(Text)
     outcome: Mapped[dict[str, Any] | None] = mapped_column(JSONB)

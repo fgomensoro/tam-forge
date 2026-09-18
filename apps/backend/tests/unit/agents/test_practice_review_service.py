@@ -8,10 +8,15 @@ from collections.abc import Mapping
 import pytest
 from tamforge_backend.agents.roles.contracts import RoleContractError
 from tamforge_backend.agents.roles.practice_review import (
+    FOLLOW_UP_DIMENSION,
     PRACTICE_DIMENSIONS,
+    PRACTICE_REVIEW_PROMPT_VERSION,
+    PRACTICE_REVIEW_SCHEMA_ID,
+    PracticeReviewOutcome,
     PracticeReviewRequest,
     PracticeReviewService,
     PracticeReviewUnavailable,
+    dimensions_for,
     render_practice_review_prompt,
     validate_practice_review,
 )
@@ -140,3 +145,101 @@ def test_the_service_repairs_once_refuses_short_answers_and_needs_claude() -> No
         asyncio.run(service.review(_request(answer_transcript="Yes. No.")))
     with pytest.raises(PracticeReviewUnavailable):
         asyncio.run(PracticeReviewService(None, model="m").review(_request()))
+
+
+FOLLOW_UP_ANSWER = (
+    "I changed the weekly meeting into a daily checkpoint and the customer renewed for two "
+    "years after that"
+)
+
+
+def _follow_up_payload(*, handled: bool) -> dict[str, object]:
+    dimensions: list[dict[str, str]] = [
+        {
+            "slug": "answer_clarity",
+            "score": "3.0",
+            "evidence": "I changed the weekly meeting",
+            "note": "One change, stated first.",
+        },
+        {
+            "slug": "technical_examples",
+            "score": "2.5",
+            "evidence": "a daily checkpoint",
+            "note": "Concrete, no number.",
+        },
+        {
+            "slug": "english_accuracy",
+            "score": "3.5",
+            "evidence": "the customer renewed for two years",
+            "note": "Accurate simple past.",
+        },
+    ]
+    if handled:
+        dimensions.append(
+            {
+                "slug": "follow_up_handling",
+                "score": "3.0",
+                "evidence": "renewed for two years after that",
+                "note": "Answers what was asked and adds the outcome.",
+            }
+        )
+    return _payload(
+        dimensions=dimensions,
+        fixes=[
+            {
+                "heard": "after that",
+                "say_instead": "within the quarter",
+                "why": "A date makes the outcome checkable.",
+            }
+        ],
+    )
+
+
+def test_an_answer_to_a_follow_up_is_also_scored_on_how_it_was_handled() -> None:
+    assert FOLLOW_UP_DIMENSION[0] == "follow_up_handling"
+    assert dimensions_for(follow_up=False) == PRACTICE_DIMENSIONS
+    assert dimensions_for(follow_up=True) == (*PRACTICE_DIMENSIONS, FOLLOW_UP_DIMENSION)
+    assert PRACTICE_REVIEW_PROMPT_VERSION == "v2"
+    assert PRACTICE_REVIEW_SCHEMA_ID == "urn:tamforge:schema:practice-review-v2"
+
+    four = _follow_up_payload(handled=True)
+    three = _follow_up_payload(handled=False)
+    assert validate_practice_review(four, answer_transcript=FOLLOW_UP_ANSWER, follow_up=True) == ()
+    missing = validate_practice_review(three, answer_transcript=FOLLOW_UP_ANSWER, follow_up=True)
+    assert "follow_up_handling" in missing[0]
+    # Without a follow-up the review is exactly what it was: three dimensions, no fourth.
+    assert validate_practice_review(three, answer_transcript=FOLLOW_UP_ANSWER) == ()
+    unexpected = validate_practice_review(four, answer_transcript=FOLLOW_UP_ANSWER)
+    assert "exactly" in unexpected[0] and "follow_up_handling" not in unexpected[0]
+    # A stored v1 outcome still loads.
+    assert PracticeReviewOutcome.model_validate(_payload()).readiness == "drilling"
+
+
+def test_the_follow_up_prompt_carries_the_earlier_exchange_as_context_only() -> None:
+    request = _request(
+        answer_transcript=FOLLOW_UP_ANSWER,
+        follow_up_question="What exactly did you change?",
+        parent_question="Tell me about a difficult customer.",
+        parent_transcript="I had an unhappy customer and I improved things.",
+    )
+    assert request.is_follow_up and not _request().is_follow_up
+    prompt = render_practice_review_prompt(request)
+    assert "Earlier question: Tell me about a difficult customer." in prompt
+    assert "context only, never quote it as evidence" in prompt
+    assert "Follow-up the interviewer then asked: What exactly did you change?" in prompt
+    assert "- follow_up_handling:" in prompt
+    assert "- follow_up_handling:" not in render_practice_review_prompt(_request())
+
+
+def test_the_service_holds_a_follow_up_review_to_four_dimensions() -> None:
+    request = _request(
+        answer_transcript=FOLLOW_UP_ANSWER,
+        follow_up_question="What exactly did you change?",
+        parent_question=QUESTION,
+        parent_transcript=ANSWER,
+    )
+    transport = _Transport([_follow_up_payload(handled=False), _follow_up_payload(handled=True)])
+    outcome = asyncio.run(PracticeReviewService(transport, model="m").review(request))
+    assert [d.slug for d in outcome.dimensions][-1] == "follow_up_handling"
+    assert "follow_up_handling" in transport.requests[1].repair_errors[0]
+    assert transport.requests[1].parent_transcript == ANSWER

@@ -441,7 +441,7 @@ async def run_suite(
             round(practice_held, 4),
             PRACTICE_REVIEW_REFUSALS,
             practice.passed and practice_held >= PRACTICE_REVIEW_REFUSALS,
-            f"{len(practice.outcomes)} cases against {practice.model}: three dimensions once, "
+            f"{len(practice.outcomes)} cases against {practice.model}: each dimension once, "
             "half points, quotes of the answer only, no completion claim",
         )
     )

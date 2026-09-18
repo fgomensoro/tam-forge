@@ -27,7 +27,7 @@ def report() -> PracticeReviewReport:
 
 def test_the_fixture_pins_the_model_and_covers_every_refusal() -> None:
     model, version, cases = load_practice_review_cases(FIXTURE)
-    assert model == "claude-fable-5-1" and version == "practice-review-refusals-v1"
+    assert model == "claude-fable-5-1" and version == "practice-review-refusals-v2"
     assert {case.expect for case in cases} == {
         "refused_by_contract",
         "refused_by_validator",
@@ -43,6 +43,8 @@ def test_the_fixture_pins_the_model_and_covers_every_refusal() -> None:
         "invented-heard-quote",
         "completion-claim",
         "half-points-and-quotes",
+        "follow-up-handling-scored",
+        "follow-up-handling-missing",
     }
 
 

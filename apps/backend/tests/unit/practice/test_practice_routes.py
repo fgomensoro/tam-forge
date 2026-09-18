@@ -51,6 +51,8 @@ def _answer(status: str) -> PracticeAnswerResponse:
         question="Why are you leaving?",
         recording_id=RECORDING,
         reference_material_id=2,
+        follow_up_of=None,
+        follow_up_question=None,
         status=status,  # type: ignore[arg-type]
         failure_category=None,
         model="claude-fable-5-1" if ready else None,
@@ -205,3 +207,26 @@ def test_with_claude_disabled_the_follow_up_is_a_503_and_the_app_moves_on() -> N
     with client:
         down = client.post("/api/v1/practice-answers/follow-up", json=FOLLOW_UP_BODY)
     assert down.status_code == 503 and down.json()["code"] == "practice_unavailable"
+
+
+def test_a_follow_up_answer_names_its_question_and_its_parent_or_neither() -> None:
+    client, service = _client()
+    parent = "7a1f6e0c-3d52-4b8e-9c11-2f4a5b6c7d8e"
+    body = {"question": "Why are you leaving?", "recording_id": str(RECORDING)}
+    linked = {**body, "follow_up_question": "What was the ceiling?"}
+    with client:
+        both = client.post(
+            "/api/v1/practice-answers", json={**linked, "follow_up_of_recording_id": parent}
+        )
+        only_question = client.post("/api/v1/practice-answers", json=linked)
+        only_parent = client.post(
+            "/api/v1/practice-answers", json={**body, "follow_up_of_recording_id": parent}
+        )
+        listed = client.get("/api/v1/practice-answers")
+
+    assert both.status_code == 202
+    assert service.submitted[0].follow_up_question == "What was the ceiling?"
+    assert str(service.submitted[0].follow_up_of_recording_id) == parent
+    assert only_question.status_code == 422 and only_parent.status_code == 422
+    item = listed.json()["items"][0]
+    assert item["follow_up_of"] is None and item["follow_up_question"] is None

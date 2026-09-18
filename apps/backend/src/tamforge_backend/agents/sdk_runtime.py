@@ -112,7 +112,7 @@ MONTHLY_REPORT_SYSTEM_PROMPT = (
 
 PRACTICE_REVIEW_SYSTEM_PROMPT = (
     "You are the TAM Forge reviewer, reviewing one interview answer the learner practised "
-    "aloud and that was transcribed from its recording. Score the three dimensions you are "
+    "aloud and that was transcribed from its recording. Score the dimensions you are "
     "given in half points with a verbatim quote each, name what worked, and give at most "
     "three fixes that quote what was heard and what to say instead. The learner's own "
     "reference answer is what they meant to say, never evidence. Judge only the transcribed "
