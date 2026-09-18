@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 
 /// The practice Interviewer: one turn at a time, no coaching, and nothing it can write to.
@@ -119,5 +120,178 @@ final class RecordingSynthesizer: LocalSpeechSynthesizing, @unchecked Sendable {
 
     func speak(_ text: String) {
         utterances.append(text)
+    }
+}
+
+
+/// The Mac's own voice asks the question. Nothing leaves the machine.
+final class SystemSpeechSynthesizer: NSObject, LocalSpeechSynthesizing, @unchecked Sendable {
+    private let synthesizer = AVSpeechSynthesizer()
+
+    func speak(_ text: String) {
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.95
+        DispatchQueue.main.async { [synthesizer] in
+            synthesizer.stopSpeaking(at: .immediate)
+            synthesizer.speak(utterance)
+        }
+    }
+}
+
+/// What free practice needs from the recorder: start, stop, and the recording it made.
+@MainActor
+protocol PracticeRecording: AnyObject {
+    var isPracticeRecordingActive: Bool { get }
+    var lastPracticeRecordingID: UUID? { get }
+    func beginPracticeRecording() async
+    func endPracticeRecording() async
+}
+
+extension RecordingCoordinator: PracticeRecording {
+    var isPracticeRecordingActive: Bool { phase.isActive }
+    var lastPracticeRecordingID: UUID? { lastRecordingID }
+    func beginPracticeRecording() async { await start() }
+    func endPracticeRecording() async { await stop() }
+}
+
+/// One question of a practice round: the prompt the interviewer says, and the learner's own
+/// reference answer it came from, shown only after the answer is recorded.
+struct PracticeQuestion: Equatable, Sendable, Identifiable {
+    let entry: ReferenceEntry
+    let prompt: String
+
+    var id: Int { entry.id }
+}
+
+struct PracticeAnswer: Equatable, Sendable, Identifiable {
+    let question: PracticeQuestion
+    let recordingID: UUID
+
+    var id: UUID { recordingID }
+}
+
+/// Free interview practice, whenever the learner wants: the interviewer asks one answer-bank
+/// question aloud, the learner answers uninterrupted while it records, and only then may
+/// they compare against their own reference answer. It never coaches and never counts as a
+/// block's attempt; each answer is an ordinary recording the speech pipeline transcribes.
+@MainActor
+final class InterviewPracticeModel: ObservableObject {
+    @Published private(set) var questions: [PracticeQuestion] = []
+    @Published private(set) var turn: InterviewerTurn?
+    @Published private(set) var isAnswering = false
+    @Published private(set) var answers: [PracticeAnswer] = []
+    @Published private(set) var revealedReference: String?
+    @Published private(set) var message: String?
+
+    private let synthesizer: any LocalSpeechSynthesizing
+    private let recorder: (any PracticeRecording)?
+    private let shuffle: ([PracticeQuestion]) -> [PracticeQuestion]
+
+    init(
+        synthesizer: any LocalSpeechSynthesizing, recorder: (any PracticeRecording)?,
+        shuffle: @escaping ([PracticeQuestion]) -> [PracticeQuestion] = { $0.shuffled() }
+    ) {
+        self.synthesizer = synthesizer
+        self.recorder = recorder
+        self.shuffle = shuffle
+    }
+
+    /// The answer bank's questions: numbered headings ("Q1. …") or ones that end in "?",
+    /// with the numbering and the readiness note removed. A bank with neither offers all.
+    static func questions(from entries: [ReferenceEntry]) -> [PracticeQuestion] {
+        let bank = entries.filter { $0.kind == .answerBank }
+        let shaped = bank.filter { entry in
+            entry.heading.range(of: #"^Q\d+[.:)]"#, options: .regularExpression) != nil
+                || prompt(from: entry.heading).hasSuffix("?")
+        }
+        return (shaped.isEmpty ? bank : shaped).map { PracticeQuestion(entry: $0, prompt: prompt(from: $0.heading)) }
+    }
+
+    static func prompt(from heading: String) -> String {
+        var text = heading
+        if let range = text.range(of: #"^Q\d+[.:)]\s*"#, options: .regularExpression) { text.removeSubrange(range) }
+        if let range = text.range(of: #"\s+[—–-]\s+[^?]*$"#, options: .regularExpression) { text.removeSubrange(range) }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var isRunning: Bool { turn != nil && !isFinished }
+    var isFinished: Bool { turn?.phase == .finished }
+    var current: PracticeQuestion? {
+        guard let turn, !isFinished, questions.indices.contains(turn.askedIndex) else { return nil }
+        return questions[turn.askedIndex]
+    }
+    var progress: String {
+        guard let turn, current != nil else { return "" }
+        return "Question \(turn.askedIndex + 1) of \(questions.count)"
+    }
+    var canBeginAnswer: Bool { turn?.phase == .awaitingAnswer && !isAnswering && recorder != nil }
+    var canRevealReference: Bool { turn?.phase == .answerCommitted && revealedReference == nil }
+    var canMoveOn: Bool { turn?.phase == .answerCommitted }
+
+    func start(entries: [ReferenceEntry]) {
+        let picked = shuffle(Self.questions(from: entries))
+        guard !picked.isEmpty else {
+            message = "Import your answer bank first: there is nothing to ask yet."
+            return
+        }
+        questions = picked
+        answers = []
+        revealedReference = nil
+        message = nil
+        turn = InterviewerTurn(context: InterviewerContext(questionBank: picked.map(\.prompt), roleBrief: ""))
+        askNext()
+    }
+
+    func repeatQuestion() {
+        guard let current, !isAnswering else { return }
+        synthesizer.speak(current.prompt)
+    }
+
+    /// The learner starts talking: the recording starts and the interviewer goes silent.
+    func beginAnswer() async {
+        guard canBeginAnswer, let recorder else { return }
+        let before = recorder.lastPracticeRecordingID
+        await recorder.beginPracticeRecording()
+        guard recorder.isPracticeRecordingActive, recorder.lastPracticeRecordingID != before else {
+            message = "The recording did not start. Check the Recording screen for the reason."
+            return
+        }
+        message = nil
+        isAnswering = true
+    }
+
+    func endAnswer() async {
+        guard isAnswering, let recorder, let current else { return }
+        await recorder.endPracticeRecording()
+        isAnswering = false
+        try? turn?.commitAnswer()
+        if let id = recorder.lastPracticeRecordingID {
+            answers.append(PracticeAnswer(question: current, recordingID: id))
+        }
+    }
+
+    func revealReference() {
+        guard canRevealReference, let current else { return }
+        revealedReference = current.entry.body
+    }
+
+    func next() {
+        guard canMoveOn else { return }
+        revealedReference = nil
+        askNext()
+    }
+
+    func stop() {
+        guard !isAnswering else { return }
+        turn?.finish()
+    }
+
+    private func askNext() {
+        do {
+            if let question = try turn?.ask() { synthesizer.speak(question) }
+        } catch {
+            turn?.finish()
+        }
     }
 }
