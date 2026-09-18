@@ -271,3 +271,45 @@ extension InterviewTimeline: Decodable {
         case recurringGaps = "recurring_gaps"
     }
 }
+
+/// The two reference documents the Coach and the interview debrief may cite.
+enum ReferenceKind: String, Codable, CaseIterable, Sendable, Identifiable {
+    case answerBank = "answer_bank"
+    case storyCatalog = "story_catalog"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .answerBank: "Answer bank"
+        case .storyCatalog: "Story catalog"
+        }
+    }
+}
+
+/// One entry of a reference document: a heading and the text under it. The readiness label
+/// is what the document claimed ("READY", "DRAFT"); nothing here has been demonstrated.
+struct ReferenceEntry: Codable, Equatable, Sendable, Identifiable {
+    let id: Int
+    let kind: ReferenceKind
+    let documentTitle: String
+    let heading: String
+    let body: String
+    let readinessLabel: String
+    let readinessVerified: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, heading, body
+        case documentTitle = "document_title"
+        case readinessLabel = "readiness_label"
+        case readinessVerified = "readiness_verified"
+    }
+}
+
+/// What one import did: entries that were new, and entries the server already had.
+struct ReferenceImportOutcome: Codable, Equatable, Sendable {
+    let kind: ReferenceKind
+    let created: Int
+    let existing: Int
+    let entries: [ReferenceEntry]
+}

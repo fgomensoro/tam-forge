@@ -5,6 +5,7 @@ import SwiftUI
 struct InterviewsView: View {
     @ObservedObject var model: InterviewsModel
     @ObservedObject var coordinator: RecordingCoordinator
+    @State private var importingReferenceKind: ReferenceKind?
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
@@ -13,6 +14,7 @@ struct InterviewsView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     editor
                     timelineSection
+                    referenceSection
                 }
                 .padding()
             }
@@ -20,6 +22,59 @@ struct InterviewsView: View {
         .padding()
         .task { await model.load() }
         .accessibilityIdentifier("interviewsScreen")
+        .fileImporter(
+            isPresented: Binding(
+                get: { importingReferenceKind != nil },
+                set: { if !$0 { importingReferenceKind = nil } }
+            ),
+            allowedContentTypes: [.plainText, .text, .item],
+            allowsMultipleSelection: false
+        ) { result in
+            guard let kind = importingReferenceKind, let url = try? result.get().first else { return }
+            Task { await model.importReference(kind: kind, fileURL: url) }
+        }
+    }
+
+    /// The answer bank and the story catalog: what the Coach and the debrief may cite.
+    private var referenceSection: some View {
+        GroupBox("Interview reference") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Import your answer bank and your story catalog as Markdown, one heading per entry. The Coach and the interview debrief cite them; nothing is treated as demonstrated until a recording shows it. Importing the same file again adds nothing.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack {
+                    ForEach(ReferenceKind.allCases) { kind in
+                        Button("Import \(kind.title.lowercased())…") { importingReferenceKind = kind }
+                            .disabled(model.isBusy)
+                            .accessibilityIdentifier("referenceImport-\(kind.rawValue)")
+                    }
+                }
+                if let outcome = model.referenceOutcome {
+                    Text("\(outcome.kind.title): \(outcome.created) new, \(outcome.existing) already known.")
+                        .font(.caption)
+                        .accessibilityIdentifier("referenceImportOutcome")
+                }
+                ForEach(ReferenceKind.allCases) { kind in
+                    let entries = model.references(of: kind)
+                    if !entries.isEmpty {
+                        Text("\(kind.title) · \(entries.count)").font(.headline)
+                        ForEach(entries) { entry in
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(entry.heading).lineLimit(2)
+                                Spacer()
+                                if !entry.readinessLabel.isEmpty {
+                                    Text(entry.readinessLabel).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+                if model.references.isEmpty {
+                    Text("Nothing imported yet.").foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var list: some View {
