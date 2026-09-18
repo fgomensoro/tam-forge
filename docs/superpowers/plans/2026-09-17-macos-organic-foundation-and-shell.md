@@ -24,6 +24,12 @@ the failure mode this plan is structured to avoid.
 Stage 1 lands with no visible change at all. Stage 2 is the first stage a user
 can see.
 
+**Task order.** Stage 1 is tasks 1, 2, 3, 4, 11, then 5. Stage 2 is tasks 6
+through 10. Task 11 is the repo skill that captures the design layer; it is
+numbered out of order because the brief extractor matches `Task <integer>` and
+renumbering would invalidate briefs already generated. It runs last in stage 1,
+once the API it documents exists, so it ships in the same pull request.
+
 ## Global Constraints
 
 - **Identifiers are a contract.** 184 `accessibilityIdentifier` values exist; 987 lines of `TAMForgeUITests.swift` depend on them. An identifier may move to a different view. It may not be renamed, dropped, or have its element type changed. No task in this plan edits `TAMForgeUITests.swift`.
@@ -55,6 +61,7 @@ can see.
 | `TAMForge/App/Shell/SignInView.swift` | The `signedOut` phase screen. |
 | `TAMForge/App/Shell/TodayTaskStatus.swift` | Pure mapping from an activity state string to done/current/ready, plus the "N left" count. Stage 3 reuses it. |
 | `TAMForge/Resources/Fonts/` | `Figtree-Regular.ttf`, `Figtree-SemiBold.ttf`, `Figtree-Bold.ttf`, `OFL.txt`. |
+| `.claude/skills/macos-organic-ui/SKILL.md` | The repo skill that makes later UI work inherit the design system, the identifier contract and the pbxproj wiring. First tracked file under `.claude/`. |
 | `TAMForgeTests/OrganicDesignTests.swift` | Token parsing, font registration, tabular digits. |
 | `TAMForgeTests/TodayTaskStatusTests.swift` | The state mapping and badge count. |
 
@@ -801,6 +808,170 @@ rather than adjusting the test.
 ```bash
 git add apps/macos/TAMForge/Core/Design/OrganicWindow.swift apps/macos/TAMForge/App/TAMForgeApp.swift apps/macos/TAMForge.xcodeproj/project.pbxproj
 git commit -m "feat(macos): hide the title bar and pin the Organic window sizing"
+```
+
+---
+
+### Task 11: Capture the design layer as a repo skill
+
+Numbered 11 rather than 5 for a mechanical reason: the brief extractor matches
+`Task <integer>`, and renumbering the existing tasks would invalidate the ledger
+and the briefs already generated. **This task belongs to stage 1 and runs after
+Task 4, before the Task 5 gate**, so the skill ships in the stage 1 pull request.
+
+**Files:**
+- Create: `.claude/skills/macos-organic-ui/SKILL.md`
+
+**Interfaces:**
+- Consumes: everything tasks 1 through 4 produced. The skill documents them; it adds no code.
+- Produces: nothing other tasks consume.
+
+**Why this exists.** Every stage from 3 onward rewrites a screen, and each one is
+a fresh chance to hardcode a hex, reach for `.font(.system(...))`, or turn a nav
+row into a tap gesture that breaks 29 UI tests. `.claude/` is currently untracked
+in this repo, so this is the first thing to live there.
+
+- [ ] **Step 1: Write the skill**
+
+Create `.claude/skills/macos-organic-ui/SKILL.md`. Keep it to this one file. The
+frontmatter description is what decides whether the skill fires, so it carries
+the trigger vocabulary, not a summary.
+
+````markdown
+---
+name: macos-organic-ui
+description: Use when writing or changing any SwiftUI view in apps/macos/TAMForge - adding a screen, a control, a card, a row, a button, a form, an empty state, or restyling an existing one. Carries the Organic design system (colors, type, spacing, radii, primitives), the accessibility-identifier contract the UI tests depend on, and the manual Xcode project wiring every new file needs. Also use when a change mentions tokens, theming, dark mode, Figtree, fonts, or the design handoff.
+---
+
+# TAM Forge macOS UI
+
+The Mac app runs on the Organic design system: warm dark ground, terracotta and
+sage accents, Figtree type, pill and over-rounded geometry. It is dark-only.
+
+## Pixel authority
+
+`docs/design/macos-organic/README.md` is final for colors, type, spacing, radii
+and copy. `docs/design/macos-organic/TAM Forge - Mac.dc.html` is the interactive
+reference for all nine routes; open it in a browser and compare against it rather
+than against a written description. Neither file is code to port.
+
+The full color ramp is transcribed into `OrganicTokens.swift`, including rungs the
+handoff's token list does not spell out. Take values from there, not from the
+handoff's prose.
+
+## Never write these
+
+| Instead of | Use |
+|---|---|
+| `Color(red:green:blue:)`, `Color(hex: "#...")`, `.gray`, `.secondary` | `Organic.Color.*` |
+| `.font(.system(size:weight:))`, `.title`, `.headline`, `.caption` | `Organic.Font.figtree(_:size:)` |
+| `.monospacedDigit()` on a clock, score or count | `Organic.Font.tabular(_:size:)` |
+| A literal corner radius or padding number | `Organic.Radius.*`, `Organic.Space.*` |
+| A hand-rolled card, pill, tag or button background | the primitives below |
+
+A number that genuinely has no token (a one-off frame width the handoff
+specifies) is fine inline. A *color* never is.
+
+## The primitives
+
+From `TAMForge/Core/Design/OrganicComponents.swift`:
+
+- `.organicCard(radius:padding:shadowed:)` — surface fill, large radius, lg shadow
+- `.organicFocusRing(_:radius:)` — 2 pt accent ring, offset 2
+- `OrganicPrimaryButtonStyle` — accent-400 fill, neutral-900 text
+- `OrganicSecondaryButtonStyle` — divider border, subtle fill
+- `OrganicGhostButtonStyle` — text only
+- `OrganicTag` — the 11 pt rounded tag for blocks, requirements and row states
+- `OrganicBadge` — the sidebar count pill
+- `OrganicStatusDot` — the status dot
+
+Add a new primitive only when the same construction appears in three places.
+Until then it is a modifier or it is inline.
+
+## The identifier contract
+
+184 `accessibilityIdentifier` values exist and 987 lines of
+`TAMForgeUITests.swift` depend on them. **Never edit that test file to make a
+change pass.** An identifier may move to a different view; it may not be renamed,
+dropped, or have its element type changed.
+
+The trap: the UI tests query by element type, for example
+`app.buttons["todayNavigation"]`. A row built as an `HStack` with
+`.onTapGesture` is not a button in the accessibility tree and breaks every such
+assertion. **Interactive rows are `Button` with `.buttonStyle(.plain)`.**
+
+Before claiming a UI change is done:
+
+```bash
+git diff --stat origin/main -- apps/macos/TAMForgeUITests/
+```
+
+Empty output, or the change is not done.
+
+## Adding a file to the Xcode project
+
+`TAMForge.xcodeproj/project.pbxproj` uses explicit file references, not Xcode 16
+synchronized groups. A Swift file that is not wired in does not compile and its
+tests do not run, silently. Four edits per file:
+
+1. a `PBXFileReference`
+2. `PBXBuildFile` entries — **two** for an app source file, because app sources
+   also compile into the unit-test target; **one** for a test file
+3. membership in the right `PBXGroup`
+4. membership in the build phases: app Sources `A10000000000000000000091`,
+   unit-test Sources `A10000000000000000000092`, app Resources
+   `A10000000000000000000094`
+
+Then, before building:
+
+```bash
+plutil -lint apps/macos/TAMForge.xcodeproj/project.pbxproj
+```
+
+A malformed project file produces a confusing `xcodebuild` error; the lint says
+what is wrong.
+
+## Testing
+
+```bash
+xcodebuild -jobs 2 -skipPackagePluginValidation \
+  -project apps/macos/TAMForge.xcodeproj -scheme TAMForge \
+  -destination 'platform=macOS' test
+```
+
+`-only-testing` against a class the project does not contain matches nothing,
+runs nothing, and still exits `TEST SUCCEEDED`. Never read that as a pass unless
+the output also shows a non-zero test count.
+````
+
+- [ ] **Step 2: Verify the skill file parses as frontmatter plus markdown**
+
+```bash
+head -5 .claude/skills/macos-organic-ui/SKILL.md
+awk 'NR==1 && $0!="---" {print "BAD: no frontmatter"; exit 1}' .claude/skills/macos-organic-ui/SKILL.md && echo "frontmatter ok"
+```
+
+Expected: the `---` fence, a `name:` line, a `description:` line, then `---`.
+
+- [ ] **Step 3: Check every claim in the skill against the code**
+
+The skill asserts specific API names. Confirm each exists before committing, so
+the skill does not teach an API that is not there:
+
+```bash
+grep -c 'organicCard\|organicFocusRing\|OrganicPrimaryButtonStyle\|OrganicSecondaryButtonStyle\|OrganicGhostButtonStyle\|OrganicTag\|OrganicBadge\|OrganicStatusDot' apps/macos/TAMForge/Core/Design/OrganicComponents.swift
+grep -c 'func figtree\|func tabular' apps/macos/TAMForge/Core/Design/OrganicFonts.swift
+grep -c 'enum Radius\|enum Space\|enum Color' apps/macos/TAMForge/Core/Design/OrganicTokens.swift
+```
+
+Expected: 8 or more, 2, and 3. If any name differs from what tasks 1 through 3
+actually committed, correct the skill to match the code, never the reverse.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add .claude/skills/macos-organic-ui/SKILL.md
+git commit -m "docs(macos): add the Organic UI skill so new views inherit the design system"
 ```
 
 ---
