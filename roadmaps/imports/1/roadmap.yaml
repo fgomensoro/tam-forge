@@ -1,0 +1,748 @@
+schema_version: 1
+program:
+  key: tam_phase_1
+  title: TAM Study Phase 1
+rest_weekdays:
+- sunday
+days:
+- id: phase-1-six-week-v1-d20
+  kind: weekday
+  budget_minutes: 180
+  blocks:
+  - id: p1-w04-d20-interview
+    type: communication
+    minutes: 60
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: 2026-09-15 execution contract
+    objective: '2026-09-15 execution contract: Independent Attempt A, coaching handoff,
+      and separate Attempt B.'
+    exercise_type: official_reading
+    allowed_ai_role: interviewer
+  - id: p1-w04-d20-pipeline
+    type: pipeline
+    minutes: 30
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: 2026-09-15 execution contract
+    objective: '2026-09-15 execution contract: One or more quality pipeline actions.'
+    exercise_type: official_reading
+    allowed_ai_role: planner
+  - id: p1-w04-d20-roadmap
+    type: technical
+    minutes: 75
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: 2026-09-15 execution contract
+    objective: '2026-09-15 execution contract: Assigned roadmap artifact and exact
+      checkpoint.'
+    exercise_type: official_reading
+    allowed_ai_role: tutor
+  - id: p1-w04-d20-close
+    type: close
+    minutes: 15
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: 2026-09-15 execution contract
+    objective: '2026-09-15 execution contract: Daily scorecard, recall items, evidence
+      map, and exact next action.'
+    exercise_type: official_reading
+    allowed_ai_role: analyst
+- id: phase-1-six-week-v1-d21
+  kind: weekday
+  budget_minutes: 180
+  blocks:
+  - id: p1-w04-d21-interview
+    type: communication
+    minutes: 60
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: 2026-09-16 execution contract
+    objective: '2026-09-16 execution contract: Independent Attempt A, coaching handoff,
+      and separate Attempt B.'
+    exercise_type: official_reading
+    allowed_ai_role: interviewer
+  - id: p1-w04-d21-pipeline
+    type: pipeline
+    minutes: 30
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: 2026-09-16 execution contract
+    objective: '2026-09-16 execution contract: One or more quality pipeline actions.'
+    exercise_type: official_reading
+    allowed_ai_role: planner
+  - id: p1-w04-d21-roadmap
+    type: technical
+    minutes: 75
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: 2026-09-16 execution contract
+    objective: '2026-09-16 execution contract: Assigned roadmap artifact and exact
+      checkpoint.'
+    exercise_type: official_reading
+    allowed_ai_role: tutor
+  - id: p1-w04-d21-close
+    type: close
+    minutes: 15
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: 2026-09-16 execution contract
+    objective: '2026-09-16 execution contract: Daily scorecard, recall items, evidence
+      map, and exact next action.'
+    exercise_type: official_reading
+    allowed_ai_role: analyst
+- id: phase-1-six-week-v1-d22
+  kind: weekday
+  budget_minutes: 180
+  blocks:
+  - id: p1-w04-d22-interview
+    type: communication
+    minutes: 60
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: 2026-09-17 execution contract
+    objective: '2026-09-17 execution contract: Independent Attempt A, coaching handoff,
+      and separate Attempt B.'
+    exercise_type: official_reading
+    allowed_ai_role: interviewer
+  - id: p1-w04-d22-pipeline
+    type: pipeline
+    minutes: 30
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: 2026-09-17 execution contract
+    objective: '2026-09-17 execution contract: One or more quality pipeline actions.'
+    exercise_type: official_reading
+    allowed_ai_role: planner
+  - id: p1-w04-d22-roadmap
+    type: technical
+    minutes: 75
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: 2026-09-17 execution contract
+    objective: '2026-09-17 execution contract: Assigned roadmap artifact and exact
+      checkpoint.'
+    exercise_type: official_reading
+    allowed_ai_role: tutor
+  - id: p1-w04-d22-close
+    type: close
+    minutes: 15
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: 2026-09-17 execution contract
+    objective: '2026-09-17 execution contract: Daily scorecard, recall items, evidence
+      map, and exact next action.'
+    exercise_type: official_reading
+    allowed_ai_role: analyst
+- id: phase-1-six-week-v1-d23
+  kind: weekday
+  budget_minutes: 180
+  blocks:
+  - id: p1-w04-d23-interview
+    type: communication
+    minutes: 60
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: 2026-09-18 execution contract
+    objective: '2026-09-18 execution contract: Independent Attempt A, coaching handoff,
+      and separate Attempt B.'
+    exercise_type: official_reading
+    allowed_ai_role: interviewer
+  - id: p1-w04-d23-pipeline
+    type: pipeline
+    minutes: 30
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: 2026-09-18 execution contract
+    objective: '2026-09-18 execution contract: One or more quality pipeline actions.'
+    exercise_type: official_reading
+    allowed_ai_role: planner
+  - id: p1-w04-d23-roadmap
+    type: technical
+    minutes: 75
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: 2026-09-18 execution contract
+    objective: '2026-09-18 execution contract: Assigned roadmap artifact and exact
+      checkpoint.'
+    exercise_type: official_reading
+    allowed_ai_role: tutor
+  - id: p1-w04-d23-close
+    type: close
+    minutes: 15
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: 2026-09-18 execution contract
+    objective: '2026-09-18 execution contract: Daily scorecard, recall items, evidence
+      map, and exact next action.'
+    exercise_type: official_reading
+    allowed_ai_role: analyst
+- id: phase-1-six-week-v1-d24
+  kind: assessment
+  budget_minutes: 120
+  blocks:
+  - id: p1-w04-d24-sat-fresh-mock
+    type: saturday_case
+    minutes: 35
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: Saturday contract
+    objective: 'Saturday contract: The named independent Saturday assessment segment.'
+    exercise_type: official_reading
+    allowed_ai_role: none
+  - id: p1-w04-d24-sat-technical-transfer
+    type: saturday_case
+    minutes: 45
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: Saturday contract
+    objective: 'Saturday contract: The named independent Saturday assessment segment.'
+    exercise_type: official_reading
+    allowed_ai_role: none
+  - id: p1-w04-d24-sat-evidence-scoring
+    type: saturday_scoring
+    minutes: 20
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: Saturday contract
+    objective: 'Saturday contract: The named independent Saturday assessment segment.'
+    exercise_type: official_reading
+    allowed_ai_role: none
+  - id: p1-w04-d24-sat-pipeline-review
+    type: saturday_scoring
+    minutes: 10
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: Saturday contract
+    objective: 'Saturday contract: The named independent Saturday assessment segment.'
+    exercise_type: official_reading
+    allowed_ai_role: none
+  - id: p1-w04-d24-sat-next-week-planning
+    type: saturday_scoring
+    minutes: 10
+    source:
+      file: Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md
+      heading: Saturday contract
+    objective: 'Saturday contract: The named independent Saturday assessment segment.'
+    exercise_type: official_reading
+    allowed_ai_role: none
+- id: phase-1-six-week-v1-d25
+  kind: weekday
+  budget_minutes: 180
+  blocks:
+  - id: p1-w05-d25-interview
+    type: communication
+    minutes: 60
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-21 execution contract
+    objective: '2026-09-21 execution contract: Independent Attempt A, coaching handoff,
+      and separate Attempt B.'
+    exercise_type: official_reading
+    allowed_ai_role: interviewer
+  - id: p1-w05-d25-pipeline
+    type: pipeline
+    minutes: 30
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-21 execution contract
+    objective: '2026-09-21 execution contract: One or more quality pipeline actions.'
+    exercise_type: official_reading
+    allowed_ai_role: planner
+  - id: p1-w05-d25-roadmap
+    type: technical
+    minutes: 75
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-21 execution contract
+    objective: '2026-09-21 execution contract: Assigned roadmap artifact and exact
+      checkpoint.'
+    exercise_type: official_reading
+    allowed_ai_role: tutor
+  - id: p1-w05-d25-close
+    type: close
+    minutes: 15
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-21 execution contract
+    objective: '2026-09-21 execution contract: Daily scorecard, recall items, evidence
+      map, and exact next action.'
+    exercise_type: official_reading
+    allowed_ai_role: analyst
+- id: phase-1-six-week-v1-d26
+  kind: weekday
+  budget_minutes: 180
+  blocks:
+  - id: p1-w05-d26-interview
+    type: communication
+    minutes: 60
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-22 execution contract
+    objective: '2026-09-22 execution contract: Independent Attempt A, coaching handoff,
+      and separate Attempt B.'
+    exercise_type: official_reading
+    allowed_ai_role: interviewer
+  - id: p1-w05-d26-pipeline
+    type: pipeline
+    minutes: 30
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-22 execution contract
+    objective: '2026-09-22 execution contract: One or more quality pipeline actions.'
+    exercise_type: official_reading
+    allowed_ai_role: planner
+  - id: p1-w05-d26-roadmap
+    type: technical
+    minutes: 75
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-22 execution contract
+    objective: '2026-09-22 execution contract: Assigned roadmap artifact and exact
+      checkpoint.'
+    exercise_type: official_reading
+    allowed_ai_role: tutor
+  - id: p1-w05-d26-close
+    type: close
+    minutes: 15
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-22 execution contract
+    objective: '2026-09-22 execution contract: Daily scorecard, recall items, evidence
+      map, and exact next action.'
+    exercise_type: official_reading
+    allowed_ai_role: analyst
+- id: phase-1-six-week-v1-d27
+  kind: weekday
+  budget_minutes: 180
+  blocks:
+  - id: p1-w05-d27-interview
+    type: communication
+    minutes: 60
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-23 execution contract
+    objective: '2026-09-23 execution contract: Independent Attempt A, coaching handoff,
+      and separate Attempt B.'
+    exercise_type: official_reading
+    allowed_ai_role: interviewer
+  - id: p1-w05-d27-pipeline
+    type: pipeline
+    minutes: 30
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-23 execution contract
+    objective: '2026-09-23 execution contract: One or more quality pipeline actions.'
+    exercise_type: official_reading
+    allowed_ai_role: planner
+  - id: p1-w05-d27-roadmap
+    type: technical
+    minutes: 75
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-23 execution contract
+    objective: '2026-09-23 execution contract: Assigned roadmap artifact and exact
+      checkpoint.'
+    exercise_type: official_reading
+    allowed_ai_role: tutor
+  - id: p1-w05-d27-close
+    type: close
+    minutes: 15
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-23 execution contract
+    objective: '2026-09-23 execution contract: Daily scorecard, recall items, evidence
+      map, and exact next action.'
+    exercise_type: official_reading
+    allowed_ai_role: analyst
+- id: phase-1-six-week-v1-d28
+  kind: weekday
+  budget_minutes: 180
+  blocks:
+  - id: p1-w05-d28-interview
+    type: communication
+    minutes: 60
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-24 execution contract
+    objective: '2026-09-24 execution contract: Independent Attempt A, coaching handoff,
+      and separate Attempt B.'
+    exercise_type: official_reading
+    allowed_ai_role: interviewer
+  - id: p1-w05-d28-pipeline
+    type: pipeline
+    minutes: 30
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-24 execution contract
+    objective: '2026-09-24 execution contract: One or more quality pipeline actions.'
+    exercise_type: official_reading
+    allowed_ai_role: planner
+  - id: p1-w05-d28-roadmap
+    type: technical
+    minutes: 75
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-24 execution contract
+    objective: '2026-09-24 execution contract: Assigned roadmap artifact and exact
+      checkpoint.'
+    exercise_type: official_reading
+    allowed_ai_role: tutor
+  - id: p1-w05-d28-close
+    type: close
+    minutes: 15
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-24 execution contract
+    objective: '2026-09-24 execution contract: Daily scorecard, recall items, evidence
+      map, and exact next action.'
+    exercise_type: official_reading
+    allowed_ai_role: analyst
+- id: phase-1-six-week-v1-d29
+  kind: weekday
+  budget_minutes: 180
+  blocks:
+  - id: p1-w05-d29-interview
+    type: communication
+    minutes: 60
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-25 execution contract
+    objective: '2026-09-25 execution contract: Independent Attempt A, coaching handoff,
+      and separate Attempt B.'
+    exercise_type: official_reading
+    allowed_ai_role: interviewer
+  - id: p1-w05-d29-pipeline
+    type: pipeline
+    minutes: 30
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-25 execution contract
+    objective: '2026-09-25 execution contract: One or more quality pipeline actions.'
+    exercise_type: official_reading
+    allowed_ai_role: planner
+  - id: p1-w05-d29-roadmap
+    type: technical
+    minutes: 75
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-25 execution contract
+    objective: '2026-09-25 execution contract: Assigned roadmap artifact and exact
+      checkpoint.'
+    exercise_type: official_reading
+    allowed_ai_role: tutor
+  - id: p1-w05-d29-close
+    type: close
+    minutes: 15
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: 2026-09-25 execution contract
+    objective: '2026-09-25 execution contract: Daily scorecard, recall items, evidence
+      map, and exact next action.'
+    exercise_type: official_reading
+    allowed_ai_role: analyst
+- id: phase-1-six-week-v1-d30
+  kind: assessment
+  budget_minutes: 120
+  blocks:
+  - id: p1-w05-d30-sat-no-ai-sql
+    type: saturday_sql
+    minutes: 30
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: Saturday contract
+    objective: 'Saturday contract: The named independent Saturday assessment segment.'
+    exercise_type: official_reading
+    allowed_ai_role: none
+  - id: p1-w05-d30-sat-case
+    type: saturday_case
+    minutes: 35
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: Saturday contract
+    objective: 'Saturday contract: The named independent Saturday assessment segment.'
+    exercise_type: official_reading
+    allowed_ai_role: none
+  - id: p1-w05-d30-sat-portfolio
+    type: saturday_portfolio
+    minutes: 20
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: Saturday contract
+    objective: 'Saturday contract: The named independent Saturday assessment segment.'
+    exercise_type: official_reading
+    allowed_ai_role: none
+  - id: p1-w05-d30-sat-executive-behavioral
+    type: saturday_behavioral
+    minutes: 20
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: Saturday contract
+    objective: 'Saturday contract: The named independent Saturday assessment segment.'
+    exercise_type: official_reading
+    allowed_ai_role: none
+  - id: p1-w05-d30-sat-scoring
+    type: saturday_scoring
+    minutes: 15
+    source:
+      file: Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md
+      heading: Saturday contract
+    objective: 'Saturday contract: The named independent Saturday assessment segment.'
+    exercise_type: official_reading
+    allowed_ai_role: none
+- id: phase-1-six-week-v1-d31
+  kind: weekday
+  budget_minutes: 180
+  blocks:
+  - id: p1-w06-d31-interview
+    type: communication
+    minutes: 60
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-09-28 execution contract
+    objective: '2026-09-28 execution contract: Independent Attempt A, coaching handoff,
+      and separate Attempt B.'
+    exercise_type: official_reading
+    allowed_ai_role: interviewer
+  - id: p1-w06-d31-pipeline
+    type: pipeline
+    minutes: 30
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-09-28 execution contract
+    objective: '2026-09-28 execution contract: One or more quality pipeline actions.'
+    exercise_type: official_reading
+    allowed_ai_role: planner
+  - id: p1-w06-d31-roadmap
+    type: technical
+    minutes: 75
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-09-28 execution contract
+    objective: '2026-09-28 execution contract: Assigned roadmap artifact and exact
+      checkpoint.'
+    exercise_type: official_reading
+    allowed_ai_role: tutor
+  - id: p1-w06-d31-close
+    type: close
+    minutes: 15
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-09-28 execution contract
+    objective: '2026-09-28 execution contract: Daily scorecard, recall items, evidence
+      map, and exact next action.'
+    exercise_type: official_reading
+    allowed_ai_role: analyst
+- id: phase-1-six-week-v1-d32
+  kind: weekday
+  budget_minutes: 180
+  blocks:
+  - id: p1-w06-d32-interview
+    type: communication
+    minutes: 60
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-09-29 execution contract
+    objective: '2026-09-29 execution contract: Independent Attempt A, coaching handoff,
+      and separate Attempt B.'
+    exercise_type: official_reading
+    allowed_ai_role: interviewer
+  - id: p1-w06-d32-pipeline
+    type: pipeline
+    minutes: 30
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-09-29 execution contract
+    objective: '2026-09-29 execution contract: One or more quality pipeline actions.'
+    exercise_type: official_reading
+    allowed_ai_role: planner
+  - id: p1-w06-d32-roadmap
+    type: technical
+    minutes: 75
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-09-29 execution contract
+    objective: '2026-09-29 execution contract: Assigned roadmap artifact and exact
+      checkpoint.'
+    exercise_type: official_reading
+    allowed_ai_role: tutor
+  - id: p1-w06-d32-close
+    type: close
+    minutes: 15
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-09-29 execution contract
+    objective: '2026-09-29 execution contract: Daily scorecard, recall items, evidence
+      map, and exact next action.'
+    exercise_type: official_reading
+    allowed_ai_role: analyst
+- id: phase-1-six-week-v1-d33
+  kind: weekday
+  budget_minutes: 180
+  blocks:
+  - id: p1-w06-d33-interview
+    type: communication
+    minutes: 60
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-09-30 execution contract
+    objective: '2026-09-30 execution contract: Independent Attempt A, coaching handoff,
+      and separate Attempt B.'
+    exercise_type: official_reading
+    allowed_ai_role: interviewer
+  - id: p1-w06-d33-pipeline
+    type: pipeline
+    minutes: 30
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-09-30 execution contract
+    objective: '2026-09-30 execution contract: One or more quality pipeline actions.'
+    exercise_type: official_reading
+    allowed_ai_role: planner
+  - id: p1-w06-d33-roadmap
+    type: technical
+    minutes: 75
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-09-30 execution contract
+    objective: '2026-09-30 execution contract: Assigned roadmap artifact and exact
+      checkpoint.'
+    exercise_type: official_reading
+    allowed_ai_role: tutor
+  - id: p1-w06-d33-close
+    type: close
+    minutes: 15
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-09-30 execution contract
+    objective: '2026-09-30 execution contract: Daily scorecard, recall items, evidence
+      map, and exact next action.'
+    exercise_type: official_reading
+    allowed_ai_role: analyst
+- id: phase-1-six-week-v1-d34
+  kind: weekday
+  budget_minutes: 180
+  blocks:
+  - id: p1-w06-d34-interview
+    type: communication
+    minutes: 60
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-10-01 execution contract
+    objective: '2026-10-01 execution contract: Independent Attempt A, coaching handoff,
+      and separate Attempt B.'
+    exercise_type: official_reading
+    allowed_ai_role: interviewer
+  - id: p1-w06-d34-pipeline
+    type: pipeline
+    minutes: 30
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-10-01 execution contract
+    objective: '2026-10-01 execution contract: One or more quality pipeline actions.'
+    exercise_type: official_reading
+    allowed_ai_role: planner
+  - id: p1-w06-d34-roadmap
+    type: technical
+    minutes: 75
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-10-01 execution contract
+    objective: '2026-10-01 execution contract: Assigned roadmap artifact and exact
+      checkpoint.'
+    exercise_type: official_reading
+    allowed_ai_role: tutor
+  - id: p1-w06-d34-close
+    type: close
+    minutes: 15
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-10-01 execution contract
+    objective: '2026-10-01 execution contract: Daily scorecard, recall items, evidence
+      map, and exact next action.'
+    exercise_type: official_reading
+    allowed_ai_role: analyst
+- id: phase-1-six-week-v1-d35
+  kind: weekday
+  budget_minutes: 180
+  blocks:
+  - id: p1-w06-d35-interview
+    type: communication
+    minutes: 60
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-10-02 execution contract
+    objective: '2026-10-02 execution contract: Sealed 45-minute final mock and self-review.'
+    exercise_type: official_reading
+    allowed_ai_role: interviewer
+  - id: p1-w06-d35-pipeline
+    type: pipeline
+    minutes: 30
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-10-02 execution contract
+    objective: '2026-10-02 execution contract: One or more quality pipeline actions.'
+    exercise_type: official_reading
+    allowed_ai_role: planner
+  - id: p1-w06-d35-roadmap
+    type: technical
+    minutes: 75
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-10-02 execution contract
+    objective: '2026-10-02 execution contract: Assigned roadmap artifact and exact
+      checkpoint.'
+    exercise_type: official_reading
+    allowed_ai_role: tutor
+  - id: p1-w06-d35-close
+    type: close
+    minutes: 15
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: 2026-10-02 execution contract
+    objective: '2026-10-02 execution contract: Daily scorecard, recall items, evidence
+      map, and exact next action.'
+    exercise_type: official_reading
+    allowed_ai_role: analyst
+- id: phase-1-six-week-v1-d36
+  kind: assessment
+  budget_minutes: 120
+  blocks:
+  - id: p1-w06-d36-sat-no-ai-sql
+    type: saturday_sql
+    minutes: 30
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: Saturday contract
+    objective: 'Saturday contract: The named independent Saturday assessment segment.'
+    exercise_type: official_reading
+    allowed_ai_role: none
+  - id: p1-w06-d36-sat-portfolio-to-depth-gauntlet
+    type: saturday_gauntlet
+    minutes: 55
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: Saturday contract
+    objective: 'Saturday contract: The named independent Saturday assessment segment.'
+    exercise_type: official_reading
+    allowed_ai_role: none
+  - id: p1-w06-d36-sat-writing
+    type: saturday_writing
+    minutes: 20
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: Saturday contract
+    objective: 'Saturday contract: The named independent Saturday assessment segment.'
+    exercise_type: official_reading
+    allowed_ai_role: none
+  - id: p1-w06-d36-sat-scoring
+    type: saturday_scoring
+    minutes: 15
+    source:
+      file: Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md
+      heading: Saturday contract
+    objective: 'Saturday contract: The named independent Saturday assessment segment.'
+    exercise_type: official_reading
+    allowed_ai_role: none
+lineage:
+  predecessor_version: month-1-v2

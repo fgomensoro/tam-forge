@@ -1,0 +1,573 @@
+{
+  "content_hash": "47d0320e8b796349f5785e99f1954ca45d56fa406a625748e5c51353130e1cdb",
+  "files": [
+    {
+      "byte_size": 5305,
+      "media_type": "text/markdown",
+      "original_filename": "Phase 1 - Week 1 - Transition, foundations, and baseline.md",
+      "path": "Phase 1 - Week 1 - Transition, foundations, and baseline.md",
+      "sha256": "82962878bb00e6541104aa7c8a7d44f78c242585edd65b95a9e3f60d4c16091b"
+    },
+    {
+      "byte_size": 10262,
+      "media_type": "text/markdown",
+      "original_filename": "Phase 1 - Week 2 - Webhooks, discovery, and retry control.md",
+      "path": "Phase 1 - Week 2 - Webhooks, discovery, and retry control.md",
+      "sha256": "330c0c748ee1f60b5dafc1b808a7ea2aa20b325c4fa6bbab482c830044e4f402"
+    },
+    {
+      "byte_size": 10187,
+      "media_type": "text/markdown",
+      "original_filename": "Phase 1 - Week 3 - Distributed failures, incidents, and payments.md",
+      "path": "Phase 1 - Week 3 - Distributed failures, incidents, and payments.md",
+      "sha256": "80086d1f071c6210c3c17702bec5a5cb1d3f6379ecd5f7b9c5a5a7f0521bf17b"
+    },
+    {
+      "byte_size": 10223,
+      "media_type": "text/markdown",
+      "original_filename": "Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md",
+      "path": "Phase 1 - Week 4 - OAuth, observability, and midpoint transfer.md",
+      "sha256": "88c4c7c18154b00a59a7be9edcbe33ffb942ccd351b5cc211420cfa3ef3dc885"
+    },
+    {
+      "byte_size": 10139,
+      "media_type": "text/markdown",
+      "original_filename": "Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md",
+      "path": "Phase 1 - Week 5 - Implementation, account strategy, and launch judgment.md",
+      "sha256": "8c22da8ea90349131611bc0d0162a19e349552e311b338ac974a96532c5f27ed"
+    },
+    {
+      "byte_size": 10195,
+      "media_type": "text/markdown",
+      "original_filename": "Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md",
+      "path": "Phase 1 - Week 6 - QBR, portfolio judgment, and final assessment.md",
+      "sha256": "ec23a3ba8cb2819f81bbfa265b30f598276699df59eb86f54c7f2bad1b9301ea"
+    },
+    {
+      "byte_size": 8250,
+      "media_type": "text/markdown",
+      "original_filename": "README.md",
+      "path": "README.md",
+      "sha256": "6553365439af54bd4e9a2b1a52f11bb8cd1cfce1787c10d7494051f9038292af"
+    },
+    {
+      "byte_size": 2311,
+      "media_type": "text/markdown",
+      "original_filename": "Northstar Case.md",
+      "path": "cases/Northstar Case.md",
+      "sha256": "9a693149cb6d9c7abfd67e3ab9b7e191c61c67f857262404bb656acf389d9612"
+    },
+    {
+      "byte_size": 8022,
+      "media_type": "text/markdown",
+      "original_filename": "Portfolio Triage Cases.md",
+      "path": "cases/Portfolio Triage Cases.md",
+      "sha256": "4a9f338867747f5b13335556b50f20a0c96b649700df42fd087aae4f4e8ddf7c"
+    },
+    {
+      "byte_size": 6569,
+      "media_type": "text/markdown",
+      "original_filename": "2026-08-28 - Phase 1 Six-Week Redesign Changes.md",
+      "path": "docs/2026-08-28 - Phase 1 Six-Week Redesign Changes.md",
+      "sha256": "b86432f9d2dbeb57cdaecb0183f5ee97f57d2d7d55a733cd2ab3ca9678ecdb8e"
+    },
+    {
+      "byte_size": 276298,
+      "media_type": "text/markdown",
+      "original_filename": "Coverage Ledger.md",
+      "path": "docs/Coverage Ledger.md",
+      "sha256": "f22b34aa4c2a661f32c461301cd1b7008af5eda2a3b254e67c8c43f21795958f"
+    },
+    {
+      "byte_size": 17774,
+      "media_type": "text/markdown",
+      "original_filename": "Interview Queue.md",
+      "path": "docs/Interview Queue.md",
+      "sha256": "717fa815fbfccbeb5ce2baafc0465bda111834eeb0d8b91665a05aa82acdfcb6"
+    },
+    {
+      "byte_size": 1001,
+      "media_type": "text/markdown",
+      "original_filename": "Next Phase Priorities.md",
+      "path": "docs/Next Phase Priorities.md",
+      "sha256": "8bc8a0b8cabeaa555bba73f3fd4d9591da3a033044f56407af85a45c9c180d3e"
+    },
+    {
+      "byte_size": 5790,
+      "media_type": "text/markdown",
+      "original_filename": "Package Contents.md",
+      "path": "docs/Package Contents.md",
+      "sha256": "02ca7af7a2d83c30eb3902094e47b3b747a043518511302001a2e8b1c85e6f8a"
+    },
+    {
+      "byte_size": 20633,
+      "media_type": "text/markdown",
+      "original_filename": "Phase 1 - Complete Roadmap.md",
+      "path": "docs/Phase 1 - Complete Roadmap.md",
+      "sha256": "4af969c70177536b138aadcbeb0ee4f1da5a1adb3f6d4ec90a128981b6350cea"
+    },
+    {
+      "byte_size": 3035,
+      "media_type": "text/markdown",
+      "original_filename": "Portfolio Judgment Track.md",
+      "path": "docs/Portfolio Judgment Track.md",
+      "sha256": "e9a576876fb309bd82fb8284894ae1e548bb592682c58f396375ac0ce70b33e6"
+    },
+    {
+      "byte_size": 15284,
+      "media_type": "text/markdown",
+      "original_filename": "Transition Ledger.md",
+      "path": "docs/Transition Ledger.md",
+      "sha256": "8712d5566e1569207318a4376bad6bf8db220e7ece8edc590f548c7e5295a31b"
+    },
+    {
+      "byte_size": 27426,
+      "media_type": "application/yaml",
+      "original_filename": "roadmap.yaml",
+      "path": "roadmap.yaml",
+      "sha256": "5e77a62cc8c0637991c13076295a1c2ee4d70bb409d8d9c386d71976f1d6df09"
+    },
+    {
+      "byte_size": 8096,
+      "media_type": "application/sql",
+      "original_filename": "setup.sql",
+      "path": "sql/setup.sql",
+      "sha256": "018d0410d7fba883898817710f8a0865e15e50dbf22a348bcc44b533dfd93d99"
+    },
+    {
+      "byte_size": 2332,
+      "media_type": "text/markdown",
+      "original_filename": "tasks.md",
+      "path": "sql/tasks.md",
+      "sha256": "fe2c4544b1b520131d8a37318a0c69f617cf8f3d7e83ff025c22fe51642805f8"
+    },
+    {
+      "byte_size": 11215,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-08 - Active Study Reforecast.md",
+      "path": "study-notes/2026-09-08 - Active Study Reforecast.md",
+      "sha256": "59d9706562137353795b6f10890b8c37743efd9c208bd27ebce2c087da897c27"
+    },
+    {
+      "byte_size": 3570,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-09 - Audience Switching Study Notes.md",
+      "path": "study-notes/2026-09-09 - Audience Switching Study Notes.md",
+      "sha256": "05ddf689851512b506aad2e58446e0d5acdd080df8521ab3a6aa78337c12d46f"
+    },
+    {
+      "byte_size": 5203,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-09 - Duplicate Order Recovery Study Notes.md",
+      "path": "study-notes/2026-09-09 - Duplicate Order Recovery Study Notes.md",
+      "sha256": "f7af8e9eef80fc527e23f85809163da4209ece1f1e094c14a0818cdf5dd1d3f1"
+    },
+    {
+      "byte_size": 1682,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-09 - Recruiter Introduction Practice Notes.md",
+      "path": "study-notes/2026-09-09 - Recruiter Introduction Practice Notes.md",
+      "sha256": "5384f7c6c5b885ebddbd5131e9096b00cc2bc7126d9b4b02ce4ecba349c7edcb"
+    },
+    {
+      "byte_size": 2986,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-09 - Study Index.md",
+      "path": "study-notes/2026-09-09 - Study Index.md",
+      "sha256": "20483289ffe260b394c3e7296aaa62a1bbbf5fb0e522c18aa7f481feb57b0727"
+    },
+    {
+      "byte_size": 9148,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-09 - Webhooks Rate Limits and Recovery Study Notes.md",
+      "path": "study-notes/2026-09-09 - Webhooks Rate Limits and Recovery Study Notes.md",
+      "sha256": "2ce774def3eeef861a4f7fed68f08df03cb12329970ce5c63466ff90084d6fd3"
+    },
+    {
+      "byte_size": 9423,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-10 - Coframe Implementation Engineer - Interview Debrief.md",
+      "path": "study-notes/2026-09-10 - Coframe Implementation Engineer - Interview Debrief.md",
+      "sha256": "83c2d4a9c3a4753d22288fe4b84488ba801678d5511c24fcb79169f6d17bd5c9"
+    },
+    {
+      "byte_size": 4685,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-10 - SQL Missing Records and Conditional Aggregation.md",
+      "path": "study-notes/2026-09-10 - SQL Missing Records and Conditional Aggregation.md",
+      "sha256": "dfd0c7008a0f141c35f9fe70075b480284a8cac578249566d7c383cc3944c068"
+    },
+    {
+      "byte_size": 1963,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-10 - Study Index.md",
+      "path": "study-notes/2026-09-10 - Study Index.md",
+      "sha256": "dc0d014d078d1980bff615ba28f088a3a5dfcfc499ab3456876cca54668417d7"
+    },
+    {
+      "byte_size": 8029,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-11 - Friday and Extended Saturday Plan.md",
+      "path": "study-notes/2026-09-11 - Friday and Extended Saturday Plan.md",
+      "sha256": "3febc704291d5bc6e99bdb69f3bf362e41a8c2481b9ad70f0c06745c65464bbd"
+    },
+    {
+      "byte_size": 9043,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-11 - Inventory Discovery and Synchronization Study Notes.md",
+      "path": "study-notes/2026-09-11 - Inventory Discovery and Synchronization Study Notes.md",
+      "sha256": "a19b8afc13b943821fe58f99dc427ffbfb3b30444c5ae35059556346c60a9e22"
+    },
+    {
+      "byte_size": 2079,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-11 - Study Index.md",
+      "path": "study-notes/2026-09-11 - Study Index.md",
+      "sha256": "05dc002a6b7548ea002f222fe51c6cedb93a5158d5a6e1bf88b24154439d743d"
+    },
+    {
+      "byte_size": 2505,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-14 - Diagnostic Mock Review.md",
+      "path": "study-notes/2026-09-14 - Diagnostic Mock Review.md",
+      "sha256": "b3ade83d7a7b3577ec83e58da65f8b1f43f0de8723fa088a9ea96c3fa61101d8"
+    },
+    {
+      "byte_size": 4539,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-14 - ERP Retries Without Idempotency Study Notes.md",
+      "path": "study-notes/2026-09-14 - ERP Retries Without Idempotency Study Notes.md",
+      "sha256": "06c6fd21f1fa787c765c35acbfb49472b1c0f6963ead233f4ac1cb01b3f63650"
+    },
+    {
+      "byte_size": 5371,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-14 - Northstar SQL Reconciliation Study Notes.md",
+      "path": "study-notes/2026-09-14 - Northstar SQL Reconciliation Study Notes.md",
+      "sha256": "d2b89fcc173a1611dc3ecab9b8c3f03280b8c556cd550cbbd3faed04b4341e2c"
+    },
+    {
+      "byte_size": 8453,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-14 - Study Index.md",
+      "path": "study-notes/2026-09-14 - Study Index.md",
+      "sha256": "f36e2fa7fe7e1b247eb3a542094bfbb1a863feccdd9b55724239dda5d32dde0b"
+    },
+    {
+      "byte_size": 4924,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-14 - Technical Transfer Review.md",
+      "path": "study-notes/2026-09-14 - Technical Transfer Review.md",
+      "sha256": "75e3eac1758934f909a8215c05f48ce7a3af4575369bded2f1b2fb011177f572"
+    },
+    {
+      "byte_size": 6774,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-15 - API Design Study Notes.md",
+      "path": "study-notes/2026-09-15 - API Design Study Notes.md",
+      "sha256": "55af65b9f58096608dff70fc46e0b2b5e23ff73da63f6915e2727275c0b8eceb"
+    },
+    {
+      "byte_size": 3091,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-15 - SQL Browser Practice Study Notes.md",
+      "path": "study-notes/2026-09-15 - SQL Browser Practice Study Notes.md",
+      "sha256": "bf40ce6b109b19927586596eb95c461967d68895a437e32c4f921e59623f64e6"
+    },
+    {
+      "byte_size": 8378,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-15 - SQL Platform Plan.md",
+      "path": "study-notes/2026-09-15 - SQL Platform Plan.md",
+      "sha256": "8198bf8c5d949b8b4e402cc26a0afa34faa05251a9724c50a002f57c8ed027ab"
+    },
+    {
+      "byte_size": 2593,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-15 - Study Index.md",
+      "path": "study-notes/2026-09-15 - Study Index.md",
+      "sha256": "99c3cff19302b71aa8efb026d9cd0efb9900bbbd798dd37cce5f183c4ae6af2f"
+    },
+    {
+      "byte_size": 3921,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-16 - Career Move and DataNest Handover Practice.md",
+      "path": "study-notes/2026-09-16 - Career Move and DataNest Handover Practice.md",
+      "sha256": "985403ff2780c17ae0264a1b19b49ceb8f95d40da67d8446fac8e0efe6053a70"
+    },
+    {
+      "byte_size": 2270,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-16 - Inventory Presentation Review.md",
+      "path": "study-notes/2026-09-16 - Inventory Presentation Review.md",
+      "sha256": "350d72cd9a69e64113a6abbda60d48f56fc7f47245aa88ce614e67dbda43ba1c"
+    },
+    {
+      "byte_size": 5023,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-16 - Retries Backoff and Jitter Study Notes.md",
+      "path": "study-notes/2026-09-16 - Retries Backoff and Jitter Study Notes.md",
+      "sha256": "c19406982be208d61b7de9ea0b31d8d06af3b9ee99806ca765f336a307d09ad2"
+    },
+    {
+      "byte_size": 6148,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-16 - Study Index.md",
+      "path": "study-notes/2026-09-16 - Study Index.md",
+      "sha256": "aaacd07849f1a1ea0fa91b226651d37f5950ac4a162707182b105d2cae344397"
+    },
+    {
+      "byte_size": 2137,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-17 - Backlog Customer Update Study Notes.md",
+      "path": "study-notes/2026-09-17 - Backlog Customer Update Study Notes.md",
+      "sha256": "c90f02aa796c1d872cf4993deb838deb0b212a227fbc0262ca7f674162bdef29"
+    },
+    {
+      "byte_size": 5508,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-17 - Circuit Breakers DLQ and Backlog Study Notes.md",
+      "path": "study-notes/2026-09-17 - Circuit Breakers DLQ and Backlog Study Notes.md",
+      "sha256": "4464df0ecb7f47e06eb3b45644fe50f6cad82f380ee1fc5437b6b502ab5efa66"
+    },
+    {
+      "byte_size": 2806,
+      "media_type": "text/markdown",
+      "original_filename": "2026-09-17 - Study Index.md",
+      "path": "study-notes/2026-09-17 - Study Index.md",
+      "sha256": "a5298b1b7cbd3acf53192c7d457efdad0ada30acdfbeb08317abe848d2f6f466"
+    },
+    {
+      "byte_size": 1971,
+      "media_type": "text/markdown",
+      "original_filename": "Day 1 - Daily Scorecard.md",
+      "path": "study-notes/Day 1 - Daily Scorecard.md",
+      "sha256": "929886a982e7f1ea01975dbcac22f703b6d896281a6597bfc1dd39ccf12f5c63"
+    },
+    {
+      "byte_size": 2280,
+      "media_type": "text/markdown",
+      "original_filename": "Day 1 - SQL Foundations Study Notes.md",
+      "path": "study-notes/Day 1 - SQL Foundations Study Notes.md",
+      "sha256": "07bd13e1621a594251ea7dbc29abd4785c8c7ec0c07867e9eba3a1b6afe7f1f7"
+    },
+    {
+      "byte_size": 2006,
+      "media_type": "text/markdown",
+      "original_filename": "Day 1 - Study Index.md",
+      "path": "study-notes/Day 1 - Study Index.md",
+      "sha256": "d40e96e85fb957fc67f74e8fdf5c3ce0a5e014099a97f8172e1a808a10d897c3"
+    },
+    {
+      "byte_size": 1422,
+      "media_type": "text/markdown",
+      "original_filename": "Day 1 - Tell Me About Yourself Practice Status.md",
+      "path": "study-notes/Day 1 - Tell Me About Yourself Practice Status.md",
+      "sha256": "7ac7469e2f528fca791910f1bbcef9cb534d56eccc9c3aa13037b84305b880c4"
+    },
+    {
+      "byte_size": 7624,
+      "media_type": "text/markdown",
+      "original_filename": "Day 2 - Behavioral Story Catalog.md",
+      "path": "study-notes/Day 2 - Behavioral Story Catalog.md",
+      "sha256": "28584fd50fc9e74b3a4688ee5d086153c11a696b61d0da7c73782ddfd4492e91"
+    },
+    {
+      "byte_size": 1739,
+      "media_type": "text/markdown",
+      "original_filename": "Day 2 - Daily Scorecard.md",
+      "path": "study-notes/Day 2 - Daily Scorecard.md",
+      "sha256": "f58c5e06fddd89e6dc164cd0b8c7cc76d3f87b9b171cb81cea3550f3bf898fae"
+    },
+    {
+      "byte_size": 3469,
+      "media_type": "text/markdown",
+      "original_filename": "Day 2 - SQL Joins and NULLs Study Notes.md",
+      "path": "study-notes/Day 2 - SQL Joins and NULLs Study Notes.md",
+      "sha256": "9ee605542045cf30b32e63aa513c3ca8dfc82e873ac274be3a1d025c261d2e20"
+    },
+    {
+      "byte_size": 1656,
+      "media_type": "text/markdown",
+      "original_filename": "Day 2 - Spoken Practice Handoff.md",
+      "path": "study-notes/Day 2 - Spoken Practice Handoff.md",
+      "sha256": "30b9978dbfc19dbe23c88bf03af5c54547d4f050c99ecfb26fa01279d0253b56"
+    },
+    {
+      "byte_size": 4684,
+      "media_type": "text/markdown",
+      "original_filename": "Day 2 - Story to TAM Requirements Mapping.md",
+      "path": "study-notes/Day 2 - Story to TAM Requirements Mapping.md",
+      "sha256": "262535205c37e9c2b2d9b787a5d103b6f59b908dc75ce39732a822780663b1fa"
+    },
+    {
+      "byte_size": 1743,
+      "media_type": "text/markdown",
+      "original_filename": "Day 2 - Study Index.md",
+      "path": "study-notes/Day 2 - Study Index.md",
+      "sha256": "8c9b239df85abcd35ac66c0a6be404ea39e17fe27244450889423266c284070f"
+    },
+    {
+      "byte_size": 2336,
+      "media_type": "text/markdown",
+      "original_filename": "Day 3 - Daily Scorecard.md",
+      "path": "study-notes/Day 3 - Daily Scorecard.md",
+      "sha256": "b585f741d76df353bbb92dba3cde8c3694f51b7b2bbb864ae8e7fb97c4710349"
+    },
+    {
+      "byte_size": 7469,
+      "media_type": "text/markdown",
+      "original_filename": "Day 3 - Idempotency and Retry Safety Study Notes.md",
+      "path": "study-notes/Day 3 - Idempotency and Retry Safety Study Notes.md",
+      "sha256": "bb38d3ac3d9de6ecc5632aa648f0bde0f02b14578e4fc206afc6e0fbed55d4c3"
+    },
+    {
+      "byte_size": 4447,
+      "media_type": "text/markdown",
+      "original_filename": "Day 3 - SQL Aggregation and Query Execution Study Notes.md",
+      "path": "study-notes/Day 3 - SQL Aggregation and Query Execution Study Notes.md",
+      "sha256": "715ab3a1322e47bd9ce0b2b2ee0780e5ae6b5486a20d74993bd764ff42294430"
+    },
+    {
+      "byte_size": 3612,
+      "media_type": "text/markdown",
+      "original_filename": "Day 3 - Study Index.md",
+      "path": "study-notes/Day 3 - Study Index.md",
+      "sha256": "eb3c0293c5802359a68e0da21e93a337a509e3a1a8e1cd1ab50067cc205b6e3d"
+    },
+    {
+      "byte_size": 8146,
+      "media_type": "text/markdown",
+      "original_filename": "HTTP Troubleshooting Checklist - Headers and Status Codes.md",
+      "path": "study-notes/HTTP Troubleshooting Checklist - Headers and Status Codes.md",
+      "sha256": "e0ed749806bac154bfa23967efd0645fcfe8350f08314036b533b8f37f88c9bb"
+    },
+    {
+      "byte_size": 9966,
+      "media_type": "text/markdown",
+      "original_filename": "Interview Progress Tracker.md",
+      "path": "study-notes/Interview Progress Tracker.md",
+      "sha256": "452d00412726f27b497f17de38eb9ff3f063bb3c6a4468ad15bd2a95d037f8fa"
+    },
+    {
+      "byte_size": 14868,
+      "media_type": "text/markdown",
+      "original_filename": "Northstar Scenario 1 - API Down but Monitoring Green.md",
+      "path": "study-notes/Northstar Scenario 1 - API Down but Monitoring Green.md",
+      "sha256": "ede182fb51659f28c0924567d50a808f813e0fcc85e68febaea64cf51195518d"
+    },
+    {
+      "byte_size": 7131,
+      "media_type": "text/markdown",
+      "original_filename": "Shopify to Odoo Integration Case.md",
+      "path": "study-notes/Shopify to Odoo Integration Case.md",
+      "sha256": "9d2219550ebbb5e289ade6552759233616609afaa39a8937f6be146df235021d"
+    },
+    {
+      "byte_size": 511,
+      "media_type": "text/markdown",
+      "original_filename": "account_plan.md",
+      "path": "templates/account_plan.md",
+      "sha256": "d7e12f7c3c0cdc37b6370db7d6538a2f1f22c24c09ec091c12c5f8f81562b3a6"
+    },
+    {
+      "byte_size": 2190,
+      "media_type": "text/markdown",
+      "original_filename": "daily_scorecard.md",
+      "path": "templates/daily_scorecard.md",
+      "sha256": "d267b940d5aac024cfeb479e5528ac98269029c931b4ef409ad796779c081e91"
+    },
+    {
+      "byte_size": 2199,
+      "media_type": "text/markdown",
+      "original_filename": "daily_study_index.md",
+      "path": "templates/daily_study_index.md",
+      "sha256": "1c018a6c600bf583c8f3dd34b3b13663a3fe0a787622e2d1eaaef029670fd681"
+    },
+    {
+      "byte_size": 443,
+      "media_type": "text/markdown",
+      "original_filename": "discovery_notes.md",
+      "path": "templates/discovery_notes.md",
+      "sha256": "a104c47a99b132134c81ee3161858a35e9696d109df2a20fd5d0cde1250671c7"
+    },
+    {
+      "byte_size": 1549,
+      "media_type": "text/markdown",
+      "original_filename": "evidence_record.md",
+      "path": "templates/evidence_record.md",
+      "sha256": "fdf993ce4beec5064432bded05d63f0cd03f63432ceaaea375824c481d8fc54f"
+    },
+    {
+      "byte_size": 241,
+      "media_type": "text/markdown",
+      "original_filename": "incident_update.md",
+      "path": "templates/incident_update.md",
+      "sha256": "863592d7b82040f820d84667ae0f1d39e403e4f3069064e58c6b2157e2c3fbc2"
+    },
+    {
+      "byte_size": 2064,
+      "media_type": "text/markdown",
+      "original_filename": "interview_practice_record.md",
+      "path": "templates/interview_practice_record.md",
+      "sha256": "9db5a17d1dbc2f4be8db19ece948c42fc1ea7501782806199c7ead609b785ec3"
+    },
+    {
+      "byte_size": 5703,
+      "media_type": "text/markdown",
+      "original_filename": "phase1_assessment.md",
+      "path": "templates/phase1_assessment.md",
+      "sha256": "373149a011bf010a18f930a3b388468ad1895353664f01942ec74a1a2526f018"
+    },
+    {
+      "byte_size": 2806,
+      "media_type": "text/markdown",
+      "original_filename": "pipeline_action.md",
+      "path": "templates/pipeline_action.md",
+      "sha256": "2e021e4fcf0128581c9909dceb53b8c37eec11a05f4471c85b56e4aef5676319"
+    },
+    {
+      "byte_size": 1373,
+      "media_type": "text/markdown",
+      "original_filename": "polished_study_note.md",
+      "path": "templates/polished_study_note.md",
+      "sha256": "607a8abeda75d765f8918ce08893e7b3cff603298f66721ae75e7c2588e95c29"
+    },
+    {
+      "byte_size": 1146,
+      "media_type": "text/markdown",
+      "original_filename": "portfolio_triage.md",
+      "path": "templates/portfolio_triage.md",
+      "sha256": "7200992a018b346a796c5ee89c17dd93b1a7b23b685b58f1772ec153924c836c"
+    },
+    {
+      "byte_size": 2119,
+      "media_type": "text/markdown",
+      "original_filename": "real_interview_debrief.md",
+      "path": "templates/real_interview_debrief.md",
+      "sha256": "79bdc644bb9cdc9cc12ee02cf3e2a6421e42fd340be56d4035f84f9f66cce227"
+    },
+    {
+      "byte_size": 2331,
+      "media_type": "text/markdown",
+      "original_filename": "spoken_practice_session.md",
+      "path": "templates/spoken_practice_session.md",
+      "sha256": "2d15a1fc71041255a00eb5d77c6a4c6f470c3a80fabc77c214d04edc077d26ab"
+    },
+    {
+      "byte_size": 582,
+      "media_type": "text/markdown",
+      "original_filename": "story_catalog.md",
+      "path": "templates/story_catalog.md",
+      "sha256": "f0f0ca243165f44f06f7dc791a087c3bdcc9d65e32d80e321d009597dd0b3e22"
+    },
+    {
+      "byte_size": 4626,
+      "media_type": "text/markdown",
+      "original_filename": "weekly_review.md",
+      "path": "templates/weekly_review.md",
+      "sha256": "a116b0304325419cc350bd4fd99a5b1e0c8bfd90ba048665fe54737409b58834"
+    }
+  ],
+  "schema_version": 1
+}
