@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><meta name="design_doc_mode" content="canvas"><style>body{margin:0;background:#e8e6e1;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}a{color:#0a60ff}a:hover{color:#0040c0}</style></helmet>
+<section style="padding:40px 44px 32px;display:flex;flex-direction:column;gap:20px">
+<div style="display:flex;align-items:baseline;gap:10px"><span style="font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#1a1a1a;color:#fff;border-radius:4px">current</span><span style="font:600 13px/1.2 system-ui;color:#1a1a1a">Recreation of the shipped SwiftUI shell — stock controls, no custom styling (TAMForgeApp.swift, TodayView.swift, ActivityWorkspaceView.swift)</span></div>
+<div style="display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start">
+
+<div style="display:flex;flex-direction:column;gap:9px"><span style="font:400 11px system-ui;color:rgba(0,0,0,.55)">Today · route "today" · fixture 2026-08-27</span>
+<div style="width:1100px;height:720px;background:#fff;border-radius:11px;box-shadow:0 0 0 1px rgba(0,0,0,.18),0 18px 44px rgba(0,0,0,.3);display:flex;overflow:hidden;font-size:13px;color:#1d1d1f">
+  <div style="width:220px;background:#ebebe9;border-right:1px solid rgba(0,0,0,.1);display:flex;flex-direction:column">
+    <div style="height:52px;display:flex;align-items:center;gap:8px;padding:0 20px"><span style="width:12px;height:12px;border-radius:50%;background:#ff5f57"></span><span style="width:12px;height:12px;border-radius:50%;background:#febc2e"></span><span style="width:12px;height:12px;border-radius:50%;background:#28c840"></span></div>
+    <div style="padding:0 10px;display:flex;flex-direction:column;gap:2px">
+      <div style="height:28px;display:flex;align-items:center;gap:8px;padding:0 8px;border-radius:6px;background:rgba(0,0,0,.09)"><span style="width:16px;height:16px;border-radius:50%;border:1.5px solid #0a60ff"></span><span>Today</span></div>
+      <div style="height:28px;display:flex;align-items:center;gap:8px;padding:0 8px"><span style="width:16px;height:16px;border-radius:3px;border:1.5px solid #0a60ff"></span><span>Roadmaps</span></div>
+      <div style="height:28px;display:flex;align-items:center;gap:8px;padding:0 8px"><span style="width:16px;height:16px;border-radius:3px;border:1.5px solid #0a60ff"></span><span>Evidence</span></div>
+      <div style="height:28px;display:flex;align-items:center;gap:8px;padding:0 8px"><span style="width:16px;height:16px;border-radius:50%;border:1.5px solid #0a60ff"></span><span>Recording</span></div>
+      <div style="height:28px;display:flex;align-items:center;gap:8px;padding:0 8px"><span style="width:16px;height:16px;border-radius:50%;border:1.5px solid #0a60ff"></span><span>Interviews</span></div>
+      <div style="height:28px;display:flex;align-items:center;gap:8px;padding:0 8px"><span style="width:16px;height:16px;border-radius:3px;border:1.5px solid #0a60ff"></span><span>English classes</span></div>
+      <div style="height:28px;display:flex;align-items:center;gap:8px;padding:0 8px"><span style="width:16px;height:16px;border-radius:3px;border:1.5px solid #0a60ff"></span><span>Cards</span></div>
+      <div style="height:28px;display:flex;align-items:center;gap:8px;padding:0 8px"><span style="width:16px;height:16px;border-radius:3px;border:1.5px solid #0a60ff"></span><span>Progress</span></div>
+    </div>
+  </div>
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+    <div style="height:52px;display:flex;align-items:center;padding:0 16px;font-weight:600;font-size:15px;border-bottom:1px solid rgba(0,0,0,.08)">TAM Forge</div>
+    <div style="padding:24px 24px 24px 36px;display:flex;flex-direction:column;gap:12px;flex:1;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:12px"><span>Local development</span><span style="flex:1"></span><span style="font-size:11px;color:#6e6e73">Updates live</span><span style="padding:3px 10px;border-radius:6px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.15),0 1px 1px rgba(0,0,0,.08)">Notifications</span><span style="padding:3px 10px;border-radius:6px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.15),0 1px 1px rgba(0,0,0,.08)">Sign out</span></div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:20px">
+        <div style="display:flex;align-items:flex-start">
+          <div style="display:flex;flex-direction:column;gap:4px"><span style="font-size:12px;color:#6e6e73">Your learning day</span><span style="font-size:26px;font-weight:700">Today</span><span>Month 1 · Week 1 · Day 4</span><span style="font-size:11px;color:#6e6e73">2026-08-27 · America/Los_Angeles</span></div>
+          <span style="flex:1"></span>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span style="font-weight:700">240 planned minutes</span><span style="font-size:12px;color:#6e6e73">65 focused · hard stop 255</span></div>
+        </div>
+        <div style="padding:10px 12px;border-radius:6px;background:#0a60ff;color:#fff;display:flex;flex-direction:column;gap:2px"><span style="font-size:11px;opacity:.8">Continue</span><span style="font-weight:600">Continue customer update</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+          <div style="border-radius:8px;background:rgba(0,0,0,.045);padding:10px 12px;display:flex;flex-direction:column;gap:6px"><span style="font-weight:600">Carryovers</span><span style="font-size:11px;color:#6e6e73">Two corrections maximum</span><span style="color:#6e6e73">None due today.</span></div>
+          <div style="border-radius:8px;background:rgba(0,0,0,.045);padding:10px 12px;display:flex;flex-direction:column;gap:6px"><span style="font-weight:600">Scheduled</span><span style="font-size:11px;color:#6e6e73">Real interviews</span><span style="color:#6e6e73">No interview scheduled today.</span></div>
+          <div style="border-radius:8px;background:rgba(0,0,0,.045);padding:10px 12px;display:flex;flex-direction:column;gap:6px"><span style="font-weight:600">Self-review due</span><span style="font-size:11px;color:#6e6e73">Independent reflection</span><span style="color:#6e6e73">Nothing waiting.</span></div>
+          <div style="border-radius:8px;background:rgba(0,0,0,.045);padding:10px 12px;display:flex;flex-direction:column;gap:6px"><span style="font-weight:600">Feedback status</span><span style="font-size:11px;color:#6e6e73">Asynchronous analysis</span><span style="color:#6e6e73">No new analysis.</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <span style="font-size:11px;color:#6e6e73">Stable roadmap spine</span><span style="font-size:20px;font-weight:700">Required work</span>
+          <div style="border-radius:8px;background:rgba(0,0,0,.045);padding:12px;display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;gap:8px;align-items:flex-start"><span style="color:#6e6e73;font-variant-numeric:tabular-nums">01</span><div style="display:flex;flex-direction:column;gap:4px"><span style="font-size:11px;color:#6e6e73">Communication Spoken</span><span style="font-weight:600">Write a concise customer update.</span></div><span style="flex:1"></span><span style="font-size:11px">ready</span></div>
+            <span style="font-size:12px;color:#6e6e73">35 minutes · Allowed AI role: None · Required</span>
+            <span>▸ Task contract</span>
+            <span style="align-self:flex-start;padding:3px 10px;border-radius:6px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.15),0 1px 1px rgba(0,0,0,.08)">Open</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<div style="display:flex;flex-direction:column;gap:9px"><span style="font:400 11px system-ui;color:rgba(0,0,0,.55)">Activity workspace · route "activity(41)" · state ready</span>
+<div style="width:1100px;height:720px;background:#fff;border-radius:11px;box-shadow:0 0 0 1px rgba(0,0,0,.18),0 18px 44px rgba(0,0,0,.3);display:flex;overflow:hidden;font-size:13px;color:#1d1d1f">
+  <div style="width:220px;background:#ebebe9;border-right:1px solid rgba(0,0,0,.1)"><div style="height:52px;display:flex;align-items:center;gap:8px;padding:0 20px"><span style="width:12px;height:12px;border-radius:50%;background:#ff5f57"></span><span style="width:12px;height:12px;border-radius:50%;background:#febc2e"></span><span style="width:12px;height:12px;border-radius:50%;background:#28c840"></span></div>
+    <div style="padding:0 10px;display:flex;flex-direction:column;gap:2px"><div style="height:28px;display:flex;align-items:center;gap:8px;padding:0 8px"><span style="width:16px;height:16px;border-radius:50%;border:1.5px solid #0a60ff"></span><span>Today</span></div><div style="height:28px;display:flex;align-items:center;gap:8px;padding:0 8px"><span style="width:16px;height:16px;border-radius:3px;border:1.5px solid #0a60ff"></span><span>Roadmaps</span></div><div style="height:28px;display:flex;align-items:center;gap:8px;padding:0 8px"><span style="width:16px;height:16px;border-radius:3px;border:1.5px solid #0a60ff"></span><span>Evidence</span></div><div style="height:28px;display:flex;align-items:center;gap:8px;padding:0 8px"><span style="width:16px;height:16px;border-radius:50%;border:1.5px solid #0a60ff"></span><span>Recording</span></div><div style="height:28px;display:flex;align-items:center;gap:8px;padding:0 8px"><span style="width:16px;height:16px;border-radius:50%;border:1.5px solid #0a60ff"></span><span>Interviews</span></div><div style="height:28px;display:flex;align-items:center;gap:8px;padding:0 8px"><span style="width:16px;height:16px;border-radius:3px;border:1.5px solid #0a60ff"></span><span>English classes</span></div><div style="height:28px;display:flex;align-items:center;gap:8px;padding:0 8px"><span style="width:16px;height:16px;border-radius:3px;border:1.5px solid #0a60ff"></span><span>Cards</span></div><div style="height:28px;display:flex;align-items:center;gap:8px;padding:0 8px"><span style="width:16px;height:16px;border-radius:3px;border:1.5px solid #0a60ff"></span><span>Progress</span></div></div></div>
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+    <div style="height:52px;display:flex;align-items:center;padding:0 16px;font-weight:600;font-size:15px;border-bottom:1px solid rgba(0,0,0,.08)">TAM Forge</div>
+    <div style="padding:24px 24px 24px 36px;display:flex;flex-direction:column;gap:12px;flex:1;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:12px"><span>Local development</span><span style="flex:1"></span><span style="font-size:11px;color:#6e6e73">Updates live</span><span style="padding:3px 10px;border-radius:6px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.15),0 1px 1px rgba(0,0,0,.08)">Notifications</span><span style="padding:3px 10px;border-radius:6px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.15),0 1px 1px rgba(0,0,0,.08)">Sign out</span></div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:20px">
+        <div style="display:flex;align-items:flex-start"><div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11px;color:#6e6e73">communication spoken</span><span style="font-size:20px;font-weight:600">Write a concise customer update.</span></div><span style="flex:1"></span><div style="display:flex;flex-direction:column;align-items:flex-end"><span style="font-size:17px;font-variant-numeric:tabular-nums">2:00</span><span style="font-size:11px;color:#6e6e73">35 min</span></div></div>
+        <div style="display:flex;gap:12px;font-size:11px;color:#6e6e73"><span>ready</span><span>AI role: none</span><span>Required</span></div>
+        <div style="border-radius:8px;background:rgba(0,0,0,.045);padding:12px;display:flex;flex-direction:column;gap:8px"><span style="font-weight:600">Focused timer</span><span style="align-self:flex-start;padding:3px 10px;border-radius:6px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.15),0 1px 1px rgba(0,0,0,.08)">Start activity</span></div>
+        <div style="border-radius:8px;background:rgba(0,0,0,.045);padding:12px;display:flex;flex-direction:column;gap:10px"><span style="font-weight:600">Assigned source</span><div style="display:flex;justify-content:space-between"><span>Artifact type</span><span style="padding:3px 10px;border-radius:6px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.15)">written output ⌄</span></div><div style="display:flex;justify-content:space-between"><span>Source available</span><span style="padding:3px 10px;border-radius:6px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.15)">Hide source</span></div></div>
+        <div style="border-radius:8px;background:rgba(0,0,0,.045);padding:12px;display:flex;flex-direction:column;gap:12px"><span style="font-weight:600">Working output</span><div style="display:flex;flex-direction:column;gap:4px"><span style="font-size:12px;font-weight:500">Prompt</span><div style="height:72px;border-radius:4px;border:1px solid rgba(0,0,0,.15);background:#fff"></div></div><div style="display:flex;flex-direction:column;gap:4px"><span style="font-size:12px;font-weight:500">Audience</span><div style="height:72px;border-radius:4px;border:1px solid rgba(0,0,0,.15);background:#fff"></div></div><div style="display:flex;flex-direction:column;gap:4px"><span style="font-size:12px;font-weight:500">Requested action</span><div style="height:72px;border-radius:4px;border:1px solid rgba(0,0,0,.15);background:#fff"></div></div></div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+</div>
+</section>
+</x-dc>
+</body>
+</html>
