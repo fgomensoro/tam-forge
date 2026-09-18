@@ -329,6 +329,76 @@ git commit -m "feat(macos): add Organic color, radius, spacing and shadow tokens
 **Interfaces:**
 - Consumes: nothing from Task 1.
 - Produces: `Organic.Font.figtree(_ weight: Organic.Font.Weight, size: CGFloat) -> Font` and `Organic.Font.tabular(_ weight: Organic.Font.Weight, size: CGFloat) -> Font`, where `Organic.Font.Weight` is `.regular | .semibold | .bold`. Every later task and stage gets type through these two functions and never calls `Font.custom` directly.
+- Also produces, via Step 0 below: the renamed `Organic.Space.p4 … p40`. Tasks 3, 7, 8 and 9 already reference the new names.
+
+- [ ] **Step 0: Amend the spacing and comments Task 1 shipped**
+
+Task 1's review found two real gaps and one false alarm. Fix the two real ones
+here, in `apps/macos/TAMForge/Core/Design/OrganicTokens.swift`, before starting
+the font work. This is a rename plus two added constants; no behavior changes.
+
+**Why the rename.** Task 1 shipped `x1 … x10` where the number is an ordinal, so
+`Organic.Space.x4` means 16 pt. That reads like 4 pt and will eventually be
+written where 4 pt was meant. Value-named constants cannot be misread.
+
+**Why the two new rungs.** The handoff's spacing scale has 12 rungs including 14
+and 18; Task 1 shipped 10, dropping exactly those two. They are not decorative:
+`TAM Forge - Mac.dc.html` uses `gap:14px` 15 times, `gap:18px` 5 times, plus
+`padding:0 14px` and `padding:12px 18px`. Without them, Task 11's skill rule
+"never write a literal padding" would be unfollowable.
+
+Replace the whole `enum Space` with:
+
+```swift
+    /// The handoff's 12-rung spacing scale. Named by value, never by ordinal,
+    /// so `p16` cannot be misread as 16 rungs or as 4 pt.
+    enum Space {
+        static let p4: CGFloat = 4
+        static let p8: CGFloat = 8
+        static let p12: CGFloat = 12
+        static let p14: CGFloat = 14
+        static let p16: CGFloat = 16
+        static let p18: CGFloat = 18
+        static let p20: CGFloat = 20
+        static let p24: CGFloat = 24
+        static let p28: CGFloat = 28
+        static let p32: CGFloat = 32
+        static let p36: CGFloat = 36
+        static let p40: CGFloat = 40
+    }
+```
+
+Nothing references `Organic.Space` yet, so this rename breaks no existing code.
+Confirm that before and after:
+
+```bash
+grep -rn 'Organic\.Space\.' apps/macos/TAMForge apps/macos/TAMForgeTests
+```
+
+Expected: no output, both times.
+
+Then extend the two shadow comments so a reader of the file alone understands the
+conversion, replacing the existing `///` lines in `enum Shadow`:
+
+```swift
+        /// Handoff lg: `0 12px 32px rgba(46,43,37,.22)`. SwiftUI's radius is about
+        /// half a CSS blur, so 32px blur becomes radius 16.
+        static let large = (color: SwiftUI.Color(hex: "#2e2b25").opacity(0.22), radius: CGFloat(16), x: CGFloat(0), y: CGFloat(12))
+        /// Handoff window: `0 24px 64px rgba(0,0,0,.55)`. 64px blur becomes radius 32.
+        static let window = (color: SwiftUI.Color.black.opacity(0.55), radius: CGFloat(32), x: CGFloat(0), y: CGFloat(24))
+```
+
+Leave `fill06` exactly as it is. The review called it untraceable; it is not. The
+handoff specifies `neutral-100 @6 %` twice, as the nav-item hover in the Shell
+section and again under Interactions. No change, and do not add a comment
+defending it.
+
+Commit this step on its own before moving to the fonts:
+
+```bash
+git add apps/macos/TAMForge/Core/Design/OrganicTokens.swift
+git commit -m "refactor(macos): name spacing tokens by value and add the missing 14 and 18 rungs"
+```
 
 - [ ] **Step 1: Vendor the font files**
 
@@ -571,7 +641,7 @@ import SwiftUI
 
 extension View {
     /// The handoff's card: a `surface` fill, a large radius and the lg shadow.
-    func organicCard(radius: CGFloat = Organic.Radius.card, padding: CGFloat = Organic.Space.x5, shadowed: Bool = true) -> some View {
+    func organicCard(radius: CGFloat = Organic.Radius.card, padding: CGFloat = Organic.Space.p20, shadowed: Bool = true) -> some View {
         let shadow = Organic.Shadow.large
         return self
             .padding(padding)
@@ -1246,12 +1316,12 @@ struct OrganicSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            brand.padding(.top, Organic.Window.trafficLightInset).padding(.horizontal, Organic.Space.x4)
+            brand.padding(.top, Organic.Window.trafficLightInset).padding(.horizontal, Organic.Space.p16)
             VStack(spacing: 2) {
                 ForEach(items, id: \.identifier) { row($0) }
             }
-            .padding(.top, Organic.Space.x6)
-            .padding(.horizontal, Organic.Space.x3)
+            .padding(.top, Organic.Space.p24)
+            .padding(.horizontal, Organic.Space.p12)
             Spacer(minLength: 0)
             footer
         }
@@ -1297,7 +1367,7 @@ struct OrganicSidebar: View {
                 }
             }
             .foregroundStyle(isSelected ? Organic.Color.accent300 : Organic.Color.body)
-            .padding(.horizontal, Organic.Space.x3)
+            .padding(.horizontal, Organic.Space.p12)
             .frame(height: 36)
             .background(isSelected ? Organic.Color.accentOn : .clear, in: Capsule(style: .continuous))
             .contentShape(Capsule(style: .continuous))
@@ -1324,8 +1394,8 @@ struct OrganicSidebar: View {
     }
 
     private var footer: some View {
-        VStack(alignment: .leading, spacing: Organic.Space.x3) {
-            HStack(spacing: Organic.Space.x2) {
+        VStack(alignment: .leading, spacing: Organic.Space.p12) {
+            HStack(spacing: Organic.Space.p8) {
                 OrganicStatusDot(color: statusDotColor, diameter: 8)
                 Text("\(statusLabel) · \(environmentLabel)")
                     .font(Organic.Font.figtree(.regular, size: 12))
@@ -1348,7 +1418,7 @@ struct OrganicSidebar: View {
                     .accessibilityIdentifier("signOutButton")
             }
         }
-        .padding(Organic.Space.x4)
+        .padding(Organic.Space.p16)
         .overlay(alignment: .top) { Rectangle().fill(Organic.Color.divider).frame(height: 1) }
     }
 
@@ -1447,15 +1517,15 @@ struct OrganicToolbar<Trailing: View>: View {
     @ViewBuilder let trailing: () -> Trailing
 
     var body: some View {
-        HStack(spacing: Organic.Space.x3) {
+        HStack(spacing: Organic.Space.p12) {
             Text(breadcrumb)
                 .font(Organic.Font.figtree(.regular, size: 13))
                 .foregroundStyle(Organic.Color.muted)
                 .lineLimit(1)
-            Spacer(minLength: Organic.Space.x4)
+            Spacer(minLength: Organic.Space.p16)
             trailing()
         }
-        .padding(.horizontal, Organic.Space.x9)
+        .padding(.horizontal, Organic.Space.p36)
         .frame(height: 52)
         .background(Organic.Color.bg)
         .overlay(alignment: .bottom) { Rectangle().fill(Organic.Color.divider).frame(height: 1) }
@@ -1483,7 +1553,7 @@ struct SignInView: View {
     let onSignIn: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Organic.Space.x4) {
+        VStack(alignment: .leading, spacing: Organic.Space.p16) {
             Spacer(minLength: 0)
             appIcon
             Text("TAM Forge")
@@ -1498,7 +1568,7 @@ struct SignInView: View {
             Button {
                 onSignIn()
             } label: {
-                HStack(spacing: Organic.Space.x2) {
+                HStack(spacing: Organic.Space.p8) {
                     Image(systemName: "chevron.left.forwardslash.chevron.right").font(.system(size: 16, weight: .bold))
                     Text("Sign in with GitHub")
                 }
@@ -1512,7 +1582,7 @@ struct SignInView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 48)
-        .padding(.bottom, Organic.Space.x10)
+        .padding(.bottom, Organic.Space.p40)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(Organic.Color.bg)
     }
@@ -1623,14 +1693,14 @@ In `NativeWorkspaceView.body`, replace the entire `NavigationSplitView { ... } d
                     }
                 }
                 ScrollView {
-                    VStack(alignment: .leading, spacing: Organic.Space.x6) {
+                    VStack(alignment: .leading, spacing: Organic.Space.p24) {
                         if let banner = session.banner { GlobalBannerView(banner: banner).organicCard(radius: 24) }
                         routeDetail
                     }
                     .frame(maxWidth: 1120, alignment: .leading)
-                    .padding(.horizontal, Organic.Space.x9)
-                    .padding(.top, Organic.Space.x8)
-                    .padding(.bottom, Organic.Space.x10)
+                    .padding(.horizontal, Organic.Space.p36)
+                    .padding(.top, Organic.Space.p32)
+                    .padding(.bottom, Organic.Space.p40)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
