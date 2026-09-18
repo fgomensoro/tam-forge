@@ -4,8 +4,6 @@
 <dict>
     <key>CFBundleDisplayName</key>
     <string>TAM Forge</string>
-	<key>ATSApplicationFontsPath</key>
-	<string>Fonts</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

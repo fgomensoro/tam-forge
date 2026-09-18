@@ -38,12 +38,18 @@ final class OrganicDesignTests: XCTestCase {
     }
 
     func testFigtreeWeightsAreRegisteredAndNotSubstituted() {
-        // CoreText silently substitutes a fallback when a font is missing, so assert
-        // on the resolved PostScript name rather than on the call succeeding.
-        for name in ["Figtree-Regular", "Figtree-SemiBold", "Figtree-Bold"] {
-            let font = CTFontCreateWithName(name as CFString, 16, nil)
+        // CoreText silently substitutes a fallback when a font is missing, so assert on
+        // the resolved PostScript name rather than on the call succeeding. Go through
+        // Organic.Font, not a bare CTFontCreateWithName: registration is explicit and
+        // happens inside that type, because TAMForgeTests is an unhosted logic-test
+        // bundle where ATSApplicationFontsPath is never read.
+        for weight in [Organic.Font.Weight.regular, .semibold, .bold] {
+            let font = Organic.Font.coreText(weight, size: 16, tabular: false)
             let resolved = CTFontCopyPostScriptName(font) as String
-            XCTAssertEqual(resolved, name, "\(name) was substituted, so it is not bundled or not registered")
+            XCTAssertEqual(
+                resolved, weight.rawValue,
+                "\(weight.rawValue) was substituted, so it is not bundled or not registered"
+            )
         }
     }
 

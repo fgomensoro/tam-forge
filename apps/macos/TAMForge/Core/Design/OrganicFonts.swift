@@ -51,11 +51,15 @@ extension Organic {
             }
         }
 
-        /// `ATSApplicationFontsPath` in Info.plist only registers fonts for a launched app's
-        /// own main bundle. TAMForgeTests has no host application, so its process never
-        /// becomes that, and every Figtree lookup would silently substitute. Registering
-        /// explicitly from whichever bundle this file was compiled into makes `figtree` and
-        /// `coreText` behave the same way in the app and under test.
+        /// Registration is explicit on purpose; do not "fix" this by restoring
+        /// `ATSApplicationFontsPath` in Info.plist. That key only registers fonts for a
+        /// launched app's own main bundle, and TAMForgeTests is an unhosted logic-test
+        /// bundle, so its process never becomes that — every Figtree lookup would
+        /// silently substitute. It also would not point at anything real: Copy Bundle
+        /// Resources flattens the `Fonts` group, so the TTFs land directly in
+        /// `Resources/`, not `Resources/Fonts/`. Registering here, from whichever bundle
+        /// this file was compiled into, makes `figtree` and `coreText` behave the same
+        /// way in the app and under test, with one mechanism instead of two.
         private final class BundleToken {}
 
         private static let registerBundledFontsOnce: Void = {
