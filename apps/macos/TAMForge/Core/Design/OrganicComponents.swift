@@ -3,7 +3,11 @@ import SwiftUI
 // MARK: - Surfaces
 
 extension View {
-    /// The handoff's card: a `surface` fill, a large radius and the lg shadow.
+    /// The handoff's card: a `surface` fill and a large radius. The shadow is opt-in
+    /// because only two surfaces in the whole handoff call for it (the Today hero card
+    /// and the Cards flashcard); every other card specifies a radius and a fill only.
+    /// It is applied to the fill shape, not chained after the background, so a card
+    /// nested in another card does not re-blur the inner card's shadow into a halo.
     func organicCard(radius: CGFloat = Organic.Radius.card, padding: CGFloat = Organic.Space.p20, shadowed: Bool = false) -> some View {
         let shadow = Organic.Shadow.large
         return self
