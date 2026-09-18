@@ -46,6 +46,7 @@ def test_the_suite_covers_speech_agents_memory_and_rubric(report: SuiteReport) -
         "class_analysis",
         "weekly_report",
         "monthly_report",
+        "practice_review",
     }
 
 
@@ -65,6 +66,7 @@ def test_provenance_names_every_fixture_model_prompt_and_rubric_by_hash_or_versi
         "class-analysis-refusal-cases.json",
         "weekly-report-refusal-cases.json",
         "monthly-report-refusal-cases.json",
+        "practice-review-refusal-cases.json",
     }
     assert all(len(h) == 64 for h in p.fixtures.values())
     assert p.speech_model_filename == "ggml-small.en-q5_1.bin" and len(p.speech_model_sha256) == 64
@@ -81,6 +83,7 @@ def test_provenance_names_every_fixture_model_prompt_and_rubric_by_hash_or_versi
         "class_analysis",
         "weekly_report",
         "monthly_report",
+        "practice_review",
     }
 
 

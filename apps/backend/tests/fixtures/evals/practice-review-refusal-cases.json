@@ -1,0 +1,651 @@
+{
+  "fixture_version": "practice-review-refusals-v1",
+  "model": "claude-fable-5-1",
+  "cases": [
+    {
+      "case_id": "answer-too-short",
+      "question": "Why are you leaving DataNest?",
+      "answer_transcript": "Because. Yes.",
+      "reference_answer": "Four anchors: four years and 25 customers; alone; the ceiling; real scale with a team.",
+      "answers": [
+        {
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "evidence": "I hit the ceiling of what I can learn there",
+              "note": "Four short sentences, one idea each."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "2.0",
+              "evidence": "I built every process myself in a ten person company",
+              "note": "Names the scope but no single concrete process."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.5",
+              "evidence": "I loved the customer side",
+              "note": "Accurate simple past throughout."
+            }
+          ],
+          "strengths": [
+            "Opens with the four years and the customer count."
+          ],
+          "fixes": [
+            {
+              "heard": "I built every process myself",
+              "say_instead": "I built every process myself, from onboarding to the support runbook",
+              "why": "One named process makes the claim checkable."
+            }
+          ],
+          "reference_coverage": "All four anchors are present.",
+          "readiness": "drilling"
+        }
+      ],
+      "expect": "refused_by_contract"
+    },
+    {
+      "case_id": "no-question",
+      "question": "   ",
+      "answer_transcript": "I spent four years building DataNest from zero to twenty five customers and I loved the customer side. I built every process myself in a ten person company. I hit the ceiling of what I can learn there, so I want to do it at real scale with a team.",
+      "reference_answer": "Four anchors: four years and 25 customers; alone; the ceiling; real scale with a team.",
+      "answers": [
+        {
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "evidence": "I hit the ceiling of what I can learn there",
+              "note": "Four short sentences, one idea each."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "2.0",
+              "evidence": "I built every process myself in a ten person company",
+              "note": "Names the scope but no single concrete process."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.5",
+              "evidence": "I loved the customer side",
+              "note": "Accurate simple past throughout."
+            }
+          ],
+          "strengths": [
+            "Opens with the four years and the customer count."
+          ],
+          "fixes": [
+            {
+              "heard": "I built every process myself",
+              "say_instead": "I built every process myself, from onboarding to the support runbook",
+              "why": "One named process makes the claim checkable."
+            }
+          ],
+          "reference_coverage": "All four anchors are present.",
+          "readiness": "drilling"
+        }
+      ],
+      "expect": "refused_by_contract"
+    },
+    {
+      "case_id": "missing-dimension",
+      "question": "Why are you leaving DataNest?",
+      "answer_transcript": "I spent four years building DataNest from zero to twenty five customers and I loved the customer side. I built every process myself in a ten person company. I hit the ceiling of what I can learn there, so I want to do it at real scale with a team.",
+      "reference_answer": "Four anchors: four years and 25 customers; alone; the ceiling; real scale with a team.",
+      "answers": [
+        {
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "evidence": "I hit the ceiling of what I can learn there",
+              "note": "Four short sentences, one idea each."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "2.0",
+              "evidence": "I built every process myself in a ten person company",
+              "note": "Names the scope but no single concrete process."
+            }
+          ],
+          "strengths": [
+            "Opens with the four years and the customer count."
+          ],
+          "fixes": [
+            {
+              "heard": "I built every process myself",
+              "say_instead": "I built every process myself, from onboarding to the support runbook",
+              "why": "One named process makes the claim checkable."
+            }
+          ],
+          "reference_coverage": "All four anchors are present.",
+          "readiness": "drilling"
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "follow-up-dimension-scored",
+      "question": "Why are you leaving DataNest?",
+      "answer_transcript": "I spent four years building DataNest from zero to twenty five customers and I loved the customer side. I built every process myself in a ten person company. I hit the ceiling of what I can learn there, so I want to do it at real scale with a team.",
+      "reference_answer": "Four anchors: four years and 25 customers; alone; the ceiling; real scale with a team.",
+      "answers": [
+        {
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "evidence": "I hit the ceiling of what I can learn there",
+              "note": "Four short sentences, one idea each."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "2.0",
+              "evidence": "I built every process myself in a ten person company",
+              "note": "Names the scope but no single concrete process."
+            },
+            {
+              "slug": "follow_up_handling",
+              "score": "3.0",
+              "evidence": "I loved the customer side",
+              "note": "There was no follow-up in a practice answer."
+            }
+          ],
+          "strengths": [
+            "Opens with the four years and the customer count."
+          ],
+          "fixes": [
+            {
+              "heard": "I built every process myself",
+              "say_instead": "I built every process myself, from onboarding to the support runbook",
+              "why": "One named process makes the claim checkable."
+            }
+          ],
+          "reference_coverage": "All four anchors are present.",
+          "readiness": "drilling"
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "quarter-point-score",
+      "question": "Why are you leaving DataNest?",
+      "answer_transcript": "I spent four years building DataNest from zero to twenty five customers and I loved the customer side. I built every process myself in a ten person company. I hit the ceiling of what I can learn there, so I want to do it at real scale with a team.",
+      "reference_answer": "Four anchors: four years and 25 customers; alone; the ceiling; real scale with a team.",
+      "answers": [
+        {
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "2.75",
+              "evidence": "I hit the ceiling of what I can learn there",
+              "note": "Four short sentences, one idea each."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "2.0",
+              "evidence": "I built every process myself in a ten person company",
+              "note": "Names the scope but no single concrete process."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.5",
+              "evidence": "I loved the customer side",
+              "note": "Accurate simple past throughout."
+            }
+          ],
+          "strengths": [
+            "Opens with the four years and the customer count."
+          ],
+          "fixes": [
+            {
+              "heard": "I built every process myself",
+              "say_instead": "I built every process myself, from onboarding to the support runbook",
+              "why": "One named process makes the claim checkable."
+            }
+          ],
+          "reference_coverage": "All four anchors are present.",
+          "readiness": "drilling"
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "invented-evidence",
+      "question": "Why are you leaving DataNest?",
+      "answer_transcript": "I spent four years building DataNest from zero to twenty five customers and I loved the customer side. I built every process myself in a ten person company. I hit the ceiling of what I can learn there, so I want to do it at real scale with a team.",
+      "reference_answer": "Four anchors: four years and 25 customers; alone; the ceiling; real scale with a team.",
+      "answers": [
+        {
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "evidence": "I hit the ceiling of what I can learn there",
+              "note": "Four short sentences, one idea each."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "2.0",
+              "evidence": "we cut churn by forty percent",
+              "note": "Names the scope but no single concrete process."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.5",
+              "evidence": "I loved the customer side",
+              "note": "Accurate simple past throughout."
+            }
+          ],
+          "strengths": [
+            "Opens with the four years and the customer count."
+          ],
+          "fixes": [
+            {
+              "heard": "I built every process myself",
+              "say_instead": "I built every process myself, from onboarding to the support runbook",
+              "why": "One named process makes the claim checkable."
+            }
+          ],
+          "reference_coverage": "All four anchors are present.",
+          "readiness": "drilling"
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "evidence-from-the-reference-answer",
+      "question": "Why are you leaving DataNest?",
+      "answer_transcript": "I spent four years there and I loved the customer side of the company a lot.",
+      "reference_answer": "Four anchors: four years and 25 customers; alone; the ceiling; real scale with a team.",
+      "answers": [
+        {
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "evidence": "real scale with a team.",
+              "note": "Four short sentences, one idea each."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "2.0",
+              "evidence": "I built every process myself in a ten person company",
+              "note": "Names the scope but no single concrete process."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.5",
+              "evidence": "I loved the customer side",
+              "note": "Accurate simple past throughout."
+            }
+          ],
+          "strengths": [
+            "Opens with the four years and the customer count."
+          ],
+          "fixes": [
+            {
+              "heard": "I built every process myself",
+              "say_instead": "I built every process myself, from onboarding to the support runbook",
+              "why": "One named process makes the claim checkable."
+            }
+          ],
+          "reference_coverage": "All four anchors are present.",
+          "readiness": "drilling"
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "invented-heard-quote",
+      "question": "Why are you leaving DataNest?",
+      "answer_transcript": "I spent four years building DataNest from zero to twenty five customers and I loved the customer side. I built every process myself in a ten person company. I hit the ceiling of what I can learn there, so I want to do it at real scale with a team.",
+      "reference_answer": "Four anchors: four years and 25 customers; alone; the ceiling; real scale with a team.",
+      "answers": [
+        {
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "evidence": "I hit the ceiling of what I can learn there",
+              "note": "Four short sentences, one idea each."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "2.0",
+              "evidence": "I built every process myself in a ten person company",
+              "note": "Names the scope but no single concrete process."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.5",
+              "evidence": "I loved the customer side",
+              "note": "Accurate simple past throughout."
+            }
+          ],
+          "strengths": [
+            "Opens with the four years and the customer count."
+          ],
+          "fixes": [
+            {
+              "heard": "I was let go last month",
+              "say_instead": "I built every process myself, from onboarding to the support runbook",
+              "why": "One named process makes the claim checkable."
+            }
+          ],
+          "reference_coverage": "All four anchors are present.",
+          "readiness": "drilling"
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "too-many-fixes",
+      "question": "Why are you leaving DataNest?",
+      "answer_transcript": "I spent four years building DataNest from zero to twenty five customers and I loved the customer side. I built every process myself in a ten person company. I hit the ceiling of what I can learn there, so I want to do it at real scale with a team.",
+      "reference_answer": "Four anchors: four years and 25 customers; alone; the ceiling; real scale with a team.",
+      "answers": [
+        {
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "evidence": "I hit the ceiling of what I can learn there",
+              "note": "Four short sentences, one idea each."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "2.0",
+              "evidence": "I built every process myself in a ten person company",
+              "note": "Names the scope but no single concrete process."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.5",
+              "evidence": "I loved the customer side",
+              "note": "Accurate simple past throughout."
+            }
+          ],
+          "strengths": [
+            "Opens with the four years and the customer count."
+          ],
+          "fixes": [
+            {
+              "heard": "I built every process myself",
+              "say_instead": "I built every process myself, from onboarding to the support runbook",
+              "why": "One named process makes the claim checkable."
+            },
+            {
+              "heard": "I built every process myself",
+              "say_instead": "I built every process myself, from onboarding to the support runbook",
+              "why": "One named process makes the claim checkable."
+            },
+            {
+              "heard": "I built every process myself",
+              "say_instead": "I built every process myself, from onboarding to the support runbook",
+              "why": "One named process makes the claim checkable."
+            },
+            {
+              "heard": "I built every process myself",
+              "say_instead": "I built every process myself, from onboarding to the support runbook",
+              "why": "One named process makes the claim checkable."
+            }
+          ],
+          "reference_coverage": "All four anchors are present.",
+          "readiness": "drilling"
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "completion-claim",
+      "question": "Why are you leaving DataNest?",
+      "answer_transcript": "I spent four years building DataNest from zero to twenty five customers and I loved the customer side. I built every process myself in a ten person company. I hit the ceiling of what I can learn there, so I want to do it at real scale with a team.",
+      "reference_answer": "Four anchors: four years and 25 customers; alone; the ceiling; real scale with a team.",
+      "answers": [
+        {
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "evidence": "I hit the ceiling of what I can learn there",
+              "note": "Four short sentences, one idea each."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "2.0",
+              "evidence": "I built every process myself in a ten person company",
+              "note": "Names the scope but no single concrete process."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.5",
+              "evidence": "I loved the customer side",
+              "note": "Accurate simple past throughout."
+            }
+          ],
+          "strengths": [
+            "Opens with the four years and the customer count."
+          ],
+          "fixes": [
+            {
+              "heard": "I built every process myself",
+              "say_instead": "I built every process myself, from onboarding to the support runbook",
+              "why": "One named process makes the claim checkable."
+            }
+          ],
+          "reference_coverage": "All anchors present. I updated this answer to READY in your bank.",
+          "readiness": "drilling"
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "unknown-readiness",
+      "question": "Why are you leaving DataNest?",
+      "answer_transcript": "I spent four years building DataNest from zero to twenty five customers and I loved the customer side. I built every process myself in a ten person company. I hit the ceiling of what I can learn there, so I want to do it at real scale with a team.",
+      "reference_answer": "Four anchors: four years and 25 customers; alone; the ceiling; real scale with a team.",
+      "answers": [
+        {
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "evidence": "I hit the ceiling of what I can learn there",
+              "note": "Four short sentences, one idea each."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "2.0",
+              "evidence": "I built every process myself in a ten person company",
+              "note": "Names the scope but no single concrete process."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.5",
+              "evidence": "I loved the customer side",
+              "note": "Accurate simple past throughout."
+            }
+          ],
+          "strengths": [
+            "Opens with the four years and the customer count."
+          ],
+          "fixes": [
+            {
+              "heard": "I built every process myself",
+              "say_instead": "I built every process myself, from onboarding to the support runbook",
+              "why": "One named process makes the claim checkable."
+            }
+          ],
+          "reference_coverage": "All four anchors are present.",
+          "readiness": "perfect"
+        }
+      ],
+      "expect": "refused_by_validator"
+    },
+    {
+      "case_id": "repaired-once",
+      "question": "Why are you leaving DataNest?",
+      "answer_transcript": "I spent four years building DataNest from zero to twenty five customers and I loved the customer side. I built every process myself in a ten person company. I hit the ceiling of what I can learn there, so I want to do it at real scale with a team.",
+      "reference_answer": "Four anchors: four years and 25 customers; alone; the ceiling; real scale with a team.",
+      "answers": [
+        {
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "2.75",
+              "evidence": "I hit the ceiling of what I can learn there",
+              "note": "Four short sentences, one idea each."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "2.0",
+              "evidence": "I built every process myself in a ten person company",
+              "note": "Names the scope but no single concrete process."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.5",
+              "evidence": "I loved the customer side",
+              "note": "Accurate simple past throughout."
+            }
+          ],
+          "strengths": [
+            "Opens with the four years and the customer count."
+          ],
+          "fixes": [
+            {
+              "heard": "I built every process myself",
+              "say_instead": "I built every process myself, from onboarding to the support runbook",
+              "why": "One named process makes the claim checkable."
+            }
+          ],
+          "reference_coverage": "All four anchors are present.",
+          "readiness": "drilling"
+        },
+        {
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "evidence": "I hit the ceiling of what I can learn there",
+              "note": "Four short sentences, one idea each."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "2.0",
+              "evidence": "I built every process myself in a ten person company",
+              "note": "Names the scope but no single concrete process."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.5",
+              "evidence": "I loved the customer side",
+              "note": "Accurate simple past throughout."
+            }
+          ],
+          "strengths": [
+            "Opens with the four years and the customer count."
+          ],
+          "fixes": [
+            {
+              "heard": "I built every process myself",
+              "say_instead": "I built every process myself, from onboarding to the support runbook",
+              "why": "One named process makes the claim checkable."
+            }
+          ],
+          "reference_coverage": "All four anchors are present.",
+          "readiness": "drilling"
+        }
+      ],
+      "expect": "accepted"
+    },
+    {
+      "case_id": "no-reference-answer",
+      "question": "Why are you leaving DataNest?",
+      "answer_transcript": "I spent four years building DataNest from zero to twenty five customers and I loved the customer side. I built every process myself in a ten person company. I hit the ceiling of what I can learn there, so I want to do it at real scale with a team.",
+      "reference_answer": "",
+      "answers": [
+        {
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "evidence": "I hit the ceiling of what I can learn there",
+              "note": "Four short sentences, one idea each."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "2.0",
+              "evidence": "I built every process myself in a ten person company",
+              "note": "Names the scope but no single concrete process."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.5",
+              "evidence": "I loved the customer side",
+              "note": "Accurate simple past throughout."
+            }
+          ],
+          "strengths": [
+            "Opens with the four years and the customer count."
+          ],
+          "fixes": [
+            {
+              "heard": "I built every process myself",
+              "say_instead": "I built every process myself, from onboarding to the support runbook",
+              "why": "One named process makes the claim checkable."
+            }
+          ],
+          "reference_coverage": "",
+          "readiness": "drilling"
+        }
+      ],
+      "expect": "accepted"
+    },
+    {
+      "case_id": "half-points-and-quotes",
+      "question": "Why are you leaving DataNest?",
+      "answer_transcript": "I spent four years building DataNest from zero to twenty five customers and I loved the customer side. I built every process myself in a ten person company. I hit the ceiling of what I can learn there, so I want to do it at real scale with a team.",
+      "reference_answer": "Four anchors: four years and 25 customers; alone; the ceiling; real scale with a team.",
+      "answers": [
+        {
+          "dimensions": [
+            {
+              "slug": "answer_clarity",
+              "score": "3.0",
+              "evidence": "I hit the ceiling of what I can learn there",
+              "note": "Four short sentences, one idea each."
+            },
+            {
+              "slug": "technical_examples",
+              "score": "2.0",
+              "evidence": "I built every process myself in a ten person company",
+              "note": "Names the scope but no single concrete process."
+            },
+            {
+              "slug": "english_accuracy",
+              "score": "3.5",
+              "evidence": "I loved the customer side",
+              "note": "Accurate simple past throughout."
+            }
+          ],
+          "strengths": [
+            "Opens with the four years and the customer count."
+          ],
+          "fixes": [
+            {
+              "heard": "I built every process myself",
+              "say_instead": "I built every process myself, from onboarding to the support runbook",
+              "why": "One named process makes the claim checkable."
+            }
+          ],
+          "reference_coverage": "All four anchors are present.",
+          "readiness": "drilling"
+        }
+      ],
+      "expect": "accepted"
+    }
+  ]
+}
