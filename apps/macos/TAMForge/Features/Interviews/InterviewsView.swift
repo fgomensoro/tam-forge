@@ -5,13 +5,23 @@ import SwiftUI
 struct InterviewsView: View {
     @ObservedObject var model: InterviewsModel
     @ObservedObject var coordinator: RecordingCoordinator
+    @StateObject private var practice: InterviewPracticeModel
     @State private var importingReferenceKind: ReferenceKind?
+
+    init(model: InterviewsModel, coordinator: RecordingCoordinator) {
+        self.model = model
+        self.coordinator = coordinator
+        _practice = StateObject(
+            wrappedValue: InterviewPracticeModel(synthesizer: SystemSpeechSynthesizer(), recorder: coordinator)
+        )
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
             list.frame(width: 280)
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    practiceSection
                     editor
                     timelineSection
                     referenceSection
@@ -32,6 +42,66 @@ struct InterviewsView: View {
         ) { result in
             guard let kind = importingReferenceKind, let url = try? result.get().first else { return }
             Task { await model.importReference(kind: kind, fileURL: url) }
+        }
+    }
+
+    /// Free practice: the interviewer asks the answer bank aloud, one question at a time.
+    private var practiceSection: some View {
+        GroupBox("Practice your answers aloud") {
+            VStack(alignment: .leading, spacing: 10) {
+                if let question = practice.current {
+                    Text(practice.progress).font(.caption).foregroundStyle(.secondary)
+                    Text(question.prompt).font(.title3).textSelection(.enabled)
+                        .accessibilityIdentifier("practiceQuestion")
+                    HStack {
+                        if practice.isAnswering {
+                            Button("Stop, that is my answer") { Task { await practice.endAnswer() } }
+                                .accessibilityIdentifier("practiceEndAnswer")
+                            Text("Recording. The interviewer will not interrupt.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else if practice.canMoveOn {
+                            Button("Show my reference answer") { practice.revealReference() }
+                                .disabled(!practice.canRevealReference)
+                            Button("Next question") { practice.next() }
+                                .accessibilityIdentifier("practiceNext")
+                        } else {
+                            Button("Record my answer") { Task { await practice.beginAnswer() } }
+                                .disabled(!practice.canBeginAnswer || coordinator.phase.isActive)
+                                .accessibilityIdentifier("practiceBeginAnswer")
+                            Button("Repeat the question") { practice.repeatQuestion() }
+                        }
+                        Spacer()
+                        Button("End practice") { practice.stop() }.disabled(practice.isAnswering)
+                    }
+                    if let reference = practice.revealedReference {
+                        Text(reference).textSelection(.enabled)
+                            .padding(8)
+                            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                            .accessibilityIdentifier("practiceReference")
+                    }
+                } else {
+                    Text("The interviewer asks your answer bank questions aloud, one at a time, in random order. You answer without interruptions while it records, and only then compare with your own reference answer. Each answer is a recording: it is transcribed like any other and you can open it from the Recording screen.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Button(practice.isFinished ? "Practice again" : "Start practice") {
+                            practice.start(entries: model.references)
+                        }
+                        .disabled(model.references(of: .answerBank).isEmpty || coordinator.phase.isActive)
+                        .accessibilityIdentifier("practiceStart")
+                        if practice.isFinished {
+                            Text("Round finished: \(practice.answers.count) answer\(practice.answers.count == 1 ? "" : "s") recorded.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else if model.references(of: .answerBank).isEmpty {
+                            Text("Import your answer bank below to start.").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if let message = practice.message {
+                    Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(Color.orange)
+                        .accessibilityIdentifier("practiceMessage")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
