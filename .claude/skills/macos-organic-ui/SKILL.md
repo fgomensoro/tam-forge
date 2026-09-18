@@ -103,11 +103,28 @@ what is wrong.
 
 ## Testing
 
+**Never run `TAMForgeUITests` on this machine unless you are explicitly asked
+to.** XCUITest on macOS drives the app with real HID events against the window
+server, and it has no headless or offscreen mode: for the whole run it owns the
+cursor and the keyboard of the desktop session someone is sitting at. One
+journey pass is 180 to 210 seconds, and anything that loops the suite — a
+bisect, a flake hunt, a retry — locks the machine out for as long as the loop
+runs. The `TAMForge` scheme contains that target, so a bare `test` is the
+command that takes the mouse.
+
+Local default, unit target only, never touches the cursor:
+
 ```bash
 xcodebuild -jobs 2 -skipPackagePluginValidation \
   -project apps/macos/TAMForge.xcodeproj -scheme TAMForge \
-  -destination 'platform=macOS' test
+  -destination 'platform=macOS' -only-testing:TAMForgeTests test
 ```
+
+The UI tests belong to the `native-ui` job in `.github/workflows/ci.yml`, which
+runs `-only-testing:TAMForgeUITests` on a macOS runner with nobody at the
+keyboard. Push and read the job. If they genuinely have to run on a Mac in front
+of you, use a second macOS user through fast user switching, or a different
+machine; both keep the events out of the session you are working in.
 
 `-only-testing` against a class the project does not contain matches nothing,
 runs nothing, and still exits `TEST SUCCEEDED`. Never read that as a pass unless
