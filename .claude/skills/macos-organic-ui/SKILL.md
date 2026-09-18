@@ -76,6 +76,29 @@ git diff --stat origin/main -- apps/macos/TAMForgeUITests/
 
 Empty output, or the change is not done.
 
+## Scroll content is eager
+
+Build the content of a `ScrollView` out of plain `VStack` and `HStack`. **Never
+`LazyVStack`, `LazyHStack` or `LazyVGrid`.**
+
+A lazy stack sizes the rows it has not realized by estimate, so the scroll view's
+content height, and with it the end of its scroll range, moves as rows realize.
+Anything below the fold stops being reachable: `RoadmapAdministrationView`'s four
+semantic-diff sections ran the estimate about 1,400 pt short on a ~10,500 pt page,
+and the approval gate under them could not be scrolled into the viewport at all,
+by `testNativeFoundationParityJourney` or by a person. That breaks the identifier
+contract above as surely as a rename does, since an identifier that can never be
+revealed fails the same assertions as one that was dropped.
+
+The exception is a genuinely unbounded feed of many uniform rows, where the
+estimate converges and laziness pays for itself. Nothing in this app is one today.
+
+```bash
+grep -rn "LazyVStack(\|LazyHStack(\|LazyVGrid(" apps/macos/TAMForge/
+```
+
+No output, or the restyle reintroduced the bug.
+
 ## Adding a file to the Xcode project
 
 `TAMForge.xcodeproj/project.pbxproj` uses explicit file references, not Xcode 16
