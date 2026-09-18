@@ -245,6 +245,10 @@
 		D5000000000000000000001F /* TodayTaskStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000A /* TodayTaskStatus.swift */; };
 		D50000000000000000000032 /* OrganicSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000C /* OrganicSidebar.swift */; };
 		D50000000000000000000033 /* OrganicSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000C /* OrganicSidebar.swift */; };
+		D50000000000000000000034 /* OrganicToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000D /* OrganicToolbar.swift */; };
+		D50000000000000000000035 /* OrganicToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000D /* OrganicToolbar.swift */; };
+		D50000000000000000000036 /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000E /* SignInView.swift */; };
+		D50000000000000000000037 /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000E /* SignInView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -420,6 +424,8 @@
 		D5000000000000000000000A /* TodayTaskStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayTaskStatus.swift; sourceTree = "<group>"; };
 		D5000000000000000000000B /* TodayTaskStatusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayTaskStatusTests.swift; sourceTree = "<group>"; };
 		D5000000000000000000000C /* OrganicSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganicSidebar.swift; sourceTree = "<group>"; };
+		D5000000000000000000000D /* OrganicToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganicToolbar.swift; sourceTree = "<group>"; };
+		D5000000000000000000000E /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -565,6 +571,8 @@
 			children = (
 				D5000000000000000000000A /* TodayTaskStatus.swift */,
 				D5000000000000000000000C /* OrganicSidebar.swift */,
+				D5000000000000000000000D /* OrganicToolbar.swift */,
+				D5000000000000000000000E /* SignInView.swift */,
 			);
 			path = Shell;
 			sourceTree = "<group>";
@@ -1087,6 +1095,8 @@
 				D5000000000000000000001C /* OrganicWindow.swift in Sources */,
 				D5000000000000000000001E /* TodayTaskStatus.swift in Sources */,
 				D50000000000000000000032 /* OrganicSidebar.swift in Sources */,
+				D50000000000000000000034 /* OrganicToolbar.swift in Sources */,
+				D50000000000000000000036 /* SignInView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1221,6 +1231,8 @@
 				D5000000000000000000001F /* TodayTaskStatus.swift in Sources */,
 				D50000000000000000000020 /* TodayTaskStatusTests.swift in Sources */,
 				D50000000000000000000033 /* OrganicSidebar.swift in Sources */,
+				D50000000000000000000035 /* OrganicToolbar.swift in Sources */,
+				D50000000000000000000037 /* SignInView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
