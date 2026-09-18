@@ -13,10 +13,17 @@ struct SignInView: View {
                 .font(Organic.Font.figtree(.semibold, size: 28))
                 .foregroundStyle(Organic.Color.text)
                 .accessibilityIdentifier("shellTitle")
-            Text("Sign in to continue your study workspace. \(environmentLabel).")
-                .font(Organic.Font.figtree(.regular, size: 14))
-                .foregroundStyle(Organic.Color.muted)
-                .accessibilityIdentifier("environmentLabel")
+            // Three siblings, not one interpolated sentence: TAMForgeUITests matches
+            // staticTexts by exact label, and expects "environmentLabel" to resolve to
+            // just the environment name (the old signedOut copy rendered it standalone).
+            HStack(spacing: 0) {
+                Text("Sign in to continue your study workspace. ")
+                Text(environmentLabel)
+                    .accessibilityIdentifier("environmentLabel")
+                Text(".")
+            }
+            .font(Organic.Font.figtree(.regular, size: 14))
+            .foregroundStyle(Organic.Color.muted)
             if let banner { GlobalBannerView(banner: banner).organicCard(radius: Organic.Radius.r24) }
             Button {
                 onSignIn()

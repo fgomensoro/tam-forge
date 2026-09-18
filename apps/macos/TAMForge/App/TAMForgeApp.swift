@@ -128,17 +128,11 @@ private struct NativeSessionView: View {
                 ProgressView("Checking your secure session").accessibilityIdentifier(
                     "sessionLoading")
             case .signedOut:
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("TAM Forge").font(.largeTitle).accessibilityIdentifier("shellTitle")
-                    Text(dependencies.environment.displayName).accessibilityIdentifier(
-                        "environmentLabel")
-                    Text("Sign in to continue your study workspace.")
-                    if let banner = model.banner { GlobalBannerView(banner: banner) }
-                    Button("Sign in") { Task { await model.signIn() } }
-                        .accessibilityIdentifier("signInButton")
-                        .keyboardShortcut(.defaultAction)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                SignInView(
+                    environmentLabel: dependencies.environment.displayName,
+                    banner: model.banner,
+                    onSignIn: { Task { await model.signIn() } }
+                )
             case .signedIn:
                 NativeWorkspaceView(
                     dependencies: dependencies,
@@ -148,7 +142,7 @@ private struct NativeSessionView: View {
                 )
             }
         }
-        .padding(24)
+        .background(Organic.Color.bg)
         .frame(minWidth: Organic.Window.minimumSize.width, minHeight: Organic.Window.minimumSize.height)
         .task {
             model.restoreRoute(from: restoredRouteID)
@@ -423,102 +417,49 @@ private struct NativeWorkspaceView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
-            List {
-                if dependencies.nativeFeatures.contains(.today) {
-                    Button {
-                        session.select(.today)
-                    } label: {
-                        Label("Today", systemImage: "sun.max")
-                    }
-                    .accessibilityIdentifier("todayNavigation")
-                }
-                if dependencies.nativeFeatures.contains(.roadmaps) {
-                    Button {
-                        session.select(.roadmaps)
-                    } label: {
-                        Label("Roadmaps", systemImage: "map")
-                    }
-                    .accessibilityIdentifier("roadmapsNavigation")
-                }
-                if dependencies.nativeFeatures.contains(.evidence) {
-                    Button {
-                        session.select(.evidence(activityID: nil))
-                    } label: {
-                        Label("Evidence", systemImage: "list.bullet.rectangle")
-                    }
-                    .accessibilityIdentifier("evidenceNavigation")
-                }
-                if dependencies.nativeFeatures.contains(.recording) {
-                    Button {
-                        session.select(.recording)
-                    } label: {
-                        Label("Recording", systemImage: "record.circle")
-                    }
-                    .accessibilityIdentifier("recordingNavigation")
-                }
-                if dependencies.nativeFeatures.contains(.interviews) {
-                    Button {
-                        session.select(.interviews)
-                    } label: {
-                        Label("Interviews", systemImage: "person.2.wave.2")
-                    }
-                    .accessibilityIdentifier("interviewsNavigation")
-                }
-                if dependencies.nativeFeatures.contains(.classes) {
-                    Button {
-                        session.select(.classes)
-                    } label: {
-                        Label("English classes", systemImage: "character.book.closed")
-                    }
-                    .accessibilityIdentifier("classesNavigation")
-                }
-                if dependencies.nativeFeatures.contains(.cards) {
-                    Button {
-                        session.select(.cards)
-                    } label: {
-                        Label("Cards", systemImage: "rectangle.on.rectangle.angled")
-                    }
-                    .accessibilityIdentifier("cardsNavigation")
-                }
-                if dependencies.nativeFeatures.contains(.progress) {
-                    Button {
-                        session.select(.progress)
-                    } label: {
-                        Label("Progress", systemImage: "chart.line.uptrend.xyaxis")
-                    }
-                    .accessibilityIdentifier("progressNavigation")
-                }
-            }
-            .navigationTitle("TAM Forge")
-        } detail: {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text(dependencies.environment.displayName).accessibilityIdentifier(
-                        "environmentLabel")
-                    Spacer()
+        HStack(spacing: 0) {
+            OrganicSidebar(
+                features: dependencies.nativeFeatures,
+                selected: session.selectedRoute,
+                todayRemaining: state.today.snapshot.map { TodayTaskStatus.remainingCount(in: $0.tasks) },
+                cardsDue: state.cards.remaining,
+                isRecording: recording.phase.isActive,
+                environmentLabel: dependencies.environment.displayName,
+                statusState: session.statusState,
+                login: loginName,
+                onSelect: { session.select($0) },
+                onSignOut: signOut
+            )
+            VStack(spacing: 0) {
+                OrganicToolbar(breadcrumb: breadcrumb) {
                     if !dependencies.nativeFeatures.isEmpty {
-                        if session.isStatusStreamActive {
-                            NotificationConnectionStatusView(state: session.statusState)
-                        }
                         NotificationPanelView(model: state.notifications)
                     }
-                    Button("Sign out") {
-                        if recording.requiresStopBeforeSignOut {
-                            showRecordingSignOutConfirmation = true
-                        } else {
-                            Task {
-                                await recording.pauseUploadsForSignOut()
-                                session.signOut()
-                            }
-                        }
-                    }
-                    .accessibilityIdentifier("signOutButton")
                 }
-                if let banner = session.banner { GlobalBannerView(banner: banner) }
-                routeDetail
+                // No outer ScrollView here: every current route (Today, Roadmaps,
+                // Recording, Interviews, Classes, Cards, Progress, Evidence, Activity)
+                // already owns a ScrollView with its own accessibilityIdentifier
+                // ("activityWorkspaceScroll", "roadmapWorkspaceScroll", "evidenceLedger",
+                // etc.), predating this shell. Wrapping routeDetail in a second, unlabeled
+                // ScrollView double-nests every route and made the self-review TextEditor
+                // in ActivityWorkspaceView intermittently unfocusable to XCUITest's
+                // synthesized keyboard events (`testNativeFoundationParityJourney` failing
+                // at the "Main answer or decision" field, 2 of 3 runs). Those feature views
+                // are explicitly out of scope until stages 3-8 restyle them one at a time
+                // (task-10-brief.md, "What this plan does not cover"), so the fix stays
+                // here: let each route keep bounding and scrolling its own content inside
+                // the width-capped column below, exactly as it did under NavigationSplitView.
+                VStack(alignment: .leading, spacing: Organic.Space.p24) {
+                    if let banner = session.banner { GlobalBannerView(banner: banner).organicCard(radius: Organic.Radius.r24) }
+                    routeDetail
+                }
+                .frame(maxWidth: 1120, alignment: .leading)
+                .padding(.horizontal, Organic.Space.p36)
+                .padding(.top, Organic.Space.p32)
+                .padding(.bottom, Organic.Space.p40)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.leading, 12)
+            .background(Organic.Color.bg)
         }
         .task(id: session.featureRefreshVersion) {
             guard session.featureRefreshVersion > 0 else { return }
@@ -561,6 +502,36 @@ private struct NativeWorkspaceView: View {
             }
         } message: {
             Text("TAM Forge will seal the encrypted local recording before signing out.")
+        }
+    }
+
+    private var loginName: String {
+        if case .signedIn(let login) = session.phase { return login }
+        return ""
+    }
+
+    private var breadcrumb: String {
+        switch session.selectedRoute {
+        case .today: "Today"
+        case .roadmaps: "Roadmaps"
+        case .recording: "Recording"
+        case .interviews: "Interviews"
+        case .classes: "English classes"
+        case .cards: "Cards"
+        case .progress: "Progress"
+        case .evidence: "Evidence"
+        case .activity(let identifier): "Today › Activity \(identifier)"
+        }
+    }
+
+    private func signOut() {
+        if recording.requiresStopBeforeSignOut {
+            showRecordingSignOutConfirmation = true
+        } else {
+            Task {
+                await recording.pauseUploadsForSignOut()
+                session.signOut()
+            }
         }
     }
 
