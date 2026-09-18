@@ -17,6 +17,7 @@ from tamforge_backend.agents.compatibility import (
     ProbeError,
     ProbeQuotaExhausted,
 )
+from tamforge_backend.agents.roles.interview_follow_up import FollowUpRequest
 from tamforge_backend.agents.runtime import AgentAuthenticationFailed, AgentServiceUnavailable
 from tamforge_backend.agents.sdk_runtime import PROBE_PROMPT, AgentSdkRuntime
 from tamforge_backend.roadmaps.planner import EvidenceLine, PlannerRequest
@@ -158,3 +159,23 @@ async def test_propose_translates_a_refused_run_into_agent_errors() -> None:
         await _runtime(FakeQuery([_result(is_error=True, structured_output=None)])).propose(
             PlannerRequest(mode="generate", files={}, instruction="", today=date(2026, 9, 12))
         )
+
+
+@pytest.mark.anyio
+async def test_follow_up_sends_the_answer_and_returns_the_decision() -> None:
+    decision = {"follow_up": "What exactly was the ceiling you hit?", "reason": "weak_point"}
+    query = FakeQuery(
+        [SystemMessage(subtype="init", data={"model": "m"}), _result(structured_output=decision)]
+    )
+    request = FollowUpRequest(
+        question="Why are you leaving?",
+        answer_transcript="I hit the ceiling of what I can learn there.",
+        prior_follow_ups=("Why now?",),
+    )
+
+    payload = await _runtime(query).follow_up(request)
+
+    assert payload == decision
+    prompt = query.calls[0]["prompt"]
+    assert "Question asked: Why are you leaving?" in prompt and "- Why now?" in prompt
+    assert query.calls[0]["options"].model == "claude-fable-5-1"
