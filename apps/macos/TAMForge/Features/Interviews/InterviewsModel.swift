@@ -10,6 +10,10 @@ final class InterviewsModel: ObservableObject {
     @Published private(set) var timeline: InterviewTimeline = .empty
     @Published private(set) var references: [ReferenceEntry] = []
     @Published private(set) var referenceOutcome: ReferenceImportOutcome?
+    @Published private(set) var practiceReviews: [PracticeAnswerReview] = []
+    /// Answers recorded this session that the server has not accepted yet, usually
+    /// because the recording was still uploading. Every refresh sends them again.
+    @Published private(set) var unsentPracticeAnswers: [PracticeAnswer] = []
     @Published private(set) var isBusy = false
     @Published private(set) var errorMessage: String?
 
@@ -28,6 +32,37 @@ final class InterviewsModel: ObservableObject {
             self.interviews = try await self.api.list()
             self.timeline = try await self.api.timeline()
             self.references = try await self.api.references()
+            self.practiceReviews = try await self.api.practiceAnswers()
+        }
+    }
+
+    /// Send one recorded practice answer for review. The call is safe to repeat: the server
+    /// stores the answer once and queues its review when the transcript has arrived.
+    func submitPracticeAnswer(_ answer: PracticeAnswer) async {
+        if !unsentPracticeAnswers.contains(answer) { unsentPracticeAnswers.append(answer) }
+        await refreshPracticeReviews()
+    }
+
+    /// Retry what the server has not accepted, nudge the answers still waiting for their
+    /// transcript, and reload the list.
+    func refreshPracticeReviews() async {
+        await perform {
+            for answer in self.unsentPracticeAnswers {
+                _ = try await self.api.submitPracticeAnswer(
+                    question: answer.question.prompt, recordingID: answer.recordingID,
+                    referenceID: answer.question.entry.id
+                )
+                self.unsentPracticeAnswers.removeAll { $0 == answer }
+            }
+            let listed = try await self.api.practiceAnswers()
+            for waiting in listed where waiting.isWaiting {
+                _ = try await self.api.submitPracticeAnswer(
+                    question: waiting.question, recordingID: waiting.recordingID,
+                    referenceID: waiting.referenceMaterialID
+                )
+            }
+            self.practiceReviews = listed.contains(where: \.isWaiting)
+                ? try await self.api.practiceAnswers() : listed
         }
     }
 

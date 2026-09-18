@@ -313,3 +313,87 @@ struct ReferenceImportOutcome: Codable, Equatable, Sendable {
     let existing: Int
     let entries: [ReferenceEntry]
 }
+
+/// One scored dimension of a practice review, with the learner's own words as evidence.
+struct PracticeDimensionScore: Codable, Equatable, Sendable, Identifiable {
+    let slug: String
+    let name: String
+    let score: Decimal
+    let evidence: String
+    let note: String
+
+    var id: String { slug }
+
+    init(slug: String, name: String, score: Decimal, evidence: String, note: String) {
+        self.slug = slug
+        self.name = name
+        self.score = score
+        self.evidence = evidence
+        self.note = note
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        slug = try container.decode(String.self, forKey: .slug)
+        name = try container.decode(String.self, forKey: .name)
+        evidence = try container.decode(String.self, forKey: .evidence)
+        note = try container.decode(String.self, forKey: .note)
+        // The server sends decimals as strings ("3.0").
+        if let text = try? container.decode(String.self, forKey: .score), let value = Decimal(string: text) {
+            score = value
+        } else {
+            score = try container.decode(Decimal.self, forKey: .score)
+        }
+    }
+}
+
+struct PracticeFix: Codable, Equatable, Sendable, Identifiable {
+    let heard: String
+    let sayInstead: String
+    let why: String
+
+    var id: String { heard + sayInstead }
+
+    enum CodingKeys: String, CodingKey {
+        case heard, why
+        case sayInstead = "say_instead"
+    }
+}
+
+/// A recorded practice answer as the server knows it: waiting for its transcript, queued,
+/// or reviewed.
+struct PracticeAnswerReview: Codable, Equatable, Sendable, Identifiable {
+    let id: Int
+    let question: String
+    let recordingID: UUID
+    let referenceMaterialID: Int?
+    let status: String
+    let failureCategory: String?
+    let dimensions: [PracticeDimensionScore]
+    let strengths: [String]
+    let fixes: [PracticeFix]
+    let referenceCoverage: String
+    let readiness: String?
+    let createdAt: Date
+
+    var isWaiting: Bool { status == "awaiting_transcript" }
+
+    var statusLabel: String {
+        switch status {
+        case "awaiting_transcript": "Waiting for the transcript"
+        case "queued": "Review queued"
+        case "running": "Review running"
+        case "ready": readiness.map { "Reviewed · \($0)" } ?? "Reviewed"
+        default: "Review needs attention" + (failureCategory.map { " (\($0.replacingOccurrences(of: "_", with: " ")))" } ?? "")
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, question, status, dimensions, strengths, fixes, readiness
+        case recordingID = "recording_id"
+        case referenceMaterialID = "reference_material_id"
+        case failureCategory = "failure_category"
+        case referenceCoverage = "reference_coverage"
+        case createdAt = "created_at"
+    }
+}
