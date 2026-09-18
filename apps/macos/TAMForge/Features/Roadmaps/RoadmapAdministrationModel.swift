@@ -11,6 +11,8 @@ final class RoadmapAdministrationModel: ObservableObject {
     @Published private(set) var versions: [RoadmapVersion] = []
     @Published private(set) var isBusy = false
     @Published private(set) var errorMessage: String?
+    /// What the last successful step did, shown next to the control that did it.
+    @Published private(set) var notice: String?
     @Published var approvalConfirmed = false
     /// The scheme editor: a planner proposal, a hand-written scheme, or a reforecast.
     @Published var schemeDraft = ""
@@ -133,6 +135,7 @@ final class RoadmapAdministrationModel: ObservableObject {
         await run(month: nil) {
             let version = try await self.service.approve(importID: roadmapImport.id)
             self.record(version)
+            self.notice = "Roadmap version \(version.versionKey) created. Activate Month \(version.monthNumber) below to start using it."
         }
     }
 
@@ -146,7 +149,9 @@ final class RoadmapAdministrationModel: ObservableObject {
     func activate(_ target: RoadmapVersion? = nil) async {
         guard let target = target ?? version, target.canActivate, !isBusy else { return }
         await run(month: target.monthNumber) {
-            self.record(try await self.service.activate(versionID: target.id))
+            let active = try await self.service.activate(versionID: target.id)
+            self.record(active)
+            self.notice = "Month \(active.monthNumber) is active. Today now follows version \(active.versionKey)."
         }
     }
 
@@ -231,6 +236,7 @@ final class RoadmapAdministrationModel: ObservableObject {
     private func run(month: Int?, _ action: () async throws -> Void) async {
         isBusy = true
         errorMessage = nil
+        notice = nil
         defer { isBusy = false }
         do {
             try await action()
