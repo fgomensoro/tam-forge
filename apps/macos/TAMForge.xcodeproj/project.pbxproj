@@ -71,6 +71,15 @@
 		D50000000000000000000011 /* OrganicTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000001 /* OrganicTokens.swift */; };
 		D50000000000000000000012 /* OrganicTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000001 /* OrganicTokens.swift */; };
 		D50000000000000000000013 /* OrganicDesignTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000002 /* OrganicDesignTests.swift */; };
+		D50000000000000000000014 /* OrganicFonts.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000003 /* OrganicFonts.swift */; };
+		D50000000000000000000015 /* OrganicFonts.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000003 /* OrganicFonts.swift */; };
+		D50000000000000000000016 /* Figtree-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000004 /* Figtree-Regular.ttf */; };
+		D50000000000000000000017 /* Figtree-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000005 /* Figtree-SemiBold.ttf */; };
+		D50000000000000000000018 /* Figtree-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000006 /* Figtree-Bold.ttf */; };
+		D50000000000000000000019 /* OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000007 /* OFL.txt */; };
+		D50000000000000000000024 /* Figtree-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000004 /* Figtree-Regular.ttf */; };
+		D50000000000000000000025 /* Figtree-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000005 /* Figtree-SemiBold.ttf */; };
+		D50000000000000000000026 /* Figtree-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000006 /* Figtree-Bold.ttf */; };
 		A100000000000000000000E1 /* NativeAPITransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000E2 /* NativeAPITransportTests.swift */; };
 		A100000000000000000000E3 /* OpenAPIRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000F3 /* OpenAPIRuntime */; };
 		A100000000000000000000E4 /* OpenAPIURLSession in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000F4 /* OpenAPIURLSession */; };
@@ -296,6 +305,11 @@
 		A1000000000000000000FA00 /* FileHandleReading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileHandleReading.swift; sourceTree = "<group>"; };
 		D50000000000000000000001 /* OrganicTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganicTokens.swift; sourceTree = "<group>"; };
 		D50000000000000000000002 /* OrganicDesignTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganicDesignTests.swift; sourceTree = "<group>"; };
+		D50000000000000000000003 /* OrganicFonts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganicFonts.swift; sourceTree = "<group>"; };
+		D50000000000000000000004 /* Figtree-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-Regular.ttf"; sourceTree = "<group>"; };
+		D50000000000000000000005 /* Figtree-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-SemiBold.ttf"; sourceTree = "<group>"; };
+		D50000000000000000000006 /* Figtree-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-Bold.ttf"; sourceTree = "<group>"; };
+		D50000000000000000000007 /* OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = OFL.txt; sourceTree = "<group>"; };
 		A10000000000000000000016 /* AppDependenciesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependenciesTests.swift; sourceTree = "<group>"; };
 		A100000000000000000000E2 /* NativeAPITransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAPITransportTests.swift; sourceTree = "<group>"; };
 		A100000000000000000000E6 /* openapi-generator-config.yaml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = openapi-generator-config.yaml; sourceTree = "<group>"; };
@@ -441,6 +455,7 @@
 			children = (
 				A10000000000000000000047 /* App */,
 				A10000000000000000000048 /* Core */,
+				D50000000000000000000022 /* Resources */,
 				C10000000000000000000017 /* Features */,
 				A10000000000000000000013 /* TAMForge.entitlements */,
 				A10000000000000000000014 /* Info.plist */,
@@ -533,8 +548,28 @@
 			isa = PBXGroup;
 			children = (
 				D50000000000000000000001 /* OrganicTokens.swift */,
+				D50000000000000000000003 /* OrganicFonts.swift */,
 			);
 			path = Design;
+			sourceTree = "<group>";
+		};
+		D50000000000000000000022 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				D50000000000000000000023 /* Fonts */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		D50000000000000000000023 /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				D50000000000000000000004 /* Figtree-Regular.ttf */,
+				D50000000000000000000005 /* Figtree-SemiBold.ttf */,
+				D50000000000000000000006 /* Figtree-Bold.ttf */,
+				D50000000000000000000007 /* OFL.txt */,
+			);
+			path = Fonts;
 			sourceTree = "<group>";
 		};
 		A10000000000000000000048 /* Core */ = {
@@ -908,6 +943,9 @@
 				E200000000000000000000A3 /* Test generator config in Resources */,
 				E200000000000000000000A4 /* Test OpenAPI input in Resources */,
 				F40000000000000000000002 /* foundation-journey-v1.json in Resources */,
+				D50000000000000000000024 /* Figtree-Regular.ttf in Resources */,
+				D50000000000000000000025 /* Figtree-SemiBold.ttf in Resources */,
+				D50000000000000000000026 /* Figtree-Bold.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -917,6 +955,10 @@
 			files = (
 				A100000000000000000000E5 /* openapi-generator-config.yaml in Resources */,
 				A100000000000000000000E7 /* openapi.yaml in Resources */,
+				D50000000000000000000016 /* Figtree-Regular.ttf in Resources */,
+				D50000000000000000000017 /* Figtree-SemiBold.ttf in Resources */,
+				D50000000000000000000018 /* Figtree-Bold.ttf in Resources */,
+				D50000000000000000000019 /* OFL.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1013,6 +1055,7 @@
 				E2000000000000000000000F /* ActivityWorkspaceModel.swift in Sources */,
 				E20000000000000000000010 /* ActivityWorkspaceView.swift in Sources */,
 				D50000000000000000000011 /* OrganicTokens.swift in Sources */,
+				D50000000000000000000014 /* OrganicFonts.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1141,6 +1184,7 @@
 				E20000000000000000000048 /* ActivityWorkspaceTests.swift in Sources */,
 				D50000000000000000000012 /* OrganicTokens.swift in Sources */,
 				D50000000000000000000013 /* OrganicDesignTests.swift in Sources */,
+				D50000000000000000000015 /* OrganicFonts.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

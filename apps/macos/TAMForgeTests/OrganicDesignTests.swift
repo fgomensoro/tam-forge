@@ -1,3 +1,4 @@
+import CoreText
 import SwiftUI
 import XCTest
 
@@ -34,5 +35,33 @@ final class OrganicDesignTests: XCTestCase {
 
     func testAccentOnIsAccentAtTwentySixPercent() {
         XCTAssertEqual(components(Organic.Color.accentOn).alpha, 0.26, accuracy: 0.001)
+    }
+
+    func testFigtreeWeightsAreRegisteredAndNotSubstituted() {
+        // CoreText silently substitutes a fallback when a font is missing, so assert
+        // on the resolved PostScript name rather than on the call succeeding.
+        for name in ["Figtree-Regular", "Figtree-SemiBold", "Figtree-Bold"] {
+            let font = CTFontCreateWithName(name as CFString, 16, nil)
+            let resolved = CTFontCopyPostScriptName(font) as String
+            XCTAssertEqual(resolved, name, "\(name) was substituted, so it is not bundled or not registered")
+        }
+    }
+
+    func testTabularFontGivesEveryDigitTheSameAdvance() {
+        let font = Organic.Font.coreText(.semibold, size: 20, tabular: true)
+        let advances = Organic.Font.digitAdvances(in: font)
+        XCTAssertEqual(advances.count, 10)
+        for advance in advances {
+            XCTAssertEqual(advance, advances[0], accuracy: 0.01, "digits are not tabular: \(advances)")
+        }
+    }
+
+    func testProportionalFontDoesNotForceEqualAdvances() {
+        let font = Organic.Font.coreText(.semibold, size: 20, tabular: false)
+        let advances = Organic.Font.digitAdvances(in: font)
+        XCTAssertFalse(
+            advances.allSatisfy { abs($0 - advances[0]) < 0.01 },
+            "proportional digits unexpectedly all match, so the tabular test proves nothing"
+        )
     }
 }
