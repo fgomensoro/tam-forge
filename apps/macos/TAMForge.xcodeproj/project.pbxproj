@@ -240,6 +240,9 @@
 		FB5000000000000000000007 /* ProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5000000000000000001007 /* ProgressView.swift */; };
 		FB5000000000000000000008 /* ProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5000000000000000001007 /* ProgressView.swift */; };
 		FB5000000000000000000009 /* ProgressModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5000000000000000001009 /* ProgressModelTests.swift */; };
+		D50000000000000000000020 /* TodayTaskStatusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000B /* TodayTaskStatusTests.swift */; };
+		D5000000000000000000001E /* TodayTaskStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000A /* TodayTaskStatus.swift */; };
+		D5000000000000000000001F /* TodayTaskStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000A /* TodayTaskStatus.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -412,6 +415,8 @@
 		FB5000000000000000001005 /* ProgressModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressModel.swift; sourceTree = "<group>"; };
 		FB5000000000000000001007 /* ProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressView.swift; sourceTree = "<group>"; };
 		FB5000000000000000001009 /* ProgressModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressModelTests.swift; sourceTree = "<group>"; };
+		D5000000000000000000000A /* TodayTaskStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayTaskStatus.swift; sourceTree = "<group>"; };
+		D5000000000000000000000B /* TodayTaskStatusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayTaskStatusTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -515,6 +520,7 @@
 				F80000000000000000001002 /* InterviewerTurnTests.swift */,
 				E20000000000000000000078 /* ActivityWorkspaceTests.swift */,
 				D50000000000000000000002 /* OrganicDesignTests.swift */,
+				D5000000000000000000000B /* TodayTaskStatusTests.swift */,
 			);
 			path = TAMForgeTests;
 			sourceTree = "<group>";
@@ -546,8 +552,17 @@
 				E20000000000000000000079 /* NativeUIFixtures.swift */,
 				F40000000000000000000014 /* NativeParityUIFixture.swift */,
 				C10000000000000000000015 /* ShellSessionModel.swift */,
+				D50000000000000000000031 /* Shell */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		D50000000000000000000031 /* Shell */ = {
+			isa = PBXGroup;
+			children = (
+				D5000000000000000000000A /* TodayTaskStatus.swift */,
+			);
+			path = Shell;
 			sourceTree = "<group>";
 		};
 		D50000000000000000000021 /* Design */ = {
@@ -1066,6 +1081,7 @@
 				D50000000000000000000014 /* OrganicFonts.swift in Sources */,
 				D5000000000000000000001A /* OrganicComponents.swift in Sources */,
 				D5000000000000000000001C /* OrganicWindow.swift in Sources */,
+				D5000000000000000000001E /* TodayTaskStatus.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1197,6 +1213,8 @@
 				D50000000000000000000015 /* OrganicFonts.swift in Sources */,
 				D5000000000000000000001B /* OrganicComponents.swift in Sources */,
 				D5000000000000000000001D /* OrganicWindow.swift in Sources */,
+				D5000000000000000000001F /* TodayTaskStatus.swift in Sources */,
+				D50000000000000000000020 /* TodayTaskStatusTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
