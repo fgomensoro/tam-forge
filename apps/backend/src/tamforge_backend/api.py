@@ -40,6 +40,9 @@ from .notes.service import NotesError
 from .notifications.routes import notification_exception_handler
 from .notifications.routes import router as notification_router
 from .notifications.service import NotificationError
+from .practice.routes import practice_exception_handler
+from .practice.routes import router as practice_router
+from .practice.service import PracticeError
 from .progress.routes import progress_exception_handler
 from .progress.routes import router as progress_router
 from .progress.service import ProgressUnavailable
@@ -77,6 +80,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(interviews_router)
     app.include_router(reference_router)
     app.include_router(classes_router)
+    app.include_router(practice_router)
     app.include_router(cards_router)
     app.include_router(progress_router)
     app.include_router(assessments_router)
@@ -100,6 +104,7 @@ def register_routes(app: FastAPI) -> None:
     app.add_exception_handler(NotesError, notes_exception_handler)
     app.add_exception_handler(InterviewsError, interviews_exception_handler)
     app.add_exception_handler(ClassesError, classes_exception_handler)
+    app.add_exception_handler(PracticeError, practice_exception_handler)
     app.add_exception_handler(CardsError, cards_exception_handler)
     app.add_exception_handler(ProgressUnavailable, progress_exception_handler)
     app.add_exception_handler(AssessmentsUnavailable, assessments_exception_handler)

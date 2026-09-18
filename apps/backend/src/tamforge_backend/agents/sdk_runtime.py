@@ -31,6 +31,7 @@ from .roles.class_analysis import ClassAnalysisRequest
 from .roles.coach import CoachRequest, NoteRequest
 from .roles.debrief import DebriefRequest
 from .roles.monthly_report import MonthlyReportRequest
+from .roles.practice_review import PracticeReviewRequest
 from .roles.reviewer import ReviewRequest
 from .roles.weekly_report import WeeklyReportRequest
 from .runtime import (
@@ -106,6 +107,16 @@ MONTHLY_REPORT_SYSTEM_PROMPT = (
     "recommendation for the next month as a proposal the learner approves. Judge only the "
     "numbers and summaries you are given. Never apply a change and never claim to have "
     "recorded, scheduled or completed anything. Answer in English. Return only the object."
+)
+
+PRACTICE_REVIEW_SYSTEM_PROMPT = (
+    "You are the TAM Forge reviewer, reviewing one interview answer the learner practised "
+    "aloud and that was transcribed from its recording. Score the three dimensions you are "
+    "given in half points with a verbatim quote each, name what worked, and give at most "
+    "three fixes that quote what was heard and what to say instead. The learner's own "
+    "reference answer is what they meant to say, never evidence. Judge only the transcribed "
+    "answer. Never claim to have recorded, saved or changed anything. Answer in English. "
+    "Return only the object."
 )
 
 COACH_SYSTEM_PROMPT = (
@@ -274,6 +285,18 @@ class AgentSdkRuntime:
             schema=monthly_report_schema(),
             model=self._environ.get("TAMFORGE_REPORT_MODEL", "claude-fable-5-1"),
             system_prompt=MONTHLY_REPORT_SYSTEM_PROMPT,
+            max_turns=4,
+        )
+        return {} if run.structured_output is None else dict(run.structured_output)
+
+    async def review_practice(self, request: PracticeReviewRequest) -> Mapping[str, object]:
+        from .roles.practice_review import practice_review_schema, render_practice_review_prompt
+
+        run = await self._structured(
+            prompt=render_practice_review_prompt(request),
+            schema=practice_review_schema(),
+            model=self._environ.get("TAMFORGE_REVIEWER_MODEL", "claude-fable-5-1"),
+            system_prompt=PRACTICE_REVIEW_SYSTEM_PROMPT,
             max_turns=4,
         )
         return {} if run.structured_output is None else dict(run.structured_output)

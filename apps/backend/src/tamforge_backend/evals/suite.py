@@ -32,6 +32,7 @@ from .coach import COACH_EVALUATOR_VERSION, run_coach_cases
 from .debrief import DEBRIEF_EVALUATOR_VERSION, run_debrief_cases
 from .failure_injection import FAILURE_INJECTION_VERSION, run_failure_injection
 from .monthly_report import MONTHLY_REPORT_EVALUATOR_VERSION, run_monthly_report_cases
+from .practice_review import PRACTICE_REVIEW_EVALUATOR_VERSION, run_practice_review_cases
 from .reviewer import REVIEWER_EVALUATOR_VERSION, run_reviewer_cases
 from .runner import run_memory_cases
 from .scoring import THRESHOLDS as MEMORY_THRESHOLDS
@@ -50,6 +51,7 @@ DEBRIEF_REFUSALS: Final = 1.0
 CLASS_ANALYSIS_REFUSALS: Final = 1.0
 WEEKLY_REPORT_REFUSALS: Final = 1.0
 MONTHLY_REPORT_REFUSALS: Final = 1.0
+PRACTICE_REVIEW_REFUSALS: Final = 1.0
 UNSUPPORTED_HIGH_SEVERITY_MAX: Final = 0
 
 
@@ -176,6 +178,7 @@ async def run_suite(
     class_path = fixtures_dir / "class-analysis-refusal-cases.json"
     report_path = fixtures_dir / "weekly-report-refusal-cases.json"
     monthly_path = fixtures_dir / "monthly-report-refusal-cases.json"
+    practice_path = fixtures_dir / "practice-review-refusal-cases.json"
     for path in (
         memory_path,
         security_path,
@@ -188,6 +191,7 @@ async def run_suite(
         class_path,
         report_path,
         monthly_path,
+        practice_path,
     ):
         if not path.exists():
             raise SuiteError(f"fixture missing: {path.name}")
@@ -428,6 +432,20 @@ async def run_suite(
         )
     )
 
+    practice = await run_practice_review_cases(practice_path)
+    practice_held = practice.held / len(practice.outcomes) if practice.outcomes else 0.0
+    parts.append(
+        PartResult(
+            "practice_review",
+            "refusals",
+            round(practice_held, 4),
+            PRACTICE_REVIEW_REFUSALS,
+            practice.passed and practice_held >= PRACTICE_REVIEW_REFUSALS,
+            f"{len(practice.outcomes)} cases against {practice.model}: three dimensions once, "
+            "half points, quotes of the answer only, no completion claim",
+        )
+    )
+
     speech_models = yaml.safe_load((config_dir / "speech-models.yaml").read_text(encoding="utf-8"))
     transcription = speech_models["artifacts"]["transcription_model"]
     rubrics = yaml.safe_load((config_dir / "tam-rubrics.yaml").read_text(encoding="utf-8"))
@@ -446,6 +464,7 @@ async def run_suite(
                 class_path,
                 report_path,
                 monthly_path,
+                practice_path,
             )
         },
         evaluator_versions={
@@ -459,6 +478,7 @@ async def run_suite(
             "class_analysis": CLASS_ANALYSIS_EVALUATOR_VERSION,
             "weekly_report": WEEKLY_REPORT_EVALUATOR_VERSION,
             "monthly_report": MONTHLY_REPORT_EVALUATOR_VERSION,
+            "practice_review": PRACTICE_REVIEW_EVALUATOR_VERSION,
         },
         speech_model_filename=str(transcription["filename"]),
         speech_model_sha256=str(transcription["sha256"]),
