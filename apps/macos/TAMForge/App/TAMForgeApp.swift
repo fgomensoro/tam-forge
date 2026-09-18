@@ -1,3 +1,4 @@
+import AppKit
 import Darwin
 import SwiftUI
 
@@ -26,11 +27,20 @@ struct TAMForgeApp: App {
             ))
     }
 
-    init(dependencies: AppDependencies) { self.dependencies = dependencies }
+    init(dependencies: AppDependencies) {
+        self.dependencies = dependencies
+        // Dark-only: the Organic palette has no light values. NSApp.appearance also
+        // covers AppKit panels (open/save) that .preferredColorScheme cannot reach.
+        NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+    }
 
     var body: some Scene {
         // One workspace owns the authenticated session and its private in-memory drafts.
-        Window("TAM Forge", id: "main") { NativeShellView(dependencies: dependencies) }
+        Window("TAM Forge", id: "main") {
+            NativeShellView(dependencies: dependencies)
+                .preferredColorScheme(.dark)
+        }
+        .organicWindowChrome()
     }
 }
 
@@ -139,7 +149,7 @@ private struct NativeSessionView: View {
             }
         }
         .padding(24)
-        .frame(minWidth: 900, minHeight: 640)
+        .frame(minWidth: Organic.Window.minimumSize.width, minHeight: Organic.Window.minimumSize.height)
         .task {
             model.restoreRoute(from: restoredRouteID)
             await model.restore()
