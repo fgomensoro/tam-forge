@@ -26,7 +26,8 @@ final class RoadmapAdministrationModel: ObservableObject {
     private let makeIdempotencyKey: @Sendable () -> String
     private let saveExport: @MainActor (Data, String) async -> Void
     private var idempotencyKey: String?
-    private var operation: Task<Void, Never>?
+    // Readable so tests can await the upload started by beginStage().
+    private(set) var operation: Task<Void, Never>?
     private var stageGeneration = 0
 
     init(
