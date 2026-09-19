@@ -169,3 +169,159 @@ def test_duration_outside_bounds_is_rejected_by_the_database(test_database_url: 
                     session.commit()
         finally:
             engine.dispose()
+
+
+def test_excerpt_is_presigned_confirmed_once_and_downloaded(test_database_url: str) -> None:
+    import hashlib
+    from collections.abc import AsyncIterator
+
+    from tamforge_backend.shadowing.schemas import ExcerptConfirmCommand, ExcerptUploadCommand
+    from tamforge_backend.shadowing.service import (
+        ShadowingClipService,
+        ShadowingConflict,
+        ShadowingInvalid,
+        ShadowingNotFound,
+        excerpt_object_key,
+    )
+    from tamforge_backend.storage.fake import InMemoryObjectStore
+
+    body = b"not really audio, only bytes " * 64
+    digest = hashlib.sha256(body).hexdigest()
+    other_digest = hashlib.sha256(b"a different take").hexdigest()
+
+    async def one_chunk(value: bytes) -> AsyncIterator[bytes]:
+        yield value
+
+    with _two_owners(test_database_url) as (owner_id, other_id):
+
+        async def exercise(factory: Any) -> None:
+            store = InMemoryObjectStore()
+            async with factory() as session:
+                service = ShadowingClipService(session, store, clock=lambda: NOW)
+                clip = await service.create(owner_id=owner_id, command=_command())
+                upload_command = ExcerptUploadCommand(
+                    sha256=digest, byte_length=len(body), content_type="audio/mp4"
+                )
+
+                with pytest.raises(ShadowingNotFound):
+                    await service.presign_excerpt(
+                        owner_id=other_id, clip_id=clip.id, command=upload_command
+                    )
+                with pytest.raises(ShadowingNotFound):
+                    await service.excerpt_download(owner_id=owner_id, clip_id=clip.id)
+
+                signed = await service.presign_excerpt(
+                    owner_id=owner_id, clip_id=clip.id, command=upload_command
+                )
+                assert signed.upload.method == "PUT" and signed.upload.expires_seconds == 300
+                assert signed.upload.headers["content-type"] == "audio/mp4"
+                assert signed.upload.headers["if-none-match"] == "*"
+                assert f"clip-{clip.id}/{digest}" in signed.upload.url
+
+                with pytest.raises(ShadowingInvalid):
+                    await service.confirm_excerpt(
+                        owner_id=owner_id,
+                        clip_id=clip.id,
+                        command=ExcerptConfirmCommand(sha256=digest),
+                    )
+
+                key = excerpt_object_key(owner_id=owner_id, clip_id=clip.id, sha256=digest)
+                await store.put_immutable(
+                    key=key,
+                    body=one_chunk(body),
+                    sha256=digest,
+                    content_type="audio/mp4",
+                    metadata={"owner-id": str(owner_id), "clip-id": str(clip.id)},
+                )
+
+            async with factory() as session:
+                service = ShadowingClipService(session, store, clock=lambda: LATER)
+                with pytest.raises(ShadowingNotFound):
+                    await service.confirm_excerpt(
+                        owner_id=other_id,
+                        clip_id=clip.id,
+                        command=ExcerptConfirmCommand(sha256=digest),
+                    )
+                confirmed = await service.confirm_excerpt(
+                    owner_id=owner_id, clip_id=clip.id, command=ExcerptConfirmCommand(sha256=digest)
+                )
+                assert confirmed.excerpt is not None
+                assert confirmed.excerpt.sha256 == digest
+                assert confirmed.excerpt.byte_length == len(body)
+                assert confirmed.excerpt.content_type == "audio/mp4"
+                assert confirmed.updated_at == LATER
+
+                again = await service.confirm_excerpt(
+                    owner_id=owner_id, clip_id=clip.id, command=ExcerptConfirmCommand(sha256=digest)
+                )
+                assert again == confirmed
+                with pytest.raises(ShadowingConflict):
+                    await service.confirm_excerpt(
+                        owner_id=owner_id,
+                        clip_id=clip.id,
+                        command=ExcerptConfirmCommand(sha256=other_digest),
+                    )
+                with pytest.raises(ShadowingConflict):
+                    await service.presign_excerpt(
+                        owner_id=owner_id,
+                        clip_id=clip.id,
+                        command=ExcerptUploadCommand(
+                            sha256=other_digest, byte_length=16, content_type="video/mp4"
+                        ),
+                    )
+
+                download = await service.excerpt_download(owner_id=owner_id, clip_id=clip.id)
+                assert download.url.startswith("https://object-store.invalid/")
+                assert digest in download.url and download.expires_seconds == 300
+                assert download.sha256 == digest and download.byte_length == len(body)
+                assert download.content_type == "audio/mp4"
+                with pytest.raises(ShadowingNotFound):
+                    await service.excerpt_download(owner_id=other_id, clip_id=clip.id)
+
+                listed = await service.list(owner_id=owner_id)
+                assert listed.items[0].excerpt == confirmed.excerpt
+
+        _run(test_database_url, exercise)
+
+
+def test_confirm_refuses_an_object_of_another_type(test_database_url: str) -> None:
+    import hashlib
+    from collections.abc import AsyncIterator
+
+    from tamforge_backend.shadowing.schemas import ExcerptConfirmCommand
+    from tamforge_backend.shadowing.service import (
+        ShadowingClipService,
+        ShadowingInvalid,
+        excerpt_object_key,
+    )
+    from tamforge_backend.storage.fake import InMemoryObjectStore
+
+    body = b"plain text pretending to be a clip"
+    digest = hashlib.sha256(body).hexdigest()
+
+    async def one_chunk(value: bytes) -> AsyncIterator[bytes]:
+        yield value
+
+    with _two_owners(test_database_url) as (owner_id, _):
+
+        async def exercise(factory: Any) -> None:
+            store = InMemoryObjectStore()
+            async with factory() as session:
+                service = ShadowingClipService(session, store, clock=lambda: NOW)
+                clip = await service.create(owner_id=owner_id, command=_command())
+                await store.put_immutable(
+                    key=excerpt_object_key(owner_id=owner_id, clip_id=clip.id, sha256=digest),
+                    body=one_chunk(body),
+                    sha256=digest,
+                    content_type="text/plain",
+                    metadata={},
+                )
+                with pytest.raises(ShadowingInvalid):
+                    await service.confirm_excerpt(
+                        owner_id=owner_id,
+                        clip_id=clip.id,
+                        command=ExcerptConfirmCommand(sha256=digest),
+                    )
+                assert (await service.get(owner_id=owner_id, clip_id=clip.id)).excerpt is None
+
+        _run(test_database_url, exercise)
