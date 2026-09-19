@@ -91,6 +91,7 @@ final class RoadmapViewModelTests: XCTestCase {
 
         model.beginStage()
         await fulfillment(of: [started], timeout: 1)
+        let upload = try XCTUnwrap(model.operation)
         model.cancelUpload()
 
         XCTAssertNotNil(model.selection)
@@ -98,7 +99,7 @@ final class RoadmapViewModelTests: XCTestCase {
         XCTAssertNil(model.errorMessage)
 
         await service.finishFirstStage()
-        await Task.yield()
+        await upload.value
         XCTAssertNil(model.roadmapImport)
 
         await model.stage()
@@ -118,6 +119,7 @@ final class RoadmapViewModelTests: XCTestCase {
 
         model.beginStage()
         await fulfillment(of: [started], timeout: 1)
+        let upload = try XCTUnwrap(model.operation)
         model.beginStage()
         await Task.yield()
 
@@ -126,10 +128,12 @@ final class RoadmapViewModelTests: XCTestCase {
         XCTAssertEqual(stageKeys, ["roadmap-stable-key"])
 
         await service.finishFirstStage()
-        await Task.yield()
+        await upload.value
 
         XCTAssertEqual(model.roadmapImport, response)
         XCTAssertFalse(model.isBusy)
+        let finalStageKeys = await service.stageKeys
+        XCTAssertEqual(finalStageKeys, ["roadmap-stable-key"])
     }
 
     func testSemanticDiffPresentationKeepsDefaultPreviewBounded() {
