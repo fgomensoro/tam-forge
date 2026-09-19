@@ -325,3 +325,54 @@ def test_confirm_refuses_an_object_of_another_type(test_database_url: str) -> No
                 assert (await service.get(owner_id=owner_id, clip_id=clip.id)).excerpt is None
 
         _run(test_database_url, exercise)
+
+
+def test_confirm_refuses_an_object_over_the_size_cap(
+    test_database_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Same guard as the content-type case, other half of the `if`: an object the store
+    reports as too large is refused even though its declared type is accepted. The cap is
+    shrunk for this test so the body stays a few bytes instead of the real 100 MiB."""
+    import hashlib
+    from collections.abc import AsyncIterator
+
+    from tamforge_backend.shadowing import service as shadowing_service
+    from tamforge_backend.shadowing.schemas import ExcerptConfirmCommand
+    from tamforge_backend.shadowing.service import (
+        ShadowingClipService,
+        ShadowingInvalid,
+        excerpt_object_key,
+    )
+    from tamforge_backend.storage.fake import InMemoryObjectStore
+
+    monkeypatch.setattr(shadowing_service, "MAX_EXCERPT_BYTES", 8)
+    body = b"ten bytes!"
+    assert len(body) > 8
+    digest = hashlib.sha256(body).hexdigest()
+
+    async def one_chunk(value: bytes) -> AsyncIterator[bytes]:
+        yield value
+
+    with _two_owners(test_database_url) as (owner_id, _):
+
+        async def exercise(factory: Any) -> None:
+            store = InMemoryObjectStore()
+            async with factory() as session:
+                service = ShadowingClipService(session, store, clock=lambda: NOW)
+                clip = await service.create(owner_id=owner_id, command=_command())
+                await store.put_immutable(
+                    key=excerpt_object_key(owner_id=owner_id, clip_id=clip.id, sha256=digest),
+                    body=one_chunk(body),
+                    sha256=digest,
+                    content_type="audio/mp4",
+                    metadata={},
+                )
+                with pytest.raises(ShadowingInvalid):
+                    await service.confirm_excerpt(
+                        owner_id=owner_id,
+                        clip_id=clip.id,
+                        command=ExcerptConfirmCommand(sha256=digest),
+                    )
+                assert (await service.get(owner_id=owner_id, clip_id=clip.id)).excerpt is None
+
+        _run(test_database_url, exercise)
