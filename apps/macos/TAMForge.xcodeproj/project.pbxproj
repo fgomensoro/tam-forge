@@ -79,6 +79,7 @@
 		D5000000000000000000001D /* OrganicWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000009 /* OrganicWindow.swift */; };
 		D50000000000000000000016 /* Figtree-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000004 /* Figtree-Regular.ttf */; };
 		D50000000000000000000017 /* Figtree-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000005 /* Figtree-SemiBold.ttf */; };
+		D500000000000000000000A1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D500000000000000000000A0 /* Assets.xcassets */; };
 		D50000000000000000000018 /* Figtree-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000006 /* Figtree-Bold.ttf */; };
 		D50000000000000000000019 /* OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000007 /* OFL.txt */; };
 		D50000000000000000000024 /* Figtree-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000004 /* Figtree-Regular.ttf */; };
@@ -323,6 +324,7 @@
 		D50000000000000000000009 /* OrganicWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganicWindow.swift; sourceTree = "<group>"; };
 		D50000000000000000000004 /* Figtree-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-Regular.ttf"; sourceTree = "<group>"; };
 		D50000000000000000000005 /* Figtree-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-SemiBold.ttf"; sourceTree = "<group>"; };
+		D500000000000000000000A0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D50000000000000000000006 /* Figtree-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-Bold.ttf"; sourceTree = "<group>"; };
 		D50000000000000000000007 /* OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = OFL.txt; sourceTree = "<group>"; };
 		A10000000000000000000016 /* AppDependenciesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependenciesTests.swift; sourceTree = "<group>"; };
@@ -591,6 +593,7 @@
 		D50000000000000000000022 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				D500000000000000000000A0 /* Assets.xcassets */,
 				D50000000000000000000023 /* Fonts */,
 			);
 			path = Resources;
@@ -992,6 +995,7 @@
 				A100000000000000000000E7 /* openapi.yaml in Resources */,
 				D50000000000000000000016 /* Figtree-Regular.ttf in Resources */,
 				D50000000000000000000017 /* Figtree-SemiBold.ttf in Resources */,
+				D500000000000000000000A1 /* Assets.xcassets in Resources */,
 				D50000000000000000000018 /* Figtree-Bold.ttf in Resources */,
 				D50000000000000000000019 /* OFL.txt in Resources */,
 			);
@@ -1356,6 +1360,7 @@
 					"$(PROJECT_DIR)/Vendor",
 					"$(inherited)",
 				);
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				INFOPLIST_FILE = TAMForge/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MARKETING_VERSION = 0.1.0;
@@ -1383,6 +1388,7 @@
 					"$(PROJECT_DIR)/Vendor",
 					"$(inherited)",
 				);
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				INFOPLIST_FILE = TAMForge/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MARKETING_VERSION = 0.1.0;
