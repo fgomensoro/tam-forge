@@ -10,19 +10,20 @@ struct ReviewPanel: View {
             VStack(alignment: .leading, spacing: 12) {
                 if !model.isOpened {
                     Text("After your self-review, the reviewer scores the attempt against the block's rubric and records the result as evidence.")
-                        .foregroundStyle(.secondary)
+                        .organic(.small)
                     Button("Open review") { Task { await model.open() } }
                         .accessibilityIdentifier("reviewOpen")
                 } else if let review = model.review {
                     content(review)
                 } else if model.isBusy {
                     ProgressView("Opening review…")
+                        .controlSize(.small)
                 } else {
                     Button("Retry") { Task { await model.open() } }
                 }
                 if let message = model.errorMessage {
                     Label(message, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
+                        .organic(.small, color: Organic.Color.warning)
                         .accessibilityIdentifier("reviewError")
                 }
             }
@@ -35,17 +36,19 @@ struct ReviewPanel: View {
     private func content(_ review: ActivityReview) -> some View {
         if review.isReady {
             if let verdict = review.verdict {
-                Text(verdict).font(.headline).accessibilityIdentifier("reviewVerdict")
+                Text(verdict).organic(.title).accessibilityIdentifier("reviewVerdict")
             }
             ForEach(review.dimensions) { dimension in
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Text(dimension.name).font(.subheadline.weight(.medium))
-                        Spacer()
-                        Text("\(dimension.score) / \(dimension.maximum)").monospacedDigit()
+                    HStack(spacing: Organic.Space.p8) {
+                        Text(dimension.name).organic(.strong)
+                        Spacer(minLength: 0)
+                        Text("\(dimension.score) / \(dimension.maximum)")
+                            .font(Organic.Font.tabular(.semibold, size: 13))
+                            .foregroundStyle(Organic.Color.text)
                     }
-                    Text(dimension.rationale).font(.callout)
-                    Text("“\(dimension.evidence)”").font(.caption).foregroundStyle(.secondary)
+                    Text(dimension.rationale).organic(.small, color: Organic.Color.body)
+                    Text("“\(dimension.evidence)”").organic(.caption)
                 }
                 .padding(.vertical, 2)
             }
@@ -53,27 +56,28 @@ struct ReviewPanel: View {
             findings("Corrections", review.corrections)
             if let next = review.nextPractice {
                 Label(next, systemImage: "arrow.turn.down.right")
+                    .organic(.small, color: Organic.Color.accent300)
             }
-            HStack {
+            HStack(spacing: Organic.Space.p8) {
                 if let model = review.model {
-                    Text("Model \(model)").font(.caption).foregroundStyle(.secondary)
+                    Text("Model \(model)").organic(.caption)
                 }
                 if let evidence = review.evidenceStatus {
                     Text(evidence == "recorded" ? "Recorded as evidence" : "Not recorded: \(evidence)")
-                        .font(.caption)
-                        .foregroundStyle(evidence == "recorded" ? Color.secondary : Color.orange)
+                        .organic(.caption, color: evidence == "recorded" ? Organic.Color.muted : Organic.Color.warning)
                         .accessibilityIdentifier("reviewEvidenceStatus")
                 }
             }
         } else {
-            HStack {
-                Text(statusLabel(review)).accessibilityIdentifier("reviewStatus")
-                Spacer()
+            HStack(spacing: Organic.Space.p8) {
+                Text(statusLabel(review)).organic(.small, color: Organic.Color.body).accessibilityIdentifier("reviewStatus")
+                Spacer(minLength: 0)
                 if model.isPending {
                     Button("Refresh") { Task { await model.refresh() } }.disabled(model.isBusy)
                 }
                 if model.canRequest {
                     Button("Request review") { Task { await model.request() } }
+                        .buttonStyle(.organicPrimary)
                         .accessibilityIdentifier("reviewRequest")
                 }
             }
@@ -83,12 +87,12 @@ struct ReviewPanel: View {
     @ViewBuilder
     private func findings(_ title: String, _ items: [ReviewFinding]) -> some View {
         if !items.isEmpty {
-            Text(title).font(.subheadline.weight(.semibold))
+            Text(title).organic(.strong)
             ForEach(items, id: \.statement) { item in
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("• \(item.statement)")
+                    Text("• \(item.statement)").organic(.small, color: Organic.Color.body)
                     if !item.instruction.isEmpty {
-                        Text(item.instruction).font(.caption).foregroundStyle(.secondary)
+                        Text(item.instruction).organic(.caption)
                     }
                 }
             }

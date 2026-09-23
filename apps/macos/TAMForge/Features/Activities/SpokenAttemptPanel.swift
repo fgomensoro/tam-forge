@@ -59,25 +59,26 @@ struct SpokenAttemptPanel: View {
     var body: some View {
         GroupBox("Spoken attempt") {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
+                HStack(spacing: Organic.Space.p8) {
                     Button("Record this attempt") { Task { await model.record() } }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.organicPrimary)
                         .disabled(!model.canRecord)
                         .accessibilityIdentifier("spokenAttemptRecord")
-                    if coordinator.phase.isActive {
-                        Text(coordinator.phase.isActive ? "Recording in progress" : "").foregroundStyle(.secondary)
-                    }
-                    Spacer()
+                    Spacer(minLength: 0)
+                    // Link style keeps both buttons on one row of the 300 pt rail.
                     Button("Refresh") { Task { await model.refresh() } }
+                        .buttonStyle(.organicLink)
                         .disabled(model.isLoading)
                         .accessibilityIdentifier("spokenAttemptRefresh")
                 }
+                if coordinator.phase.isActive {
+                    Text("Recording in progress").organic(.small, color: Organic.Color.accent300)
+                }
                 Text("The recording carries this block's id; the transcript is made on this Mac and the server turns it into speaker turns.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .organic(.caption)
                 if model.recordings.isEmpty {
                     Text("No recordings for this block yet.")
-                        .foregroundStyle(.secondary)
+                        .organic(.small)
                         .accessibilityIdentifier("spokenAttemptEmpty")
                 }
                 ForEach(model.recordings, id: \.recordingID) { recording in
@@ -85,7 +86,7 @@ struct SpokenAttemptPanel: View {
                 }
                 if let message = model.errorMessage {
                     Label(message, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
+                        .organic(.small, color: Organic.Color.warning)
                         .accessibilityIdentifier("spokenAttemptError")
                 }
             }
@@ -99,32 +100,32 @@ struct SpokenAttemptPanel: View {
     private func recordingRow(_ recording: RecordingServerStatus) -> some View {
         let analysis = model.analysis(for: recording)
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
+            HStack(spacing: Organic.Space.p8) {
                 if let startedAt = recording.startedAt {
-                    Text(startedAt, style: .time).font(.subheadline.weight(.medium))
+                    Text(startedAt, style: .time).organic(.strong)
                 }
                 Text(recording.state.replacingOccurrences(of: "_", with: " "))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
+                    .organic(.caption)
+                Spacer(minLength: 0)
                 Text(statusLabel(analysis))
-                    .font(.caption)
-                    .foregroundStyle(analysis.status == "needs_attention" ? .orange : .secondary)
+                    .organic(.caption, color: analysis.status == "needs_attention" ? Organic.Color.warning : Organic.Color.muted)
             }
             ForEach(analysis.turns) { turn in
-                HStack(alignment: .top, spacing: 8) {
+                HStack(alignment: .top, spacing: Organic.Space.p8) {
                     Text(timestamp(turn.startMS))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .font(Organic.Font.tabular(.regular, size: 12))
+                        .foregroundStyle(Organic.Color.faint)
                     Text(turn.isLearner ? "You" : "Other")
-                        .font(.caption.weight(.semibold))
+                        .font(Organic.Font.figtree(.semibold, size: 12))
+                        .foregroundStyle(turn.isLearner ? Organic.Color.accent300 : Organic.Color.accent2_300)
                         .frame(width: 44, alignment: .leading)
-                    Text(turn.text).textSelection(.enabled)
+                    Text(turn.text).organic(.small, color: Organic.Color.body).textSelection(.enabled)
                 }
             }
         }
-        .padding(8)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+        .padding(Organic.Space.p12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Organic.Color.fill04, in: RoundedRectangle(cornerRadius: Organic.Radius.r20, style: .continuous))
     }
 
     private func statusLabel(_ analysis: RecordingAnalysis) -> String {
