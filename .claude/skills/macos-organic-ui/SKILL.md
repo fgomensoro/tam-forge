@@ -70,6 +70,12 @@ The trap: the UI tests query by element type, for example
 `.onTapGesture` is not a button in the accessibility tree and breaks every such
 assertion. **Interactive rows are `Button` with `.buttonStyle(.plain)`.**
 
+A second trap: on macOS a `Text`'s accessibility **value** is the string as
+rendered, and `app.staticTexts["Before"]` matches it. `.organic(.kicker)` and any
+`.textCase(.uppercase)` render "BEFORE", which no longer matches, and an
+`.accessibilityLabel` does not change the value. A string the tests look up stays
+mixed case; grep the test file before putting a visible string in the kicker role.
+
 Before claiming a UI change is done:
 
 ```bash

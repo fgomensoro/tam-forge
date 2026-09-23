@@ -75,6 +75,8 @@
 		D50000000000000000000015 /* OrganicFonts.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000003 /* OrganicFonts.swift */; };
 		D5000000000000000000001A /* OrganicComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000008 /* OrganicComponents.swift */; };
 		D5000000000000000000001B /* OrganicComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000008 /* OrganicComponents.swift */; };
+		D50000000000000000000F02 /* OrganicStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000F01 /* OrganicStyles.swift */; };
+		D50000000000000000000F03 /* OrganicStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000F01 /* OrganicStyles.swift */; };
 		D5000000000000000000001C /* OrganicWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000009 /* OrganicWindow.swift */; };
 		D5000000000000000000001D /* OrganicWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000009 /* OrganicWindow.swift */; };
 		D50000000000000000000016 /* Figtree-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000004 /* Figtree-Regular.ttf */; };
@@ -321,6 +323,7 @@
 		D50000000000000000000002 /* OrganicDesignTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganicDesignTests.swift; sourceTree = "<group>"; };
 		D50000000000000000000003 /* OrganicFonts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganicFonts.swift; sourceTree = "<group>"; };
 		D50000000000000000000008 /* OrganicComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganicComponents.swift; sourceTree = "<group>"; };
+		D50000000000000000000F01 /* OrganicStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganicStyles.swift; sourceTree = "<group>"; };
 		D50000000000000000000009 /* OrganicWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganicWindow.swift; sourceTree = "<group>"; };
 		D50000000000000000000004 /* Figtree-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-Regular.ttf"; sourceTree = "<group>"; };
 		D50000000000000000000005 /* Figtree-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-SemiBold.ttf"; sourceTree = "<group>"; };
@@ -585,6 +588,7 @@
 				D50000000000000000000001 /* OrganicTokens.swift */,
 				D50000000000000000000003 /* OrganicFonts.swift */,
 				D50000000000000000000008 /* OrganicComponents.swift */,
+				D50000000000000000000F01 /* OrganicStyles.swift */,
 				D50000000000000000000009 /* OrganicWindow.swift */,
 			);
 			path = Design;
@@ -1096,6 +1100,7 @@
 				D50000000000000000000011 /* OrganicTokens.swift in Sources */,
 				D50000000000000000000014 /* OrganicFonts.swift in Sources */,
 				D5000000000000000000001A /* OrganicComponents.swift in Sources */,
+				D50000000000000000000F02 /* OrganicStyles.swift in Sources */,
 				D5000000000000000000001C /* OrganicWindow.swift in Sources */,
 				D5000000000000000000001E /* TodayTaskStatus.swift in Sources */,
 				D50000000000000000000032 /* OrganicSidebar.swift in Sources */,
@@ -1231,6 +1236,7 @@
 				D50000000000000000000013 /* OrganicDesignTests.swift in Sources */,
 				D50000000000000000000015 /* OrganicFonts.swift in Sources */,
 				D5000000000000000000001B /* OrganicComponents.swift in Sources */,
+				D50000000000000000000F03 /* OrganicStyles.swift in Sources */,
 				D5000000000000000000001D /* OrganicWindow.swift in Sources */,
 				D5000000000000000000001F /* TodayTaskStatus.swift in Sources */,
 				D50000000000000000000020 /* TodayTaskStatusTests.swift in Sources */,

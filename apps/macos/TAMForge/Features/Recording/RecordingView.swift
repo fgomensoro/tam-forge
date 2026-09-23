@@ -11,12 +11,27 @@ struct RecordingView: View {
         let accessibilityLabel: String
     }
 
+    /// One dot in a preflight row. `passed` is nil while the check has not run
+    /// yet, so the row never claims a result the coordinator did not report.
+    private struct PreflightItem: Identifiable {
+        let id: String
+        let title: String
+        let passed: Bool?
+    }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                header
-                phaseNotice
-                recordingControls
+            VStack(alignment: .leading, spacing: Organic.Space.p24) {
+                if isRecording {
+                    liveRecording
+                } else {
+                    OrganicPageHeader(
+                        title: "Recording",
+                        subtitle: "Capture microphone and system audio only after you explicitly start."
+                    )
+                    phaseNotice
+                    recordingControls
+                }
                 transcriptSection
                 consentSummary
                 if let snapshot = coordinator.preflightSnapshot,
@@ -27,7 +42,6 @@ struct RecordingView: View {
                 captureHealth
                 if !coordinator.pendingRecordingIDs.isEmpty { pendingRecovery }
             }
-            .padding()
         }
         .accessibilityIdentifier("recordingScreen")
         .confirmationDialog(
@@ -50,82 +64,193 @@ struct RecordingView: View {
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Recording").font(.largeTitle).bold().accessibilityAddTraits(.isHeader)
-            Text("Capture microphone and system audio only after you explicitly start.")
-                .foregroundStyle(.secondary)
-        }
+    private var isRecording: Bool {
+        if case .recording = coordinator.phase { return true }
+        return false
     }
+
+    // MARK: - Live recording
+
+    /// The handoff's recording screen: a centred column, max 640, with the
+    /// phase tag, the 260 pt ring and clock, the headline, the controls and the
+    /// preflight row. The ring is static, so reduce motion has nothing to turn off.
+    private var liveRecording: some View {
+        VStack(spacing: Organic.Space.p28) {
+            phaseNotice
+            recordingRing
+            VStack(spacing: 6) {
+                Text("Encrypted locally. Transcribing on-device.")
+                    .font(Organic.Font.figtree(.semibold, size: 26))
+                    .tracking(-0.52)
+                    .foregroundStyle(Organic.Color.text)
+                    .accessibilityAddTraits(.isHeader)
+                Text(
+                    "Microphone and system audio. Keep TAM Forge open until you stop and seal this recording; nothing leaves this Mac before then."
+                )
+                .organic(.body, color: Organic.Color.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .multilineTextAlignment(.center)
+            recordingControls
+            HStack(spacing: Organic.Space.p24) {
+                ForEach(liveChecks) { item in
+                    HStack(spacing: 6) {
+                        OrganicStatusDot(color: dotColor(item.passed), diameter: 7)
+                        Text(item.title)
+                            .organic(
+                                .caption,
+                                color: item.passed == false ? Organic.Color.accent300 : Organic.Color.muted)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
+        .frame(maxWidth: 640)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Organic.Space.p32)
+    }
+
+    private var recordingRing: some View {
+        ZStack {
+            Circle().fill(Organic.Color.accent.opacity(0.10))
+            Circle().fill(Organic.Color.accent.opacity(0.16)).padding(28)
+            Circle().fill(Organic.Color.accent).padding(56)
+            Group {
+                if let startedAt = coordinator.startedAt {
+                    Text(startedAt, style: .timer)
+                } else {
+                    Text("0:00")
+                }
+            }
+            .font(Organic.Font.tabular(.semibold, size: 32))
+            .tracking(-0.32)
+            .foregroundStyle(Organic.Color.neutral900)
+        }
+        .frame(width: 260, height: 260)
+    }
+
+    private var liveChecks: [PreflightItem] {
+        let microphoneOK = coordinator.health.microphone.warning == nil
+        let systemAudioOK = coordinator.health.systemAudio.warning == nil
+        var items = [
+            PreflightItem(
+                id: "microphone",
+                title: microphoneOK ? "Mic OK" : "Mic needs attention",
+                passed: microphoneOK),
+            PreflightItem(
+                id: "systemAudio",
+                title: systemAudioOK ? "Screen audio OK" : "Screen audio needs attention",
+                passed: systemAudioOK),
+        ]
+        if let snapshot = coordinator.preflightSnapshot {
+            items.append(
+                PreflightItem(
+                    id: "disk",
+                    title: "\(byteCount(snapshot.availableDiskBytes)) free",
+                    passed: snapshot.availableDiskBytes >= RecordingDiskPolicy.requiredFreeReserveBytes))
+        }
+        return items
+    }
+
+    // MARK: - Phase and controls
 
     @ViewBuilder
     private var phaseNotice: some View {
         switch coordinator.phase {
         case .idle:
             Label("Ready to check recording access.", systemImage: "record.circle")
-                .foregroundStyle(.secondary)
+                .organic(.small)
         case .preflighting:
             ProgressView("Checking access, microphone, display, and disk reserve…")
+                .controlSize(.small)
         case .blocked(let failure):
-            stateNotice(title: "Recording is blocked", detail: failure.message, color: .red)
+            stateNotice(title: "Recording is blocked", detail: failure.message, tint: Organic.Color.danger)
         case .recording:
             stateNotice(
                 title: "Recording in progress",
-                detail: "Keep TAM Forge open until you stop and seal this recording.", color: .red)
+                detail: "Keep TAM Forge open until you stop and seal this recording.",
+                tint: Organic.Color.accent300,
+                compact: true)
         case .stopping:
             stateNotice(
                 title: "Sealing recording",
                 detail: "TAM Forge is stopping capture and sealing the local recording.",
-                color: .orange)
+                tint: Organic.Color.warning,
+                systemImage: "lock")
         case .sealed:
             stateNotice(
                 title: "Recording sealed",
                 detail: "Capture has stopped. It will not resume automatically.",
-                color: .green)
+                tint: Organic.Color.success,
+                systemImage: "checkmark.seal")
         case .needsAttention(_, let message):
-            stateNotice(title: "Recording needs attention", detail: message, color: .orange)
+            stateNotice(title: "Recording needs attention", detail: message, tint: Organic.Color.warning)
         }
     }
 
-    @ViewBuilder
+    /// While recording the controls sit bare in the centred column; every other
+    /// phase keeps them in the "Recording control" card.
     private var recordingControls: some View {
-        GroupBox("Recording control") {
-            switch coordinator.phase {
-            case .idle:
-                Button("Start recording") { Task { await coordinator.start() } }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("recordingStartButton")
-                    .accessibilityLabel("Start recording")
-            case .preflighting:
-                Button("Checking recording access") {}
-                    .disabled(true)
-                    .accessibilityIdentifier("recordingPreflightingButton")
-            case .recording:
-                Button("Stop recording") { Task { await coordinator.stop() } }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .accessibilityIdentifier("recordingStopButton")
-                    .accessibilityLabel("Stop recording and seal local capture")
-            case .stopping:
-                Button("Sealing recording") {}
-                    .disabled(true)
-                    .accessibilityIdentifier("recordingStoppingButton")
-            case .blocked:
-                Button("Retry recording checks") { Task { await coordinator.start() } }
-                    .accessibilityIdentifier("recordingRetryButton")
-                    .accessibilityLabel("Retry recording checks")
-            case .sealed:
-                Button("Prepare another recording") { coordinator.resetSealedState() }
-                    .accessibilityIdentifier("recordingResetSealedButton")
-                    .accessibilityLabel("Prepare another recording")
-            case .needsAttention:
-                Button("Try recording again") { Task { await coordinator.start() } }
-                    .accessibilityIdentifier("recordingRetryAfterAttentionButton")
-                    .accessibilityLabel("Try recording again after reviewing capture health")
+        Group {
+            if isRecording {
+                controlButton
+            } else {
+                GroupBox("Recording control") { controlButton }
             }
         }
         .accessibilityIdentifier("recordingControls")
     }
+
+    @ViewBuilder
+    private var controlButton: some View {
+        switch coordinator.phase {
+        case .idle:
+            Button("Start recording") { Task { await coordinator.start() } }
+                .buttonStyle(.organicPrimary)
+                .accessibilityIdentifier("recordingStartButton")
+                .accessibilityLabel("Start recording")
+        case .preflighting:
+            Button("Checking recording access") {}
+                .disabled(true)
+                .accessibilityIdentifier("recordingPreflightingButton")
+        case .recording:
+            // No Pause here: the coordinator has no pause, only stop and seal.
+            Button {
+                Task { await coordinator.stop() }
+            } label: {
+                HStack(spacing: Organic.Space.p8) {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(Organic.Color.neutral900)
+                        .frame(width: 10, height: 10)
+                    Text("Stop & seal")
+                }
+            }
+            .buttonStyle(OrganicPrimaryButtonStyle(size: 14, horizontalPadding: 22, verticalPadding: 11))
+            .accessibilityIdentifier("recordingStopButton")
+            .accessibilityLabel("Stop recording and seal local capture")
+        case .stopping:
+            Button("Sealing recording") {}
+                .disabled(true)
+                .accessibilityIdentifier("recordingStoppingButton")
+        case .blocked:
+            Button("Retry recording checks") { Task { await coordinator.start() } }
+                .buttonStyle(.organicPrimary)
+                .accessibilityIdentifier("recordingRetryButton")
+                .accessibilityLabel("Retry recording checks")
+        case .sealed:
+            Button("Prepare another recording") { coordinator.resetSealedState() }
+                .buttonStyle(.organicPrimary)
+                .accessibilityIdentifier("recordingResetSealedButton")
+                .accessibilityLabel("Prepare another recording")
+        case .needsAttention:
+            Button("Try recording again") { Task { await coordinator.start() } }
+                .buttonStyle(.organicPrimary)
+                .accessibilityIdentifier("recordingRetryAfterAttentionButton")
+                .accessibilityLabel("Try recording again after reviewing capture health")
+        }
+    }
+
+    // MARK: - Transcript
 
     // Local only: nothing here is written to disk or sent anywhere until
     // issue #44. Absent whenever transcriptState is .idle, which is every
@@ -139,28 +264,29 @@ struct RecordingView: View {
                     EmptyView()
                 case .running:
                     ProgressView("Transcribing this recording on this Mac.")
+                        .controlSize(.small)
                         .accessibilityIdentifier("recordingTranscriptStatus")
                 case .ready(_, let result):
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Organic.Space.p8) {
                         ScrollView {
                             Text(result.text)
+                                .organic(.body)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .textSelection(.enabled)
                         }
                         .frame(maxHeight: 280)
                         .accessibilityIdentifier("recordingTranscript")
                         Text("Transcribed locally with \(result.identity.modelFilename).")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .organic(.caption)
                             .accessibilityIdentifier("recordingTranscriptModel")
                     }
                 case .failed(_, let reason):
                     Label(reason, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
+                        .organic(.small, color: Organic.Color.warning)
                         .accessibilityIdentifier("recordingTranscriptStatus")
                 case .deferred(_, let reason):
                     Label(reason, systemImage: "hourglass")
-                        .foregroundStyle(.secondary)
+                        .organic(.small)
                         .accessibilityIdentifier("recordingTranscriptStatus")
                 }
             }
@@ -168,21 +294,33 @@ struct RecordingView: View {
         }
     }
 
+    // MARK: - Setup cards
+
     private var consentSummary: some View {
         GroupBox("Preflight and consent") {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(
-                    "Start checks microphone and Screen Recording permission, a shareable display, and disk reserve before capture begins."
-                )
+            VStack(alignment: .leading, spacing: Organic.Space.p12) {
+                Text("Start checks these before capture begins.")
+                    .organic(.body)
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(preflightChecks) { item in
+                        HStack(spacing: 10) {
+                            OrganicStatusDot(color: dotColor(item.passed), diameter: 8)
+                            Text(item.title)
+                                .organic(
+                                    .body,
+                                    color: item.passed == false ? Organic.Color.accent300 : Organic.Color.body)
+                        }
+                    }
+                }
                 Text(
                     "Audio stays in an encrypted local spool while capture is active. Nothing starts automatically."
                 )
-                .foregroundStyle(.secondary)
+                .organic(.small)
                 Label(
                     "Coverage remains provisional until recording is sealed and reviewed.",
                     systemImage: "exclamationmark.triangle"
                 )
-                .foregroundStyle(.orange)
+                .organic(.small, color: Organic.Color.warning)
                 .accessibilityIdentifier("recordingProvisionalCoverage")
             }
         }
@@ -192,52 +330,74 @@ struct RecordingView: View {
         )
     }
 
+    /// Sage once the last preflight passed, accent on the check that blocked
+    /// it, neutral for anything not checked yet.
+    private var preflightChecks: [PreflightItem] {
+        let passedAll =
+            coordinator.preflightSnapshot != nil && coordinator.phase.hasCurrentPreflightSnapshot
+        var blockedOn: RecordingPreflightCheck?
+        if case .blocked(let failure) = coordinator.phase { blockedOn = failure.check }
+        return RecordingPreflightCheck.allCases.map { check in
+            let passed: Bool? = blockedOn == check ? false : (passedAll ? true : nil)
+            return PreflightItem(id: check.title, title: check.title, passed: passed)
+        }
+    }
+
     private func preflightSummary(_ snapshot: RecordingPreflightSnapshot) -> some View {
         GroupBox("Current recording setup") {
-            Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 10) {
+            Grid(alignment: .leading, horizontalSpacing: Organic.Space.p18, verticalSpacing: 10) {
                 GridRow {
-                    Text("Microphone").foregroundStyle(.secondary)
+                    setupLabel("Microphone")
                     Text(snapshot.selectedMicrophone.name)
                         .accessibilityIdentifier("recordingSelectedMicrophone")
                 }
                 GridRow {
-                    Text("Route").foregroundStyle(.secondary)
+                    setupLabel("Route")
                     Text(routeDescription)
                         .accessibilityIdentifier("recordingRoute")
                 }
                 GridRow {
-                    Text("Displays available").foregroundStyle(.secondary)
+                    setupLabel("Displays available")
                     Text("\(snapshot.displayCount)")
                         .accessibilityIdentifier("recordingDisplayCount")
                 }
                 GridRow {
-                    Text("Disk available").foregroundStyle(.secondary)
+                    setupLabel("Disk available")
                     Text(byteCount(snapshot.availableDiskBytes))
                         .accessibilityIdentifier("recordingAvailableDisk")
                 }
                 GridRow {
-                    Text("Required free reserve").foregroundStyle(.secondary)
+                    setupLabel("Required free reserve")
                     Text(byteCount(RecordingDiskPolicy.requiredFreeReserveBytes))
                         .accessibilityIdentifier("recordingDiskReserve")
                 }
                 GridRow {
-                    Text("Pending local spools").foregroundStyle(.secondary)
+                    setupLabel("Pending local spools")
                     Text(byteCount(snapshot.pendingSpoolBytes))
                         .accessibilityIdentifier("recordingPendingSpools")
                 }
             }
+            .organic(.body)
         }
         .accessibilityIdentifier("recordingPreflightSummary")
         .accessibilityElement(children: .contain)
     }
 
+    private func setupLabel(_ title: String) -> some View {
+        Text(title).organic(.body, color: Organic.Color.muted)
+    }
+
+    // MARK: - Health and recovery
+
     private var captureHealth: some View {
         GroupBox("Capture health") {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: Organic.Space.p14) {
                 if let startedAt = coordinator.startedAt {
-                    HStack {
-                        Text("Elapsed").foregroundStyle(.secondary)
-                        Text(startedAt, style: .timer).monospacedDigit()
+                    HStack(spacing: Organic.Space.p8) {
+                        Text("Elapsed").organic(.body, color: Organic.Color.muted)
+                        Text(startedAt, style: .timer)
+                            .font(Organic.Font.tabular(.semibold, size: 14))
+                            .foregroundStyle(Organic.Color.text)
                             .accessibilityIdentifier("recordingElapsedTime")
                     }
                 }
@@ -254,18 +414,17 @@ struct RecordingView: View {
 
     private var pendingRecovery: some View {
         GroupBox("Pending encrypted recordings") {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: Organic.Space.p12) {
                 Text("TAM Forge retained these recordings for recovery.")
-                    .foregroundStyle(.secondary)
+                    .organic(.body, color: Organic.Color.muted)
                 Text(
                     "A server audio 201 receipt alone does not delete the local encrypted spool. It stays until transcript-lineage acceptance."
                 )
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .organic(.caption)
                 ForEach(coordinator.pendingRecordingIDs, id: \.self) { recordingID in
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: Organic.Space.p8) {
                         Text(recordingID.uuidString)
-                            .font(.caption)
+                            .organic(.mono)
                             .textSelection(.enabled)
                         uploadStatus(for: recordingID)
                         HStack {
@@ -280,7 +439,11 @@ struct RecordingView: View {
                                 .accessibilityLabel("Discard pending encrypted recording")
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(Organic.Space.p14)
+                    .background(
+                        Organic.Color.fill04,
+                        in: RoundedRectangle(cornerRadius: Organic.Radius.r20, style: .continuous)
+                    )
                     .accessibilityElement(children: .contain)
                 }
             }
@@ -292,7 +455,7 @@ struct RecordingView: View {
     private func uploadStatus(for recordingID: UUID) -> some View {
         let status = uploadStatusDescription(for: coordinator.uploadStates[recordingID] ?? .pending)
         Label(status.title, systemImage: status.symbol)
-            .foregroundStyle(status.color)
+            .organic(.small, color: status.color)
             .accessibilityIdentifier("recordingUploadStatus")
             .accessibilityLabel(status.accessibilityLabel)
     }
@@ -315,7 +478,7 @@ struct RecordingView: View {
             .init(
                 title: "Ready to upload",
                 symbol: "clock",
-                color: .secondary,
+                color: Organic.Color.muted,
                 accessibilityLabel: "Upload pending. Retry uploads this encrypted recording."
             )
         case .uploading(let completedParts):
@@ -323,7 +486,7 @@ struct RecordingView: View {
                 title:
                     "Uploading: \(completedParts) part\(completedParts == 1 ? "" : "s") complete",
                 symbol: "arrow.up.circle",
-                color: .blue,
+                color: Organic.Color.success,
                 accessibilityLabel:
                     "Uploading encrypted recording. \(completedParts) part\(completedParts == 1 ? "" : "s") complete."
             )
@@ -331,14 +494,14 @@ struct RecordingView: View {
             .init(
                 title: "Waiting for sign-in",
                 symbol: "person.crop.circle.badge.exclamationmark",
-                color: .orange,
+                color: Organic.Color.warning,
                 accessibilityLabel: "Upload is waiting for authentication. Sign in, then retry."
             )
         case .waitingForNetwork:
             .init(
                 title: "Waiting for network",
                 symbol: "wifi.exclamationmark",
-                color: .orange,
+                color: Organic.Color.warning,
                 accessibilityLabel:
                     "Upload is waiting for a network connection. Reconnect, then retry."
             )
@@ -346,7 +509,7 @@ struct RecordingView: View {
             .init(
                 title: "Waiting for transcript acceptance",
                 symbol: "text.badge.clock",
-                color: .orange,
+                color: Organic.Color.warning,
                 accessibilityLabel:
                     "Server audio was accepted, but the local encrypted spool remains until transcript-lineage acceptance. Retry checks its status again."
             )
@@ -354,7 +517,7 @@ struct RecordingView: View {
             .init(
                 title: "Needs attention: \(message)",
                 symbol: "exclamationmark.triangle",
-                color: .red,
+                color: Organic.Color.danger,
                 accessibilityLabel:
                     "Recording upload needs attention. \(message). Retry attempts recovery."
             )
@@ -370,16 +533,18 @@ struct RecordingView: View {
         let percentage = Int((level * 100).rounded())
         let status = track.statusMessage
 
-        return VStack(alignment: .leading, spacing: 5) {
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(title).font(.headline)
+                Text(title).organic(.title)
                 Spacer()
-                Text("\(percentage)%").monospacedDigit().foregroundStyle(.secondary)
+                Text("\(percentage)%")
+                    .font(Organic.Font.tabular(.semibold, size: 13))
+                    .foregroundStyle(Organic.Color.muted)
             }
             ProgressView(value: level, total: 1)
-            Text(status).font(.caption).foregroundStyle(
-                track.warning == nil ? Color.secondary : Color.orange
-            )
+            Text(status).organic(
+                .caption,
+                color: track.warning == nil ? Organic.Color.muted : Organic.Color.warning)
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("\(identifier)Health")
@@ -387,22 +552,41 @@ struct RecordingView: View {
         .accessibilityValue("Level \(percentage) percent. \(status)")
     }
 
+    // MARK: - Helpers
+
     private var routeDescription: String {
         coordinator.health.routeDescription.isEmpty
             ? coordinator.preflightSnapshot?.routeDescription ?? "Not available"
             : coordinator.health.routeDescription
     }
 
-    private func stateNotice(title: String, detail: String, color: Color) -> some View {
-        Label {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.headline)
-                Text(detail).font(.subheadline)
-            }
-        } icon: {
-            Image(systemName: "exclamationmark.triangle")
+    private func dotColor(_ passed: Bool?) -> Color {
+        switch passed {
+        case true?: Organic.Color.accent2_400
+        case false?: Organic.Color.accent
+        case nil: Organic.Color.faint
         }
-        .foregroundStyle(color)
+    }
+
+    /// The live screen shows the phase as the handoff's accent tag; every other
+    /// phase shows a notice strip. Both carry the same identifier and label.
+    private func stateNotice(
+        title: String,
+        detail: String,
+        tint: Color,
+        systemImage: String = "exclamationmark.triangle",
+        compact: Bool = false
+    ) -> some View {
+        Group {
+            if compact {
+                OrganicTag(
+                    text: title,
+                    background: Organic.Color.accent.opacity(0.24),
+                    foreground: tint)
+            } else {
+                OrganicNotice(systemImage: systemImage, tint: tint, title: title, message: detail)
+            }
+        }
         .accessibilityIdentifier("recordingPhase")
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title). \(detail)")
@@ -418,30 +602,34 @@ struct RecordingGlobalStatusView: View {
 
     var body: some View {
         if coordinator.phase.isActive {
-            HStack(spacing: 10) {
+            HStack(spacing: Organic.Space.p12) {
                 Image(systemName: coordinator.phase.globalStatusSymbol)
                     .foregroundStyle(coordinator.phase.globalStatusColor)
-                Text(coordinator.phase.globalStatusTitle).font(.headline)
+                Text(coordinator.phase.globalStatusTitle).organic(.strong)
                 if let startedAt = coordinator.startedAt {
-                    Text(startedAt, style: .timer).monospacedDigit()
+                    Text(startedAt, style: .timer)
+                        .font(Organic.Font.tabular(.semibold, size: 14))
+                        .foregroundStyle(Organic.Color.text)
                 }
                 Spacer()
                 Text(
                     coordinator.health.routeDescription.isEmpty
                         ? "Recording route pending" : coordinator.health.routeDescription
                 )
-                .foregroundStyle(.secondary)
+                .organic(.small)
                 .lineLimit(1)
                 if case .recording = coordinator.phase {
                     Button("Stop") { Task { await coordinator.stop() } }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.red)
+                        .buttonStyle(.organicPrimary)
                         .accessibilityIdentifier("recordingGlobalStopButton")
                 }
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, Organic.Space.p24)
             .padding(.vertical, 10)
-            .background(.thinMaterial)
+            .background(Organic.Color.sidebarBg)
+            .overlay(alignment: .top) {
+                Rectangle().fill(Organic.Color.divider).frame(height: 1)
+            }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("recordingGlobalStatus")
             .accessibilityLabel(globalAccessibilityLabel)
@@ -460,7 +648,36 @@ struct RecordingGlobalStatusView: View {
     }
 }
 
+/// The four things preflight verifies, shown as the "Preflight and consent" rows.
+private enum RecordingPreflightCheck: CaseIterable {
+    case microphone, screenRecording, display, disk
+
+    var title: String {
+        switch self {
+        case .microphone: "Microphone access and audio route"
+        case .screenRecording: "Screen Recording access"
+        case .display: "Shareable display"
+        case .disk: "Disk reserve"
+        }
+    }
+}
+
 extension RecordingPreflightFailure {
+    fileprivate var check: RecordingPreflightCheck {
+        switch self {
+        case .microphonePermissionDenied, .microphonePermissionRestricted,
+            .microphonePermissionNotDetermined, .microphoneMissing, .microphoneInUse,
+            .routeUnavailable:
+            .microphone
+        case .screenRecordingPermissionDenied:
+            .screenRecording
+        case .noShareableDisplay:
+            .display
+        case .insufficientDiskReserve, .recordingSizeLimitReached, .globalSpoolLimitReached:
+            .disk
+        }
+    }
+
     fileprivate var message: String {
         switch self {
         case .microphonePermissionDenied:
@@ -553,11 +770,11 @@ extension RecordingPhase {
     fileprivate var globalStatusColor: Color {
         switch self {
         case .recording:
-            .red
+            Organic.Color.accent400
         case .preflighting, .stopping:
-            .orange
+            Organic.Color.warning
         case .idle, .blocked, .sealed, .needsAttention:
-            .secondary
+            Organic.Color.muted
         }
     }
 }

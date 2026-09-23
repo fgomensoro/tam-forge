@@ -462,6 +462,7 @@ private struct NativeWorkspaceView: View {
                     if let banner = session.banner { GlobalBannerView(banner: banner).organicCard(radius: Organic.Radius.r24) }
                     routeDetail
                 }
+                .organicContentTheme()
                 .frame(maxWidth: 1120, alignment: .leading)
                 .padding(.horizontal, Organic.Space.p36)
                 .padding(.top, Organic.Space.p32)

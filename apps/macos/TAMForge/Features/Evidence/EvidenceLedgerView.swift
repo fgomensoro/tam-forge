@@ -7,7 +7,7 @@ struct EvidenceLedgerView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: Organic.Space.p24) {
                 header
                 skillSection
                 portfolioSection
@@ -15,45 +15,52 @@ struct EvidenceLedgerView: View {
                     activitySection(activityID: activityID)
                 }
             }
-            .frame(maxWidth: 980, alignment: .leading)
-            .padding(24)
+            .frame(maxWidth: 1008, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityIdentifier("evidenceLedger")
     }
 
+    // MARK: Header
+
     private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Measured performance")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: Organic.Space.p14) {
+            HStack(alignment: .bottom, spacing: Organic.Space.p20) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text("Evidence")
-                        .font(.largeTitle)
-                        .bold()
+                        .organic(.h1)
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("evidenceTitle")
+                    Text("See what you demonstrated, how each estimate was calculated, and the evidence behind it.")
+                        .organic(.body, color: Organic.Color.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("evidenceIntro")
                 }
-                Spacer()
-                Button("Refresh", systemImage: "arrow.clockwise") {
-                    Task { await model.refresh() }
+                Spacer(minLength: 0)
+                HStack(spacing: Organic.Space.p12) {
+                    ViewThatFits(in: .horizontal) {
+                        filterChips
+                        ScrollView(.horizontal, showsIndicators: false) { filterChips }
+                    }
+                    Button("Refresh", systemImage: "arrow.clockwise") {
+                        Task { await model.refresh() }
+                    }
+                    .keyboardShortcut("r", modifiers: .command)
+                    .accessibilityIdentifier("evidenceRefresh")
                 }
-                .keyboardShortcut("r", modifiers: .command)
-                .accessibilityIdentifier("evidenceRefresh")
             }
-            Text("See what you demonstrated, how each estimate was calculated, and the evidence behind it.")
-                .accessibilityIdentifier("evidenceIntro")
             Text("Skill estimates use a 4-point scale. Portfolio judgment uses a separate 20-point scale. Self-scores remain separate. Missing evidence is not zero.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .organic(.small)
+                .fixedSize(horizontal: false, vertical: true)
             if model.isStale {
-                Label("Showing saved evidence. Refresh to check for updates.", systemImage: "clock.arrow.circlepath")
-                    .foregroundStyle(.orange)
+                OrganicNotice(systemImage: "clock.arrow.circlepath", message: "Showing saved evidence. Refresh to check for updates.")
+                    .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("evidenceStaleNotice")
             }
             if let activityID = model.activeActivityID {
-                HStack(spacing: 12) {
-                    Text("Activity \(activityID) context").font(.headline)
+                HStack(spacing: Organic.Space.p12) {
+                    Text("Activity \(activityID) context").organic(.title)
+                    Spacer(minLength: 0)
                     Button("Open activity") { onOpenActivity(activityID) }
                         .accessibilityIdentifier("evidenceOpenActivity")
                     Button("All evidence") {
@@ -62,8 +69,9 @@ struct EvidenceLedgerView: View {
                     }
                     .accessibilityIdentifier("evidenceAllActivities")
                 }
-                .padding(12)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal, Organic.Space.p16)
+                .padding(.vertical, Organic.Space.p12)
+                .background(Organic.Color.fill04, in: RoundedRectangle(cornerRadius: Organic.Radius.r20, style: .continuous))
                 .accessibilityElement(children: .contain)
             }
         }
@@ -71,11 +79,50 @@ struct EvidenceLedgerView: View {
         .accessibilitySortPriority(3)
     }
 
+    /// "All skills" plus one chip per skill. A chip opens that skill's ledger through
+    /// the same model calls as "Inspect evidence"; a skill without a snapshot has no
+    /// ledger to open, so its chip is disabled.
+    private var filterChips: some View {
+        HStack(spacing: 6) {
+            chip("All skills", selected: model.selectedSkillSlug == nil) {
+                model.dismissSkillInspector()
+            }
+            ForEach(model.skills) { skill in
+                chip(skill.name, selected: model.selectedSkillSlug == skill.slug) {
+                    guard model.selectedSkillSlug != skill.slug else { return }
+                    Task { await model.inspectSkill(slug: skill.slug) }
+                }
+                .disabled(skill.snapshot == nil)
+            }
+        }
+    }
+
+    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(Organic.Font.figtree(.semibold, size: 11))
+                .tracking(0.22)
+                .lineLimit(1)
+                .fixedSize()
+                .foregroundStyle(selected ? Organic.Color.neutral900 : Organic.Color.neutral300)
+                .padding(.horizontal, Organic.Space.p14)
+                .padding(.vertical, 6)
+                .background(selected ? Organic.Color.accent400 : .clear, in: Capsule(style: .continuous))
+                .overlay(Capsule(style: .continuous).strokeBorder(selected ? .clear : Organic.Color.divider, lineWidth: 1))
+                .contentShape(Capsule(style: .continuous))
+                .modifier(OrganicDisabledDimming())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    // MARK: Skills
+
     private var skillSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Organic.Space.p14) {
             sectionHeader("Demonstrated skills", title: "Skill estimates")
             if model.skillState == .loading {
-                ProgressView("Loading skill evidence…")
+                ProgressView("Loading skill evidence…").controlSize(.small)
             }
             if model.skillState == .failed {
                 sectionError(
@@ -87,86 +134,120 @@ struct EvidenceLedgerView: View {
                 }
             }
             if model.skillState == .empty {
-                Text("No skills are configured yet.").foregroundStyle(.secondary)
+                Text("No skills are configured yet.").organic(.small)
             }
-            ForEach(model.skills) { skill in
-                skillCard(skill)
+            Grid(alignment: .topLeading, horizontalSpacing: Organic.Space.p14, verticalSpacing: Organic.Space.p14) {
+                ForEach(skillRows, id: \.first?.slug) { row in
+                    GridRow {
+                        ForEach(row) { skill in skillCard(skill) }
+                        ForEach(row.count..<3, id: \.self) { _ in
+                            Color.clear.frame(maxWidth: .infinity).gridCellUnsizedAxes(.vertical)
+                        }
+                    }
+                }
+            }
+            if let skill = model.selectedSkill, let snapshot = skill.snapshot {
+                skillInspector(skill: skill, snapshot: snapshot)
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilitySortPriority(2)
     }
 
-    private func skillCard(_ skill: EvidenceSkill) -> some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .firstTextBaseline, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(skill.name)
-                            .font(.title3)
-                            .bold()
-                            .accessibilityIdentifier("evidenceSkillName_\(skill.slug)")
-                        Text("Baseline \(skill.baseline) · Month 1 \(skill.monthOneTarget) · Final \(skill.finalTarget)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Text(skill.snapshot.map { "\($0.estimatedLevel) / 4" } ?? "Not assessed")
-                        .font(.title3)
-                        .bold()
-                        .monospacedDigit()
-                }
-                if let snapshot = skill.snapshot {
-                    Text("\(readable(snapshot.confidence)) confidence · \(readable(snapshot.trend)) trend · \(readable(snapshot.recency)) evidence")
-                        .font(.subheadline)
-                    Text("Baseline gap \(snapshot.baselineTargetGap) · Month 1 gap \(snapshot.monthOneTargetGap) · Final target gap \(snapshot.finalTargetGap)")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Text("Last strong evidence \(snapshot.lastStrongEvidenceDate ?? "not yet demonstrated")")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Button(model.selectedSkillSlug == skill.slug ? "Hide evidence" : "Inspect evidence") {
-                        if model.selectedSkillSlug == skill.slug {
-                            model.dismissSkillInspector()
-                        } else {
-                            Task { await model.inspectSkill(slug: skill.slug) }
-                        }
-                    }
-                    .accessibilityLabel(model.selectedSkillSlug == skill.slug ? "Hide \(skill.name) evidence" : "Inspect \(skill.name) evidence")
-                    .accessibilityValue(model.selectedSkillSlug == skill.slug ? "Expanded" : "Collapsed")
-                    .accessibilityIdentifier("evidenceInspectSkill_\(skill.slug)")
-                    if model.selectedSkillSlug == skill.slug {
-                        skillInspector(snapshot: snapshot)
-                    }
-                } else {
-                    Text("No qualifying independent evidence yet. Missing evidence is never scored as zero.")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.vertical, 4)
+    /// Summary cards sit three to a row, as in the handoff.
+    private var skillRows: [[EvidenceSkill]] {
+        stride(from: 0, to: model.skills.count, by: 3).map {
+            Array(model.skills[$0..<min($0 + 3, model.skills.count)])
         }
+    }
+
+    private func skillCard(_ skill: EvidenceSkill) -> some View {
+        VStack(alignment: .leading, spacing: Organic.Space.p4) {
+            // Mixed case on purpose: the macOS accessibility value is the rendered string,
+            // and the UI tests match the skill name as written.
+            Text(skill.name)
+                .organic(.strong, color: Organic.Color.muted)
+                .accessibilityIdentifier("evidenceSkillName_\(skill.slug)")
+            if let snapshot = skill.snapshot {
+                summaryValue("\(snapshot.estimatedLevel) / 4")
+                Text("\(readable(snapshot.confidence)) confidence · \(readable(snapshot.trend)) trend · \(readable(snapshot.recency)) evidence")
+                    .organic(.caption)
+                Text("Baseline gap \(snapshot.baselineTargetGap) · Month 1 gap \(snapshot.monthOneTargetGap) · Final target gap \(snapshot.finalTargetGap)")
+                    .organic(.caption)
+                Text("Last strong evidence \(snapshot.lastStrongEvidenceDate ?? "not yet demonstrated")")
+                    .organic(.caption)
+                targets(skill)
+                Spacer(minLength: Organic.Space.p8)
+                Button(model.selectedSkillSlug == skill.slug ? "Hide evidence" : "Inspect evidence") {
+                    if model.selectedSkillSlug == skill.slug {
+                        model.dismissSkillInspector()
+                    } else {
+                        Task { await model.inspectSkill(slug: skill.slug) }
+                    }
+                }
+                .accessibilityLabel(model.selectedSkillSlug == skill.slug ? "Hide \(skill.name) evidence" : "Inspect \(skill.name) evidence")
+                .accessibilityValue(model.selectedSkillSlug == skill.slug ? "Expanded" : "Collapsed")
+                .accessibilityIdentifier("evidenceInspectSkill_\(skill.slug)")
+            } else {
+                summaryValue("—", color: Organic.Color.faint)
+                    .accessibilityHidden(true)
+                Text("Not assessed").organic(.caption)
+                targets(skill)
+                Text("No qualifying independent evidence yet. Missing evidence is never scored as zero.")
+                    .organic(.caption, color: Organic.Color.faint)
+            }
+        }
+        .padding(.vertical, Organic.Space.p20)
+        .padding(.horizontal, 22)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: Organic.Radius.r26, style: .continuous)
+                .fill(skill.snapshot == nil ? Organic.Color.fill04 : Organic.Color.surface)
+        )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("evidenceSkill_\(skill.slug)")
     }
 
-    private func skillInspector(snapshot: EvidenceSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Divider()
-            Text("Estimate lineage").font(.headline).accessibilityAddTraits(.isHeader)
-            Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 6) {
-                metricRow("Formula", snapshot.formulaVersion)
-                metricRow("Snapshot date", snapshot.snapshotDate)
-                metricRow("Effective weight", snapshot.totalEffectiveWeight)
-                metricRow("Qualifying events", String(snapshot.qualifyingEventCount))
-                metricRow("Exercise types", String(snapshot.exerciseTypeCount))
-                metricRow("Baseline gap", snapshot.baselineTargetGap)
-                metricRow("Month 1 gap", snapshot.monthOneTargetGap)
-                metricRow("Final target gap", snapshot.finalTargetGap)
+    private func summaryValue(_ value: String, color: Color = Organic.Color.text) -> some View {
+        Text(value)
+            .font(Organic.Font.tabular(.semibold, size: 24))
+            .tracking(-0.24)
+            .foregroundStyle(color)
+    }
+
+    private func targets(_ skill: EvidenceSkill) -> some View {
+        Text("Baseline \(skill.baseline) · Month 1 \(skill.monthOneTarget) · Final \(skill.finalTarget)")
+            .organic(.caption, color: Organic.Color.faint)
+    }
+
+    private func skillInspector(skill: EvidenceSkill, snapshot: EvidenceSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: Organic.Space.p14) {
+            GroupBox {
+                VStack(alignment: .leading, spacing: Organic.Space.p12) {
+                    HStack(alignment: .firstTextBaseline, spacing: Organic.Space.p12) {
+                        Text("Estimate lineage").organic(.title).accessibilityAddTraits(.isHeader)
+                        Text(skill.name).organic(.small)
+                    }
+                    HStack(alignment: .top, spacing: Organic.Space.p40) {
+                        Grid(alignment: .leading, horizontalSpacing: Organic.Space.p24, verticalSpacing: 6) {
+                            metricRow("Formula", snapshot.formulaVersion)
+                            metricRow("Snapshot date", snapshot.snapshotDate)
+                            metricRow("Effective weight", snapshot.totalEffectiveWeight)
+                            metricRow("Qualifying events", String(snapshot.qualifyingEventCount))
+                        }
+                        Grid(alignment: .leading, horizontalSpacing: Organic.Space.p24, verticalSpacing: 6) {
+                            metricRow("Exercise types", String(snapshot.exerciseTypeCount))
+                            metricRow("Baseline gap", snapshot.baselineTargetGap)
+                            metricRow("Month 1 gap", snapshot.monthOneTargetGap)
+                            metricRow("Final target gap", snapshot.finalTargetGap)
+                        }
+                    }
+                    DisclosureGroup("Confidence basis") { lineageText(snapshot.confidenceBasis) }
+                        .accessibilityIdentifier("evidenceConfidenceBasis")
+                    DisclosureGroup("Trend basis") { lineageText(snapshot.trendBasis) }
+                        .accessibilityIdentifier("evidenceTrendBasis")
+                }
             }
-            DisclosureGroup("Confidence basis") { lineageText(snapshot.confidenceBasis) }
-                .accessibilityIdentifier("evidenceConfidenceBasis")
-            DisclosureGroup("Trend basis") { lineageText(snapshot.trendBasis) }
-                .accessibilityIdentifier("evidenceTrendBasis")
             inspectorContent(
                 state: model.skillInspectorState,
                 error: model.skillInspectorError,
@@ -177,7 +258,7 @@ struct EvidenceLedgerView: View {
             ) {
                 if let page = model.skillPage {
                     manifest(snapshot.manifest, events: page.items)
-                    ForEach(page.items) { event in eventCard(event) }
+                    ledger(page.items, manifest: snapshot.manifest)
                     pageControls(
                         newest: model.isNewestSkillPage,
                         hasOlder: page.nextCursor != nil,
@@ -191,15 +272,15 @@ struct EvidenceLedgerView: View {
                 }
             }
         }
-        .padding(12)
-        .background(.quinary, in: RoundedRectangle(cornerRadius: 8))
     }
 
+    // MARK: Portfolio
+
     private var portfolioSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Organic.Space.p14) {
             sectionHeader("Cross-customer decisions", title: "Portfolio history")
             if model.portfolioState == .loading {
-                ProgressView("Loading portfolio history…")
+                ProgressView("Loading portfolio history…").controlSize(.small)
             }
             if model.portfolioState == .failed {
                 sectionError(
@@ -211,7 +292,7 @@ struct EvidenceLedgerView: View {
                 }
             }
             if model.portfolioState == .empty {
-                Text("No portfolio judgment has been assessed yet.").foregroundStyle(.secondary)
+                Text("No portfolio judgment has been assessed yet.").organic(.small)
             }
             if let page = model.portfolioPage {
                 ForEach(page.items) { score in portfolioCard(score) }
@@ -233,31 +314,22 @@ struct EvidenceLedgerView: View {
 
     private func portfolioCard(_ score: EvidencePortfolioScore) -> some View {
         GroupBox {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: Organic.Space.p12) {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Portfolio judgment").font(.title3).bold()
-                        Text("Activity \(score.activityID) · Attempt \(score.attemptID)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        Text("Portfolio judgment").organic(.title)
+                        Text("Activity \(score.activityID) · Attempt \(score.attemptID)").organic(.caption)
                     }
                     Spacer()
-                    Text("\(score.totalScore) / 20")
-                        .font(.title3)
-                        .bold()
-                        .monospacedDigit()
+                    summaryValue("\(score.totalScore) / 20")
                 }
-                Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 5) {
+                Grid(alignment: .leading, horizontalSpacing: Organic.Space.p24, verticalSpacing: 5) {
                     ForEach(score.components) { component in
                         metricRow(readable(component.slug), component.score)
                     }
                 }
-                Text("\(score.formulaVersion) · \(score.rubricVersion)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("Scored \(score.scoredAt.formatted(date: .abbreviated, time: .shortened))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text("\(score.formulaVersion) · \(score.rubricVersion)").organic(.caption)
+                Text("Scored \(score.scoredAt.formatted(date: .abbreviated, time: .shortened))").organic(.caption)
                 DisclosureGroup("Trend basis") { lineageText(score.trendBasis) }
                     .accessibilityIdentifier("evidencePortfolioTrend_\(score.id)")
                 Button(model.inspectedActivityID == score.activityID ? "Reload related evidence" : "Inspect related evidence") {
@@ -266,14 +338,15 @@ struct EvidenceLedgerView: View {
                 .accessibilityLabel("Inspect portfolio evidence from activity \(score.activityID)")
                 .accessibilityIdentifier("evidenceInspectPortfolio_\(score.id)")
             }
-            .padding(.vertical, 4)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("evidencePortfolio_\(score.id)")
     }
 
+    // MARK: Activity
+
     private func activitySection(activityID: Int) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Organic.Space.p14) {
             HStack(alignment: .bottom) {
                 sectionHeader("Related lineage", title: "Activity \(activityID) evidence")
                     .accessibilityIdentifier("evidenceActivityHistory")
@@ -293,7 +366,7 @@ struct EvidenceLedgerView: View {
                 retry: { await model.retryActivityEvidence() }
             ) {
                 if let page = model.activityPage {
-                    ForEach(page.items) { event in eventCard(event) }
+                    ledger(page.items, manifest: [])
                     pageControls(
                         newest: model.isNewestActivityPage,
                         hasOlder: page.nextCursor != nil,
@@ -310,18 +383,21 @@ struct EvidenceLedgerView: View {
         .accessibilityElement(children: .contain)
     }
 
+    // MARK: Ledger
+
     private func manifest(_ entries: [EvidenceManifestEntry], events: [EvidenceEvent]) -> some View {
         DisclosureGroup("Snapshot manifest · \(entries.count) events") {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Organic.Space.p8) {
                 ForEach(entries) { entry in
                     let event = events.first { $0.id == entry.eventID }
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Event \(entry.eventID) · \(readable(entry.inclusionCode))").bold()
+                        Text("Event \(entry.eventID) · \(readable(entry.inclusionCode))").organic(.strong)
                         if let event {
                             Text("Used weight \(entry.usedWeight) · Event weight \(event.effectiveWeight)")
+                                .organic(.small, color: Organic.Color.neutral300)
                         } else {
                             Text("Used weight \(entry.usedWeight) · Outside this page; browse older evidence")
-                                .foregroundStyle(.secondary)
+                                .organic(.small)
                         }
                     }
                     .accessibilityElement(children: .combine)
@@ -332,13 +408,39 @@ struct EvidenceLedgerView: View {
         .accessibilityIdentifier("evidenceManifest")
     }
 
-    private func eventCard(_ event: EvidenceEvent) -> some View {
+    /// The handoff's ledger table: a column header, then one disclosure row per event.
+    /// The Activity column leads because the disclosure's accessibility label is
+    /// built from the row text, and the UI tests match it by its "Evidence event N,"
+    /// prefix.
+    private func ledger(_ events: [EvidenceEvent], manifest: [EvidenceManifestEntry]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: LedgerColumn.spacing) {
+                Text("Activity").frame(maxWidth: .infinity, alignment: .leading)
+                Text("When").frame(width: LedgerColumn.when, alignment: .leading)
+                Text("Evaluator").frame(width: LedgerColumn.evaluator, alignment: .leading)
+                Text("Score").frame(width: LedgerColumn.score, alignment: .leading)
+                Text("Weight").frame(width: LedgerColumn.weight, alignment: .leading)
+                Text("Counts").frame(width: LedgerColumn.counts, alignment: .leading)
+            }
+            .organic(.kicker)
+            .padding(.leading, LedgerColumn.disclosureInset)
+            .padding(.horizontal, Organic.Space.p8)
+            .padding(.vertical, Organic.Space.p8)
+            .overlay(alignment: .bottom) { Rectangle().fill(Organic.Color.divider).frame(height: 1) }
+            .accessibilityHidden(true)
+            ForEach(events) { event in
+                eventRow(event, manifestEntry: manifest.first { $0.eventID == event.id })
+            }
+        }
+    }
+
+    private func eventRow(_ event: EvidenceEvent, manifestEntry: EvidenceManifestEntry?) -> some View {
         DisclosureGroup {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Organic.Space.p8) {
                 Text("Activity \(event.activityID) · Attempt \(event.attemptID.map { String($0) } ?? "not linked")")
                 Text("Performance \(event.performanceScore) / 4 · Skill impact \(event.skillImpact) · Effective weight \(event.effectiveWeight)")
                 Text(event.qualifyingForLevel ? "Qualifies for level · \(readable(event.qualificationReason))" : "Excluded from level · \(readable(event.qualificationReason))")
-                Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 4) {
+                Grid(alignment: .leading, horizontalSpacing: Organic.Space.p20, verticalSpacing: 4) {
                     metricRow("Exercise", readable(event.exerciseType))
                     metricRow("Mapping", event.mappingVersion)
                     metricRow("Formula", event.formulaVersion)
@@ -353,17 +455,58 @@ struct EvidenceLedgerView: View {
                 }
                 .accessibilityIdentifier("evidenceRawDimensions_\(event.id)")
             }
+            .organic(.small, color: Organic.Color.neutral300)
             .padding(.top, 6)
+            .padding(.bottom, Organic.Space.p12)
         } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Evidence event \(event.id)").bold()
-                Text("\(model.skillName(for: event.skillSlug) ?? readable(event.skillSlug)) · \(event.occurredAt.formatted(date: .abbreviated, time: .shortened))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: LedgerColumn.spacing) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Evidence event \(event.id)")
+                        .font(Organic.Font.figtree(.semibold, size: 13))
+                        .foregroundStyle(Organic.Color.text)
+                    Text("\(model.skillName(for: event.skillSlug) ?? readable(event.skillSlug)) · \(readable(event.exerciseType))")
+                        .font(Organic.Font.figtree(.regular, size: 11))
+                        .foregroundStyle(Organic.Color.muted)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Text(event.occurredAt.formatted(date: .abbreviated, time: .shortened))
+                    .foregroundStyle(Organic.Color.muted)
+                    .frame(width: LedgerColumn.when, alignment: .leading)
+                Text(readable(event.evaluator))
+                    .frame(width: LedgerColumn.evaluator, alignment: .leading)
+                Text(event.performanceScore)
+                    .font(Organic.Font.tabular(.regular, size: 13))
+                    .frame(width: LedgerColumn.score, alignment: .leading)
+                Text(event.effectiveWeight)
+                    .font(Organic.Font.tabular(.regular, size: 13))
+                    .frame(width: LedgerColumn.weight, alignment: .leading)
+                countsTag(event, manifestEntry: manifestEntry)
+                    .frame(width: LedgerColumn.counts, alignment: .leading)
             }
+            .font(Organic.Font.figtree(.regular, size: 13))
+            .foregroundStyle(Organic.Color.body)
+            .lineLimit(1)
+            .padding(.vertical, Organic.Space.p8)
             .accessibilityIdentifier("evidenceEvent_\(event.id)")
         }
+        .padding(.horizontal, Organic.Space.p8)
+        .modifier(EvidenceRowHover())
+        .overlay(alignment: .bottom) { Rectangle().fill(Organic.Color.fill08).frame(height: 1) }
     }
+
+    /// Qualifies: sage. Discounted by the snapshot manifest: accent. Anything else
+    /// (excluded, pending): neutral.
+    private func countsTag(_ event: EvidenceEvent, manifestEntry: EvidenceManifestEntry?) -> OrganicTag {
+        if let code = manifestEntry?.inclusionCode, code.hasPrefix("discounted") {
+            return OrganicTag(text: readable(code), background: Organic.Color.accentOn, foreground: Organic.Color.accent300)
+        }
+        if event.qualifyingForLevel {
+            return OrganicTag(text: "qualifies", background: Organic.Color.accent2.opacity(0.28), foreground: Organic.Color.accent2_200)
+        }
+        return OrganicTag(text: readable(event.qualificationReason))
+    }
+
+    // MARK: Shared parts
 
     @ViewBuilder
     private func inspectorContent<Content: View>(
@@ -375,7 +518,7 @@ struct EvidenceLedgerView: View {
         retry: @escaping @MainActor () async -> Void,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        if state == .loading { ProgressView("Loading evidence…") }
+        if state == .loading { ProgressView("Loading evidence…").controlSize(.small) }
         if state == .failed {
             sectionError(
                 error ?? "Evidence could not be loaded.",
@@ -384,7 +527,7 @@ struct EvidenceLedgerView: View {
                 retry: retry
             )
         }
-        if state == .empty { Text(empty).foregroundStyle(.secondary) }
+        if state == .empty { Text(empty).organic(.small) }
         if state == .content || state == .failed || state == .loading { content() }
     }
 
@@ -394,9 +537,7 @@ struct EvidenceLedgerView: View {
         retryLabel: String,
         retry: @escaping @MainActor () async -> Void
     ) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Label(message, systemImage: "exclamationmark.triangle")
-                .foregroundStyle(.orange)
+        OrganicNotice(systemImage: "exclamationmark.triangle", message: message) {
             Button("Retry") { Task { await retry() } }
                 .accessibilityLabel(retryLabel)
                 .accessibilityIdentifier(retryID)
@@ -413,14 +554,16 @@ struct EvidenceLedgerView: View {
         older: @escaping @MainActor () async -> Void,
         newestAction: @escaping @MainActor () async -> Void
     ) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Organic.Space.p8) {
             if hasOlder {
-                Button("Older") { Task { await older() } }
+                Button("Load older") { Task { await older() } }
+                    .buttonStyle(.organicSecondary)
                     .accessibilityLabel(olderLabel)
                     .accessibilityIdentifier(olderID)
             }
             if !newest {
                 Button("Newest") { Task { await newestAction() } }
+                    .buttonStyle(.organicSecondary)
                     .accessibilityLabel(newestLabel)
                     .accessibilityIdentifier(newestID)
             }
@@ -429,21 +572,23 @@ struct EvidenceLedgerView: View {
 
     private func sectionHeader(_ eyebrow: String, title: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(eyebrow).font(.caption).foregroundStyle(.secondary)
-            Text(title).font(.title2).bold().accessibilityAddTraits(.isHeader)
+            Text(eyebrow).organic(.kicker)
+            Text(title).organic(.h2).accessibilityAddTraits(.isHeader)
         }
     }
 
     private func metricRow(_ label: String, _ value: String) -> some View {
         GridRow {
-            Text(label).foregroundStyle(.secondary)
-            Text(value).monospacedDigit()
+            Text(label).organic(.small)
+            Text(value)
+                .font(Organic.Font.tabular(.regular, size: 13))
+                .foregroundStyle(Organic.Color.body)
         }
     }
 
     private func lineageText(_ value: [String: ActivityJSONValue]) -> some View {
         Text(EvidenceLineageText.render(.object(value)))
-            .font(.system(.caption, design: .monospaced))
+            .organic(.mono)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 6)
@@ -451,6 +596,29 @@ struct EvidenceLedgerView: View {
 
     private func readable(_ value: String) -> String {
         value.replacingOccurrences(of: "_", with: " ")
+    }
+}
+
+/// Ledger column widths, from the handoff's table at the 1008 pt content width.
+private enum LedgerColumn {
+    static let spacing: CGFloat = 12
+    static let when: CGFloat = 132
+    static let evaluator: CGFloat = 104
+    static let score: CGFloat = 44
+    static let weight: CGFloat = 72
+    static let counts: CGFloat = 150
+    /// Width of the system disclosure triangle, so the header lines up with the rows.
+    static let disclosureInset: CGFloat = 20
+}
+
+/// Table row hover: neutral-100 at 4 %.
+private struct EvidenceRowHover: ViewModifier {
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(hovering ? Organic.Color.fill04 : .clear, in: Rectangle())
+            .onHover { hovering = $0 }
     }
 }
 

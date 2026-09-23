@@ -10,7 +10,7 @@ struct StudyNotePanel: View {
             VStack(alignment: .leading, spacing: 12) {
                 if !model.isOpened {
                     Text("A polished note for this block: rule, example, corrected misconceptions, sources and card-ready Q/A. Approving it stores it as evidence.")
-                        .foregroundStyle(.secondary)
+                        .organic(.small)
                     Button("Open note") { Task { await model.open() } }
                         .accessibilityIdentifier("noteOpen")
                 } else if model.isApproved, let note = model.note {
@@ -20,7 +20,7 @@ struct StudyNotePanel: View {
                 }
                 if let message = model.errorMessage {
                     Label(message, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
+                        .organic(.small, color: Organic.Color.warning)
                         .accessibilityIdentifier("noteError")
                 }
             }
@@ -32,31 +32,31 @@ struct StudyNotePanel: View {
     @ViewBuilder
     private func approved(_ note: StudyNote) -> some View {
         Label("Approved and stored as evidence (\(note.assistance)).", systemImage: "checkmark.seal")
+            .organic(.small, color: Organic.Color.success)
             .accessibilityIdentifier("noteApproved")
-        Text(note.title).font(.headline)
-        Text(note.rule)
+        Text(note.title).organic(.title)
+        Text(note.rule).organic(.body)
         if !note.flashcards.isEmpty {
-            Text("\(note.flashcards.count) card-ready Q/A").font(.caption).foregroundStyle(.secondary)
+            Text("\(note.flashcards.count) card-ready Q/A").organic(.caption)
         }
     }
 
     @ViewBuilder
     private var editor: some View {
-        HStack {
+        HStack(spacing: Organic.Space.p8) {
             Button("Draft with the coach") { Task { await model.draft() } }
                 .disabled(model.isBusy)
                 .accessibilityIdentifier("noteDraft")
             if let note = model.note {
                 Text("Drafted by \(note.draftedBy) · \(note.assistance)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .organic(.caption)
             }
-            Spacer()
+            Spacer(minLength: 0)
             if model.isBusy { ProgressView().controlSize(.small) }
         }
         TextField("Title", text: $model.title)
-            .textFieldStyle(.roundedBorder)
             .accessibilityIdentifier("noteTitle")
+            .organicField(onSurface: true)
         NoteField(title: "Rule", text: $model.rule, minimumHeight: 48)
         NoteField(title: "Explanation", text: $model.explanation, minimumHeight: 72)
         NoteField(title: "Example", text: $model.example, minimumHeight: 72)
@@ -67,8 +67,9 @@ struct StudyNotePanel: View {
             Button("Save draft") { Task { await model.save() } }
                 .disabled(!model.canSave)
                 .accessibilityIdentifier("noteSave")
-            Spacer()
+            Spacer(minLength: 0)
             Button("Approve as evidence") { Task { await model.approve() } }
+                .buttonStyle(.organicPrimary)
                 .disabled(!model.canApprove)
                 .accessibilityIdentifier("noteApprove")
                 .help("Save the draft first; approval freezes the saved note.")
@@ -82,11 +83,11 @@ private struct NoteField: View {
     var minimumHeight: CGFloat
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.subheadline.weight(.medium))
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).organic(.caption)
             TextEditor(text: $text)
-                .frame(minHeight: minimumHeight)
                 .accessibilityLabel(title)
+                .organicEditor(minHeight: minimumHeight, onSurface: true)
         }
     }
 }

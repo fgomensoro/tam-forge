@@ -47,6 +47,7 @@ struct OrganicPrimaryButtonStyle: ButtonStyle {
                 in: Capsule(style: .continuous)
             )
             .contentShape(Capsule(style: .continuous))
+            .modifier(OrganicDisabledDimming())
     }
 }
 
@@ -62,6 +63,7 @@ struct OrganicSecondaryButtonStyle: ButtonStyle {
             .background(configuration.isPressed ? Organic.Color.fill08 : Organic.Color.fill04, in: Capsule(style: .continuous))
             .overlay(Capsule(style: .continuous).strokeBorder(Organic.Color.divider, lineWidth: 1))
             .contentShape(Capsule(style: .continuous))
+            .modifier(OrganicDisabledDimming())
     }
 }
 
@@ -74,6 +76,7 @@ struct OrganicGhostButtonStyle: ButtonStyle {
             .font(Organic.Font.figtree(.semibold, size: size))
             .foregroundStyle(configuration.isPressed ? Organic.Color.text : tint)
             .contentShape(Rectangle())
+            .modifier(OrganicDisabledDimming())
     }
 }
 
