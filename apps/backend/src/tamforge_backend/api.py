@@ -58,6 +58,9 @@ from .reviews.service import ReviewsError
 from .roadmaps.ports import RoadmapWorkflowError
 from .roadmaps.routes import roadmap_exception_handler
 from .roadmaps.routes import router as roadmap_router
+from .shadowing.routes import router as shadowing_router
+from .shadowing.routes import shadowing_exception_handler
+from .shadowing.service import ShadowingError
 from .speech.contracts import TranscriptError
 from .speech.routes import router as speech_router
 from .speech.routes import transcript_exception_handler
@@ -82,6 +85,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(classes_router)
     app.include_router(practice_router)
     app.include_router(cards_router)
+    app.include_router(shadowing_router)
     app.include_router(progress_router)
     app.include_router(assessments_router)
     app.include_router(coverage_router)
@@ -106,6 +110,7 @@ def register_routes(app: FastAPI) -> None:
     app.add_exception_handler(ClassesError, classes_exception_handler)
     app.add_exception_handler(PracticeError, practice_exception_handler)
     app.add_exception_handler(CardsError, cards_exception_handler)
+    app.add_exception_handler(ShadowingError, shadowing_exception_handler)
     app.add_exception_handler(ProgressUnavailable, progress_exception_handler)
     app.add_exception_handler(AssessmentsUnavailable, assessments_exception_handler)
     app.add_exception_handler(CoverageError, coverage_exception_handler)
