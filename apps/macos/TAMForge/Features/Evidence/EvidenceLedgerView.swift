@@ -163,9 +163,10 @@ struct EvidenceLedgerView: View {
 
     private func skillCard(_ skill: EvidenceSkill) -> some View {
         VStack(alignment: .leading, spacing: Organic.Space.p4) {
+            // Mixed case on purpose: the macOS accessibility value is the rendered string,
+            // and the UI tests match the skill name as written.
             Text(skill.name)
-                .organic(.kicker)
-                .accessibilityLabel(skill.name)
+                .organic(.strong, color: Organic.Color.muted)
                 .accessibilityIdentifier("evidenceSkillName_\(skill.slug)")
             if let snapshot = skill.snapshot {
                 summaryValue("\(snapshot.estimatedLevel) / 4")

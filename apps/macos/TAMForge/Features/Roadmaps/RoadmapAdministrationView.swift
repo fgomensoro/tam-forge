@@ -395,11 +395,11 @@ struct RoadmapAdministrationView: View {
                                 if isExpanded {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(field.label).organic(.strong)
-                                        // Explicit labels: the kicker role uppercases, and the
-                                        // UI tests match these two words as written.
-                                        Text("Before").organic(.kicker).accessibilityLabel("Before")
+                                        // Not the kicker role: it uppercases, the macOS accessibility
+                                        // value is the rendered string, and the UI tests match these as written.
+                                        Text("Before").organic(.caption)
                                         Text(field.before).organic(.small).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                                        Text("After").organic(.kicker).accessibilityLabel("After")
+                                        Text("After").organic(.caption)
                                         Text(field.after).organic(.small, color: Organic.Color.text).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                                     }
                                 } else {

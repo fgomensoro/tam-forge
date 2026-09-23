@@ -317,7 +317,7 @@ private struct TodayHeroCard: View {
                         .lineSpacing(2)
                         .fixedSize(horizontal: false, vertical: true)
                     if let task {
-                        Text("\(task.timeboxMinutes) min · \(TodayFormat.state(task.state))")
+                        Text("\(task.timeboxMinutes) minutes · \(TodayFormat.state(task.state))")
                             .organic(.body, color: Organic.Color.muted)
                     }
                 }
