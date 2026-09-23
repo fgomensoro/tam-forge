@@ -200,7 +200,7 @@ struct InterviewsView: View {
                     .gridCellColumns(2)
                     HStack(spacing: Organic.Space.p12) {
                         Button(model.isCreating ? "Create" : "Save") { Task { await model.save() } }
-                            .buttonStyle(.organicPrimary)
+                            .buttonStyle(.organicSecondary)
                             .disabled(!model.canSave)
                             .accessibilityIdentifier("interviewSave")
                         if model.isBusy { ProgressView().controlSize(.small) }

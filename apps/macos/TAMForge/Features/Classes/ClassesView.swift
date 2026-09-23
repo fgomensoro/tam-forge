@@ -134,7 +134,7 @@ struct ClassesView: View {
             }
             HStack(spacing: Organic.Space.p12) {
                 Button(model.isCreating ? "Create" : "Save") { Task { await model.save() } }
-                    .buttonStyle(.organicPrimary)
+                    .buttonStyle(.organicSecondary)
                     .disabled(!model.canSave)
                     .accessibilityIdentifier("classSave")
                 if model.isBusy { ProgressView().controlSize(.small) }
