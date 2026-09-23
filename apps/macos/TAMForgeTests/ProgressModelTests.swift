@@ -47,6 +47,19 @@ final class ProgressModelTests: XCTestCase {
         XCTAssertNil(model.errorMessage)
     }
 
+    func testTheMonthOneMarkerSitsOnTheBaselineToFinalTrack() {
+        func skill(_ baseline: String, _ monthOne: String, _ final: String) -> ProgressSkill {
+            ProgressSkill(
+                slug: "s", name: "S", baseline: Decimal(string: baseline)!, monthOneTarget: Decimal(string: monthOne)!,
+                finalTarget: Decimal(string: final)!, latestLevel: nil, confidence: nil, trend: nil, points: []
+            )
+        }
+        XCTAssertEqual(skill("2", "2.5", "3.5").monthOneFraction, 1.0 / 3.0, accuracy: 0.001)
+        XCTAssertEqual(skill("2", "1", "3").monthOneFraction, 0)
+        XCTAssertEqual(skill("2", "4", "3").monthOneFraction, 1)
+        XCTAssertEqual(skill("3", "3", "3").monthOneFraction, 1)
+    }
+
     func testProblemsBecomeMessagesAndKeepTheLastReport() async throws {
         let report = try NativeJSONCodec.decode(ProgressReport.self, from: Data(payload.utf8))
         let api = FakeProgressAPI(report: report)
