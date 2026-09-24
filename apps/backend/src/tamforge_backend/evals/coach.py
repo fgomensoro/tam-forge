@@ -25,7 +25,7 @@ from ..agents.roles.coach import (
 )
 from ..agents.roles.contracts import RoleContractError
 
-COACH_EVALUATOR_VERSION: Final = "coach-refusals-v1"
+COACH_EVALUATOR_VERSION: Final = "coach-refusals-v2"
 Outcome = Literal["refused_by_contract", "refused_by_validator", "accepted"]
 OUTCOMES: Final[frozenset[str]] = frozenset(
     {"refused_by_contract", "refused_by_validator", "accepted"}
