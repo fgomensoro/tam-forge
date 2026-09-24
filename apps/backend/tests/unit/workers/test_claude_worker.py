@@ -304,3 +304,26 @@ def test_the_probe_verdict_is_reused_between_beats(monkeypatch: pytest.MonkeyPat
     assert probed == [start]
     assert beat(start + claude.PROBE_INTERVAL) == "quota"
     assert probed == [start, start + claude.PROBE_INTERVAL]
+
+
+@pytest.mark.parametrize(
+    ("message", "category", "forgets"),
+    [
+        ("the subscription quota is spent", "resource_exhausted", True),
+        ("the subscription credential was refused", "permission_required", True),
+        ("the agent runtime failed to complete", "transient_dependency", False),
+    ],
+)
+def test_a_refused_job_forgets_the_cached_probe_verdict(
+    monkeypatch: pytest.MonkeyPatch, message: str, category: str, forgets: bool
+) -> None:
+    """A cached "ready" would otherwise let every beat spend a job's attempts on a 429."""
+    from datetime import UTC, datetime
+
+    from tamforge_backend.workers import claude
+
+    verdict = (datetime(2026, 9, 24, 1, 0, tzinfo=UTC), None)
+    monkeypatch.setattr(claude, "_last_probe", verdict)
+
+    assert claude._unavailable_category(RuntimeError(message)) == category
+    assert claude._last_probe == (None if forgets else verdict)

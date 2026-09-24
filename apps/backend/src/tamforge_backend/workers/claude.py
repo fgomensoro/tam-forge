@@ -237,13 +237,7 @@ async def review_step(
             except ReviewInvalid:
                 category = "invalid_input"
             except ReviewsUnavailable as exc:
-                text = str(exc).lower()
-                if "quota" in text:
-                    category = "resource_exhausted"
-                elif "credential" in text or "authentication" in text:
-                    category = "permission_required"
-                else:
-                    category = "transient_dependency"
+                category = _unavailable_category(exc)
             except Exception:  # noqa: BLE001 - a job must always end in a closed state
                 await session.rollback()
                 category = "processing_failure"
@@ -301,13 +295,7 @@ async def debrief_step(
             except InterviewInvalid:
                 category = "invalid_input"
             except InterviewsUnavailable as exc:
-                text = str(exc).lower()
-                if "quota" in text:
-                    category = "resource_exhausted"
-                elif "credential" in text or "authentication" in text:
-                    category = "permission_required"
-                else:
-                    category = "transient_dependency"
+                category = _unavailable_category(exc)
             except Exception:  # noqa: BLE001 - a job must always end in a closed state
                 await session.rollback()
                 category = "processing_failure"
@@ -363,13 +351,7 @@ async def class_analysis_step(
             except ClassInvalid:
                 category = "invalid_input"
             except ClassesUnavailable as exc:
-                text = str(exc).lower()
-                if "quota" in text:
-                    category = "resource_exhausted"
-                elif "credential" in text or "authentication" in text:
-                    category = "permission_required"
-                else:
-                    category = "transient_dependency"
+                category = _unavailable_category(exc)
             except Exception:  # noqa: BLE001 - a job must always end in a closed state
                 await session.rollback()
                 category = "processing_failure"
@@ -432,13 +414,7 @@ async def weekly_report_step(
         except ReportInvalid:
             category = "invalid_input"
         except ReportsUnavailable as exc:
-            text = str(exc).lower()
-            if "quota" in text:
-                category = "resource_exhausted"
-            elif "credential" in text or "authentication" in text:
-                category = "permission_required"
-            else:
-                category = "transient_dependency"
+            category = _unavailable_category(exc)
         except Exception:  # noqa: BLE001 - a job must always end in a closed state
             await session.rollback()
             category = "processing_failure"
@@ -498,13 +474,7 @@ async def monthly_report_step(
         except ReportInvalid:
             category = "invalid_input"
         except ReportsUnavailable as exc:
-            text = str(exc).lower()
-            if "quota" in text:
-                category = "resource_exhausted"
-            elif "credential" in text or "authentication" in text:
-                category = "permission_required"
-            else:
-                category = "transient_dependency"
+            category = _unavailable_category(exc)
         except Exception:  # noqa: BLE001 - a job must always end in a closed state
             await session.rollback()
             category = "processing_failure"
@@ -564,13 +534,7 @@ async def practice_review_step(
             except (PracticeInvalid, PracticeNotFound):
                 category = "invalid_input"
             except PracticeUnavailable as exc:
-                text = str(exc).lower()
-                if "quota" in text:
-                    category = "resource_exhausted"
-                elif "credential" in text or "authentication" in text:
-                    category = "permission_required"
-                else:
-                    category = "transient_dependency"
+                category = _unavailable_category(exc)
             except Exception:  # noqa: BLE001 - a job must always end in a closed state
                 await session.rollback()
                 category = "processing_failure"
@@ -594,6 +558,23 @@ async def practice_review_step(
 PROBE_INTERVAL = timedelta(minutes=15)
 
 _last_probe: tuple[datetime, str | None] | None = None
+
+
+def _unavailable_category(exc: Exception) -> str:
+    """Close a job step's Claude failure; a refusal also drops the cached probe verdict.
+
+    A cached "ready" would keep the gate open on a spent quota, and each 30-second beat
+    would spend another of the job's attempts until it failed for good.
+    """
+    global _last_probe
+    text = str(exc).lower()
+    if "quota" in text:
+        _last_probe = None
+        return "resource_exhausted"
+    if "credential" in text or "authentication" in text:
+        _last_probe = None
+        return "permission_required"
+    return "transient_dependency"
 
 
 async def probe_step(
