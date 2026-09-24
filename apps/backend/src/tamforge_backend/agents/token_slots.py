@@ -10,16 +10,20 @@ from __future__ import annotations
 from collections.abc import Mapping, MutableMapping
 from datetime import datetime
 from types import MappingProxyType
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Text, select
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Text, func, select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Mapped, mapped_column
 
+from ..auth.models import Owner
 from ..database import transaction_scope
 from ..models.base import Base, utc_now
 from .settings import SUBSCRIPTION_TOKEN_VAR
+
+if TYPE_CHECKING:
+    from .sdk_runtime import AgentSdkRuntime
 
 TokenSlot = Literal["a", "b"]
 DEFAULT_SLOT: TokenSlot = "a"
@@ -47,6 +51,24 @@ async def read_active_slot(session: AsyncSession, *, owner_id: int) -> TokenSlot
         select(ClaudeTokenSlot.slot).where(ClaudeTokenSlot.owner_id == owner_id)
     )
     return "b" if stored == "b" else DEFAULT_SLOT
+
+
+async def read_deployment_slot(session: AsyncSession) -> TokenSlot:
+    """The first owner's choice; the API and the Claude worker both serve that owner."""
+    owner_id = await session.scalar(select(func.min(Owner.id)))
+    return DEFAULT_SLOT if owner_id is None else await read_active_slot(session, owner_id=owner_id)
+
+
+async def follow_deployment_slot(
+    sessions: async_sessionmaker[AsyncSession],
+    runtime: AgentSdkRuntime,
+    tokens: Mapping[TokenSlot, str],
+) -> None:
+    """Point a long-lived runtime at the active slot's token; the API does this every beat."""
+    async with sessions() as session:
+        slot = await read_deployment_slot(session)
+        await session.rollback()
+    runtime.use_slot(slot, tokens)
 
 
 async def choose_slot(session: AsyncSession, *, owner_id: int, slot: TokenSlot) -> None:
