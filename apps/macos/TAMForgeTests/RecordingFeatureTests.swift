@@ -3313,3 +3313,99 @@ extension RecordingFeatureTests {
     }
 }
 
+
+// Signing out cancels the upload worker and empties its queue, while the same
+// coordinator serves the next sign-in in that launch. The fresh workspace has
+// to restart what the sign-out stranded.
+extension RecordingFeatureTests {
+    func testResumeAfterSignOutUploadsThePendingRecordingAgain() async throws {
+        let (coordinator, uploader, recordingID) = await coordinatorUploadingOnePendingRecording()
+
+        await coordinator.pauseUploadsForSignOut()
+        await coordinator.resumeUploads()
+
+        let resumed = await waitUntil { await uploader.attempts == [recordingID, recordingID] }
+        XCTAssertTrue(resumed)
+        await uploader.release()
+    }
+
+    // The first workspace of a launch resumes while the coordinator's own
+    // startup pass may still be uploading; that recording must not queue twice.
+    func testResumeNeverQueuesTheRecordingAlreadyUploading() async throws {
+        let (coordinator, uploader, recordingID) = await coordinatorUploadingOnePendingRecording()
+
+        await coordinator.resumeUploads()
+        await uploader.release()
+
+        // A duplicate would start the moment the held upload returns.
+        for _ in 0..<20 {
+            try? await Task.sleep(for: .milliseconds(10))
+            let attempts = await uploader.attempts
+            XCTAssertEqual(attempts, [recordingID])
+        }
+    }
+
+    // A workspace that disappears while its resume is still reading the spool
+    // cancels that resume; it must not restart uploads after the sign-out.
+    func testCancelledResumeLeavesUploadsPaused() async throws {
+        let (coordinator, uploader, recordingID) = await coordinatorUploadingOnePendingRecording()
+        await coordinator.pauseUploadsForSignOut()
+
+        // Created and cancelled in one main-actor turn, so it is cancelled before it runs.
+        let resume = await MainActor.run {
+            let task = Task { await coordinator.resumeUploads() }
+            task.cancel()
+            return task
+        }
+        await resume.value
+
+        for _ in 0..<20 {
+            try? await Task.sleep(for: .milliseconds(10))
+            let attempts = await uploader.attempts
+            XCTAssertEqual(attempts, [recordingID])
+        }
+    }
+
+    private func coordinatorUploadingOnePendingRecording() async
+        -> (RecordingCoordinator, HeldRecordingUploader, UUID)
+    {
+        let recordingID = UUID()
+        let uploader = HeldRecordingUploader()
+        let coordinator = await MainActor.run {
+            RecordingCoordinator(
+                preflight: FakeRecordingPreflight(),
+                source: FakeRecordingCaptureSource(),
+                spoolFactory: PendingRecordingSpoolFactory(recordingIDs: [recordingID]),
+                uploader: uploader
+            )
+        }
+        let started = await waitUntil { await uploader.attempts == [recordingID] }
+        XCTAssertTrue(started, "the startup pass never began uploading")
+        return (coordinator, uploader, recordingID)
+    }
+}
+
+private struct PendingRecordingSpoolFactory: RecordingSpoolCreating {
+    let recordingIDs: [UUID]
+
+    func create(recordingID: UUID) async throws -> any RecordingSpoolWriting { FakeRecordingSpool() }
+    func pendingRecordingIDs() async -> [UUID] { recordingIDs }
+    func discard(recordingID: UUID) async throws {}
+}
+
+// Holds every upload open until released, so a test can act while one is in flight.
+private actor HeldRecordingUploader: RecordingUploading {
+    private(set) var attempts: [UUID] = []
+    private var released = false
+
+    func upload(
+        recordingID: UUID,
+        progress: @escaping @Sendable (Int) -> Void
+    ) async throws -> RecordingReleaseGates {
+        attempts.append(recordingID)
+        while !released { try await Task.sleep(for: .milliseconds(5)) }
+        return RecordingReleaseGates(audioCreatedOnServer: true, transcriptLineageAccepted: true)
+    }
+
+    func release() { released = true }
+}
