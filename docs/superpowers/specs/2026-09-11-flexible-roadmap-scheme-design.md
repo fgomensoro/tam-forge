@@ -96,6 +96,14 @@ and drops the Monday-start requirement. `time_policy.py` takes the day budget fr
 the stored day instead of `DayBudget("weekday", 240, ...)`; the Today
 `target_minutes` cap becomes the day budget.
 
+A later version (a reforecast, or the next package) carries its own anchor,
+`roadmap_versions.starts_on`, set when it is activated: the first date on or after the
+learner's today that has no materialized study day and is not one of its rest weekdays.
+A materialized day stays frozen under the version that planned it, so the new version
+takes effect from the next unplanned date. The planner is told that date as day 1.
+Versions without a `starts_on` (the first activation, legacy versions) keep using
+`study_start_date`.
+
 ## Import pipeline
 
 `parse_roadmap` gains a v2 path: when the package contains `roadmap.yaml` it is parsed

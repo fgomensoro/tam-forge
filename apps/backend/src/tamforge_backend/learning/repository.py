@@ -41,6 +41,13 @@ class StudyDayNotReady(SchedulePolicyError):
     """The learner or active roadmap cannot produce the requested study day."""
 
 
+def study_anchor(study_start_date: date, version: RoadmapVersion | None) -> date:
+    """The date a version's day 1 lands on: its own start, else the learner's first."""
+    if version is None or version.starts_on is None:
+        return study_start_date
+    return version.starts_on
+
+
 @dataclass(frozen=True, slots=True)
 class StudyDayRecord:
     id: int
@@ -89,9 +96,12 @@ class StudyDayService:
                 scheme = scheme_for_version(
                     None if version is None else version.normalized_payload.get("scheme")
                 )
-                curriculum_day = scheme.day_number(setting.study_start_date, context.local_date)
-                if curriculum_day is None:
-                    return None
+                anchor = study_anchor(setting.study_start_date, version)
+                curriculum_day: int | None = None
+                if context.local_date >= anchor:
+                    curriculum_day = scheme.day_number(anchor, context.local_date)
+                    if curriculum_day is None:
+                        return None
                 existing = (
                     await self._session.execute(
                         select(StudyDay)
@@ -102,6 +112,10 @@ class StudyDayService:
                 ).scalar_one_or_none()
                 if existing is not None:
                     return await self._record(existing, created=False)
+                # A date before the anchor was planned by an earlier version or by
+                # nobody; a later version never reaches back into it.
+                if curriculum_day is None:
+                    raise StudyDayNotReady("study date precedes the roadmap anchor")
                 if version is None or version.state != "active":
                     raise StudyDayNotReady(
                         "an active roadmap is required"

@@ -32,6 +32,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import date
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
@@ -460,6 +461,7 @@ class SqlAlchemyRoadmapRepository:
     ) -> RoadmapVersionRecord:
         async with _unavailable_on_database_error():
             from ..learning.models import LearnerSetting
+            from ..learning.scheduling import first_open_study_date, scheme_for_version
 
             async with transaction_scope(self._session):
                 versions = tuple(
@@ -529,6 +531,15 @@ class SqlAlchemyRoadmapRepository:
                     setting.active_roadmap_version_id = target.id
                     if timezone is not None:
                         setting.timezone = timezone
+                    scheme = target.normalized_payload.get("scheme")
+                    if active is not None and scheme:
+                        # A planned day stays frozen under the version that planned it,
+                        # so a later version's day 1 is the first date nobody owns yet.
+                        target.starts_on = first_open_study_date(
+                            now.astimezone(ZoneInfo(setting.timezone)).date(),
+                            await self._last_planned_date(owner_id),
+                            rest_weekdays=scheme_for_version(scheme).rest_weekdays,
+                        )
                 self._session.add(
                     OutboxEvent(
                         owner_id=owner_id,
@@ -545,6 +556,29 @@ class SqlAlchemyRoadmapRepository:
                 await self._session.flush()
                 result = self._to_version(target)
             return result
+
+    async def first_open_date(self, *, owner_id: int) -> date:
+        """The earliest date a version activated now could own, before its rest days."""
+        from ..learning.models import LearnerSetting
+        from ..learning.scheduling import first_open_study_date
+
+        async with _unavailable_on_database_error():
+            timezone = await self._session.scalar(
+                select(LearnerSetting.timezone).where(LearnerSetting.owner_id == owner_id)
+            )
+            last = await self._last_planned_date(owner_id)
+            await self._session.rollback()
+        now = utc_now()
+        local_today = now.date() if timezone is None else now.astimezone(ZoneInfo(timezone)).date()
+        return first_open_study_date(local_today, last)
+
+    async def _last_planned_date(self, owner_id: int) -> date | None:
+        from ..learning.models import StudyDay
+
+        last: date | None = await self._session.scalar(
+            select(func.max(StudyDay.local_date)).where(StudyDay.owner_id == owner_id)
+        )
+        return last
 
     async def _locked_import(self, owner_id: int, import_id: int) -> tuple[RoadmapImport, str]:
         row = (

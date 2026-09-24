@@ -13,6 +13,7 @@ from tamforge_backend.learning.scheduling import (
     UnfinishedWork,
     build_day,
     curriculum_day_number,
+    first_open_study_date,
     local_study_context,
     scheme_for_version,
     select_carryover,
@@ -215,6 +216,23 @@ def test_study_day_number_walks_non_rest_dates_from_any_start() -> None:
     assert study_day_number(start, date(2026, 9, 14), rest_weekdays=rest) == 5
     with pytest.raises(SchedulePolicyError, match="precedes"):
         study_day_number(start, date(2026, 9, 8), rest_weekdays=rest)
+
+
+def test_first_open_study_date_starts_after_the_last_materialized_day() -> None:
+    rest = frozenset({6})
+    tuesday = date(2026, 9, 22)
+
+    # Nothing planned yet: the new version owns today.
+    assert first_open_study_date(tuesday, None, rest_weekdays=rest) == tuesday
+    # Today is already planned under the old version and frozen: day 1 is tomorrow.
+    assert first_open_study_date(tuesday, tuesday, rest_weekdays=rest) == date(2026, 9, 23)
+    # A stale last day never pulls the anchor into the past.
+    assert first_open_study_date(tuesday, date(2026, 9, 17), rest_weekdays=rest) == tuesday
+    # A rest day is skipped.
+    assert first_open_study_date(date(2026, 9, 26), date(2026, 9, 26), rest_weekdays=rest) == (
+        date(2026, 9, 28)
+    )
+    assert first_open_study_date(date(2026, 9, 26), date(2026, 9, 26)) == date(2026, 9, 27)
 
 
 def test_study_day_number_with_two_rest_days() -> None:
