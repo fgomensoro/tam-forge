@@ -19,7 +19,7 @@ struct CoachPanel: View {
                     if thread.coachingAllowed {
                         conversation(thread)
                     } else {
-                        Label("Coaching is not available for this block.", systemImage: "lock")
+                        Label(CoachAPIError.notAllowed.message, systemImage: "lock")
                             .organic(.small)
                             .accessibilityIdentifier("coachNotAllowed")
                     }
