@@ -347,6 +347,11 @@ class AgentSdkRuntime:
         system_prompt: str,
         max_turns: int,
     ) -> StructuredRun:
+        # The CLI inherits the whole process environment and an API key outranks the
+        # token, so anything but the subscription token alone stops the run here. This
+        # covers the API, which never passes through ClaudeSubscriptionSettings.for_worker.
+        if self._authentication_method() != SUBSCRIPTION_AUTHENTICATION:
+            raise AgentAuthenticationFailed("only the subscription token may run Claude")
         from claude_agent_sdk import (
             ClaudeAgentOptions,
             CLIConnectionError,

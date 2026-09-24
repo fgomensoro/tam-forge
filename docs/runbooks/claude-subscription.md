@@ -45,8 +45,8 @@ Both are mode 0640, owned by `root:tamforge-claude`. Two units load both through
 worker, for queued jobs, and the API, because the coach, note drafts, roadmap generation
 and reforecast, and interview follow-ups call Claude inside the request. No other unit
 loads them. The database stores only which slot is active (`claude_token_slots`, "a" or
-"b"); the worker applies that choice on every beat and the API before every Claude call.
-TAM Forge's own repository and database store no
+"b"); the worker applies that choice on every beat and the API on its own 20-second
+heartbeat. TAM Forge's own repository and database store no
 token and no copy of one; the attestation this procedure produces records that the operator
 looked at the policy, never the secret that lets Claude run.
 
@@ -76,8 +76,8 @@ afterwards.
 The Mac app's Settings window (Cmd+,) has a Claude pane that shows the active slot's worker
 status, a Slot A / Slot B switch and the rotation command for the chosen slot. Switching
 sends only the slot name to `PUT /ops/claude/slot`; the worker picks it up on its next beat
-and probes the new token. When one subscription runs out of quota, switch to the other slot
-there. The app never sees a token, and no TAM Forge endpoint accepts one.
+and probes the new token, and the API within 20 seconds. When one subscription runs out of
+quota, switch to the other slot there. The app never sees a token, and no TAM Forge endpoint accepts one.
 
 ## Confirming the policy
 
@@ -196,6 +196,11 @@ It then requires a current attestation and the subscription credential itself. A
 missing credential is a refusal, never a fallback, because a fallback is exactly what
 must not exist here. Every rejection names the variable and never its value, and the
 token is a `SecretStr` that stays redacted in reprs, dumps and JSON.
+
+The API never goes through `for_worker`, so `AgentSdkRuntime` repeats the check before
+every run, in the API and in the worker alike: the CLI starts only when the subscription
+token is present and none of `FORBIDDEN_CREDENTIAL_VARS` is. Anything else fails as a
+refused credential. There is no path to Claude through an API key.
 
 The worker process receives only what `worker_environment()` returns: the subscription
 token plus the telemetry opt-outs. Nonessential traffic, error reporting and the bug

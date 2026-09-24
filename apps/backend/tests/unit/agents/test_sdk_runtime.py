@@ -214,3 +214,21 @@ async def test_a_slot_switch_changes_the_token_that_later_calls_send() -> None:
     await runtime.probe(requested_model="m")
 
     assert query.calls[0]["options"].env["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-fixture-b"
+
+
+@pytest.mark.anyio
+async def test_a_run_without_only_the_subscription_token_never_calls_the_runtime() -> None:
+    # The CLI inherits the whole process environment, and an API key outranks the token:
+    # a paid or missing credential must stop the run before the CLI starts.
+    query = FakeQuery([_result()])
+    request = PlannerRequest(mode="generate", files={}, instruction="", today=date(2026, 9, 12))
+    for environ in ({}, {**TOKEN_ENV, "ANTHROPIC_API_KEY": ""}, {"ANTHROPIC_BASE_URL": "x"}):
+        with pytest.raises(AgentAuthenticationFailed):
+            await _runtime(query, environ=environ).propose(request)
+
+    # A chosen slot with no token installed never falls back to the slot A token.
+    switched = _runtime(query)
+    switched.use_slot("b", {"a": "redacted-fixture-token", "b": ""})
+    with pytest.raises(AgentAuthenticationFailed):
+        await switched.propose(request)
+    assert query.calls == []
