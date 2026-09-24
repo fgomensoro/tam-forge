@@ -7,10 +7,11 @@ two names, and the audit trail then cannot say which of them produced an answer.
 Context is granted per role and checked against what a call asks for. A role sees the
 kinds of context its contract lists and nothing else, whatever the caller passes.
 
-The last rule is the one the workspace exists for. Only the Planner runs before the
-learner has committed anything, because planning the day is not answering the question.
-Every other role is refused until there is a committed attempt to work from: a tutor
-that answers first has replaced the exercise, and a reviewer with nothing to review is
+The last rule is the one the workspace exists for. Only the Planner and the Coach run
+before the learner has committed anything: planning the day is not answering the
+question, and a coach hint given before the commit is recorded as assistance. Every
+other role is refused until there is a committed attempt to work from: a tutor that
+answers first has replaced the exercise, and a reviewer with nothing to review is
 inventing one.
 """
 
@@ -34,9 +35,11 @@ RUBRIC = "rubric"
 EVIDENCE_SUMMARY = "evidence_summary"
 SPEECH_METRICS = "speech_metrics"
 
-# Only the Planner works before anything is committed: planning a day is not answering
-# a question. Every other role needs a committed attempt in front of it.
-ROLES_BEFORE_COMMITMENT: frozenset[AgentRole] = frozenset({AgentRole.PLANNER})
+# The Planner plans a day before anything is committed. The Coach may speak before the
+# commit too: it asks the recall question and hands out hints, and every hint it gives
+# before the commit is recorded on the attempt as assistance. Every other role needs a
+# committed attempt in front of it.
+ROLES_BEFORE_COMMITMENT: frozenset[AgentRole] = frozenset({AgentRole.PLANNER, AgentRole.COACH})
 
 
 class RoleContractError(ValueError):
