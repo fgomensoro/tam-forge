@@ -24,7 +24,7 @@ APPROVED_COMPOSE = f"""services:
       - tamforge-postgres:/var/lib/postgresql/data
   minio:
     image: {APPROVED_MINIO_IMAGE}
-    command: server /data --console-address \":9001\"
+    command: minio server /bitnami/minio/data --console-address \":9001\"
     environment:
       MINIO_ROOT_USER: tamforge
       MINIO_ROOT_PASSWORD: tamforge-local
@@ -32,7 +32,7 @@ APPROVED_COMPOSE = f"""services:
       - \"127.0.0.1:9000:9000\"
       - \"127.0.0.1:9001:9001\"
     volumes:
-      - tamforge-minio:/data
+      - tamforge-minio:/bitnami/minio/data
 volumes:
   tamforge-postgres:
   tamforge-minio:
@@ -118,6 +118,7 @@ def test_rejects_unsafe_port_forms(replacement: str) -> None:
         "minio/minio:${MINIO_TAG}",
         "minio/minio",
         "minio/minio@sha256:0123456789abcdef",
+        "docker.io/bitnamilegacy/minio:2024.6.13",
     ),
 )
 def test_rejects_unpinned_or_interpolated_minio_images(image: str) -> None:

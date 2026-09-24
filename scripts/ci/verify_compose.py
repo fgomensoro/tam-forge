@@ -10,7 +10,13 @@ from yaml.events import AliasEvent
 from yaml.loader import SafeLoader
 from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 
-APPROVED_MINIO_IMAGE = "quay.io/minio/minio:RELEASE.2024-06-13T22-53-53Z"
+# MinIO stopped serving its community images anonymously (quay.io and Docker Hub both answer
+# 401), so this is the same RELEASE.2024-06-13T22-53-53Z build from Bitnami's frozen legacy
+# repository, pinned by digest.
+APPROVED_MINIO_IMAGE = (
+    "docker.io/bitnamilegacy/minio:2024.6.13"
+    "@sha256:aa1752895e6d2b420e394d55241d5b2c948960715db0a50bb648f430e447e645"
+)
 MAX_COMPOSE_BYTES = 64 * 1024
 MAX_COMPOSE_NESTING_DEPTH = 32
 MAX_COMPOSE_NODES = 500
@@ -28,13 +34,13 @@ APPROVED_COMPOSE: dict[str, object] = {
         },
         "minio": {
             "image": APPROVED_MINIO_IMAGE,
-            "command": 'server /data --console-address ":9001"',
+            "command": 'minio server /bitnami/minio/data --console-address ":9001"',
             "environment": {
                 "MINIO_ROOT_USER": "tamforge",
                 "MINIO_ROOT_PASSWORD": "tamforge-local",
             },
             "ports": ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"],
-            "volumes": ["tamforge-minio:/data"],
+            "volumes": ["tamforge-minio:/bitnami/minio/data"],
         },
     },
     "volumes": {"tamforge-postgres": None, "tamforge-minio": None},
