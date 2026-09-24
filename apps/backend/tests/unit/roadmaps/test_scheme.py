@@ -69,6 +69,11 @@ def test_valid_scheme_has_no_issues() -> None:
             "objective: Read the day., exercise_type: nope}",
             "exercise 'nope' is unknown",
         ),
+        (
+            "rest_weekdays: [sunday]",
+            "rest_weekdays: [monday, tuesday, wednesday, thursday, friday, saturday, sunday]",
+            "rest_weekdays leave no study weekday",
+        ),
     ],
 )
 def test_invalid_schemes_report_named_issues(before: str, after: str, fragment: str) -> None:

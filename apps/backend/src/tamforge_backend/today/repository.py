@@ -44,13 +44,14 @@ from ..learning.models import (
     SelfReview,
     StudyDay,
 )
-from ..learning.repository import StudyDayNotReady, StudyDayService
-from ..learning.scheduling import SchemeInfo, scheme_for_version
+from ..learning.repository import StudyDayNotReady, StudyDayService, study_anchor
+from ..learning.scheduling import SchedulePolicyError, SchemeInfo, scheme_for_version
 from ..learning.service import ActivityUnavailable
 from ..models.base import utc_now
 from ..notes.models import StudyNote
 from ..notifications.models import OutboxEvent
 from ..roadmaps.models import CurriculumNode, RoadmapVersion, TaskDefinition
+from ..roadmaps.parser import STUDY_DAYS_PER_WEEK
 from .handoff import HandoffActivityInput, build_handoff
 from .models import ActivityProcessingStatus, Correction, DailyHandoff, Interview
 from .schemas import (
@@ -261,7 +262,11 @@ class SqlAlchemyTodayRepository:
                     analyses=analysis_rows,
                 )
             )
-            roadmap_day = (local_date - setting.study_start_date).days
+            # Numbers and budget come from the version that owns the date, on its own anchor.
+            day_scheme = scheme_for_version(version.normalized_payload.get("scheme"))
+            anchor = study_anchor(setting.study_start_date, version)
+            curriculum_day = self._curriculum_day(day_scheme, anchor, local_date)
+            week, week_day = self._week_and_day(curriculum_day, anchor, local_date)
             source = TodayReadInput(
                 local_date=local_date,
                 timezone=setting.timezone,
@@ -273,8 +278,8 @@ class SqlAlchemyTodayRepository:
                     version_key=version.version_key,
                     version_number=version.version_number,
                     month=version.month_number,
-                    week=(roadmap_day // 7) + 1,
-                    day=local_date.weekday() + 1,
+                    week=week,
+                    day=week_day,
                 ),
                 planned_minutes=day.planned_minutes if day is not None else 0,
                 focused_minutes=day.focused_minutes if day is not None else 0,
@@ -284,7 +289,7 @@ class SqlAlchemyTodayRepository:
                 awaiting_self_reviews=awaiting_self_reviews,
                 analyses=analyses,
                 source_updated_at=source_updated_at,
-                budget=self._budget(scheme, setting.study_start_date, local_date),
+                budget=self._budget(day_scheme, curriculum_day, local_date),
             )
             await self._session.rollback()
             return source
@@ -304,10 +309,34 @@ class SqlAlchemyTodayRepository:
         return scheme_for_version(version.normalized_payload.get("scheme"))
 
     @staticmethod
-    def _budget(scheme: SchemeInfo, study_start_date: date, local_date: date) -> TodayBudget | None:
-        if scheme.is_legacy or local_date < study_start_date:
+    def _curriculum_day(scheme: SchemeInfo, anchor: date, local_date: date) -> int | None:
+        if local_date < anchor:
             return None
-        budget = scheme.budget(scheme.day_number(study_start_date, local_date), local_date)
+        try:
+            return scheme.day_number(anchor, local_date)
+        except SchedulePolicyError:
+            # A legacy version on a non-Monday anchor: no curriculum day to show.
+            return None
+
+    @staticmethod
+    def _week_and_day(
+        curriculum_day: int | None, anchor: date, local_date: date
+    ) -> tuple[int, int]:
+        """The curriculum week and day, grouped the way the parser builds week nodes."""
+        if curriculum_day is None:
+            return max(0, (local_date - anchor).days) // 7 + 1, local_date.weekday() + 1
+        return (
+            (curriculum_day - 1) // STUDY_DAYS_PER_WEEK + 1,
+            (curriculum_day - 1) % STUDY_DAYS_PER_WEEK + 1,
+        )
+
+    @staticmethod
+    def _budget(
+        scheme: SchemeInfo, curriculum_day: int | None, local_date: date
+    ) -> TodayBudget | None:
+        if scheme.is_legacy:
+            return None
+        budget = scheme.budget(curriculum_day, local_date)
         return TodayBudget(
             day_type=budget.day_type,
             target_minutes=budget.target_minutes,

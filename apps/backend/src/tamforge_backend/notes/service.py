@@ -23,7 +23,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..agents.roles.coach import (
-    CoachBlock,
     CoachNoteDraft,
     CoachService,
     CoachUnavailable,
@@ -34,10 +33,10 @@ from ..agents.roles.contracts import RoleContractError
 from ..cards.importing import note_card_commands, skill_slug_for
 from ..cards.service import CardService
 from ..coaching.models import CoachEvidence, CoachMessage, CoachThread
+from ..coaching.service import _block
 from ..database import transaction_scope
 from ..learning.artifacts import unencrypted_metadata
 from ..learning.models import ActivityArtifactLink, ActivityInstance, Artifact, Attempt, StudyDay
-from ..learning.service import _string_items
 from ..models.base import utc_now
 from ..roadmaps.models import TaskDefinition
 from ..storage.models import ObjectStoreError, build_object_key
@@ -473,16 +472,6 @@ async def _chunks(payload: bytes) -> AsyncIterator[bytes]:
 
 def _escape_like(text: str) -> str:
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-
-def _block(definition: TaskDefinition) -> CoachBlock:
-    return CoachBlock(
-        stable_id=definition.stable_id,
-        objective=definition.objective,
-        allowed_ai_role=definition.allowed_ai_role,
-        required_output=_string_items(definition.output_contract, "items"),
-        pass_criteria=_string_items(definition.pass_contract, "items"),
-    )
 
 
 def _apply_draft(note: StudyNote, draft: CoachNoteDraft) -> None:

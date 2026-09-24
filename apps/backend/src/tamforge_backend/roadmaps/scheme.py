@@ -143,6 +143,8 @@ def validate_scheme(
     markdown = decode_markdown(files)
     headings = headings_index(markdown)
     seen: set[str] = set()
+    if len(scheme.rest_weekday_indexes) == len(WEEKDAY_NAMES):
+        issues.append("rest_weekdays leave no study weekday")
     for day in scheme.days:
         if day.id in seen:
             issues.append(f"id '{day.id}' is duplicated")
