@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -73,3 +74,19 @@ def test_metadata_guard_is_import_order_independent_in_a_fresh_process(operation
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_every_migration_table_is_registered_in_metadata() -> None:
+    # A table missing from Base.metadata makes `alembic revision --autogenerate`
+    # emit op.drop_table for it, so register its model module in _MODEL_MODULES.
+    from tamforge_backend.models import Base, load_all_models
+
+    load_all_models()
+    created: set[str] = set()
+    for migration in (Path(__file__).parents[2] / "alembic" / "versions").glob("*.py"):
+        source = migration.read_text()
+        created |= set(re.findall(r'create_table\(\s*"(\w+)"', source))
+        created |= set(re.findall(r"CREATE TABLE (?:IF NOT EXISTS )?(\w+)", source))
+
+    assert created
+    assert sorted(created - set(Base.metadata.tables)) == []
