@@ -8,6 +8,7 @@ import pytest
 from claude_agent_sdk import (
     CLINotFoundError,
     ProcessError,
+    ResultError,
     ResultMessage,
     SystemMessage,
 )
@@ -53,10 +54,10 @@ class FakeQuery:
         return self._iterate()
 
     async def _iterate(self) -> AsyncIterator[Any]:
-        if self.error is not None:
-            raise self.error
         for message in self.messages:
             yield message
+        if self.error is not None:
+            raise self.error
 
 
 def _runtime(query: FakeQuery, environ: dict[str, str] | None = None) -> AgentSdkRuntime:
@@ -119,6 +120,26 @@ async def test_probe_maps_runtime_failures_to_closed_probe_errors() -> None:
         ).probe(requested_model="m")
     with pytest.raises(ProbeError):
         await _runtime(FakeQuery([])).probe(requested_model="m")
+
+
+def _error_result(status: int, text: str) -> tuple[ResultMessage, ResultError]:
+    """What SDK 0.2.152 streams for a refused call: the error result, then `ResultError`."""
+    message = _result(api_error_status=status, is_error=True, result=text, structured_output=None)
+    data = {"subtype": "success", "is_error": True, "result": text, "api_error_status": status}
+    error = ResultError(f"Claude Code returned an error result: {text}", data=data, exit_code=1)
+    return message, error
+
+
+@pytest.mark.anyio
+async def test_probe_reads_the_status_off_the_sdk_result_error() -> None:
+    """A spent quota used to surface as `probe_failed` and the heartbeat's `service`."""
+    message, error = _error_result(429, "You've hit your org's monthly spend limit")
+    with pytest.raises(ProbeQuotaExhausted):
+        await _runtime(FakeQuery([message], error=error)).probe(requested_model="m")
+
+    message, error = _error_result(401, "Invalid bearer token")
+    with pytest.raises(ProbeAuthenticationFailed):
+        await _runtime(FakeQuery([message], error=error)).probe(requested_model="m")
 
 
 @pytest.mark.anyio

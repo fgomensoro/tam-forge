@@ -272,3 +272,58 @@ def test_the_gate_reads_the_attestation_on_a_fresh_session(monkeypatch: pytest.M
     assert reason == "permission_required"
     assert len(sessions) == 2
     assert sessions[0].rolled_back == 1
+
+
+def test_the_probe_verdict_is_reused_between_beats(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The probe is a real Claude call; asking every 30-second beat spent the quota."""
+    from datetime import UTC, datetime, timedelta
+
+    from tamforge_backend.agents import compatibility
+    from tamforge_backend.workers import claude
+
+    probed: list[datetime] = []
+
+    async def probe(**kwargs: object) -> compatibility.CompatibilityResult:
+        now = kwargs["now"]
+        assert isinstance(now, datetime)
+        probed.append(now)
+        return compatibility.CompatibilityResult(
+            status="needs_attention", reason="quota_exhausted", remediation="", checked_at=now
+        )
+
+    monkeypatch.setenv("TAMFORGE_DATABASE_URL", "postgresql+asyncpg://unused/unused")
+    monkeypatch.setattr(compatibility, "probe_claude_compatibility", probe)
+    monkeypatch.setattr(claude, "_last_probe", None)
+    start = datetime(2026, 9, 24, 1, 0, tzinfo=UTC)
+
+    def beat(at: datetime) -> str | None:
+        return asyncio.run(claude.probe_step(_AutobeginSession, owner_id=1, now=at))  # type: ignore[arg-type]
+
+    assert beat(start) == "quota"
+    assert beat(start + timedelta(seconds=30)) == "quota"
+    assert probed == [start]
+    assert beat(start + claude.PROBE_INTERVAL) == "quota"
+    assert probed == [start, start + claude.PROBE_INTERVAL]
+
+
+@pytest.mark.parametrize(
+    ("message", "category", "forgets"),
+    [
+        ("the subscription quota is spent", "resource_exhausted", True),
+        ("the subscription credential was refused", "permission_required", True),
+        ("the agent runtime failed to complete", "transient_dependency", False),
+    ],
+)
+def test_a_refused_job_forgets_the_cached_probe_verdict(
+    monkeypatch: pytest.MonkeyPatch, message: str, category: str, forgets: bool
+) -> None:
+    """A cached "ready" would otherwise let every beat spend a job's attempts on a 429."""
+    from datetime import UTC, datetime
+
+    from tamforge_backend.workers import claude
+
+    verdict = (datetime(2026, 9, 24, 1, 0, tzinfo=UTC), None)
+    monkeypatch.setattr(claude, "_last_probe", verdict)
+
+    assert claude._unavailable_category(RuntimeError(message)) == category
+    assert claude._last_probe == (None if forgets else verdict)

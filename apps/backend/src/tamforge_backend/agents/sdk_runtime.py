@@ -426,6 +426,13 @@ class AgentSdkRuntime:
 
 
 def _translate_process_error(exc: Exception) -> Exception:
+    # Since SDK 0.2.152 a refused call ends in `ResultError`, a `ProcessError` that
+    # carries the HTTP status; its prose ("monthly spend limit") matches no marker.
+    status = getattr(exc, "api_error_status", None)
+    if status in (401, 403):
+        return AgentAuthenticationFailed("the subscription credential was refused")
+    if status == 429:
+        return AgentQuotaExhausted("the subscription quota is spent")
     text = " ".join(
         str(part).lower()
         for part in (getattr(exc, "stderr", None), getattr(exc, "message", None), str(exc))

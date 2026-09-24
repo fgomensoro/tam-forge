@@ -134,7 +134,10 @@ rendered, because an SDK error can carry the credential it tried to use. Read th
 worker host's own logs for the detail.
 
 Two rules matter operationally. A quota failure is not a retry loop: wait for the
-window rather than hammering it, and never resolve it by adding an API key. And a
+window rather than hammering it, and never resolve it by adding an API key. The probe
+is itself a Claude call, so the Claude worker keeps each verdict for `PROBE_INTERVAL`
+(15 minutes) instead of asking on every 30-second beat; after a quota window resets,
+the heartbeat can take that long to return to `ok`. And a
 `blocked` result stops Claude work from claiming jobs without making the API
 unready — every non-Claude study path keeps working, which is the whole point of the
 gate failing closed.
