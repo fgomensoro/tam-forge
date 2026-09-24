@@ -166,6 +166,28 @@ def study_day_number(
     return number
 
 
+def first_open_study_date(
+    local_today: date,
+    last_planned: date | None,
+    *,
+    rest_weekdays: frozenset[int] = frozenset(),
+) -> date:
+    """The first date a newly activated version can own: its day 1.
+
+    A materialized study day is frozen under the version that planned it, so a
+    later version starts after the last planned date, never before today, and
+    never on one of its own rest weekdays.
+    """
+    if len(rest_weekdays) >= 7:
+        raise SchedulePolicyError("a scheme needs at least one study weekday")
+    candidate = local_today
+    if last_planned is not None and last_planned >= candidate:
+        candidate = last_planned + timedelta(days=1)
+    while candidate.weekday() in rest_weekdays:
+        candidate += timedelta(days=1)
+    return candidate
+
+
 @dataclass(frozen=True, slots=True)
 class SchemeInfo:
     """What the scheduler needs from a stored roadmap version's scheme."""

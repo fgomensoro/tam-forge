@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -370,6 +371,9 @@ class RoadmapVersion(Base):
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Learner-local date of this version's day 1, set when a later version is activated.
+    # NULL means the version is anchored on learner_settings.study_start_date.
+    starts_on: Mapped[date | None] = mapped_column(Date)
     mirror_status: Mapped[str] = mapped_column(Text, nullable=False)
     mirror_ref: Mapped[str | None] = mapped_column(Text)
     mirror_error_code: Mapped[str | None] = mapped_column(Text)

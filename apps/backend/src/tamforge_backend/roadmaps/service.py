@@ -8,6 +8,7 @@ import re
 import shutil
 import zipfile
 from collections.abc import AsyncIterator, Iterator, Mapping
+from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, cast
@@ -131,6 +132,14 @@ def _issue_payload(issue: ValidationIssue) -> dict[str, object]:
         "path": issue.path,
         "severity": issue.severity,
         "message": issue.message,
+    }
+
+
+def _rejection_report(code: str, path: str | None, message: str) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "accepted": False,
+        "issues": [{"code": code, "path": path, "severity": "error", "message": message}],
     }
 
 
@@ -373,6 +382,19 @@ class RoadmapService:
                 validation_report=report,
                 failure_code=failure_code,
             )
+        # The key becomes the version's unique key within the source; approving a
+        # taken one could never succeed, so the Review step must name it now.
+        if await self._repository.version_key_exists(
+            owner_id=owner_id, source_id=record.source_id, version_key=parsed.roadmap_version
+        ):
+            return await self._reject_invalid(
+                owner_id,
+                record.id,
+                "roadmap_version_exists",
+                SCHEME_FILE_NAME,
+                f"program.key {parsed.roadmap_version!r} is already a version of this "
+                "roadmap; give the scheme a new program.key",
+            )
         previous_payload = await self._repository.latest_normalized_payload(
             owner_id=owner_id,
             source_id=record.source_id,
@@ -409,18 +431,7 @@ class RoadmapService:
             parsed = parse_roadmap(files=files, config=self._config)
         except (RoadmapParseError, UnicodeError, ValueError) as exc:
             return (
-                {
-                    "schema_version": 1,
-                    "accepted": False,
-                    "issues": [
-                        {
-                            "code": "roadmap_validation_failed",
-                            "path": None,
-                            "severity": "error",
-                            "message": str(exc),
-                        }
-                    ],
-                },
+                _rejection_report("roadmap_validation_failed", None, str(exc)),
                 "validation_failed",
                 None,
             )
@@ -437,6 +448,16 @@ class RoadmapService:
             },
             None,
             parsed,
+        )
+
+    async def _reject_invalid(
+        self, owner_id: int, import_id: int, code: str, path: str | None, message: str
+    ) -> RoadmapImportRecord:
+        return await self._repository.reject_validation(
+            owner_id=owner_id,
+            import_id=import_id,
+            validation_report=_rejection_report(code, path, message),
+            failure_code="validation_failed",
         )
 
     async def get_import(self, *, owner_id: int, import_id: int) -> RoadmapImportRecord:
@@ -611,6 +632,9 @@ class RoadmapService:
 
     async def list_versions(self, *, owner_id: int) -> tuple[RoadmapVersionRecord, ...]:
         return await self._repository.list_versions(owner_id=owner_id)
+
+    async def first_open_date(self, *, owner_id: int) -> date:
+        return await self._repository.first_open_date(owner_id=owner_id)
 
     async def _open_package(self, object_key: str) -> InspectedRoadmapPackage:
         temporary = TemporaryDirectory(prefix="tamforge-roadmap-load-")

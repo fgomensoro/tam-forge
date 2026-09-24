@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Literal, Protocol
 
@@ -63,6 +63,8 @@ class PlannerRequest:
     files: Mapping[str, str]
     instruction: str
     today: date
+    # The first date the scheme's day 1 can land on; earlier dates are already planned.
+    first_day: date | None = None
     current_scheme: Mapping[str, object] | None = None
     evidence_summary: tuple[EvidenceLine, ...] = ()
     repair_errors: tuple[str, ...] = ()
@@ -97,16 +99,7 @@ class _RuntimeAdapter:
         self, run: PreparedAgentRun, *, repair_errors: tuple[str, ...] = ()
     ) -> TransportResult:
         del run
-        request = PlannerRequest(
-            mode=self.request.mode,
-            files=self.request.files,
-            instruction=self.request.instruction,
-            today=self.request.today,
-            current_scheme=self.request.current_scheme,
-            evidence_summary=self.request.evidence_summary,
-            repair_errors=repair_errors,
-        )
-        payload = await self.transport.propose(request)
+        payload = await self.transport.propose(replace(self.request, repair_errors=repair_errors))
         self.last_payload = payload
         return TransportResult(payload=payload, turns=1)
 
@@ -127,12 +120,15 @@ class PlannerService:
         self._config = config
         self._model = model
 
-    async def generate(self, *, files: Mapping[str, bytes], instruction: str) -> SchemeProposal:
+    async def generate(
+        self, *, files: Mapping[str, bytes], instruction: str, first_day: date
+    ) -> SchemeProposal:
         request = PlannerRequest(
             mode="generate",
             files=_markdown_text(files),
             instruction=instruction.strip(),
             today=date.today(),
+            first_day=first_day,
         )
         return await self._propose(request, files)
 
@@ -143,6 +139,7 @@ class PlannerService:
         current_scheme: Mapping[str, object],
         evidence: Sequence[EvidenceLine],
         today: date,
+        first_day: date,
         instruction: str,
     ) -> SchemeProposal:
         request = PlannerRequest(
@@ -150,6 +147,7 @@ class PlannerService:
             files=_markdown_text(files),
             instruction=instruction.strip(),
             today=today,
+            first_day=first_day,
             current_scheme=current_scheme,
             evidence_summary=tuple(evidence),
         )
@@ -164,7 +162,10 @@ class PlannerService:
             requested_context=(TASK_BRIEF, ROADMAP_STATE, EVIDENCE_SUMMARY),
         )
         adapter = _RuntimeAdapter(self._transport, request)
-        runtime = BoundedClaudeRuntime(adapter, validate=self._issues_for(files))
+        program = (request.current_scheme or {}).get("program")
+        taken_key = program.get("key") if isinstance(program, Mapping) else None
+        validate = self._issues_for(files, taken_key)
+        runtime = BoundedClaudeRuntime(adapter, validate=validate)
         digest = hashlib.sha256(
             f"{request.mode}:{request.today.isoformat()}:{request.instruction}".encode()
         ).hexdigest()[:24]
@@ -181,7 +182,7 @@ class PlannerService:
             result = await runtime.run(prepared)
         except AgentOutputInvalid:
             payload = adapter.last_payload or {}
-            issues = self._issues_for(files)(payload) or ("the planner did not return a scheme",)
+            issues = validate(payload) or ("the planner did not return a scheme",)
             return SchemeProposal(
                 yaml_text=render_scheme_yaml(payload) if payload else "",
                 summary={},
@@ -197,13 +198,23 @@ class PlannerService:
             issues=(),
         )
 
-    def _issues_for(self, files: Mapping[str, bytes]):  # type: ignore[no-untyped-def]
+    def _issues_for(  # type: ignore[no-untyped-def]
+        self, files: Mapping[str, bytes], taken_key: str | None = None
+    ):
         def validate(payload: Mapping[str, object]) -> tuple[str, ...]:
             try:
                 scheme = scheme_from_payload(payload)
             except SchemeValidationError as exc:
                 return (str(exc),)
-            return validate_scheme(scheme, files=files, config=self._config)
+            issues = validate_scheme(scheme, files=files, config=self._config)
+            if scheme.program.key == taken_key:
+                # The key is the version's unique key: a reforecast that keeps it
+                # could never be approved.
+                issues += (
+                    f"program.key {taken_key!r} belongs to the current version; "
+                    "a reforecast needs a new program.key",
+                )
+            return issues
 
         return validate
 

@@ -170,6 +170,14 @@ class FakeRoadmapRepository(RoadmapRepository):
         ]
         return candidates[-1].normalized_payload if candidates else None
 
+    async def version_key_exists(self, *, owner_id: int, source_id: int, version_key: str) -> bool:
+        return any(
+            item.owner_id == owner_id
+            and item.source_id == source_id
+            and item.version_key == version_key
+            for item in self.versions.values()
+        )
+
     async def approve_import(self, approval: ImportApproval) -> RoadmapVersionRecord:
         self.events.append("repository.approve")
         item = self.imports[approval.import_id]
@@ -656,3 +664,46 @@ async def test_staging_with_a_scheme_creates_a_validated_import_from_the_snapsho
             yaml_text="days: [",
             idempotency_key="scheme:1:broken",
         )
+
+
+@pytest.mark.anyio
+async def test_a_scheme_reusing_an_approved_program_key_is_rejected_by_name() -> None:
+    events: list[str] = []
+    repository = FakeRoadmapRepository(events)
+    service = RoadmapService(
+        config=CONFIG, repository=repository, object_store=RecordingStore(events), mirror=None
+    )
+    with _package() as package:
+        legacy = await service.stage_package(
+            owner_id=1,
+            source_key="obsidian-main",
+            source_name="TAM Roadmap",
+            source_kind="obsidian",
+            package_kind="zip",
+            idempotency_key="legacy-import",
+            package=package,
+        )
+    first = await service.stage_with_scheme(
+        owner_id=1,
+        source_key="obsidian-main",
+        object_key=legacy.object_key,
+        yaml_text=SCHEME_FOR_MONTH_ONE,
+        idempotency_key="scheme:1:first",
+    )
+    await service.approve_import(owner_id=1, import_id=first.id)
+
+    reforecast = await service.stage_with_scheme(
+        owner_id=1,
+        source_key="obsidian-main",
+        object_key=legacy.object_key,
+        yaml_text=SCHEME_FOR_MONTH_ONE.replace("Read the day.", "Reread the day."),
+        idempotency_key="reforecast:1:second",
+    )
+
+    assert reforecast.status == "rejected"
+    assert reforecast.failure_code == "validation_failed"
+    [issue] = reforecast.validation_report["issues"]
+    assert issue["code"] == "roadmap_version_exists"
+    assert "month_one_scheme" in issue["message"]
+    with pytest.raises(ImportNotApprovable):
+        await service.approve_import(owner_id=1, import_id=reforecast.id)

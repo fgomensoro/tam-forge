@@ -153,6 +153,7 @@ async def test_propose_sends_the_package_and_repair_errors_and_returns_the_schem
         files={"Week 1.md": "# Week 1\n\n## Day 1\n"},
         instruction="two hours a day",
         today=date(2026, 9, 12),
+        first_day=date(2026, 9, 13),
         current_scheme={"days": {}},
         evidence_summary=(EvidenceLine("d01", "done"),),
         repair_errors=("day 'd01' block minutes 10 do not equal budget 20",),
@@ -165,6 +166,7 @@ async def test_propose_sends_the_package_and_repair_errors_and_returns_the_schem
     assert payload == scheme
     prompt = query.calls[0]["prompt"]
     assert "Mode: reforecast." in prompt and "Today: 2026-09-12." in prompt
+    assert "Day 1 of your scheme is the first date on or after 2026-09-13" in prompt
     assert "two hours a day" in prompt and "### Week 1.md" in prompt
     assert "- d01: done" in prompt and "do not equal budget 20" in prompt
     assert query.calls[0]["options"].model == "claude-opus-5"

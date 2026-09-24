@@ -329,7 +329,11 @@ async def propose_scheme_for_import(
 ) -> SchemeProposalResponse:
     record = await service.get_import(owner_id=owner.owner_id, import_id=import_id)
     files = await service.snapshot_files(record.object_key)
-    proposal = await planner.generate(files=files, instruction=command.instruction)
+    proposal = await planner.generate(
+        files=files,
+        instruction=command.instruction,
+        first_day=await service.first_open_date(owner_id=owner.owner_id),
+    )
     _prevent_storage(response)
     return _proposal_response(proposal)
 
@@ -387,6 +391,7 @@ async def propose_reforecast(
         current_scheme=current,
         evidence=evidence,
         today=date.today(),
+        first_day=await service.first_open_date(owner_id=owner.owner_id),
         instruction=command.instruction,
     )
     _prevent_storage(response)
