@@ -1,8 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Settings > Claude: whether the server's Claude worker runs with a valid token, and
-/// the command that replaces the token. The token itself never passes through the app.
+/// Settings > Claude: which of the two installed tokens the server's Claude worker uses, whether it is valid, and the command that replaces a slot's token. Tokens never pass through the app.
 struct ClaudeSettingsView: View {
     @ObservedObject var session: ShellSessionModel
     @StateObject private var model: ClaudeSettingsModel
@@ -29,6 +28,18 @@ struct ClaudeSettingsView: View {
 
     private var status: some View {
         VStack(alignment: .leading, spacing: Organic.Space.p8) {
+            Picker("Token slot", selection: Binding(
+                get: { model.slot ?? .a },
+                set: { newSlot in Task { await model.choose(newSlot) } }
+            )) {
+                ForEach(ClaudeTokenSlot.allCases, id: \.self) { slot in
+                    Text(slot.label).tag(slot)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .disabled(model.isLoading || model.slot == nil)
+            .accessibilityIdentifier("claudeSettingsSlot")
             HStack(spacing: Organic.Space.p12) {
                 OrganicStatusDot(color: dotColor)
                 Text(statusTitle)
@@ -40,7 +51,11 @@ struct ClaudeSettingsView: View {
                     .disabled(model.isLoading)
                     .accessibilityIdentifier("claudeSettingsRefresh")
             }
-            if let state = model.state {
+            if let switched = model.switchedSlot {
+                Text("The worker switches to \(switched.label) on its next beat. Refresh in a minute to see its status.")
+                    .organic(.small)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let state = model.state {
                 Text(state.detail).organic(.small).fixedSize(horizontal: false, vertical: true)
             }
             if let errorMessage = model.errorMessage {
@@ -54,18 +69,18 @@ struct ClaudeSettingsView: View {
 
     private var rotation: some View {
         VStack(alignment: .leading, spacing: Organic.Space.p12) {
-            Text("To change the token, run this from the repository on your Mac. The token never passes through the app.")
+            Text("To install or replace this slot's token, run this from the repository on your Mac. The token never passes through the app.")
                 .organic(.small)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: Organic.Space.p12) {
-                Text(ClaudeSettingsModel.rotateCommand)
+                Text(rotateCommand)
                     .organic(.mono)
                     .textSelection(.enabled)
                     .accessibilityIdentifier("claudeSettingsCommand")
                 Spacer(minLength: 0)
                 Button("Copy") {
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(ClaudeSettingsModel.rotateCommand, forType: .string)
+                    NSPasteboard.general.setString(rotateCommand, forType: .string)
                 }
                 .buttonStyle(OrganicSecondaryButtonStyle())
                 .accessibilityIdentifier("claudeSettingsCopyCommand")
@@ -74,7 +89,12 @@ struct ClaudeSettingsView: View {
         .organicCard(radius: Organic.Radius.r24)
     }
 
+    private var rotateCommand: String {
+        ClaudeSettingsModel.rotateCommand(for: model.slot ?? .a)
+    }
+
     private var statusTitle: String {
+        if let switched = model.switchedSlot { return "Switched to \(switched.label)" }
         if let state = model.state { return state.title }
         return model.errorMessage == nil ? "Checking status" : "Status unavailable"
     }
