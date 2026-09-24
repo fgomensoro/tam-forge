@@ -210,3 +210,16 @@ def test_reference_citations_are_rendered_as_unverified_material() -> None:
     assert "never present it as demonstrated" in prompt
     assert "- [answer_bank] Handling an escalation" in prompt
     assert "Reference material" not in render_coach_prompt(_request())
+
+
+@pytest.mark.anyio
+async def test_the_transport_receives_the_reference_material() -> None:
+    from dataclasses import replace
+
+    transport = FakeTransport([GOOD])
+    service = CoachService(transport, model="m")
+    reference = ("[answer_bank] Handling an escalation (unverified): text",)
+
+    await service.turn(replace(_request(), reference=reference))
+
+    assert transport.requests[0].reference == reference

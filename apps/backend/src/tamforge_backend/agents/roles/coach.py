@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -203,14 +203,7 @@ class _NoteRuntimeAdapter:
         self, run: PreparedAgentRun, *, repair_errors: tuple[str, ...] = ()
     ) -> TransportResult:
         del run
-        request = NoteRequest(
-            block=self.request.block,
-            committed_attempt=self.request.committed_attempt,
-            self_review=self.request.self_review,
-            coach_messages=self.request.coach_messages,
-            accepted_evidence=self.request.accepted_evidence,
-            repair_errors=repair_errors,
-        )
+        request = replace(self.request, repair_errors=repair_errors)
         payload = await self.transport.draft_note(request)
         return TransportResult(payload=payload, turns=1)
 
@@ -225,16 +218,7 @@ class _RuntimeAdapter:
         self, run: PreparedAgentRun, *, repair_errors: tuple[str, ...] = ()
     ) -> TransportResult:
         del run
-        request = CoachRequest(
-            block=self.request.block,
-            committed_attempt=self.request.committed_attempt,
-            learner_message=self.request.learner_message,
-            next_step=self.request.next_step,
-            self_review=self.request.self_review,
-            prior_messages=self.request.prior_messages,
-            repair_errors=repair_errors,
-            handoff=self.request.handoff,
-        )
+        request = replace(self.request, repair_errors=repair_errors)
         payload = await self.transport.respond(request)
         self.last_payload = payload
         return TransportResult(payload=payload, turns=1)
