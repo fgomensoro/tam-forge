@@ -3,11 +3,11 @@
 Three rules, all enforced by shape rather than by discipline at the call site:
 
 - It never runs in a block whose `allowed_ai_role` forbids it (`none`, or a role
-  other than coach or tutor, except an interviewer block whose procedure is the
-  interview cycle, which schedules coaching between Attempt A and Attempt B).
-  Before the learner commits it asks a recall question and gives hints on request; a
-  hint is reported in `hint_given` and the caller records it as assistance on the
-  attempt. After the commit it corrects.
+  other than coach, tutor or interviewer). An interviewer block forbids coaching
+  during Attempt A, so there it answers only after the commit, and never in the
+  sealed final mock. Elsewhere, before the learner commits it asks a recall question
+  and gives hints on request; a hint is reported in `hint_given` and the caller
+  records it as assistance on the attempt. After the commit it corrects.
 - Its output is a message, the next step taken from the plan the caller hands it
   (never invented), and proposed evidence the learner still has to accept. There is
   no field through which it could mark anything done.
@@ -46,9 +46,9 @@ COACH_JOB_TYPE = "claude.followup"
 COACH_MAX_TURNS = 4
 COACH_WALL_TIME_SECONDS = 120.0
 COACHING_ROLES: frozenset[str] = frozenset({"coach", "tutor"})
-# The interview cycle's own procedure has a coaching step after Attempt A; the sealed
-# final mock, also an interviewer block, has none.
-INTERVIEW_CYCLE_PHASE = "interview_cycle"
+# Interviewer contracts forbid coaching during Attempt A, not after it is committed;
+# only the sealed final mock forbids it outright.
+SEALED_MOCK_PHASE = "sealed_final_mock"
 CoachPhase = Literal["before_commit", "after_commit"]
 MAX_MESSAGE_CHARS = 2000
 EvidenceKind = Literal["note", "correction", "question", "card"]
@@ -172,7 +172,7 @@ class NoteTransport(Protocol):
 def coaching_allowed(block: CoachBlock) -> bool:
     if block.allowed_ai_role in COACHING_ROLES:
         return True
-    return block.allowed_ai_role == "interviewer" and INTERVIEW_CYCLE_PHASE in block.phases
+    return block.allowed_ai_role == "interviewer" and SEALED_MOCK_PHASE not in block.phases
 
 
 def validate_coach_turn(
@@ -253,6 +253,10 @@ class CoachService:
         """One coaching turn, or a contract error the caller renders as such."""
         if not coaching_allowed(request.block):
             raise RoleContractError("this block does not allow coaching")
+        if request.block.allowed_ai_role == "interviewer" and request.phase == "before_commit":
+            raise RoleContractError(
+                "an interviewer block is coached only after Attempt A is committed"
+            )
         prepare_role_prompt(
             AgentRole.COACH,
             committed=request.phase == "after_commit",

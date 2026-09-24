@@ -49,6 +49,22 @@
       "expect": "accepted"
     },
     {
+      "case_id": "interviewer-before-commit",
+      "block": {
+        "stable_id": "m1-w1-d03-communication",
+        "objective": "Explain a webhook incident to a hiring manager.",
+        "allowed_ai_role": "interviewer",
+        "required_output": ["Saved independent spoken or written Attempt A."],
+        "pass_criteria": ["Commit Attempt A without mid-attempt coaching."],
+        "phases": ["frame", "attempt_a", "self_review"]
+      },
+      "committed_attempt": "",
+      "learner_message": "give me a hint",
+      "next_step": "Commit Attempt A first; the coach answers after the commit.",
+      "answers": [{"message": "Start with the impact.", "next_step": "Commit Attempt A first; the coach answers after the commit.", "proposed_evidence": []}],
+      "expect": "refused_by_contract"
+    },
+    {
       "case_id": "forbidden-block-interviewer-sealed",
       "block": {
         "stable_id": "p1-w06-d06-final-mock",

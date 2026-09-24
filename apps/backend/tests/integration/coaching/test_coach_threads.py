@@ -356,7 +356,17 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
                     thread = await disabled.thread(owner_id=owner_id, activity_id=coached_id)
                     assert len(thread.messages) == 8
 
-                # An interviewer block is coached only when its contract schedules coaching.
+                # An interviewer block forbids coaching during Attempt A, not after it.
+                async with factory() as session:
+                    before = await service(session).thread(
+                        owner_id=owner_id, activity_id=interview_id
+                    )
+                    assert before.next_step.startswith("Commit Attempt A first")
+                    with pytest.raises(CoachingConflict, match="only after Attempt A"):
+                        await service(session).send(
+                            owner_id=owner_id, activity_id=interview_id, text="a hint?"
+                        )
+
                 async with factory() as session:
                     async with transaction_scope(session):
                         activity = await session.get(ActivityInstance, interview_id)
@@ -422,15 +432,7 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
                             )
                         )
 
-                # The month scheme's communication contract has no coaching step.
-                async with factory() as session:
-                    with pytest.raises(CoachingConflict, match="does not allow"):
-                        await service(session).send(
-                            owner_id=owner_id, activity_id=interview_id, text="how did it go?"
-                        )
-
-                # The Phase 1 interview cycle: Attempt A, coaching handoff, Attempt B.
-                contract("interview")
+                # The month scheme's communication block, as production runs it.
                 async with factory() as session:
                     opened = await service(session).thread(
                         owner_id=owner_id, activity_id=interview_id
@@ -441,6 +443,14 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
                     )
                     assert [m.speaker for m in coached.messages] == ["learner", "coach"]
                     assert transport.requests[-1].block.allowed_ai_role == "interviewer"  # type: ignore[attr-defined]
+
+                # The Phase 1 interview cycle: Attempt A, coaching handoff, Attempt B.
+                contract("interview")
+                async with factory() as session:
+                    coached = await service(session).send(
+                        owner_id=owner_id, activity_id=interview_id, text="and Attempt B?"
+                    )
+                    assert [m.speaker for m in coached.messages][-2:] == ["learner", "coach"]
 
                 # The sealed final mock is an interviewer block too, and stays uncoached.
                 contract("sealed_interview")
