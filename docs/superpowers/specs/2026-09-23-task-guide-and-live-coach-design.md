@@ -60,10 +60,17 @@ row. No existing identifier changes.
 
 Today the rule "commit before coaching" is enforced by refusing to speak. It becomes
 "coaching before the commit is recorded as assistance". The learner may talk to the
-Coach at any point; whatever help arrives before the commit lands on the activity's
-`assistance_mode`, the attempt copies it at commit time, and the reviewer and the
+Coach at any point; whatever help arrives before the commit lands on the coaching
+thread's `assistance_mode`, the learning service copies the stronger of the activity's
+and the thread's mode onto the attempt at commit time, and the reviewer and the
 evidence service already treat `hint_ladder` as assisted work. Nothing new has to
-score or penalise; the field was waiting for a writer.
+score or penalise.
+
+The mode lives on the thread rather than on the activity because every persisted
+change to an `ActivityInstance` must bump its optimistic version and change its state
+or source visibility (`learning/models.py`, `validate_activity_workflow`); a coach
+turn is neither, and a version bump from the coach would make the app's next command
+fail on a stale version. The thread already updates on every turn.
 
 ### Backend
 
@@ -84,15 +91,20 @@ score or penalise; the field was waiting for a writer.
     try to detect a full answer in the text; the validator stays structural and the
     prompt carries the rule.
 - `agents/sdk_runtime.py`: `COACH_SYSTEM_PROMPT` describes both phases.
+- `coaching/models.py` and one migration: `coach_threads.assistance_mode`, text, not
+  null, default `none`, check constraint over `none | coach_preparation | hint_ladder`.
 - `coaching/service.py`:
   - `send` drops the `output_committed_at is None` conflict.
-  - Before the commit, after a successful turn: `assistance_mode` becomes
+  - Before the commit, after a successful turn: the thread's `assistance_mode` becomes
     `coach_preparation` if it is `none`, and `hint_ladder` if the turn set
-    `hint_given`. The write happens on the locked `ActivityInstance` in the same
-    transaction as the messages. `hint_ladder` never downgrades back.
+    `hint_given`. The write happens in the same transaction as the messages.
+    `hint_ladder` never downgrades back.
   - `next_step_for` returns, before the commit, "Write your independent attempt; ask
     the coach for a hint only when stuck." and keeps the later steps.
   - `CoachThreadResponse` gains `assistance_mode` so the app can show it.
+- `learning/service.py`: `commit_output` writes the attempt's `assistance_mode` as the
+  stronger of the activity's mode and the thread's mode (`none` < `coach_preparation`
+  < `hint_ladder`).
 - `coaching/routes.py`: unchanged shape; `committed` stays in the response.
 
 ### macOS
@@ -111,9 +123,8 @@ score or penalise; the field was waiting for a writer.
 
 ## Data and errors
 
-No migration. `assistance_mode` already allows the two values written here. A Coach
-failure before the commit leaves `assistance_mode` untouched, because the write follows
-the turn inside one transaction. Claude disabled or the transport missing keeps the
+One additive migration on `coach_threads`. A Coach failure before the commit leaves
+`assistance_mode` untouched, because the write follows the turn inside one transaction. Claude disabled or the transport missing keeps the
 existing `CoachUnavailable` path.
 
 ## Testing
