@@ -242,6 +242,7 @@ class _RuntimeAdapter:
             prior_messages=self.request.prior_messages,
             repair_errors=repair_errors,
             handoff=self.request.handoff,
+            reference=self.request.reference,
         )
         payload = await self.transport.respond(request)
         self.last_payload = payload
