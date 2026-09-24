@@ -42,9 +42,9 @@ embedding workers as their own users with `NoNewPrivileges`, `PrivateTmp`,
 `LimitNOFILE`, bounded restarts and journald rate limits. Credentials are per service
 through `LoadCredential`: only the general worker gets the export private key, only the
 speech worker gets the recording-manifest keyring, and the API and the general worker get
-the public trust bundle. The Claude worker alone reads its subscription token, from
-`/etc/tamforge/secrets/claude-oauth.env` through `EnvironmentFile`, because the SDK takes
-it from the environment. No unit `Requires=` Claude or
+the public trust bundle. The Claude worker alone reads its subscription tokens, from
+`/etc/tamforge/secrets/claude-oauth.env` (slot A) and `/etc/tamforge/secrets/claude-oauth-b.env`
+(slot B) through `EnvironmentFile`, because the SDK takes the token from the environment. No unit `Requires=` Claude or
 speech, so ingest and study stay up when those are degraded.
 
 `infra/caddy/Caddyfile` terminates TLS, proxies to `127.0.0.1:8000` with streaming
