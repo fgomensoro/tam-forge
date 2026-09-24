@@ -3,7 +3,9 @@
 Three rules, all enforced by shape rather than by discipline at the call site:
 
 - It never runs in a block whose `allowed_ai_role` forbids it (`none`, or a role
-  other than coach or tutor), and never before the learner commits an attempt.
+  other than coach or tutor, except an interviewer block whose procedure is the
+  interview cycle, which schedules coaching between Attempt A and Attempt B), and
+  never before the learner commits an attempt.
 - Its output is a message, the next step taken from the plan the caller hands it
   (never invented), and proposed evidence the learner still has to accept. There is
   no field through which it could mark anything done.
@@ -42,6 +44,9 @@ COACH_JOB_TYPE = "claude.followup"
 COACH_MAX_TURNS = 4
 COACH_WALL_TIME_SECONDS = 120.0
 COACHING_ROLES: frozenset[str] = frozenset({"coach", "tutor"})
+# The interview cycle's own procedure has a coaching step after Attempt A; the sealed
+# final mock, also an interviewer block, has none.
+INTERVIEW_CYCLE_PHASE = "interview_cycle"
 MAX_MESSAGE_CHARS = 2000
 EvidenceKind = Literal["note", "correction", "question", "card"]
 
@@ -87,6 +92,7 @@ class CoachBlock:
     allowed_ai_role: str
     required_output: tuple[str, ...]
     pass_criteria: tuple[str, ...]
+    phases: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,7 +162,9 @@ class NoteTransport(Protocol):
 
 
 def coaching_allowed(block: CoachBlock) -> bool:
-    return block.allowed_ai_role in COACHING_ROLES
+    if block.allowed_ai_role in COACHING_ROLES:
+        return True
+    return block.allowed_ai_role == "interviewer" and INTERVIEW_CYCLE_PHASE in block.phases
 
 
 def validate_coach_turn(payload: Mapping[str, object], *, next_step: str) -> tuple[str, ...]:
