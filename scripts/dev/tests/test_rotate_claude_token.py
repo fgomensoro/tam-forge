@@ -173,7 +173,8 @@ def test_the_host_script_installs_0640_before_the_restart_and_reads_only_newer_b
         "-rw-------",
         "restart tamforge-claude-worker",
         "claude-oauth.env",
-        "select coalesce((select slot from claude_token_slots order by owner_id limit 1), 'a')",
+        "select coalesce((select slot from claude_token_slots"
+        " where owner_id = (select min(id) from owners)), 'a')",
         "select clock_timestamp()",
         "select status || ' ' || reason from worker_heartbeats where worker = 'claude' "
         "and observed_at > '2026-09-24 01:14:20.88667+00'",

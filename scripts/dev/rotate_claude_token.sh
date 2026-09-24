@@ -55,7 +55,8 @@ chmod 0640 /etc/tamforge/secrets/$file.new
 mv -f /etc/tamforge/secrets/$file.new /etc/tamforge/secrets/$file
 systemctl restart tamforge-claude-worker
 # The heartbeat speaks for the active slot only; rotating the other one has nothing to wait for.
-active="\$(sudo -u postgres psql -d tamforge -Atc "select coalesce((select slot from claude_token_slots order by owner_id limit 1), 'a')")"
+# The first owner, as the worker picks it.
+active="\$(sudo -u postgres psql -d tamforge -Atc "select coalesce((select slot from claude_token_slots where owner_id = (select min(id) from owners)), 'a')")"
 if [ "\$active" != "$slot" ]; then echo "inactive \$active"; exit 0; fi
 # Read after the restart and from the database's own clock: restart returns only once the
 # old process has exited, including its last beat, so any newer row is the new process's.

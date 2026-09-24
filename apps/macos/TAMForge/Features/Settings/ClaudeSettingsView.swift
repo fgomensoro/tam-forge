@@ -1,7 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// Settings > Claude: which of the two installed tokens the server's Claude worker uses, whether it is valid, and the command that replaces a slot's token. Tokens never pass through the app.
+/// Settings > Claude: which of the two installed tokens the server's Claude worker uses,
+/// whether it is valid, and the command that replaces a slot's token. Tokens never pass
+/// through the app.
 struct ClaudeSettingsView: View {
     @ObservedObject var session: ShellSessionModel
     @StateObject private var model: ClaudeSettingsModel
