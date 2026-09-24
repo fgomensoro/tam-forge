@@ -50,6 +50,7 @@ def _thread(messages: int = 0) -> CoachThreadResponse:
         thread_id=7 if messages else None,
         coaching_allowed=True,
         committed=True,
+        assistance_mode="none",
         next_step="Submit the mandatory self-review for this block.",
         messages=items,
     )

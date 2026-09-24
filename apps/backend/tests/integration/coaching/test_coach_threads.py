@@ -1,4 +1,4 @@
-"""A coaching thread on a real database: refuse before commit, answer after, accept evidence."""
+"""A coaching thread on a real database: help before commit, answer after, accept evidence."""
 
 from __future__ import annotations
 
@@ -20,6 +20,16 @@ class FakeTransport:
     async def respond(self, request: object) -> Mapping[str, object]:
         self.requests.append(request)
         next_step = request.next_step  # type: ignore[attr-defined]
+        message = request.learner_message  # type: ignore[attr-defined]
+        if request.phase == "before_commit":  # type: ignore[attr-defined]
+            return {
+                "message": "What does a 200 from the receiver mean for the sender?"
+                if "pista" not in message
+                else "Think about who owns the retry once the receiver says nothing.",
+                "next_step": next_step,
+                "hint_given": "pista" in message,
+                "proposed_evidence": [],
+            }
         return {
             "message": "Your note names delivery but not retries. Add the backoff rule.",
             "next_step": next_step,
@@ -192,10 +202,20 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
                     )
                     assert before.thread_id is None and before.coaching_allowed
                     assert not before.committed
-                    with pytest.raises(CoachingConflict, match="commit"):
-                        await service(session).send(
-                            owner_id=owner_id, activity_id=coached_id, text="ya lo hice"
-                        )
+                    assert before.assistance_mode == "none"
+                    assert before.next_step.startswith("Write your independent attempt")
+                    opened = await service(session).send(
+                        owner_id=owner_id, activity_id=coached_id, text="empiezo"
+                    )
+                    assert opened.assistance_mode == "coach_preparation"
+                    hinted = await service(session).send(
+                        owner_id=owner_id, activity_id=coached_id, text="dame una pista"
+                    )
+                    assert hinted.assistance_mode == "hint_ladder"
+                    again = await service(session).send(
+                        owner_id=owner_id, activity_id=coached_id, text="ahora sí"
+                    )
+                    assert again.assistance_mode == "hint_ladder"
                     with pytest.raises(CoachingConflict, match="does not allow"):
                         await service(session).send(
                             owner_id=owner_id, activity_id=forbidden_id, text="hola"
@@ -237,11 +257,13 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
                         owner_id=owner_id, activity_id=coached_id, text="ya lo hice"
                     )
                     assert after.thread_id is not None
-                    assert [m.speaker for m in after.messages] == ["learner", "coach"]
-                    coach_message = after.messages[1]
+                    assert after.assistance_mode == "hint_ladder"
+                    # The three pre-commit exchanges stay on the thread before this one.
+                    assert [m.speaker for m in after.messages] == ["learner", "coach"] * 4
+                    coach_message = after.messages[7]
                     assert coach_message.next_step == after.next_step
                     assert coach_message.proposed_evidence[0].accepted is False
-                    request = transport.requests[0]
+                    request = transport.requests[-1]
                     assert request.committed_attempt.startswith("Webhooks deliver")  # type: ignore[attr-defined]
                     assert request.block.allowed_ai_role == "tutor"  # type: ignore[attr-defined]
                     # The previous day's handoff opens the conversation; the plan's next
@@ -258,14 +280,14 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
                         message_id=coach_message.id,
                         index=0,
                     )
-                    assert accepted.messages[1].proposed_evidence[0].accepted is True
+                    assert accepted.messages[7].proposed_evidence[0].accepted is True
                     again = await service(session).accept_evidence(
                         owner_id=owner_id,
                         activity_id=coached_id,
                         message_id=coach_message.id,
                         index=0,
                     )
-                    assert again.messages[1].proposed_evidence[0].accepted is True
+                    assert again.messages[7].proposed_evidence[0].accepted is True
                     with pytest.raises(CoachingInvalidRequest):
                         await service(session).accept_evidence(
                             owner_id=owner_id,
@@ -287,7 +309,7 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
                         index=1,
                         question="What does a 200 from ingest mean?",
                     )
-                    proposal = with_card.messages[1].proposed_evidence[1]
+                    proposal = with_card.messages[7].proposed_evidence[1]
                     assert proposal.kind == "card" and proposal.answer == "Accepted."
                     assert proposal.accepted is True
                     cards = (await session.scalars(select(Card))).all()
@@ -303,7 +325,7 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
                     with pytest.raises(CoachingUnavailable):
                         await disabled.send(owner_id=owner_id, activity_id=coached_id, text="más")
                     thread = await disabled.thread(owner_id=owner_id, activity_id=coached_id)
-                    assert len(thread.messages) == 2
+                    assert len(thread.messages) == 8
             finally:
                 await engine.dispose()
 

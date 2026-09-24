@@ -38,7 +38,7 @@ from .contracts import (
     prepare_role_prompt,
 )
 
-COACH_SCHEMA_ID = "urn:tamforge:schema:coach-v1"
+COACH_SCHEMA_ID = "urn:tamforge:schema:coach-v2"
 NOTE_SCHEMA_ID = "urn:tamforge:schema:coach-note-v1"
 COACH_JOB_TYPE = "claude.followup"
 COACH_MAX_TURNS = 4
@@ -283,7 +283,7 @@ class CoachService:
             job_type=COACH_JOB_TYPE,
             model=self._model,
             schema_id=COACH_SCHEMA_ID,
-            prompt_version="v1",
+            prompt_version="v2",
             max_turns=COACH_MAX_TURNS,
             wall_time_seconds=COACH_WALL_TIME_SECONDS,
         )
