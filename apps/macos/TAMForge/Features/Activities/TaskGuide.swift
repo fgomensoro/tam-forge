@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// The block's steps, spelled out from its procedure, and which one the learner is on.
 /// Nothing here comes from the AI: the list is the block type's contract and the
@@ -49,5 +50,39 @@ enum TaskGuide {
         case .incomplete, .superseded:
             return nil
         }
+    }
+}
+
+/// The step list at the top of the activity screen. Rows are plain text; the current
+/// row carries the status dot and the `activityTaskGuideStep` identifier.
+struct TaskGuidePanel: View {
+    let activity: ActivityDetail
+
+    var body: some View {
+        let steps = TaskGuide.steps(for: activity.taskContract.block)
+        let current = TaskGuide.currentStep(for: activity)
+        GroupBox("Your steps") {
+            VStack(alignment: .leading, spacing: Organic.Space.p8) {
+                ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                    HStack(alignment: .firstTextBaseline, spacing: Organic.Space.p8) {
+                        OrganicStatusDot(color: dotColor(index: index, current: current))
+                        Text("\(index + 1). \(step)")
+                            .font(Organic.Font.figtree(index == current ? .semibold : .regular, size: 13))
+                            .foregroundStyle(index == current ? Organic.Color.text : Organic.Color.muted)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier(index == current ? "activityTaskGuideStep" : "activityTaskGuideRow\(index)")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityIdentifier("activityTaskGuide")
+    }
+
+    private func dotColor(index: Int, current: Int?) -> Color {
+        guard let current else { return Organic.Color.faint }
+        if index < current { return Organic.Color.accent2_300 }
+        if index == current { return Organic.Color.accent300 }
+        return Organic.Color.faint
     }
 }

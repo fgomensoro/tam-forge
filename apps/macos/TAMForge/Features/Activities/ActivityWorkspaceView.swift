@@ -116,6 +116,7 @@ struct ActivityWorkspaceView: View {
     private func mainColumn(_ activity: ActivityDetail) -> some View {
         VStack(alignment: .leading, spacing: Organic.Space.p24) {
             header(activity)
+            TaskGuidePanel(activity: activity)
             if let cards, activity.state.isEditable, Self.hasRetrievalPhase(activity) {
                 // The retrieval phase runs the due cards here, so its minutes count in the block.
                 CardsPanel(model: cards).id("activityRetrievalCards")
@@ -144,9 +145,6 @@ struct ActivityWorkspaceView: View {
             }
             if activity.state == .outputCommitted { selfReviewPanel(activity).id("activitySelfReview") }
             if activity.selfReview != nil { reviewComplete(activity) }
-            Label("AI feedback remains unavailable until a server-backed self-review. This app cannot create an AI Attempt A.", systemImage: "lock")
-                .organic(.small)
-                .accessibilityLabel("AI feedback locked until self-review")
         }
     }
 
@@ -160,8 +158,8 @@ struct ActivityWorkspaceView: View {
             if let spoken, activity.taskContract.block == .communicationSpoken {
                 SpokenAttemptPanel(model: spoken)
             }
+            if let coach { CoachPanel(model: coach) }
             if !activity.state.isEditable {
-                if let coach { CoachPanel(model: coach) }
                 if let note { StudyNotePanel(model: note) }
             }
             if let aiReview, activity.selfReview != nil { ReviewPanel(model: aiReview) }
