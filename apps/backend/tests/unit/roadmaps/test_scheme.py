@@ -164,6 +164,59 @@ def test_scheme_package_reads_generic_exit_criteria() -> None:
     assert [item.text for item in parsed.exit_criteria] == ["Defend it.", "Ship it."]
 
 
+QUEUE = (
+    b"# Interview Queue\n\n## Ordered queue\n\n"
+    b"### P1-Q16 \xe2\x80\x94 Explain APIs and webhooks\n\n"
+    b"- Exact question: Explain APIs and webhooks to a non-technical customer.\n"
+    b"- Segment: 4\n- Default audience: customer\n- Answer limit: 120 seconds\n\n"
+    b"### P1-Q17 \xe2\x80\x94 OAuth\n\n- Exact question: How do OAuth and API security work?\n\n"
+    # Longer than a curriculum node title may be (512 bytes).
+    b"### P1-Q18 \xe2\x80\x94 Long case\n\n- Exact question: "
+    + b"Walk the customer through it. " * 20
+    + b"\n"
+)
+SPOKEN = """
+schema_version: 1
+program: {key: demo, title: Demo}
+days:
+  - id: d01
+    kind: weekday
+    budget_minutes: 60
+    blocks:
+      - {id: d01-interview, type: communication, minutes: 60, source: {file: Week 1.md, heading: Day 1}, objective: 'Day 1: Independent Attempt A.'}
+"""
+
+
+def _spoken_objective(day_body: str) -> str:
+    files = {
+        WEEK: f"# Week 1\n\n## Day 1\n\n{day_body}\n\n## Day 2\n\n- Interview: P1-Q17.\n".encode(),
+        "docs/Interview Queue.md": QUEUE,
+        "roadmap.yaml": SPOKEN.encode("utf-8"),
+    }
+    return parse_roadmap(files=files, config=CONFIG).tasks[0].objective
+
+
+def test_spoken_block_objective_carries_its_queue_question() -> None:
+    body = "- Interview: P1-Q16 in [[Roadmap/docs/Interview Queue]] using the vector."
+    assert _spoken_objective(body) == (
+        "P1-Q16: Explain APIs and webhooks to a non-technical customer. "
+        "Audience: customer. Answer limit: 120 seconds."
+    )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "No queue item today.",
+        "- Interview: P1-Q16 or P1-Q17, whichever is due.",
+        "- Interview: P1-Q99 in [[Roadmap/docs/Interview Queue]].",
+        "- Interview: P1-Q18 in [[Roadmap/docs/Interview Queue]].",
+    ],
+)
+def test_spoken_block_keeps_its_objective_without_exactly_one_queue_item(body: str) -> None:
+    assert _spoken_objective(body) == "Day 1: Independent Attempt A."
+
+
 def test_scheme_summary_is_empty_for_legacy_and_compact_for_schemes() -> None:
     assert scheme_summary_from_payload(None) == {}
     parsed = parse_roadmap(files=_files_with_scheme(), config=CONFIG)
@@ -196,3 +249,24 @@ def test_reference_scheme_packages_parse(
     assert parsed.scheme["days"]["1"]["budget_minutes"] == first_budget
     assert parsed.scheme["days"]["6"]["kind"] == "assessment"
     assert all(task.block for task in parsed.tasks)
+
+
+def test_six_week_spoken_blocks_carry_their_queue_questions() -> None:
+    from tamforge_backend.roadmaps.package import inspect_zip_stream
+
+    name = "phase-1-six-week-scheme-v1.zip"
+    payload = (ROOT / "apps" / "backend" / "tests" / "fixtures" / "roadmaps" / name).read_bytes()
+    with inspect_zip_stream((payload,)) as package:
+        files = {item.manifest.path: item.staged_path.read_bytes() for item in package.files}
+    objectives = {
+        task.stable_id: task.objective for task in parse_roadmap(files=files, config=CONFIG).tasks
+    }
+    assert objectives["p1-w05-d25-interview"] == (
+        "P1-Q16: Explain APIs and webhooks to a non-technical customer. "
+        "Audience: customer. Answer limit: 120 seconds."
+    )
+    assert objectives["p1-w06-d35-interview"].startswith(
+        "P1-Q30: Complete the sealed 45-minute final mock."
+    )
+    # Week 1 is a historical record with no queue item, so it keeps the scheme's text.
+    assert objectives["p1-w01-d01-interview"].startswith("Day 1 — Historical transition record:")

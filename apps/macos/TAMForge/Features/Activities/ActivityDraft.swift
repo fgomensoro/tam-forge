@@ -13,7 +13,9 @@ struct ActivityDraft: Codable, Equatable, Sendable {
         .technicalLearning: [.reading],
         .sql: [.sql],
         .tamCase: [.`case`],
-        .communicationSpoken: [.`case`, .writing],
+        // Writing first: its fields (audience, action, facts, unknowns, tone, limit) are
+        // what the communication pass criteria ask for.
+        .communicationSpoken: [.writing, .`case`],
         .careerPipeline: [.pipeline],
         .correctionWarmup: [.sql, .`case`, .writing],
         .dailyClose: [.writing],

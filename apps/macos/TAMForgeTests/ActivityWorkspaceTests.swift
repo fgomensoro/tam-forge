@@ -351,6 +351,17 @@ final class ActivityWorkspaceTests: XCTestCase {
         XCTAssertEqual(output["solving_seconds"], .integer(1_200))
     }
 
+    func testSpokenDraftDefaultsToWritingAndPrefillsTheQueueQuestion() {
+        var detail = ActivityFixtures.detail()
+        detail.taskContract.exerciseType = "official_reading"
+        detail.taskContract.objective = "P1-Q16: Explain APIs and webhooks to a non-technical customer. Audience: customer. Answer limit: 120 seconds."
+
+        let draft = ActivityDraft.empty(for: detail)
+
+        XCTAssertEqual(draft.kind, .writing)
+        XCTAssertEqual(draft.value(for: "prompt"), detail.taskContract.objective)
+    }
+
     func testUnauthorizedDropsLocalDraftAndDoesNotPretendMutationSucceeded() async throws {
         let detail = ActivityFixtures.detail(state: .ready)
         let api = ActivityAPIStub(detail: detail)
