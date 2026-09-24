@@ -99,7 +99,7 @@ async def test_planner_is_unavailable_without_claude_or_when_the_runtime_fails()
 
 @pytest.mark.anyio
 async def test_reforecast_passes_the_current_scheme_evidence_and_today() -> None:
-    transport = FakeTransport([VALID])
+    transport = FakeTransport([dict(VALID, program={"key": "demo-r2", "title": "Demo"})])
     service = PlannerService(transport, config=CONFIG, model="m")
     current = {"rest_weekdays": [6], "program": {"key": "demo", "title": "Demo"}, "days": {}}
 
@@ -117,3 +117,18 @@ async def test_reforecast_passes_the_current_scheme_evidence_and_today() -> None
     assert request.today == date(2026, 9, 12)
     assert request.current_scheme == current
     assert [line.status for line in request.evidence_summary] == ["done", "pending"]
+
+
+@pytest.mark.anyio
+async def test_a_reforecast_that_keeps_the_current_program_key_is_refused_by_name() -> None:
+    transport = FakeTransport([VALID, VALID])
+    service = PlannerService(transport, config=CONFIG, model="m")
+    current = {"rest_weekdays": [6], "program": {"key": "demo", "title": "Demo"}, "days": {}}
+
+    proposal = await service.reforecast(
+        files=FILES, current_scheme=current, evidence=(), today=date(2026, 9, 12), instruction=""
+    )
+
+    assert not proposal.accepted
+    assert any("program.key 'demo'" in issue for issue in proposal.issues)
+    assert transport.requests[1].repair_errors == proposal.issues
