@@ -8,6 +8,7 @@ import re
 import shutil
 import zipfile
 from collections.abc import AsyncIterator, Iterator, Mapping
+from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, cast
@@ -601,6 +602,9 @@ class RoadmapService:
 
     async def list_versions(self, *, owner_id: int) -> tuple[RoadmapVersionRecord, ...]:
         return await self._repository.list_versions(owner_id=owner_id)
+
+    async def first_open_date(self, *, owner_id: int) -> date:
+        return await self._repository.first_open_date(owner_id=owner_id)
 
     async def _open_package(self, object_key: str) -> InspectedRoadmapPackage:
         temporary = TemporaryDirectory(prefix="tamforge-roadmap-load-")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Protocol
 
 from .contracts import ParsedRoadmap
@@ -181,6 +182,11 @@ class RoadmapRepository(Protocol):
         """Stable ids of tasks whose output was committed under this version."""
         del owner_id, version_id
         return ()
+
+    async def first_open_date(self, *, owner_id: int) -> date:
+        """The earliest date a version activated now could own, before its rest days."""
+        del owner_id
+        return date.today()
 
     async def source_key(self, *, owner_id: int, source_id: int) -> str | None:
         """The stable key of a roadmap source, or None when it does not exist."""

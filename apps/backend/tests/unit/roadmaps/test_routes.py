@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -98,6 +98,10 @@ class StubRoadmapService:
     async def completed_block_ids(self, *, owner_id: int, version_id: int) -> tuple[str, ...]:
         assert owner_id == 1 and version_id == 5
         return ("m1-w1-d01-sql",)
+
+    async def first_open_date(self, *, owner_id: int) -> date:
+        assert owner_id == 1
+        return date(2026, 9, 24)
 
     async def export_package(self, *, owner_id: int, version_id: int) -> bytes:
         assert owner_id == 1 and version_id == 5
@@ -262,8 +266,12 @@ class StubPlanner:
         self.unavailable = unavailable
         self.calls: list[dict[str, object]] = []
 
-    async def generate(self, *, files: dict[str, bytes], instruction: str) -> SchemeProposal:
-        self.calls.append({"mode": "generate", "files": files, "instruction": instruction})
+    async def generate(
+        self, *, files: dict[str, bytes], instruction: str, first_day: date
+    ) -> SchemeProposal:
+        self.calls.append(
+            {"mode": "generate", "files": files, "instruction": instruction, "first_day": first_day}
+        )
         if self.unavailable:
             raise PlannerUnavailable("the planner needs Claude enabled on the server")
         return SchemeProposal(yaml_text="schema_version: 1\n", summary={"study_days": 1}, issues=())
@@ -295,6 +303,7 @@ def test_generate_proposal_reads_the_snapshot_and_returns_the_scheme() -> None:
     }
     assert response.headers["cache-control"] == "no-store"
     assert planner.calls[0]["instruction"] == "three hours"
+    assert planner.calls[0]["first_day"] == date(2026, 9, 24)
     assert "Week 1.md" in planner.calls[0]["files"]  # type: ignore[operator]
 
 
@@ -305,6 +314,7 @@ def test_reforecast_proposal_carries_done_blocks_and_refusals_keep_their_issues(
 
     assert response.status_code == 200, response.text
     assert response.json()["issues"] == ["day 'x' is over budget"]
+    assert planner.calls[0]["first_day"] == date(2026, 9, 24)
     evidence = planner.calls[0]["evidence"]
     assert any(line.block_id == "m1-w1-d01-sql" and line.status == "done" for line in evidence)  # type: ignore[union-attr]
 

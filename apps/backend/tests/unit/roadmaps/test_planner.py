@@ -19,6 +19,7 @@ from .test_scheme import FILES, SCHEME
 
 ROOT = Path(__file__).parents[5]
 CONFIG = load_config_bundle(ROOT / "config")
+FIRST_DAY = date(2026, 9, 14)
 VALID: dict[str, object] = yaml.safe_load(SCHEME)
 
 
@@ -43,7 +44,9 @@ async def test_generate_returns_a_validated_proposal() -> None:
     transport = FakeTransport([VALID])
     service = PlannerService(transport, config=CONFIG, model="claude-fable-5-1")
 
-    proposal = await service.generate(files=FILES, instruction="two hours a day")
+    proposal = await service.generate(
+        files=FILES, instruction="two hours a day", first_day=FIRST_DAY
+    )
 
     assert proposal.accepted
     assert proposal.summary == {
@@ -65,7 +68,7 @@ async def test_one_repair_is_offered_then_the_proposal_is_refused_with_issues() 
     transport = FakeTransport([broken, broken])
     service = PlannerService(transport, config=CONFIG, model="m")
 
-    proposal = await service.generate(files=FILES, instruction="")
+    proposal = await service.generate(files=FILES, instruction="", first_day=FIRST_DAY)
 
     assert not proposal.accepted
     assert any("do not equal budget 200" in issue for issue in proposal.issues)
@@ -80,7 +83,7 @@ async def test_a_payload_that_is_not_a_scheme_is_refused_by_name() -> None:
     transport = FakeTransport([{"schema_version": 7}, {"schema_version": 7}])
     service = PlannerService(transport, config=CONFIG, model="m")
 
-    proposal = await service.generate(files=FILES, instruction="")
+    proposal = await service.generate(files=FILES, instruction="", first_day=FIRST_DAY)
 
     assert not proposal.accepted
     assert "schema_version" in proposal.issues[0]
@@ -90,11 +93,11 @@ async def test_a_payload_that_is_not_a_scheme_is_refused_by_name() -> None:
 async def test_planner_is_unavailable_without_claude_or_when_the_runtime_fails() -> None:
     disabled = PlannerService(None, config=CONFIG, model="m")
     with pytest.raises(PlannerUnavailable):
-        await disabled.generate(files=FILES, instruction="")
+        await disabled.generate(files=FILES, instruction="", first_day=FIRST_DAY)
 
     broken = PlannerService(BrokenTransport(), config=CONFIG, model="m")
     with pytest.raises(PlannerUnavailable):
-        await broken.generate(files=FILES, instruction="")
+        await broken.generate(files=FILES, instruction="", first_day=FIRST_DAY)
 
 
 @pytest.mark.anyio
@@ -108,6 +111,7 @@ async def test_reforecast_passes_the_current_scheme_evidence_and_today() -> None
         current_scheme=current,
         evidence=(EvidenceLine("d01-interview", "done"), EvidenceLine("d02-sql", "pending")),
         today=date(2026, 9, 12),
+        first_day=FIRST_DAY,
         instruction="from tomorrow two hours",
     )
 
@@ -115,6 +119,7 @@ async def test_reforecast_passes_the_current_scheme_evidence_and_today() -> None
     request = transport.requests[0]
     assert request.mode == "reforecast"
     assert request.today == date(2026, 9, 12)
+    assert request.first_day == FIRST_DAY
     assert request.current_scheme == current
     assert [line.status for line in request.evidence_summary] == ["done", "pending"]
 
