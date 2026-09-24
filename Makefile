@@ -1,4 +1,4 @@
-.PHONY: install test check check-openapi check-policy integration e2e macos-check macos-release-dmg whisper-framework whisper-models whisper-benchmark speech-perf
+.PHONY: install test check check-openapi check-policy integration e2e macos-check macos-release-dmg rotate-claude-token whisper-framework whisper-models whisper-benchmark speech-perf
 
 # Keep local verification comfortable on the 8 GB development Mac. Callers can
 # also supply -derivedDataPath here to reuse an existing task-specific cache.
@@ -44,6 +44,10 @@ macos-check:
 # Signed Release app plus DMG with the stable local identity (never in CI).
 macos-release-dmg:
 	scripts/dev/build_release_dmg.sh
+
+# Replaces the Claude subscription token on the production host (never in CI).
+rotate-claude-token:
+	scripts/dev/rotate_claude_token.sh
 
 # One-time fetches of the pinned whisper.cpp runtime artifacts. Pins live in
 # config/speech-models.yaml; both scripts are idempotent.

@@ -37,13 +37,31 @@ not this rule.
 Install the token as a root-owned service credential: a file the backend's own
 service account can read, that the interactive login the operator deploys with
 cannot write to and that a stray `git add` cannot pick up. Restrict its permissions
-to that one reader. TAM Forge's own repository and database store no token and no
+to that one reader. On the production host that file is
+`/etc/tamforge/secrets/claude-oauth.env`, mode 0640, owned by `root:tamforge-claude`,
+holding the single line `CLAUDE_CODE_OAUTH_TOKEN=<token>`; the Claude worker's unit loads
+it through `EnvironmentFile`. TAM Forge's own repository and database store no token and no
 copy of one; the attestation this procedure produces records that the operator
 looked at the policy, never the secret that lets Claude run.
 
 Record the rotation date, one year from issuance, somewhere durable outside this
 repository. Rotating on schedule, not on failure, is what keeps an expired token from
 turning into an unplanned outage of the one feature that depends on it.
+
+## Rotating the token
+
+Run `make rotate-claude-token` from the repository on the operator's Mac. It runs
+`claude setup-token`, asks for the resulting token with input hidden, and installs it
+over a single ssh session to the production host (`TAMFORGE_HOST`, default
+`hetzner-server-2`): the new file replaces the old one atomically with the ownership and
+mode above, then `tamforge-claude-worker` restarts. The script waits up to 90 seconds for
+the worker's next heartbeat and exits non-zero unless the worker reports ready. The token
+travels only on ssh's standard input; it never appears in a command line, a local file or
+the terminal.
+
+The Mac app's Settings window (Cmd+,) has a Claude pane that shows the same worker status
+and this command. It shows the command and nothing more: the app never sees the token,
+and no TAM Forge endpoint accepts one.
 
 ## Confirming the policy
 
