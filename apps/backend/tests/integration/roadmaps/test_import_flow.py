@@ -175,6 +175,109 @@ def test_import_approval_and_activation_are_durable_and_separate(
             sync_engine.dispose()
 
 
+def test_a_taken_program_key_is_named_at_staging_and_refused_at_approval(
+    test_database_url: str,
+) -> None:
+    """A reforecast that keeps its key used to validate and then 503 on approval."""
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.engine import make_url
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from tamforge_backend.database import database_url_to_sync
+    from tamforge_backend.evidence.config_loader import load_config_bundle
+    from tamforge_backend.roadmaps.package import inspect_zip_stream
+    from tamforge_backend.roadmaps.ports import ImportConflict
+    from tamforge_backend.roadmaps.repository import SqlAlchemyRoadmapRepository
+    from tamforge_backend.roadmaps.service import RoadmapService
+    from tamforge_backend.storage.fake import InMemoryObjectStore
+
+    config = Config("apps/backend/alembic.ini")
+    config.attributes["database_url"] = test_database_url
+    sync_engine = create_engine(database_url_to_sync(test_database_url))
+    try:
+        command.downgrade(config, "base")
+        command.upgrade(config, "head")
+        with sync_engine.begin() as connection:
+            owner_id = connection.execute(
+                text(
+                    "INSERT INTO owners (github_user_id, github_login) "
+                    "VALUES (102269369, 'fgomensoro') RETURNING id"
+                )
+            ).scalar_one()
+
+        async_url = make_url(test_database_url).set(drivername="postgresql+asyncpg")
+
+        async def exercise() -> None:
+            engine = create_async_engine(async_url)
+            factory = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
+            try:
+                async with factory() as session:
+                    service = RoadmapService(
+                        config=load_config_bundle(ROOT / "config"),
+                        repository=SqlAlchemyRoadmapRepository(session),
+                        object_store=InMemoryObjectStore(),
+                        mirror=None,
+                    )
+                    with inspect_zip_stream((FIXTURE.read_bytes(),)) as package:
+                        staged = await service.stage_package(
+                            owner_id=owner_id,
+                            source_key="obsidian-main",
+                            source_name="TAM Roadmap",
+                            source_kind="obsidian",
+                            package_kind="zip",
+                            idempotency_key="taken-key-base",
+                            package=package,
+                        )
+                    await service.approve_import(owner_id=owner_id, import_id=staged.id)
+                    files = await service.snapshot_files(staged.object_key)
+                    scheme = files["roadmap.yaml"].decode()
+                    assert "key: month-1-v2" in scheme
+
+                    async def stage(yaml_text: str, key: str):  # type: ignore[no-untyped-def]
+                        return await service.stage_with_scheme(
+                            owner_id=owner_id,
+                            source_key="obsidian-main",
+                            object_key=staged.object_key,
+                            yaml_text=yaml_text,
+                            idempotency_key=key,
+                        )
+
+                    kept = await stage(
+                        scheme.replace("without copying.", "without copying, twice.", 1),
+                        "reforecast-kept-key",
+                    )
+                    assert kept.status == "rejected"
+                    [issue] = kept.validation_report["issues"]  # type: ignore[misc]
+                    assert issue["code"] == "roadmap_version_exists"
+
+                    renamed = scheme.replace("key: month-1-v2", "key: month-1-v3", 1)
+                    first = await stage(
+                        renamed.replace("without copying.", "without notes.", 1),
+                        "reforecast-new-key-first",
+                    )
+                    second = await stage(
+                        renamed.replace("without copying.", "without hints.", 1),
+                        "reforecast-new-key-second",
+                    )
+                    assert (first.status, second.status) == ("validated", "validated")
+                    approved = await service.approve_import(owner_id=owner_id, import_id=first.id)
+                    assert approved.version_key == "month-1-v3"
+                    with pytest.raises(ImportConflict):
+                        await service.approve_import(owner_id=owner_id, import_id=second.id)
+            finally:
+                await engine.dispose()
+
+        asyncio.run(exercise())
+    finally:
+        try:
+            with sync_engine.begin() as connection:
+                connection.execute(text("DROP SCHEMA public CASCADE"))
+                connection.execute(text("CREATE SCHEMA public"))
+        finally:
+            sync_engine.dispose()
+
+
 def test_approved_six_week_import_stores_the_queue_question_for_spoken_tasks(
     test_database_url: str,
 ) -> None:

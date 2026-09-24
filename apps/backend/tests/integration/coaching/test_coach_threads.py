@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -11,6 +12,7 @@ import pytest
 
 ROOT = Path(__file__).parents[5]
 FIXTURE = ROOT / "apps" / "backend" / "tests" / "fixtures" / "roadmaps" / "month-v1.zip"
+PHASE1_CONFIG = ROOT / "config" / "releases" / "phase-1-six-week-v1"
 
 
 class FakeTransport:
@@ -123,6 +125,11 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
                     ).all()
                     coached_id = next(a.id for a, d in rows if d.allowed_ai_role == "tutor")
                     forbidden_id = next(a.id for a, d in rows if d.allowed_ai_role == "none")
+                    interview_id, interview_definition_id = next(
+                        (a.id, d.id)
+                        for a, d in rows
+                        if d.allowed_ai_role == "interviewer" and d.block == "communication_spoken"
+                    )
                     await session.rollback()
 
                 # The day before closed with a gap; its handoff is what the Coach opens with.
@@ -304,6 +311,104 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
                         await disabled.send(owner_id=owner_id, activity_id=coached_id, text="más")
                     thread = await disabled.thread(owner_id=owner_id, activity_id=coached_id)
                     assert len(thread.messages) == 2
+
+                # An interviewer block is coached only when its contract schedules coaching.
+                async with factory() as session:
+                    async with transaction_scope(session):
+                        activity = await session.get(ActivityInstance, interview_id)
+                        assert activity is not None
+                        now = activity.created_at + timedelta(seconds=1)
+                        activity.state = "active"
+                        activity.started_at = now
+                        activity.optimistic_version += 1
+                        await session.flush()
+                        activity.state = "output_committed"
+                        activity.attempt_kind = "attempt_a"
+                        activity.output_committed_at = now
+                        activity.optimistic_version += 1
+                        await session.flush()
+                        session.add(
+                            Attempt(
+                                owner_id=owner_id,
+                                activity_instance_id=interview_id,
+                                attempt_kind="attempt_a",
+                                parent_attempt_id=None,
+                                original_text="I would start from the failing webhook.",
+                                original_markdown=None,
+                                original_sql=None,
+                                audience="hiring manager",
+                                prompt="Walk me through a webhook incident.",
+                                assistance_mode="none",
+                                commitment_hash=b"i" * 32,
+                                committed_at=now,
+                            )
+                        )
+
+                phase1 = load_config_bundle(PHASE1_CONFIG).roadmap_contracts
+
+                def contract(key: str) -> None:
+                    # The retired task-map parser wrote the Phase 1 rows production still
+                    # runs; the scheme parser cannot, so the test rewrites one in place.
+                    source = phase1[key]
+                    output = {
+                        "schema_version": 1,
+                        "items": list(source.required_output),
+                        "procedure": [step.model_dump() for step in source.procedure],
+                        "constraints": list(source.constraints),
+                        "correction_selection": None,
+                    }
+                    with sync_engine.begin() as connection:
+                        connection.execute(
+                            text(
+                                "ALTER TABLE task_definitions "
+                                "DISABLE TRIGGER trg_task_definitions_immutable"
+                            )
+                        )
+                        connection.execute(
+                            text(
+                                "UPDATE task_definitions SET output_contract = "
+                                "CAST(:output AS jsonb) WHERE id = :id"
+                            ),
+                            {"output": json.dumps(output), "id": interview_definition_id},
+                        )
+                        connection.execute(
+                            text(
+                                "ALTER TABLE task_definitions "
+                                "ENABLE TRIGGER trg_task_definitions_immutable"
+                            )
+                        )
+
+                # The month scheme's communication contract has no coaching step.
+                async with factory() as session:
+                    with pytest.raises(CoachingConflict, match="does not allow"):
+                        await service(session).send(
+                            owner_id=owner_id, activity_id=interview_id, text="how did it go?"
+                        )
+
+                # The Phase 1 interview cycle: Attempt A, coaching handoff, Attempt B.
+                contract("interview")
+                async with factory() as session:
+                    opened = await service(session).thread(
+                        owner_id=owner_id, activity_id=interview_id
+                    )
+                    assert opened.coaching_allowed and opened.committed
+                    coached = await service(session).send(
+                        owner_id=owner_id, activity_id=interview_id, text="how did it go?"
+                    )
+                    assert [m.speaker for m in coached.messages] == ["learner", "coach"]
+                    assert transport.requests[-1].block.allowed_ai_role == "interviewer"  # type: ignore[attr-defined]
+
+                # The sealed final mock is an interviewer block too, and stays uncoached.
+                contract("sealed_interview")
+                async with factory() as session:
+                    sealed = await service(session).thread(
+                        owner_id=owner_id, activity_id=interview_id
+                    )
+                    assert not sealed.coaching_allowed
+                    with pytest.raises(CoachingConflict, match="does not allow"):
+                        await service(session).send(
+                            owner_id=owner_id, activity_id=interview_id, text="and now?"
+                        )
             finally:
                 await engine.dispose()
 

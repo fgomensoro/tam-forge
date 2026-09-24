@@ -126,6 +126,12 @@ class DroppedConnectionSession:
             id="latest_normalized_payload",
         ),
         pytest.param(
+            lambda repository: repository.version_key_exists(
+                owner_id=1, source_id=3, version_key="2026.01"
+            ),
+            id="version_key_exists",
+        ),
+        pytest.param(
             lambda repository: repository.approve_import(
                 ImportApproval(
                     owner_id=1,
