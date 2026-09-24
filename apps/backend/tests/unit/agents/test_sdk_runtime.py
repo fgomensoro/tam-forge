@@ -200,3 +200,15 @@ async def test_follow_up_sends_the_answer_and_returns_the_decision() -> None:
     prompt = query.calls[0]["prompt"]
     assert "Question asked: Why are you leaving?" in prompt and "- Why now?" in prompt
     assert query.calls[0]["options"].model == "claude-fable-5-1"
+
+
+@pytest.mark.anyio
+async def test_a_slot_switch_changes_the_token_that_later_calls_send() -> None:
+    """The API builds one runtime at startup; a slot switch must still reach its calls."""
+    query = FakeQuery([_result()])
+    runtime = _runtime(query, environ={"CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-fixture"})
+
+    runtime.use_slot("b", {"a": "sk-ant-oat01-fixture", "b": "sk-ant-oat01-fixture-b"})
+    await runtime.probe(requested_model="m")
+
+    assert query.calls[0]["options"].env["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-fixture-b"
