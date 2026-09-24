@@ -356,6 +356,11 @@ def _block(definition: TaskDefinition) -> CoachBlock:
         allowed_ai_role=definition.allowed_ai_role,
         required_output=_string_items(definition.output_contract, "items"),
         pass_criteria=_string_items(definition.pass_contract, "items"),
+        phases=tuple(
+            str(step.get("phase"))
+            for step in definition.output_contract.get("procedure") or ()
+            if isinstance(step, dict)
+        ),
     )
 
 
