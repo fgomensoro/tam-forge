@@ -74,6 +74,16 @@ def test_turn_validation_refuses_completion_claims_and_invented_next_steps() -> 
 
 
 @pytest.mark.anyio
+async def test_a_turn_forwards_the_reference_material_to_the_transport() -> None:
+    transport = FakeTransport([GOOD])
+    service = CoachService(transport, model="claude-opus-5")
+
+    await service.turn(_request(reference=("## Story: outage",)))
+
+    assert transport.requests[0].reference == ("## Story: outage",)
+
+
+@pytest.mark.anyio
 async def test_a_turn_returns_the_validated_message_and_evidence() -> None:
     transport = FakeTransport([GOOD])
     service = CoachService(transport, model="claude-opus-5")
