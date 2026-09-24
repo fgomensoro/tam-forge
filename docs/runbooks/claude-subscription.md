@@ -54,10 +54,14 @@ Run `make rotate-claude-token` from the repository on the operator's Mac. It run
 `claude setup-token`, asks for the resulting token with input hidden, and installs it
 over a single ssh session to the production host (`TAMFORGE_HOST`, default
 `hetzner-server-2`): the new file replaces the old one atomically with the ownership and
-mode above, then `tamforge-claude-worker` restarts. The script waits up to 90 seconds for
-the worker's next heartbeat and exits non-zero unless the worker reports ready. The token
-travels only on ssh's standard input; it never appears in a command line, a local file or
-the terminal.
+mode above, then `tamforge-claude-worker` restarts. The script then waits, up to 15
+minutes by default (`TAMFORGE_ROTATE_WAIT_SECONDS`), for the first heartbeat of the new
+worker process, and exits non-zero unless it reports ready. The wait can be long on
+success: the worker beats only after a whole step, and with a working token that step
+first runs the Claude jobs queued while it was down. A refused token reports within
+seconds. The token travels only on ssh's standard input and never appears in a command
+line or a local file; `claude setup-token` itself prints it once, so clear the terminal
+afterwards.
 
 The Mac app's Settings window (Cmd+,) has a Claude pane that shows the same worker status
 and this command. It shows the command and nothing more: the app never sees the token,

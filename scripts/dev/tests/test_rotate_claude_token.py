@@ -86,3 +86,52 @@ def test_a_worker_that_is_not_ready_after_the_restart_fails_the_rotation(
     result = run({**env, "FAKE_SSH_RESULT": "needs_attention auth"}, TOKEN)
     assert result.returncode == 1
     assert "needs_attention (auth)" in result.stderr
+
+
+def fake_command(path: Path, body: str) -> None:
+    path.write_text("#!/bin/bash\nset -eu\n" + body, encoding="utf-8")
+    path.chmod(0o700)
+
+
+def test_the_host_script_installs_0640_before_the_restart_and_reads_only_newer_beats(
+    fake_ssh: tuple[dict[str, str], Path, Path], tmp_path: Path
+) -> None:
+    env, argv_log, stdin_log = fake_ssh
+    run(env, TOKEN)
+    secrets = tmp_path / "secrets"
+    secrets.mkdir()
+    remote = "\n".join(argv_log.read_text().splitlines()[1:]).replace(
+        "/etc/tamforge/secrets", str(secrets)
+    )
+    host_bin = tmp_path / "host-bin"
+    host_bin.mkdir()
+    log = tmp_path / "host.log"
+    target = secrets / "claude-oauth.env"
+    fake_command(host_bin / "chown", f'ls -l "$2" | cut -c1-10 >> {log}\n')
+    fake_command(host_bin / "systemctl", f'echo "$@" >> {log}; ls {secrets} >> {log}\n')
+    fake_command(host_bin / "sleep", "")
+    fake_command(
+        host_bin / "sudo",
+        f'echo "${{@: -1}}" >> {log}\n'
+        'case "${@: -1}" in *clock_timestamp*) echo "2026-09-24 01:14:20.88667+00" ;;'
+        ' *) echo "ok none" ;; esac\n',
+    )
+    result = subprocess.run(
+        ["bash", "-c", remote],
+        stdin=stdin_log.open(),
+        env={**os.environ, "PATH": f"{host_bin}:{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "ok none\n"
+    assert target.read_text() == f"CLAUDE_CODE_OAUTH_TOKEN={TOKEN}\n"
+    assert oct(target.stat().st_mode & 0o777) == "0o640"
+    assert log.read_text().splitlines() == [
+        "-rw-------",
+        "restart tamforge-claude-worker",
+        "claude-oauth.env",
+        "select clock_timestamp()",
+        "select status || ' ' || reason from worker_heartbeats where worker = 'claude' "
+        "and observed_at > '2026-09-24 01:14:20.88667+00'",
+    ]
