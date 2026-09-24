@@ -37,9 +37,9 @@ enum ClaudeTokenState: Equatable, Sendable {
         case .ready: "The server's Claude worker is running with a valid token."
         case .tokenRefused: "Rotate the token with the command below."
         case .quotaSpent: "The subscription quota is used up. Wait for it to reset; a new token does not help."
-        case .disabled: "Claude is off or has no current privacy attestation on the server."
+        case .disabled: "Claude is off, has no current privacy attestation, or the worker sees a credential other than the subscription token."
         case .notReporting: "The Claude worker has not sent a heartbeat in the last minute."
-        case .serviceProblem: "The worker is up but its compatibility check failed. Check its logs on the host."
+        case .serviceProblem: "The worker is up but its last step failed. Check its logs on the host."
         }
     }
 }

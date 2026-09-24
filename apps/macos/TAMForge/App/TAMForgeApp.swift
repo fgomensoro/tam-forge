@@ -47,6 +47,10 @@ struct TAMForgeApp: App {
                 recording: composition.recording
             )
             .preferredColorScheme(.dark)
+            // Closing the workspace quits, as it did before Settings existed. An open Settings
+            // window would otherwise keep the process alive with uploads paused by the
+            // workspace's onDisappear and nothing to resume them when the window reopens.
+            .onDisappear { NSApp.terminate(nil) }
         }
         .organicWindowChrome()
 

@@ -11,6 +11,7 @@ final class ClaudeSettingsModelTests: XCTestCase {
         XCTAssertEqual(ClaudeTokenState(status: "unknown", reason: "stale"), .notReporting)
         XCTAssertEqual(ClaudeTokenState(status: "unknown", reason: "not_observed"), .notReporting)
         XCTAssertEqual(ClaudeTokenState(status: "needs_attention", reason: "service"), .serviceProblem)
+        XCTAssertEqual(ClaudeTokenState(status: "needs_attention", reason: "processing_failure"), .serviceProblem)
     }
 
     func testTheLiveClientReadsTheClaudeComponentOfOpsStatus() async throws {
@@ -30,17 +31,27 @@ final class ClaudeSettingsModelTests: XCTestCase {
         XCTAssertEqual(fixture.requests.first?.url?.path, "/ops/status")
     }
 
-    func testAFailedRefreshClearsTheStateAndSaysSo() async {
-        let model = ClaudeSettingsModel(api: FailingClaudeStatusAPI())
+    func testAFailedRefreshClearsAnEarlierStateAndSaysSo() async {
+        let api = FlakyClaudeStatusAPI()
+        let model = ClaudeSettingsModel(api: api)
 
         await model.refresh()
+        XCTAssertEqual(model.state, .ready)
+        XCTAssertNil(model.errorMessage)
 
+        await model.refresh()
         XCTAssertNil(model.state)
         XCTAssertNotNil(model.errorMessage)
     }
 }
 
 @MainActor
-private final class FailingClaudeStatusAPI: ClaudeStatusAPI {
-    func claudeState() async throws -> ClaudeTokenState { throw URLError(.notConnectedToInternet) }
+private final class FlakyClaudeStatusAPI: ClaudeStatusAPI {
+    private var calls = 0
+
+    func claudeState() async throws -> ClaudeTokenState {
+        calls += 1
+        if calls == 1 { return .ready }
+        throw URLError(.notConnectedToInternet)
+    }
 }
