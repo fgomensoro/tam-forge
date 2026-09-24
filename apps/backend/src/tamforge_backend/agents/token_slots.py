@@ -17,6 +17,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
+from ..database import transaction_scope
 from ..models.base import Base, utc_now
 from .settings import SUBSCRIPTION_TOKEN_VAR
 
@@ -49,7 +50,7 @@ async def read_active_slot(session: AsyncSession, *, owner_id: int) -> TokenSlot
 
 
 async def choose_slot(session: AsyncSession, *, owner_id: int, slot: TokenSlot) -> None:
-    async with session.begin():
+    async with transaction_scope(session):
         statement = insert(ClaudeTokenSlot).values(
             owner_id=owner_id, slot=slot, updated_at=utc_now()
         )
