@@ -18,8 +18,10 @@ EnvironmentFile=/etc/tamforge/claude-worker.env
 # connection; a readable HOME keeps that probe a clean miss. The Claude CLI also
 # writes ~/.claude, so HOME is the writable state directory, not a read-only path.
 Environment=HOME=%S/tamforge/claude
-# The subscription token; replaced by `make rotate-claude-token`.
+# The subscription tokens, one file per slot; replaced by `make rotate-claude-token SLOT=a|b`.
+# The worker reads which slot is active from the database on every beat.
 EnvironmentFile=-/etc/tamforge/secrets/claude-oauth.env
+EnvironmentFile=-/etc/tamforge/secrets/claude-oauth-b.env
 Restart=on-failure
 RestartSec=5s
 SyslogIdentifier=tamforge-claude-worker

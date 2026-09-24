@@ -45,9 +45,10 @@ macos-check:
 macos-release-dmg:
 	scripts/dev/build_release_dmg.sh
 
-# Replaces the Claude subscription token on the production host (never in CI).
+# Replaces one Claude subscription token slot on the production host (never in CI).
+# SLOT=a (default) or SLOT=b.
 rotate-claude-token:
-	scripts/dev/rotate_claude_token.sh
+	scripts/dev/rotate_claude_token.sh $(SLOT)
 
 # One-time fetches of the pinned whisper.cpp runtime artifacts. Pins live in
 # config/speech-models.yaml; both scripts are idempotent.

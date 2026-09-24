@@ -248,9 +248,13 @@ class _AutobeginSession:
 
 def test_the_gate_reads_the_attestation_on_a_fresh_session(monkeypatch: pytest.MonkeyPatch) -> None:
     """A shared session used to surface as `InvalidProvenance`, then `processing_failure`."""
+    from tamforge_backend.workers import claude as claude_module
     from tamforge_backend.workers.claude import gate_step
 
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_B", raising=False)
+    monkeypatch.setattr(claude_module, "_slot_tokens", None)
+    monkeypatch.setattr(claude_module, "_active_slot", None)
     sessions: list[_AutobeginSession] = []
 
     def factory() -> _AutobeginSession:
@@ -327,3 +331,46 @@ def test_a_refused_job_forgets_the_cached_probe_verdict(
 
     assert claude._unavailable_category(RuntimeError(message)) == category
     assert claude._last_probe == (None if forgets else verdict)
+
+
+def test_switching_slots_swaps_the_token_and_forgets_the_probe_verdict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cached verdict belongs to the old token; the new one is probed on the next beat."""
+    from datetime import UTC, datetime
+
+    from tamforge_backend.workers import claude
+
+    verdict = (datetime(2026, 9, 24, 1, 0, tzinfo=UTC), None)
+    monkeypatch.setattr(claude, "_slot_tokens", None)
+    monkeypatch.setattr(claude, "_active_slot", "a")
+    monkeypatch.setattr(claude, "_last_probe", verdict)
+    environ = {
+        "CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-fixture",
+        "CLAUDE_CODE_OAUTH_TOKEN_B": "sk-ant-oat01-fixture-b",
+    }
+
+    claude._use_slot("a", environ)
+    assert environ["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-fixture"
+    assert claude._last_probe == verdict
+
+    claude._use_slot("b", environ)
+    assert environ["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-fixture-b"
+    assert claude._last_probe is None
+
+    # Slot A's variable was overwritten above; the token captured on the first beat survives.
+    claude._use_slot("a", environ)
+    assert environ["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-fixture"
+
+
+def test_a_slot_with_no_token_installed_leaves_no_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The settings gate then raises SubscriptionCredentialMissing, which beats as `auth`."""
+    from tamforge_backend.workers import claude
+
+    monkeypatch.setattr(claude, "_slot_tokens", None)
+    monkeypatch.setattr(claude, "_active_slot", None)
+    environ = {"CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-fixture"}
+
+    claude._use_slot("b", environ)
+
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in environ
