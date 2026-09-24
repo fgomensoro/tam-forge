@@ -164,7 +164,10 @@ class PlannerService:
             requested_context=(TASK_BRIEF, ROADMAP_STATE, EVIDENCE_SUMMARY),
         )
         adapter = _RuntimeAdapter(self._transport, request)
-        runtime = BoundedClaudeRuntime(adapter, validate=self._issues_for(files))
+        program = (request.current_scheme or {}).get("program")
+        taken_key = program.get("key") if isinstance(program, Mapping) else None
+        validate = self._issues_for(files, taken_key)
+        runtime = BoundedClaudeRuntime(adapter, validate=validate)
         digest = hashlib.sha256(
             f"{request.mode}:{request.today.isoformat()}:{request.instruction}".encode()
         ).hexdigest()[:24]
@@ -181,7 +184,7 @@ class PlannerService:
             result = await runtime.run(prepared)
         except AgentOutputInvalid:
             payload = adapter.last_payload or {}
-            issues = self._issues_for(files)(payload) or ("the planner did not return a scheme",)
+            issues = validate(payload) or ("the planner did not return a scheme",)
             return SchemeProposal(
                 yaml_text=render_scheme_yaml(payload) if payload else "",
                 summary={},
@@ -197,13 +200,23 @@ class PlannerService:
             issues=(),
         )
 
-    def _issues_for(self, files: Mapping[str, bytes]):  # type: ignore[no-untyped-def]
+    def _issues_for(  # type: ignore[no-untyped-def]
+        self, files: Mapping[str, bytes], taken_key: str | None = None
+    ):
         def validate(payload: Mapping[str, object]) -> tuple[str, ...]:
             try:
                 scheme = scheme_from_payload(payload)
             except SchemeValidationError as exc:
                 return (str(exc),)
-            return validate_scheme(scheme, files=files, config=self._config)
+            issues = validate_scheme(scheme, files=files, config=self._config)
+            if scheme.program.key == taken_key:
+                # The key is the version's unique key: a reforecast that keeps it
+                # could never be approved.
+                issues += (
+                    f"program.key {taken_key!r} belongs to the current version; "
+                    "a reforecast needs a new program.key",
+                )
+            return issues
 
         return validate
 

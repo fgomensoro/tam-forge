@@ -466,6 +466,11 @@ def _planner_prompt(request: PlannerRequest) -> str:
         sections.append(
             "Current scheme (JSON):\n" + json.dumps(dict(request.current_scheme), sort_keys=True)
         )
+    if request.mode == "reforecast":
+        sections.append(
+            "A reforecast becomes a new version: give program.key a new value (the current "
+            "one is taken) and set lineage.predecessor_version to the current program.key."
+        )
     if request.evidence_summary:
         lines = "\n".join(f"- {line.block_id}: {line.status}" for line in request.evidence_summary)
         sections.append("Evidence so far:\n" + lines)

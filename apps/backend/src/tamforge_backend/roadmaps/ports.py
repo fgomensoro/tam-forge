@@ -165,6 +165,10 @@ class RoadmapRepository(Protocol):
         self, *, owner_id: int, source_id: int
     ) -> dict[str, object] | None: ...
 
+    async def version_key_exists(
+        self, *, owner_id: int, source_id: int, version_key: str
+    ) -> bool: ...
+
     async def approve_import(self, approval: ImportApproval) -> RoadmapVersionRecord: ...
 
     async def get_version(
