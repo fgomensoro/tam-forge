@@ -1,5 +1,6 @@
 #!/bin/bash
-# Rotates the Claude subscription token on the production host.
+# Rotates one of the two Claude subscription token slots on the production host.
+# Usage: rotate_claude_token.sh [a|b]   (make rotate-claude-token SLOT=b); the slot defaults to a.
 #
 # The token is read with echo off and travels only on ssh's stdin: never in argv or a
 # local file. Everything on the host happens inside one ssh session, so the Bitwarden
@@ -11,6 +12,18 @@ host="${TAMFORGE_HOST:-hetzner-server-2}"
 # The worker beats only after a whole step, and with a working token that step runs the
 # Claude jobs queued while it was down, each bounded by its lease; cover one of them.
 wait_seconds="${TAMFORGE_ROTATE_WAIT_SECONDS:-900}"
+
+slot="${1:-a}"
+# Slot A keeps the file and variable the host had before slots existed.
+case "$slot" in
+  a) file=claude-oauth.env; variable=CLAUDE_CODE_OAUTH_TOKEN ;;
+  b) file=claude-oauth-b.env; variable=CLAUDE_CODE_OAUTH_TOKEN_B ;;
+  *)
+    echo "SLOT must be a or b. Nothing changed." >&2
+    exit 1
+    ;;
+esac
+label="$(printf '%s' "$slot" | tr '[:lower:]' '[:upper:]')"
 
 if [ "${TAMFORGE_SKIP_SETUP_TOKEN:-0}" != "1" ]; then
   if command -v claude >/dev/null 2>&1; then
@@ -36,11 +49,15 @@ esac
 remote="$(cat <<REMOTE
 set -euo pipefail
 umask 077
-cat > /etc/tamforge/secrets/claude-oauth.env.new
-chown root:tamforge-claude /etc/tamforge/secrets/claude-oauth.env.new
-chmod 0640 /etc/tamforge/secrets/claude-oauth.env.new
-mv -f /etc/tamforge/secrets/claude-oauth.env.new /etc/tamforge/secrets/claude-oauth.env
+cat > /etc/tamforge/secrets/$file.new
+chown root:tamforge-claude /etc/tamforge/secrets/$file.new
+chmod 0640 /etc/tamforge/secrets/$file.new
+mv -f /etc/tamforge/secrets/$file.new /etc/tamforge/secrets/$file
 systemctl restart tamforge-claude-worker
+# The heartbeat speaks for the active slot only; rotating the other one has nothing to wait for.
+# The first owner, as the worker picks it.
+active="\$(sudo -u postgres psql -d tamforge -Atc "select coalesce((select slot from claude_token_slots where owner_id = (select min(id) from owners)), 'a')")"
+if [ "\$active" != "$slot" ]; then echo "inactive \$active"; exit 0; fi
 # Read after the restart and from the database's own clock: restart returns only once the
 # old process has exited, including its last beat, so any newer row is the new process's.
 started="\$(sudo -u postgres psql -d tamforge -Atc 'select clock_timestamp()')"
@@ -54,9 +71,9 @@ echo "unknown not_observed"
 REMOTE
 )"
 
-echo "Installing the token and waiting up to $((wait_seconds / 60)) minutes for the Claude worker's first heartbeat."
+echo "Installing the slot $label token and waiting up to $((wait_seconds / 60)) minutes for the Claude worker's first heartbeat."
 # printf is a shell builtin, so the token never shows up in a process listing.
-if ! result="$(printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$token" | ssh "$host" "$remote")"; then
+if ! result="$(printf '%s=%s\n' "$variable" "$token" | ssh "$host" "$remote")"; then
   unset token
   echo "The host step failed, possibly after the new token was installed. Check 'journalctl -u tamforge-claude-worker' on the host." >&2
   exit 1
@@ -67,9 +84,14 @@ printf '\n' >&2
 status="${result%% *}"
 reason="${result#* }"
 next="$(date -u -v+1y +%Y-%m-%d 2>/dev/null || date -u -d '+1 year' +%Y-%m-%d)"
-if [ "$status" = "ok" ]; then
-  echo "Claude worker is ready with the new token. Rotate again before $next."
+if [ "$status" = "inactive" ]; then
+  active_label="$(printf '%s' "$reason" | tr '[:lower:]' '[:upper:]')"
+  echo "Token installed in slot $label. Slot $active_label is active; switch to slot $label in Settings > Claude to use it. Rotate again before $next."
   exit 0
 fi
-echo "Token installed, but the Claude worker reports $status ($reason). See docs/runbooks/claude-subscription.md." >&2
+if [ "$status" = "ok" ]; then
+  echo "Claude worker is ready with the new slot $label token. Rotate again before $next."
+  exit 0
+fi
+echo "Token installed in slot $label, but the Claude worker reports $status ($reason). See docs/runbooks/claude-subscription.md." >&2
 exit 1

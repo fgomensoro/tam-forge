@@ -13,7 +13,7 @@ again inside the same minute, and both need a human.
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, Protocol, cast
@@ -37,6 +37,13 @@ from ..agents.runtime import (
     BoundedClaudeRuntime,
     PreparedAgentRun,
     ValidatedAgentResult,
+)
+from ..agents.token_slots import (
+    DEFAULT_SLOT,
+    TokenSlot,
+    install_slot_token,
+    installed_tokens,
+    read_active_slot,
 )
 from ..reports.resend import build_report_sender
 
@@ -155,7 +162,11 @@ async def gate_step(sessions: async_sessionmaker[AsyncSession]) -> str | None:
 
     async with sessions() as session:
         owner_id = await session.scalar(select(Owner.id).order_by(Owner.id).limit(1))
+        slot = (
+            DEFAULT_SLOT if owner_id is None else await read_active_slot(session, owner_id=owner_id)
+        )
         await session.rollback()
+    _use_slot(slot, os.environ)
     stored = None
     if owner_id is not None:
         # A fresh session: `AttestationRepository.current` opens its own transaction,
@@ -558,6 +569,22 @@ async def practice_review_step(
 PROBE_INTERVAL = timedelta(minutes=15)
 
 _last_probe: tuple[datetime, str | None] | None = None
+
+# Both slots' tokens as the worker started with them. Captured once, because installing
+# slot B overwrites the variable slot A arrived in.
+_slot_tokens: dict[TokenSlot, str] | None = None
+_active_slot: TokenSlot | None = None
+
+
+def _use_slot(slot: TokenSlot, environ: MutableMapping[str, str]) -> None:
+    """Install the chosen slot's token; a different slot also drops the probe verdict."""
+    global _slot_tokens, _active_slot, _last_probe
+    if _slot_tokens is None:
+        _slot_tokens = installed_tokens(environ)
+    install_slot_token(slot, tokens=_slot_tokens, environ=environ)
+    if slot != _active_slot:
+        _active_slot = slot
+        _last_probe = None
 
 
 def _unavailable_category(exc: Exception) -> str:
