@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 from tamforge_backend.evidence.config_loader import load_config_bundle
+from tamforge_backend.roadmaps import service as service_module
 from tamforge_backend.roadmaps.package import inspect_zip_stream
+from tamforge_backend.roadmaps.parser import RoadmapParseError
 from tamforge_backend.roadmaps.ports import (
     CreateImportResult,
     ImportApproval,
@@ -21,6 +23,7 @@ from tamforge_backend.roadmaps.service import (
     RoadmapService,
 )
 from tamforge_backend.storage.fake import InMemoryObjectStore
+from tamforge_backend.storage.models import ObjectIntegrityError
 
 ROOT = Path(__file__).parents[5]
 CONFIG = load_config_bundle(ROOT / "config")
@@ -54,7 +57,13 @@ class FakeRoadmapRepository(RoadmapRepository):
         self._next_version = 1
 
     async def find_duplicate_import(
-        self, *, owner_id: int, source_key: str, idempotency_key: str, package_hash: str
+        self,
+        *,
+        owner_id: int,
+        source_key: str,
+        idempotency_key: str,
+        package_hash: str,
+        normalized_hash: str | None,
     ) -> RoadmapImportRecord | None:
         for item in self.imports.values():
             if item.owner_id != owner_id:
@@ -64,7 +73,11 @@ class FakeRoadmapRepository(RoadmapRepository):
         for item in self.imports.values():
             if item.owner_id != owner_id or item.source_key != source_key:
                 continue
-            if item.package_hash == package_hash:
+            if (
+                item.package_hash == package_hash
+                and item.status in {"validated", "imported", "rejected"}
+                and item.validation_report.get("normalized_hash") == normalized_hash
+            ):
                 return item
         return None
 
@@ -78,8 +91,9 @@ class FakeRoadmapRepository(RoadmapRepository):
         package_hash: str,
         object_key: str,
         idempotency_key: str,
+        normalized_hash: str | None,
     ) -> CreateImportResult:
-        del source_name, source_kind
+        del source_name, source_kind, normalized_hash
         item = RoadmapImportRecord(
             id=self._next_import,
             owner_id=owner_id,
@@ -297,6 +311,86 @@ async def test_duplicate_package_or_idempotency_returns_same_staged_import() -> 
     assert first == repeated == duplicate_content
     assert first.status == "validated"
     assert store.put_count == 1
+
+
+def _deploy_parser_change(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The same files now parse to a different projection, as after a parser deploy."""
+    original = service_module.parse_roadmap
+    monkeypatch.setattr(
+        service_module,
+        "parse_roadmap",
+        lambda **kwargs: replace(original(**kwargs), normalized_hash="f" * 64),
+    )
+
+
+async def _stage(service: RoadmapService, idempotency_key: str) -> RoadmapImportRecord:
+    with _package() as package:
+        return await service.stage_package(
+            owner_id=1,
+            source_key="obsidian-main",
+            source_name="TAM Roadmap",
+            source_kind="obsidian",
+            package_kind="zip",
+            idempotency_key=idempotency_key,
+            package=package,
+        )
+
+
+@pytest.mark.anyio
+async def test_restaging_after_a_parser_change_replaces_the_stale_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    repository = FakeRoadmapRepository(events)
+    service = RoadmapService(
+        config=CONFIG, repository=repository, object_store=RecordingStore(events), mirror=None
+    )
+    stale = await _stage(service, "before-deploy")
+
+    _deploy_parser_change(monkeypatch)
+    with pytest.raises(ObjectIntegrityError):
+        await service.approve_import(owner_id=1, import_id=stale.id)
+    fresh = await _stage(service, "after-deploy")
+    repeated = await _stage(service, "after-deploy-again")
+    replayed = await _stage(service, "before-deploy")
+
+    assert fresh.id != stale.id
+    assert fresh.package_hash == stale.package_hash
+    assert fresh.status == "validated"
+    assert fresh.validation_report["normalized_hash"] == "f" * 64
+    assert repeated == fresh
+    assert replayed.id == stale.id
+    version = await service.approve_import(owner_id=1, import_id=fresh.id)
+    assert version.content_hash == "f" * 64
+
+    monkeypatch.undo()
+    rolled_back = await _stage(service, "after-rollback")
+    assert rolled_back.id == stale.id
+
+
+@pytest.mark.anyio
+async def test_restaging_after_a_parser_fix_replaces_a_rejected_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken_parser(**kwargs: object) -> None:
+        raise RoadmapParseError("parser bug")
+
+    events: list[str] = []
+    repository = FakeRoadmapRepository(events)
+    service = RoadmapService(
+        config=CONFIG, repository=repository, object_store=RecordingStore(events), mirror=None
+    )
+    monkeypatch.setattr(service_module, "parse_roadmap", broken_parser)
+    rejected = await _stage(service, "broken-parser")
+    still_rejected = await _stage(service, "broken-parser-again")
+
+    monkeypatch.undo()
+    fixed = await _stage(service, "fixed-parser")
+
+    assert rejected.status == "rejected"
+    assert still_rejected == rejected
+    assert fixed.id != rejected.id
+    assert fixed.status == "validated"
 
 
 @pytest.mark.anyio

@@ -35,7 +35,7 @@ from contextlib import asynccontextmanager
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, and_, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -76,6 +76,20 @@ async def _unavailable_on_database_error() -> AsyncIterator[None]:
         raise RoadmapStorageUnavailable("roadmap storage is unavailable") from None
 
 
+def _holds_parse(normalized_hash: str | None) -> ColumnElement[bool]:
+    """A finished import of the same package that the current parser would reproduce.
+
+    Folder and scheme packages are deterministic zips, so a parser change leaves the
+    package hash alone; only the stored parse tells a current import from a stale one.
+    A None hash is a rejection, which matches earlier rejections of that package.
+    """
+    stored_hash = RoadmapImport.validation_report["normalized_hash"].astext
+    return and_(
+        RoadmapImport.status.in_(("validated", "imported", "rejected")),
+        stored_hash.is_not_distinct_from(normalized_hash),
+    )
+
+
 class SqlAlchemyRoadmapRepository:
     """Owner-scoped repository with short, explicit transaction boundaries."""
 
@@ -89,6 +103,7 @@ class SqlAlchemyRoadmapRepository:
         source_key: str,
         idempotency_key: str,
         package_hash: str,
+        normalized_hash: str | None,
     ) -> RoadmapImportRecord | None:
         async with _unavailable_on_database_error():
             idempotency_row = (
@@ -116,6 +131,7 @@ class SqlAlchemyRoadmapRepository:
                         .where(RoadmapImport.owner_id == owner_id)
                         .where(RoadmapSource.source_key == source_key)
                         .where(RoadmapImport.package_hash == bytes.fromhex(package_hash))
+                        .where(_holds_parse(normalized_hash))
                     )
                 ).first()
             row = idempotency_row or package_row
@@ -133,6 +149,7 @@ class SqlAlchemyRoadmapRepository:
         package_hash: str,
         object_key: str,
         idempotency_key: str,
+        normalized_hash: str | None,
     ) -> CreateImportResult:
         async with _unavailable_on_database_error():
             digest = bytes.fromhex(package_hash)
@@ -186,6 +203,8 @@ class SqlAlchemyRoadmapRepository:
                         .where(RoadmapImport.owner_id == owner_id)
                         .where(RoadmapImport.source_id == source.id)
                         .where(RoadmapImport.package_hash == digest)
+                        .where(_holds_parse(normalized_hash))
+                        .limit(1)
                         .with_for_update()
                     )
                 ).scalar_one_or_none()

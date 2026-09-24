@@ -154,9 +154,6 @@ class RoadmapImport(Base):
         UniqueConstraint(
             "owner_id", "idempotency_key", name="uq_roadmap_imports_owner_idempotency"
         ),
-        UniqueConstraint(
-            "source_id", "package_hash", name="uq_roadmap_imports_source_package_hash"
-        ),
         CheckConstraint("octet_length(package_hash) = 32", name="package_hash_length"),
         CheckConstraint("btrim(object_key) <> ''", name="object_key_nonblank"),
         CheckConstraint(
@@ -207,6 +204,7 @@ class RoadmapImport(Base):
             name="lifecycle_coherent",
         ),
         Index("ix_roadmap_imports_owner_id_source_id", "owner_id", "source_id"),
+        Index("ix_roadmap_imports_source_id_package_hash", "source_id", "package_hash"),
         Index("ix_roadmap_imports_status_created_at", "status", "created_at"),
     )
 

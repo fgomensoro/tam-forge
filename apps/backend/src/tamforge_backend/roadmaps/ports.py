@@ -125,6 +125,7 @@ class RoadmapRepository(Protocol):
         source_key: str,
         idempotency_key: str,
         package_hash: str,
+        normalized_hash: str | None,
     ) -> RoadmapImportRecord | None: ...
 
     async def create_staged_import(
@@ -137,6 +138,7 @@ class RoadmapRepository(Protocol):
         package_hash: str,
         object_key: str,
         idempotency_key: str,
+        normalized_hash: str | None,
     ) -> CreateImportResult: ...
 
     async def begin_validation(self, *, owner_id: int, import_id: int) -> RoadmapImportRecord: ...

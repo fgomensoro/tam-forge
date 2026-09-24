@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Iterator, Mapping
 from datetime import date
 from typing import Annotated, Literal, cast
+from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import (
@@ -309,9 +309,10 @@ def _proposal_response(proposal: SchemeProposal) -> SchemeProposalResponse:
     )
 
 
-def _scheme_idempotency_key(prefix: str, subject_id: int, yaml_text: str) -> str:
-    digest = hashlib.sha256(yaml_text.encode("utf-8")).hexdigest()[:32]
-    return f"{prefix}:{subject_id}:{digest}"
+def _scheme_idempotency_key(prefix: str, subject_id: int) -> str:
+    # A fresh key per request: identical content still dedupes by package hash,
+    # and that path notices when a parser change has made the stored import stale.
+    return f"{prefix}:{subject_id}:{uuid4().hex}"
 
 
 @router.post(
@@ -351,7 +352,7 @@ async def stage_scheme_for_import(
         source_key=record.source_key,
         object_key=record.object_key,
         yaml_text=command.yaml_text,
-        idempotency_key=_scheme_idempotency_key("scheme", import_id, command.yaml_text),
+        idempotency_key=_scheme_idempotency_key("scheme", import_id),
     )
     _prevent_storage(response)
     return _import_response(staged)
@@ -411,7 +412,7 @@ async def stage_reforecast(
         source_key=source,
         object_key=version.object_key,
         yaml_text=command.yaml_text,
-        idempotency_key=_scheme_idempotency_key("reforecast", version_id, command.yaml_text),
+        idempotency_key=_scheme_idempotency_key("reforecast", version_id),
     )
     _prevent_storage(response)
     return _import_response(staged)

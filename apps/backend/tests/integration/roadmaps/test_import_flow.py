@@ -143,6 +143,7 @@ def test_import_approval_and_activation_are_durable_and_separate(
                         package_hash="2" * 64,
                         object_key="roadmap-source/1/collision-first/" + "2" * 64,
                         idempotency_key="collision-first",
+                        normalized_hash=None,
                     )
                     key_collision = await repository.create_staged_import(
                         owner_id=owner_id,
@@ -152,16 +153,112 @@ def test_import_approval_and_activation_are_durable_and_separate(
                         package_hash="3" * 64,
                         object_key="roadmap-source/1/collision-key/" + "3" * 64,
                         idempotency_key="collision-key",
+                        normalized_hash=None,
                     )
                     selected = await repository.find_duplicate_import(
                         owner_id=owner_id,
                         source_key="obsidian-main",
                         idempotency_key="collision-key",
                         package_hash="2" * 64,
+                        normalized_hash=None,
                     )
                     assert selected is not None
                     assert selected.id == key_collision.record.id
                     assert selected.id != first_collision.record.id
+            finally:
+                await engine.dispose()
+
+        asyncio.run(exercise())
+    finally:
+        try:
+            with sync_engine.begin() as connection:
+                connection.execute(text("DROP SCHEMA public CASCADE"))
+                connection.execute(text("CREATE SCHEMA public"))
+        finally:
+            sync_engine.dispose()
+
+
+def test_restaging_after_a_parser_change_replaces_an_unapproved_stale_import(
+    test_database_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from dataclasses import replace
+
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.engine import make_url
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from tamforge_backend.database import database_url_to_sync
+    from tamforge_backend.evidence.config_loader import load_config_bundle
+    from tamforge_backend.roadmaps import service as service_module
+    from tamforge_backend.roadmaps.package import inspect_zip_stream
+    from tamforge_backend.roadmaps.repository import SqlAlchemyRoadmapRepository
+    from tamforge_backend.roadmaps.service import RoadmapService
+    from tamforge_backend.storage.fake import InMemoryObjectStore
+    from tamforge_backend.storage.models import ObjectIntegrityError
+
+    config = Config("apps/backend/alembic.ini")
+    config.attributes["database_url"] = test_database_url
+    sync_engine = create_engine(database_url_to_sync(test_database_url))
+    try:
+        command.downgrade(config, "base")
+        command.upgrade(config, "head")
+        with sync_engine.begin() as connection:
+            owner_id = connection.execute(
+                text(
+                    "INSERT INTO owners (github_user_id, github_login) "
+                    "VALUES (102269369, 'fgomensoro') RETURNING id"
+                )
+            ).scalar_one()
+
+        async_url = make_url(test_database_url).set(drivername="postgresql+asyncpg")
+
+        async def exercise() -> None:
+            engine = create_async_engine(async_url)
+            factory = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
+            try:
+                async with factory() as session:
+                    service = RoadmapService(
+                        config=load_config_bundle(ROOT / "config"),
+                        repository=SqlAlchemyRoadmapRepository(session),
+                        object_store=InMemoryObjectStore(),
+                        mirror=None,
+                    )
+
+                    async def stage(idempotency_key: str):  # type: ignore[no-untyped-def]
+                        with inspect_zip_stream((FIXTURE.read_bytes(),)) as package:
+                            return await service.stage_package(
+                                owner_id=owner_id,
+                                source_key="obsidian-main",
+                                source_name="TAM Roadmap",
+                                source_kind="obsidian",
+                                package_kind="zip",
+                                idempotency_key=idempotency_key,
+                                package=package,
+                            )
+
+                    first = await stage("before-deploy")
+                    assert (await stage("unchanged-parser")).id == first.id
+
+                    original = service_module.parse_roadmap
+                    monkeypatch.setattr(
+                        service_module,
+                        "parse_roadmap",
+                        lambda **kwargs: replace(original(**kwargs), normalized_hash="f" * 64),
+                    )
+                    with pytest.raises(ObjectIntegrityError):
+                        await service.approve_import(owner_id=owner_id, import_id=first.id)
+                    fresh = await stage("after-deploy")
+                    assert fresh.id != first.id
+                    assert fresh.package_hash == first.package_hash
+                    assert fresh.status == "validated"
+                    assert (await stage("after-deploy-again")).id == fresh.id
+
+                    version = await service.approve_import(owner_id=owner_id, import_id=fresh.id)
+                    assert version.content_hash == "f" * 64
+
+                    monkeypatch.undo()
+                    assert (await stage("after-rollback")).id == first.id
             finally:
                 await engine.dispose()
 
