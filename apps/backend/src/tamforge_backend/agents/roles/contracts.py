@@ -88,7 +88,7 @@ ROLE_CONTRACTS: Mapping[AgentRole, RolePromptContract] = MappingProxyType(
         AgentRole.COACH: _contract(
             AgentRole.COACH,
             "tamforge.coach",
-            "urn:tamforge:schema:coach-v1",
+            "urn:tamforge:schema:coach-v2",
             (TASK_BRIEF, COMMITTED_ATTEMPT, SELF_REVIEW),
         ),
         AgentRole.REVIEWER: _contract(

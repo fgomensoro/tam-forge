@@ -16,6 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.models import CommandReceipt, Owner
+from ..coaching.models import CoachThread
 from ..database import transaction_scope
 from ..models.base import utc_now
 from ..roadmaps.models import TaskDefinition
@@ -789,7 +790,11 @@ class ActivityService:
                     original_sql=validated.original_sql,
                     audience=validated.audience,
                     prompt=validated.prompt,
-                    assistance_mode=row.activity.assistance_mode,
+                    assistance_mode=await self._coached_assistance(
+                        owner_id=owner_id,
+                        activity_id=activity_id,
+                        current=row.activity.assistance_mode,
+                    ),
                     commitment_hash=commitment_hash,
                     committed_at=now,
                     created_at=now,
@@ -1508,6 +1513,20 @@ class ActivityService:
         elif parent_attempt_id is not None:
             raise ActivityInvalidRequest("only Attempt B can have a parent attempt")
         return current
+
+    _ASSISTANCE_RANK = {"none": 0, "coach_preparation": 1, "hint_ladder": 2}
+
+    async def _coached_assistance(self, *, owner_id: int, activity_id: int, current: str) -> str:
+        """The stronger of the activity's own mode and what the coach gave before the commit."""
+        coached = await self._session.scalar(
+            select(CoachThread.assistance_mode)
+            .where(CoachThread.owner_id == owner_id)
+            .where(CoachThread.activity_instance_id == activity_id)
+        )
+        if coached is None:
+            return current
+        rank = self._ASSISTANCE_RANK
+        return coached if rank.get(coached, 0) > rank.get(current, 0) else current
 
     async def _load_commitment_artifacts(
         self,
