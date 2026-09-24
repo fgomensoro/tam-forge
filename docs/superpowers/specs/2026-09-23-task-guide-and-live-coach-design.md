@@ -77,8 +77,11 @@ fail on a stale version. The thread already updates on every turn.
 - `agents/roles/contracts.py`: `ROLES_BEFORE_COMMITMENT` gains `AgentRole.COACH`.
   The reviewer, tutor and analyst keep requiring a commit.
 - `agents/roles/coach.py`:
-  - `COACHING_ROLES` becomes `{"coach", "tutor", "interviewer"}`. `none`, `planner`,
-    `reviewer` and `analyst` stay refused, so a sealed assessment stays sealed.
+  - `COACHING_ROLES` stays `{"coach", "tutor"}`. An `interviewer` block is coachable
+    only when its contract's procedure contains the phase `interview_cycle` (the rule
+    from PR #405, carried by `CoachBlock.phases`). `none`, `planner`, `reviewer`,
+    `analyst` and the sealed final mock stay refused, so a sealed assessment stays
+    sealed.
   - `CoachRequest` gains `phase: Literal["before_commit", "after_commit"]`, derived by
     the caller from `committed_attempt` being empty.
   - `CoachTurn` gains `hint_given: bool = False`.
@@ -131,8 +134,9 @@ existing `CoachUnavailable` path.
 
 Backend unit tests:
 
-- `agents/roles/test_coach.py`: interviewer blocks allowed; `none` refused; a turn with
-  an empty committed attempt runs in phase `before_commit`; `hint_given` after the
+- `agents/roles/test_coach.py`: interviewer blocks allowed only in the interview cycle;
+  `none` refused; a turn with an empty committed attempt runs in phase
+  `before_commit`; `hint_given` after the
   commit is refused by the validator.
 - `coaching/test_routes.py` or a new `coaching/test_service.py`: send before the
   commit succeeds and sets `coach_preparation`; a turn with `hint_given` sets

@@ -2,10 +2,12 @@
 
 Three rules, all enforced by shape rather than by discipline at the call site:
 
-- It never runs in a block whose `allowed_ai_role` forbids it (`none`, `planner`,
-  `reviewer` or `analyst`). Before the learner commits it asks a recall question and
-  gives hints on request; a hint is reported in `hint_given` and the caller records
-  it as assistance on the attempt. After the commit it corrects.
+- It never runs in a block whose `allowed_ai_role` forbids it (`none`, or a role
+  other than coach or tutor, except an interviewer block whose procedure is the
+  interview cycle, which schedules coaching between Attempt A and Attempt B).
+  Before the learner commits it asks a recall question and gives hints on request; a
+  hint is reported in `hint_given` and the caller records it as assistance on the
+  attempt. After the commit it corrects.
 - Its output is a message, the next step taken from the plan the caller hands it
   (never invented), and proposed evidence the learner still has to accept. There is
   no field through which it could mark anything done.
@@ -43,7 +45,10 @@ NOTE_SCHEMA_ID = "urn:tamforge:schema:coach-note-v1"
 COACH_JOB_TYPE = "claude.followup"
 COACH_MAX_TURNS = 4
 COACH_WALL_TIME_SECONDS = 120.0
-COACHING_ROLES: frozenset[str] = frozenset({"coach", "tutor", "interviewer"})
+COACHING_ROLES: frozenset[str] = frozenset({"coach", "tutor"})
+# The interview cycle's own procedure has a coaching step after Attempt A; the sealed
+# final mock, also an interviewer block, has none.
+INTERVIEW_CYCLE_PHASE = "interview_cycle"
 CoachPhase = Literal["before_commit", "after_commit"]
 MAX_MESSAGE_CHARS = 2000
 EvidenceKind = Literal["note", "correction", "question", "card"]
@@ -91,6 +96,7 @@ class CoachBlock:
     allowed_ai_role: str
     required_output: tuple[str, ...]
     pass_criteria: tuple[str, ...]
+    phases: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,7 +170,9 @@ class NoteTransport(Protocol):
 
 
 def coaching_allowed(block: CoachBlock) -> bool:
-    return block.allowed_ai_role in COACHING_ROLES
+    if block.allowed_ai_role in COACHING_ROLES:
+        return True
+    return block.allowed_ai_role == "interviewer" and INTERVIEW_CYCLE_PHASE in block.phases
 
 
 def validate_coach_turn(
@@ -246,6 +254,7 @@ class _RuntimeAdapter:
             prior_messages=self.request.prior_messages,
             repair_errors=repair_errors,
             handoff=self.request.handoff,
+            reference=self.request.reference,
         )
         payload = await self.transport.respond(request)
         self.last_payload = payload

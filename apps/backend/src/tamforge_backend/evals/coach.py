@@ -100,6 +100,7 @@ def load_coach_cases(path: Path) -> tuple[str, str, tuple[CoachCase, ...]]:
                     allowed_ai_role=str(block["allowed_ai_role"]),
                     required_output=tuple(block["required_output"]),
                     pass_criteria=tuple(block["pass_criteria"]),
+                    phases=tuple(str(p) for p in block.get("phases", ())),
                 ),
                 committed_attempt=str(raw["committed_attempt"]),
                 learner_message=str(raw["learner_message"]),

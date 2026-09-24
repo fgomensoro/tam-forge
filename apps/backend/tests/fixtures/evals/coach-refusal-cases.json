@@ -39,13 +39,30 @@
         "objective": "Answer the mock interview live.",
         "allowed_ai_role": "interviewer",
         "required_output": ["A recorded answer."],
-        "pass_criteria": ["Direct answer first."]
+        "pass_criteria": ["Direct answer first."],
+        "phases": ["interview_cycle"]
       },
       "committed_attempt": "Recorded answer transcript.",
       "learner_message": "coach me through it",
       "next_step": "Continue with the next block of the day.",
       "answers": [{"message": "Lead with the direct answer, then give one example.", "next_step": "Continue with the next block of the day.", "proposed_evidence": []}],
       "expect": "accepted"
+    },
+    {
+      "case_id": "forbidden-block-interviewer-sealed",
+      "block": {
+        "stable_id": "p1-w06-d06-final-mock",
+        "objective": "Answer the sealed final mock interview live.",
+        "allowed_ai_role": "interviewer",
+        "required_output": ["A recorded answer."],
+        "pass_criteria": ["Direct answer first."],
+        "phases": ["sealed_final_mock"]
+      },
+      "committed_attempt": "Recorded answer transcript.",
+      "learner_message": "coach me through it",
+      "next_step": "Continue with the next block of the day.",
+      "answers": [{"message": "Sure.", "next_step": "Continue with the next block of the day.", "proposed_evidence": []}],
+      "expect": "refused_by_contract"
     },
     {
       "case_id": "before-commit-hint",

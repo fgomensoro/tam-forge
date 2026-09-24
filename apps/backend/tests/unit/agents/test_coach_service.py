@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
 
 import pytest
 from tamforge_backend.agents.roles.coach import (
@@ -16,6 +17,7 @@ from tamforge_backend.agents.roles.coach import (
     validate_note_draft,
 )
 from tamforge_backend.agents.roles.contracts import RoleContractError
+from tamforge_backend.evidence.config_loader import load_config_bundle
 
 BLOCK = CoachBlock(
     stable_id="p1-w01-d01-roadmap",
@@ -56,9 +58,34 @@ def _request(**overrides: object) -> CoachRequest:
 def test_coaching_is_allowed_only_where_the_block_says_so() -> None:
     assert coaching_allowed(BLOCK)
     assert coaching_allowed(CoachBlock("x", "o", "tutor", (), ()))
-    assert coaching_allowed(CoachBlock("x", "o", "interviewer", (), ()))
-    for sealed in ("none", "planner", "reviewer", "analyst"):
+    assert not coaching_allowed(CoachBlock("x", "o", "none", (), ()))
+    assert not coaching_allowed(CoachBlock("x", "o", "interviewer", (), ()))
+    assert coaching_allowed(CoachBlock("x", "o", "interviewer", (), (), ("interview_cycle",)))
+    assert not coaching_allowed(CoachBlock("x", "o", "interviewer", (), (), ("sealed_final_mock",)))
+    assert not coaching_allowed(CoachBlock("x", "o", "none", (), (), ("interview_cycle",)))
+    for sealed in ("planner", "reviewer", "analyst"):
         assert not coaching_allowed(CoachBlock("x", "o", sealed, (), ()))
+
+
+def test_phase1_interviewer_blocks_are_coached_exactly_where_the_contract_promises_it() -> None:
+    config = load_config_bundle(Path(__file__).parents[5] / "config/releases/phase-1-six-week-v1")
+    verdicts = set()
+    for task in config.roadmap_tasks:
+        if task.allowed_ai_role != "interviewer":
+            continue
+        contract = config.roadmap_contracts[task.contract]
+        block = CoachBlock(
+            stable_id=task.stable_id,
+            objective="o",
+            allowed_ai_role=task.allowed_ai_role,
+            required_output=contract.required_output,
+            pass_criteria=contract.pass_criteria,
+            phases=tuple(step.phase for step in contract.procedure),
+        )
+        promised = any("coaching handoff" in item for item in contract.required_output)
+        assert coaching_allowed(block) is promised, task.stable_id
+        verdicts.add((task.contract, promised))
+    assert verdicts == {("interview", True), ("sealed_interview", False)}
 
 
 def test_the_phase_follows_the_committed_attempt() -> None:
@@ -106,6 +133,16 @@ def test_turn_validation_refuses_completion_claims_and_invented_next_steps() -> 
     assert validate_coach_turn(
         {**GOOD, "proposed_evidence": [{"kind": "score", "text": "4/5"}]}, next_step=NEXT
     )
+
+
+@pytest.mark.anyio
+async def test_a_turn_forwards_the_reference_material_to_the_transport() -> None:
+    transport = FakeTransport([GOOD])
+    service = CoachService(transport, model="claude-opus-5")
+
+    await service.turn(_request(reference=("## Story: outage",)))
+
+    assert transport.requests[0].reference == ("## Story: outage",)
 
 
 @pytest.mark.anyio

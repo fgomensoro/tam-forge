@@ -465,9 +465,20 @@ def _planner_prompt(request: PlannerRequest) -> str:
         f"Today: {request.today.isoformat()}.",
         f"Instruction: {request.instruction or 'none'}.",
     ]
+    if request.first_day is not None:
+        sections.append(
+            f"Day 1 of your scheme is the first date on or after {request.first_day.isoformat()} "
+            "that is not one of its rest weekdays. Earlier dates are already planned under the "
+            "current version and do not change, so plan the remaining work from that date."
+        )
     if request.current_scheme is not None:
         sections.append(
             "Current scheme (JSON):\n" + json.dumps(dict(request.current_scheme), sort_keys=True)
+        )
+    if request.mode == "reforecast":
+        sections.append(
+            "A reforecast becomes a new version: give program.key a new value (the current "
+            "one is taken) and set lineage.predecessor_version to the current program.key."
         )
     if request.evidence_summary:
         lines = "\n".join(f"- {line.block_id}: {line.status}" for line in request.evidence_summary)

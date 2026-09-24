@@ -151,6 +151,7 @@ def test_roadmap_models_expose_exact_tables_types_and_required_columns() -> None
             "approved_at",
             "activated_at",
             "superseded_at",
+            "starts_on",
             "mirror_status",
             "mirror_ref",
             "mirror_error_code",
@@ -387,6 +388,7 @@ def test_models_have_explicit_nullability_and_only_intended_server_defaults() ->
             "approved_at",
             "activated_at",
             "superseded_at",
+            "starts_on",
             "mirror_ref",
             "mirror_error_code",
         },
@@ -1025,4 +1027,4 @@ def test_alembic_has_exactly_one_linear_head() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "20260923_0038_coach_assistance (head)"
+    assert result.stdout.strip() == "20260923_0039_coach_assistance (head)"
