@@ -492,6 +492,9 @@ private struct NativeWorkspaceView: View {
             if case .evidence = newRoute { return }
             state.evidence.deactivate()
         }
+        // The recording coordinator outlives sign-out, which empties its upload
+        // queue; each signed-in workspace restarts whatever is still pending.
+        .task { await recording.resumeUploads() }
         // Close this generation on logout/expiry. A fresh sign-in gets a new model;
         // canceled or noncooperative reads cannot publish into the retired workspace.
         .onDisappear {

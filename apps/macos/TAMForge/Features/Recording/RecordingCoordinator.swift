@@ -169,6 +169,7 @@ final class RecordingCoordinator: ObservableObject {
     private var abortedForPressure: Set<UUID> = []
     private var resourceTask: Task<Void, Never>?
     private var uploadQueue: [UUID] = []
+    private var uploadingRecordingID: UUID?
     private var uploadWorkerTask: Task<Void, Never>?
     private var spool: (any RecordingSpoolWriting)?
     private var eventContinuation: AsyncStream<RecordingCaptureEvent>.Continuation?
@@ -670,6 +671,14 @@ final class RecordingCoordinator: ObservableObject {
         uploadQueue.removeAll()
     }
 
+    /// Restarts what `pauseUploadsForSignOut` emptied; every signed-in workspace calls it.
+    func resumeUploads() async {
+        await refreshPendingRecordings()
+        // A workspace that signed out while the spool was read cancels this.
+        guard !Task.isCancelled else { return }
+        enqueueAllPendingUploads()
+    }
+
     private func consume(_ event: RecordingCaptureEvent) async {
         switch event {
         case let .chunk(chunk):
@@ -826,6 +835,7 @@ final class RecordingCoordinator: ObservableObject {
         guard uploader != nil,
               !phase.isActive,
               !uploadQueue.contains(recordingID),
+              uploadingRecordingID != recordingID,
               pendingRecordingIDs.contains(recordingID)
         else { return }
         uploadQueue.append(recordingID)
@@ -838,7 +848,9 @@ final class RecordingCoordinator: ObservableObject {
             guard let self else { return }
             while !Task.isCancelled, !self.uploadQueue.isEmpty {
                 let recordingID = self.uploadQueue.removeFirst()
+                self.uploadingRecordingID = recordingID
                 await self.uploadOne(recordingID)
+                self.uploadingRecordingID = nil
             }
             self.uploadWorkerTask = nil
         }
