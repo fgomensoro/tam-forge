@@ -242,7 +242,12 @@
 		FB5000000000000000000006 /* ProgressModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5000000000000000001005 /* ProgressModel.swift */; };
 		FB5000000000000000000007 /* ProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5000000000000000001007 /* ProgressView.swift */; };
 		FB5000000000000000000008 /* ProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5000000000000000001007 /* ProgressView.swift */; };
+		FB6000000000000000000001 /* ClaudeStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB6000000000000000001001 /* ClaudeStatus.swift */; };
+		FB6000000000000000000002 /* ClaudeStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB6000000000000000001001 /* ClaudeStatus.swift */; };
+		FB6000000000000000000003 /* ClaudeSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB6000000000000000001003 /* ClaudeSettingsView.swift */; };
+		FB6000000000000000000004 /* ClaudeSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB6000000000000000001003 /* ClaudeSettingsView.swift */; };
 		FB5000000000000000000009 /* ProgressModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB5000000000000000001009 /* ProgressModelTests.swift */; };
+		FB6000000000000000000009 /* ClaudeSettingsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB6000000000000000001009 /* ClaudeSettingsModelTests.swift */; };
 		D50000000000000000000020 /* TodayTaskStatusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000B /* TodayTaskStatusTests.swift */; };
 		D5000000000000000000001E /* TodayTaskStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000A /* TodayTaskStatus.swift */; };
 		D5000000000000000000001F /* TodayTaskStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000A /* TodayTaskStatus.swift */; };
@@ -425,7 +430,10 @@
 		FB5000000000000000001003 /* ProgressService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressService.swift; sourceTree = "<group>"; };
 		FB5000000000000000001005 /* ProgressModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressModel.swift; sourceTree = "<group>"; };
 		FB5000000000000000001007 /* ProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressView.swift; sourceTree = "<group>"; };
+		FB6000000000000000001001 /* ClaudeStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeStatus.swift; sourceTree = "<group>"; };
+		FB6000000000000000001003 /* ClaudeSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeSettingsView.swift; sourceTree = "<group>"; };
 		FB5000000000000000001009 /* ProgressModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressModelTests.swift; sourceTree = "<group>"; };
+		FB6000000000000000001009 /* ClaudeSettingsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeSettingsModelTests.swift; sourceTree = "<group>"; };
 		D5000000000000000000000A /* TodayTaskStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayTaskStatus.swift; sourceTree = "<group>"; };
 		D5000000000000000000000B /* TodayTaskStatusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayTaskStatusTests.swift; sourceTree = "<group>"; };
 		D5000000000000000000000C /* OrganicSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganicSidebar.swift; sourceTree = "<group>"; };
@@ -531,6 +539,7 @@
 				FB300000000000000001009 /* ClassesModelTests.swift */,
 				FB4000000000000000001009 /* CardsModelTests.swift */,
 				FB5000000000000000001009 /* ProgressModelTests.swift */,
+				FB6000000000000000001009 /* ClaudeSettingsModelTests.swift */,
 				F80000000000000000001002 /* InterviewerTurnTests.swift */,
 				E20000000000000000000078 /* ActivityWorkspaceTests.swift */,
 				D50000000000000000000002 /* OrganicDesignTests.swift */,
@@ -671,6 +680,7 @@
 				FB300000000000000002001 /* Classes */,
 				FB4000000000000000002001 /* Cards */,
 				FB5000000000000000002001 /* Progress */,
+				FB6000000000000000002001 /* Settings */,
 				F80000000000000000002001 /* Interviewer */,
 			);
 			path = Features;
@@ -852,6 +862,15 @@
 				FB5000000000000000001007 /* ProgressView.swift */,
 			);
 			path = Progress;
+			sourceTree = "<group>";
+		};
+		FB6000000000000000002001 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				FB6000000000000000001001 /* ClaudeStatus.swift */,
+				FB6000000000000000001003 /* ClaudeSettingsView.swift */,
+			);
+			path = Settings;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -1059,6 +1078,8 @@
 				FB5000000000000000000003 /* ProgressService.swift in Sources */,
 				FB5000000000000000000005 /* ProgressModel.swift in Sources */,
 				FB5000000000000000000007 /* ProgressView.swift in Sources */,
+				FB6000000000000000000001 /* ClaudeStatus.swift in Sources */,
+				FB6000000000000000000003 /* ClaudeSettingsView.swift in Sources */,
 				F80000000000000000000001 /* InterviewerTurn.swift in Sources */,
 				F6000000000000000000000C /* RecordingAudioReading.swift in Sources */,
 				E30000000000000000000001 /* EvidenceModels.swift in Sources */,
@@ -1160,6 +1181,8 @@
 				FB5000000000000000000004 /* ProgressService.swift in Sources */,
 				FB5000000000000000000006 /* ProgressModel.swift in Sources */,
 				FB5000000000000000000008 /* ProgressView.swift in Sources */,
+				FB6000000000000000000002 /* ClaudeStatus.swift in Sources */,
+				FB6000000000000000000004 /* ClaudeSettingsView.swift in Sources */,
 				F80000000000000000000002 /* InterviewerTurn.swift in Sources */,
 				F6000000000000000000000D /* RecordingAudioReading.swift in Sources */,
 				F30000000000000000000021 /* RecordingFeatureTests.swift in Sources */,
@@ -1230,6 +1253,7 @@
 				FB300000000000000000009 /* ClassesModelTests.swift in Sources */,
 				FB4000000000000000000009 /* CardsModelTests.swift in Sources */,
 				FB5000000000000000000009 /* ProgressModelTests.swift in Sources */,
+				FB6000000000000000000009 /* ClaudeSettingsModelTests.swift in Sources */,
 				F80000000000000000000003 /* InterviewerTurnTests.swift in Sources */,
 				E20000000000000000000048 /* ActivityWorkspaceTests.swift in Sources */,
 				D50000000000000000000012 /* OrganicTokens.swift in Sources */,

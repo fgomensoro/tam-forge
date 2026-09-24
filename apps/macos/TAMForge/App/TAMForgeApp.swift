@@ -5,6 +5,8 @@ import SwiftUI
 @main
 struct TAMForgeApp: App {
     let dependencies: AppDependencies
+    // Owned here, not by the main window, so the main window and Settings share one session.
+    @StateObject private var composition: NativeShellComposition
 
     init() {
         // One startup sweep; live uploads are protected by their OS-held file locks.
@@ -29,6 +31,7 @@ struct TAMForgeApp: App {
 
     init(dependencies: AppDependencies) {
         self.dependencies = dependencies
+        _composition = StateObject(wrappedValue: NativeShellComposition(dependencies: dependencies))
         // Dark-only: the Organic palette has no light values. NSApp.appearance also
         // covers AppKit panels (open/save) that .preferredColorScheme cannot reach.
         NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
@@ -37,10 +40,20 @@ struct TAMForgeApp: App {
     var body: some Scene {
         // One workspace owns the authenticated session and its private in-memory drafts.
         Window("TAM Forge", id: "main") {
-            NativeShellView(dependencies: dependencies)
-                .preferredColorScheme(.dark)
+            NativeSessionView(
+                dependencies: dependencies,
+                model: composition.session,
+                services: composition.services,
+                recording: composition.recording
+            )
+            .preferredColorScheme(.dark)
         }
         .organicWindowChrome()
+
+        Settings {
+            ClaudeSettingsView(session: composition.session, api: composition.services.claudeStatus)
+                .preferredColorScheme(.dark)
+        }
     }
 }
 
@@ -93,25 +106,6 @@ struct TAMForgeApp: App {
         }
     }
 #endif
-
-private struct NativeShellView: View {
-    let dependencies: AppDependencies
-    @StateObject private var composition: NativeShellComposition
-
-    init(dependencies: AppDependencies) {
-        self.dependencies = dependencies
-        _composition = StateObject(wrappedValue: NativeShellComposition(dependencies: dependencies))
-    }
-
-    var body: some View {
-        NativeSessionView(
-            dependencies: dependencies,
-            model: composition.session,
-            services: composition.services,
-            recording: composition.recording
-        )
-    }
-}
 
 private struct NativeSessionView: View {
     let dependencies: AppDependencies
@@ -185,6 +179,7 @@ private struct NativeFeatureServices {
     let classes: any EnglishClassAPI
     let cards: any CardAPI
     let progress: any ProgressAPI
+    let claudeStatus: any ClaudeStatusAPI
 }
 
 @MainActor
@@ -260,7 +255,8 @@ private final class NativeShellComposition: ObservableObject {
             interviews: LiveInterviewAPI(transport: transport, recordings: recordingServer),
             classes: LiveEnglishClassAPI(transport: transport, recordings: recordingServer),
             cards: LiveCardAPI(transport: transport),
-            progress: LiveProgressAPI(transport: transport)
+            progress: LiveProgressAPI(transport: transport),
+            claudeStatus: LiveClaudeStatusAPI(transport: transport)
         )
         #if DEBUG
             let isUITest = ProcessInfo.processInfo.arguments.contains("-ui-test-signed-out")
