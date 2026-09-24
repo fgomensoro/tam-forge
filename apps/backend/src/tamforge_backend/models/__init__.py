@@ -15,6 +15,16 @@ _MODEL_MODULES = (
     "tamforge_backend.workspaces.models",
     "tamforge_backend.agents.models",
     "tamforge_backend.speech.models",
+    "tamforge_backend.cards.models",
+    "tamforge_backend.classes.models",
+    "tamforge_backend.coaching.models",
+    "tamforge_backend.interviews.models",
+    "tamforge_backend.notes.models",
+    "tamforge_backend.practice.models",
+    "tamforge_backend.reports.models",
+    "tamforge_backend.reviews.models",
+    "tamforge_backend.shadowing.models",
+    "tamforge_backend.observability.heartbeats",
 )
 
 
