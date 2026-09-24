@@ -56,8 +56,43 @@ def _request(**overrides: object) -> CoachRequest:
 def test_coaching_is_allowed_only_where_the_block_says_so() -> None:
     assert coaching_allowed(BLOCK)
     assert coaching_allowed(CoachBlock("x", "o", "tutor", (), ()))
-    assert not coaching_allowed(CoachBlock("x", "o", "none", (), ()))
-    assert not coaching_allowed(CoachBlock("x", "o", "interviewer", (), ()))
+    assert coaching_allowed(CoachBlock("x", "o", "interviewer", (), ()))
+    for sealed in ("none", "planner", "reviewer", "analyst"):
+        assert not coaching_allowed(CoachBlock("x", "o", sealed, (), ()))
+
+
+def test_the_phase_follows_the_committed_attempt() -> None:
+    assert _request().phase == "after_commit"
+    assert _request(committed_attempt="").phase == "before_commit"
+    assert _request(committed_attempt="   ").phase == "before_commit"
+
+
+def test_a_hint_is_only_recorded_before_the_commit() -> None:
+    hinted = {**GOOD, "hint_given": True}
+    assert validate_coach_turn(hinted, next_step=NEXT, phase="before_commit") == ()
+    assert validate_coach_turn(hinted, next_step=NEXT, phase="after_commit") == (
+        "a hint is recorded only before the commit",
+    )
+    assert validate_coach_turn(GOOD, next_step=NEXT, phase="before_commit") == ()
+
+
+@pytest.mark.anyio
+async def test_a_turn_before_the_commit_runs_and_tells_the_prompt_the_phase() -> None:
+    transport = FakeTransport([{**GOOD, "hint_given": True}])
+    service = CoachService(transport, model="claude-opus-5")
+
+    turn = await service.turn(_request(committed_attempt="", learner_message="dame una pista"))
+
+    assert turn.hint_given
+    prompt = render_coach_prompt(transport.requests[0])
+    assert "before the commit" in prompt
+    assert "Committed attempt" not in prompt
+
+
+def test_the_prompt_after_the_commit_carries_the_attempt() -> None:
+    prompt = render_coach_prompt(_request())
+    assert "Committed attempt:\nWebhooks deliver events" in prompt
+    assert "before the commit" not in prompt
 
 
 def test_turn_validation_refuses_completion_claims_and_invented_next_steps() -> None:
@@ -98,12 +133,10 @@ async def test_one_repair_then_refusal_and_runtime_failures_are_unavailable() ->
 
 
 @pytest.mark.anyio
-async def test_the_coach_refuses_forbidden_blocks_and_uncommitted_attempts() -> None:
+async def test_the_coach_refuses_forbidden_blocks() -> None:
     service = CoachService(FakeTransport([GOOD]), model="m")
     with pytest.raises(RoleContractError, match="does not allow coaching"):
         await service.turn(_request(block=CoachBlock("s", "o", "none", (), ())))
-    with pytest.raises(RoleContractError, match="only after the learner commits"):
-        await service.turn(_request(committed_attempt="   "))
 
 
 def test_the_prompt_carries_the_brief_the_attempt_and_repair_errors() -> None:
