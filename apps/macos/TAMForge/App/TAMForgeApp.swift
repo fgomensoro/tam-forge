@@ -476,11 +476,12 @@ private struct NativeWorkspaceView: View {
                 .padding(.top, Organic.Space.p32)
                 .padding(.bottom, Organic.Space.p40)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // Below the toolbar, so the open panel never covers the notifications bell.
+                .overlay(alignment: .bottomTrailing) {
+                    CoachOverlay(model: state.coach).padding(Organic.Space.p24)
+                }
             }
             .background(Organic.Color.bg)
-            .overlay(alignment: .bottomTrailing) {
-                CoachOverlay(model: state.coach).padding(Organic.Space.p24)
-            }
         }
         .task(id: session.featureRefreshVersion) {
             guard session.featureRefreshVersion > 0 else { return }
