@@ -28,8 +28,8 @@ struct CoachMessage: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
-/// The server's view of an activity's coaching thread. The server decides
-/// whether coaching is allowed for the block; the app only renders that answer.
+/// The server's view of an activity's coaching thread. Every block may be coached,
+/// so `coachingAllowed` is always true.
 struct CoachThread: Codable, Equatable, Sendable {
     let activityID: Int
     let threadID: Int?
@@ -47,6 +47,36 @@ struct CoachThread: Codable, Equatable, Sendable {
         case nextStep = "next_step"
         case assistanceMode = "assistance_mode"
     }
+}
+
+/// The owner's thread outside any activity: messages only, no next step or evidence.
+struct GeneralCoachThread: Decodable, Equatable, Sendable {
+    let threadID: Int?
+    let messages: [CoachMessage]
+
+    enum CodingKeys: String, CodingKey {
+        case threadID = "thread_id"
+        case messages
+    }
+}
+
+/// One non-empty field of the activity's unsaved draft.
+struct CoachDraftField: Encodable, Equatable, Sendable {
+    let name: String
+    let value: String
+}
+
+/// Where the owner stands inside an activity, sent with each activity message. It aims
+/// the coach's hint; the server neither stores it nor treats it as evidence.
+struct CoachWorkingContext: Encodable, Equatable, Sendable {
+    let step: String
+    let fields: [CoachDraftField]
+}
+
+/// The screen the owner asks from, sent with each general message.
+struct CoachScreenContext: Encodable, Equatable, Sendable {
+    let screen: String
+    let summary: String
 }
 
 enum CoachAPIError: Error, Equatable {

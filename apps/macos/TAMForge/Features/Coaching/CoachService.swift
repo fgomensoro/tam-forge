@@ -4,8 +4,10 @@ import HTTPTypes
 @MainActor
 protocol CoachAPI {
     func thread(activityID: Int) async throws -> CoachThread
-    func send(activityID: Int, text: String) async throws -> CoachThread
+    func send(activityID: Int, text: String, context: CoachWorkingContext) async throws -> CoachThread
     func acceptEvidence(activityID: Int, messageID: Int, index: Int) async throws -> CoachThread
+    func generalThread() async throws -> GeneralCoachThread
+    func sendGeneral(text: String, context: CoachScreenContext) async throws -> GeneralCoachThread
 }
 
 @MainActor
@@ -20,9 +22,8 @@ final class LiveCoachAPI: CoachAPI {
         try await request(.get, path: "\(path(activityID))")
     }
 
-    func send(activityID: Int, text: String) async throws -> CoachThread {
-        let body = try JSONSerialization.data(withJSONObject: ["text": text], options: [.sortedKeys])
-        return try await request(.post, path: "\(path(activityID))/messages", body: body)
+    func send(activityID: Int, text: String, context: CoachWorkingContext) async throws -> CoachThread {
+        try await request(.post, path: "\(path(activityID))/messages", body: Self.encode(Message(text: text, context: context)))
     }
 
     func acceptEvidence(activityID: Int, messageID: Int, index: Int) async throws -> CoachThread {
@@ -32,11 +33,32 @@ final class LiveCoachAPI: CoachAPI {
         return try await request(.post, path: "\(path(activityID))/evidence", body: body)
     }
 
-    private func request(_ method: HTTPRequest.Method, path: String, body: Data? = nil) async throws -> CoachThread {
+    func generalThread() async throws -> GeneralCoachThread {
+        try await request(.get, path: "/api/v1/coach")
+    }
+
+    func sendGeneral(text: String, context: CoachScreenContext) async throws -> GeneralCoachThread {
+        try await request(.post, path: "/api/v1/coach/messages", body: Self.encode(Message(text: text, context: context)))
+    }
+
+    private struct Message<Context: Encodable>: Encodable {
+        let text: String
+        let context: Context
+    }
+
+    private static func encode(_ value: some Encodable) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        return try encoder.encode(value)
+    }
+
+    private func request<Value: Decodable & Sendable>(
+        _ method: HTTPRequest.Method, path: String, body: Data? = nil
+    ) async throws -> Value {
         do {
             try Task.checkCancellation()
             let response = try await transport.send(.init(method: method, path: path, body: body))
-            return try response.decoded(as: CoachThread.self)
+            return try response.decoded(as: Value.self)
         } catch is CancellationError {
             throw CoachAPIError.cancelled
         } catch let error as NativeAPIError {

@@ -1,33 +1,26 @@
 import SwiftUI
 
-/// The coach conversation, available before and after the commit. The coach
-/// speaks only in blocks whose scheme allows it; the server enforces that and
-/// records help given before the commit as assistance, and the panel renders
-/// whatever it answers.
+/// The coach conversation for an activity, available before and after the commit.
+/// The server records help given before the commit as assistance, and the panel
+/// renders whatever it answers.
 struct CoachPanel: View {
     @ObservedObject var model: CoachThreadModel
 
     var body: some View {
         GroupBox("Coach") {
             VStack(alignment: .leading, spacing: 12) {
-                if !model.isOpened {
+                if !model.isPresented {
                     Text("Start with the coach: it asks a recall question first and gives hints only when you ask. Help before the commit is recorded as assistance.")
                         .organic(.small)
-                    Button("Open coach") { Task { await model.open() } }
+                    Button("Open coach") { Task { await model.toggle() } }
                         .accessibilityIdentifier("coachOpen")
-                } else if let thread = model.thread {
-                    if thread.coachingAllowed {
-                        conversation(thread)
-                    } else {
-                        Label(CoachAPIError.notAllowed.message, systemImage: "lock")
-                            .organic(.small)
-                            .accessibilityIdentifier("coachNotAllowed")
-                    }
+                } else if let thread = model.activityThread {
+                    conversation(thread)
                 } else if model.isBusy {
                     ProgressView("Opening coach…")
                         .controlSize(.small)
                 } else {
-                    Button("Retry") { Task { await model.open() } }
+                    Button("Retry") { Task { await model.reload() } }
                 }
                 if let message = model.errorMessage {
                     Label(message, systemImage: "exclamationmark.triangle")

@@ -582,8 +582,8 @@ private struct NativeWorkspaceView: View {
             .task(id: identifier) { await state.evidence.open(activityID: identifier) }
         case .activity(let identifier) where dependencies.nativeFeatures.contains(.today):
             NativeActivityScreen(
-                activityID: identifier, api: services.activities, coaching: services.coaching,
-                notes: services.notes, recordings: services.recordings, recording: recording,
+                activityID: identifier, api: services.activities, notes: services.notes,
+                recordings: services.recordings, recording: recording,
                 reviews: services.reviews, drafts: state.drafts, timerJournal: state.timerJournal,
                 focusSelfReview: focusSelfReview, cards: state.cards
             )
@@ -610,7 +610,6 @@ private struct NativeWorkspaceView: View {
 private struct NativeActivityScreen: View {
     @StateObject private var model: ActivityWorkspaceModel
     @StateObject private var uploader: ActivityArtifactUploader
-    @StateObject private var coach: CoachThreadModel
     @StateObject private var note: StudyNoteModel
     @StateObject private var spoken: SpokenAttemptModel
     @StateObject private var review: ReviewModel
@@ -618,7 +617,7 @@ private struct NativeActivityScreen: View {
     let cards: CardsModel
 
     init(
-        activityID: Int, api: any ActivityAPI, coaching: any CoachAPI, notes: any StudyNoteAPI,
+        activityID: Int, api: any ActivityAPI, notes: any StudyNoteAPI,
         recordings: any RecordingServerServicing, recording: RecordingCoordinator, reviews: any ReviewAPI,
         drafts: any ActivityDraftStoring, timerJournal: any ActivityTimerJournaling, focusSelfReview: Bool,
         cards: CardsModel
@@ -628,7 +627,6 @@ private struct NativeActivityScreen: View {
                 activityID: activityID, api: api, drafts: drafts, timerJournal: timerJournal
             ))
         _uploader = StateObject(wrappedValue: ActivityArtifactUploader(api: api))
-        _coach = StateObject(wrappedValue: CoachThreadModel(activityID: activityID, api: coaching))
         _note = StateObject(wrappedValue: StudyNoteModel(activityID: activityID, api: notes))
         _spoken = StateObject(
             wrappedValue: SpokenAttemptModel(
@@ -641,7 +639,7 @@ private struct NativeActivityScreen: View {
 
     var body: some View {
         ActivityWorkspaceView(
-            model: model, uploader: uploader, focusSelfReview: focusSelfReview, coach: coach, note: note,
+            model: model, uploader: uploader, focusSelfReview: focusSelfReview, coach: nil, note: note,
             spoken: spoken, aiReview: review, cards: cards
         )
     }
