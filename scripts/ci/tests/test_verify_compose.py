@@ -24,7 +24,6 @@ APPROVED_COMPOSE = f"""services:
       - tamforge-postgres:/var/lib/postgresql/data
   minio:
     image: {APPROVED_MINIO_IMAGE}
-    command: server /data --console-address \":9001\"
     environment:
       MINIO_ROOT_USER: tamforge
       MINIO_ROOT_PASSWORD: tamforge-local
@@ -32,7 +31,7 @@ APPROVED_COMPOSE = f"""services:
       - \"127.0.0.1:9000:9000\"
       - \"127.0.0.1:9001:9001\"
     volumes:
-      - tamforge-minio:/data
+      - tamforge-minio:/bitnami/minio/data
 volumes:
   tamforge-postgres:
   tamforge-minio:
