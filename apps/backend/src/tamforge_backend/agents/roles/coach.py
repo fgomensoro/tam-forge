@@ -2,12 +2,12 @@
 
 Three rules, all enforced by shape rather than by discipline at the call site:
 
-- It never runs in a block whose `allowed_ai_role` forbids it (`none`, or a role
-  other than coach, tutor or interviewer). An interviewer block forbids coaching
-  during Attempt A, so there it answers only after the commit, and never in the
-  sealed final mock. Elsewhere, before the learner commits it asks a recall question
-  and gives hints on request; a hint is reported in `hint_given` and the caller
-  records it as assistance on the attempt. After the commit it corrects.
+- It answers on every block, whatever its `allowed_ai_role`, the sealed final mock
+  included. Before the learner commits it asks a recall question and gives hints on
+  request; a hint is reported in `hint_given` and the caller records it as assistance
+  on the attempt, so help taken before the commit is never mistaken for independent
+  work. After the commit it corrects. The learner's current step and unsaved draft may
+  ride along to aim the hint; they are never evidence.
 - Its output is a message, the next step taken from the plan the caller hands it
   (never invented), and proposed evidence the learner still has to accept. There is
   no field through which it could mark anything done.
@@ -36,6 +36,7 @@ from .contracts import (
     COMMITTED_ATTEMPT,
     SELF_REVIEW,
     TASK_BRIEF,
+    WORKING_DRAFT,
     RoleContractError,
     prepare_role_prompt,
 )
@@ -45,10 +46,6 @@ NOTE_SCHEMA_ID = "urn:tamforge:schema:coach-note-v1"
 COACH_JOB_TYPE = "claude.followup"
 COACH_MAX_TURNS = 4
 COACH_WALL_TIME_SECONDS = 120.0
-COACHING_ROLES: frozenset[str] = frozenset({"coach", "tutor"})
-# Interviewer contracts forbid coaching during Attempt A, not after it is committed;
-# only the sealed final mock forbids it outright.
-SEALED_MOCK_PHASE = "sealed_final_mock"
 CoachPhase = Literal["before_commit", "after_commit"]
 MAX_MESSAGE_CHARS = 2000
 EvidenceKind = Literal["note", "correction", "question", "card"]
@@ -110,6 +107,10 @@ class CoachRequest:
     repair_errors: tuple[str, ...] = ()
     handoff: str | None = None
     reference: tuple[str, ...] = ()
+    # Where the learner is standing: the task-guide step and the non-empty, unsaved draft
+    # fields. They aim the hint; they are never stored and never evidence.
+    working_step: str = ""
+    working_fields: tuple[tuple[str, str], ...] = ()
 
     @property
     def phase(self) -> CoachPhase:
@@ -167,12 +168,6 @@ class NoteRequest:
 
 class NoteTransport(Protocol):
     async def draft_note(self, request: NoteRequest) -> Mapping[str, object]: ...
-
-
-def coaching_allowed(block: CoachBlock) -> bool:
-    if block.allowed_ai_role in COACHING_ROLES:
-        return True
-    return block.allowed_ai_role == "interviewer" and SEALED_MOCK_PHASE not in block.phases
 
 
 def validate_coach_turn(
@@ -251,16 +246,11 @@ class CoachService:
 
     async def turn(self, request: CoachRequest) -> CoachTurn:
         """One coaching turn, or a contract error the caller renders as such."""
-        if not coaching_allowed(request.block):
-            raise RoleContractError("this block does not allow coaching")
-        if request.block.allowed_ai_role == "interviewer" and request.phase == "before_commit":
-            raise RoleContractError(
-                "an interviewer block is coached only after Attempt A is committed"
-            )
+        working = (WORKING_DRAFT,) if request.working_step or request.working_fields else ()
         prepare_role_prompt(
             AgentRole.COACH,
             committed=request.phase == "after_commit",
-            requested_context=(TASK_BRIEF, COMMITTED_ATTEMPT, SELF_REVIEW),
+            requested_context=(TASK_BRIEF, COMMITTED_ATTEMPT, SELF_REVIEW, *working),
         )
         if self._transport is None:
             raise CoachUnavailable("the coach needs Claude enabled on the server")
@@ -293,8 +283,6 @@ class CoachService:
 
     async def draft_note(self, request: NoteRequest) -> CoachNoteDraft:
         """One polished note draft, or a contract error the caller renders as such."""
-        if not coaching_allowed(request.block):
-            raise RoleContractError("this block does not allow coaching")
         if not request.committed_attempt.strip():
             raise RoleContractError("the coach drafts a note only after the learner commits")
         prepare_role_prompt(
@@ -389,6 +377,12 @@ def render_coach_prompt(request: CoachRequest) -> str:
     else:
         lines.append("Phase: after the commit.")
         lines.append("Committed attempt:\n" + request.committed_attempt)
+    if request.working_step or request.working_fields:
+        lines.append(
+            "Where the learner is standing (unsaved, not evidence; use it to aim the hint, "
+            f"never grade it): step: {request.working_step or 'unknown'}"
+            + "".join(f"\n- {name}: {value}" for name, value in request.working_fields)
+        )
     if request.self_review:
         lines.append("Self-review:\n" + request.self_review)
     if request.handoff:
@@ -415,7 +409,6 @@ def render_coach_prompt(request: CoachRequest) -> str:
 
 
 __all__ = [
-    "COACHING_ROLES",
     "COACH_JOB_TYPE",
     "COACH_SCHEMA_ID",
     "CoachBlock",
@@ -434,7 +427,6 @@ __all__ = [
     "ProposedEvidence",
     "Sequence",
     "coach_turn_schema",
-    "coaching_allowed",
     "note_draft_schema",
     "render_coach_prompt",
     "render_note_prompt",

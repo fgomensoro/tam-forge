@@ -16,13 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..agents.roles.coach import (
-    CoachBlock,
-    CoachRequest,
-    CoachService,
-    CoachUnavailable,
-    coaching_allowed,
-)
+from ..agents.roles.coach import CoachBlock, CoachRequest, CoachService, CoachUnavailable
 from ..agents.roles.contracts import RoleContractError
 from ..cards.importing import coach_card_command, skill_slug_for
 from ..cards.service import CardService
@@ -35,7 +29,12 @@ from ..roadmaps.models import TaskDefinition
 from ..today.handoff import render_handoff
 from ..today.models import DailyHandoff
 from .models import CoachEvidence, CoachMessage, CoachThread
-from .schemas import CoachEvidenceProposal, CoachMessageResponse, CoachThreadResponse
+from .schemas import (
+    CoachEvidenceProposal,
+    CoachMessageResponse,
+    CoachThreadResponse,
+    CoachWorkingContext,
+)
 
 PRIOR_MESSAGE_LIMIT = 10
 
@@ -49,7 +48,7 @@ class CoachingNotFound(CoachingError):
 
 
 class CoachingConflict(CoachingError):
-    """Coaching is not allowed here, or the learner has not committed yet."""
+    """The role contract refused the turn."""
 
 
 class CoachingInvalidRequest(CoachingError):
@@ -67,11 +66,9 @@ class _Loaded:
     thread: CoachThread | None
 
 
-def next_step_for(activity: ActivityInstance, *, allowed_ai_role: str = "") -> str:
+def next_step_for(activity: ActivityInstance) -> str:
     """The plan's next step, derived from state; the Coach repeats it, never invents it."""
     if activity.output_committed_at is None:
-        if allowed_ai_role == "interviewer":
-            return "Commit Attempt A first; the coach answers after the commit."
         return "Write your independent attempt; ask the coach for a hint only when stuck."
     if activity.state == "output_committed":
         return "Submit the mandatory self-review for this block."
@@ -101,13 +98,13 @@ class CoachThreadService:
         except SQLAlchemyError:
             raise CoachingUnavailable("the coaching store is unavailable") from None
 
-    async def send(self, *, owner_id: int, activity_id: int, text: str) -> CoachThreadResponse:
+    async def send(
+        self, *, owner_id: int, activity_id: int, text: str, context: CoachWorkingContext
+    ) -> CoachThreadResponse:
         try:
             async with transaction_scope(self._session):
                 loaded = await self._load(owner_id=owner_id, activity_id=activity_id, lock=True)
                 block = _block(loaded.definition)
-                if not coaching_allowed(block):
-                    raise CoachingConflict("this block does not allow coaching")
                 thread = loaded.thread or CoachThread(
                     owner_id=owner_id, activity_instance_id=activity_id
                 )
@@ -121,7 +118,7 @@ class CoachThreadService:
                         owner_id=owner_id, activity_id=activity_id
                     ),
                     learner_message=text.strip(),
-                    next_step=next_step_for(loaded.activity, allowed_ai_role=block.allowed_ai_role),
+                    next_step=next_step_for(loaded.activity),
                     prior_messages=tuple(
                         (cast(Any, item.speaker), item.text)
                         for item in prior[-PRIOR_MESSAGE_LIMIT:]
@@ -129,6 +126,10 @@ class CoachThreadService:
                     handoff=await self._handoff(owner_id=owner_id, activity=loaded.activity),
                     reference=await ReferenceMaterialService(self._session).citations(
                         owner_id=owner_id, text=f"{block.objective} {text}"
+                    ),
+                    working_step=context.step.strip(),
+                    working_fields=tuple(
+                        (f.name, f.value) for f in context.fields if f.value.strip()
                     ),
                 )
                 try:
@@ -347,14 +348,13 @@ class CoachThreadService:
         return CoachThreadResponse(
             activity_id=loaded.activity.id,
             thread_id=None if loaded.thread is None else loaded.thread.id,
-            coaching_allowed=coaching_allowed(_block(loaded.definition)),
+            # Kept for apps installed before every block was coachable.
+            coaching_allowed=True,
             committed=loaded.activity.output_committed_at is not None,
             assistance_mode=cast(
                 Any, "none" if loaded.thread is None else loaded.thread.assistance_mode
             ),
-            next_step=next_step_for(
-                loaded.activity, allowed_ai_role=loaded.definition.allowed_ai_role
-            ),
+            next_step=next_step_for(loaded.activity),
             messages=messages,
         )
 

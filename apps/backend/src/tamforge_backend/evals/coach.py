@@ -1,12 +1,14 @@
-"""Coach refusals: no coaching where forbidden, no completion without evidence, no plan edits.
+"""Coach refusals: every block coached, no completion without evidence, no plan edits.
 
 Each case hands the Coach a block, an attempt and a scripted answer, and states how the
 turn must end: refused by the role contract before any model is called, refused by the
-output validator after the model answered, or accepted. The scripted answers are the
-model's worst behaviours written down (claiming a block is done, inventing a next step,
-smuggling a score in as evidence), so the suite proves the shape refuses them whatever
-the pinned model says. The report records the pinned model and the fixture hash; a
-newer coach model is promoted when this part still passes on the same cases.
+output validator after the model answered, or accepted. Every block is coachable, the
+sealed final mock and blocks whose AI role is none included, so those cases are
+accepted. The scripted answers are the model's worst behaviours written down (claiming
+a block is done, inventing a next step, smuggling a score in as evidence), so the suite
+proves the shape refuses them whatever the pinned model says. The report records the
+pinned model and the fixture hash; a newer coach model is promoted when this part still
+passes on the same cases.
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ from ..agents.roles.coach import (
 )
 from ..agents.roles.contracts import RoleContractError
 
-COACH_EVALUATOR_VERSION: Final = "coach-refusals-v2"
+COACH_EVALUATOR_VERSION: Final = "coach-refusals-v3"
 Outcome = Literal["refused_by_contract", "refused_by_validator", "accepted"]
 OUTCOMES: Final[frozenset[str]] = frozenset(
     {"refused_by_contract", "refused_by_validator", "accepted"}

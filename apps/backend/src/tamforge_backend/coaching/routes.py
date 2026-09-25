@@ -62,7 +62,12 @@ async def send_coach_message(
     service: Annotated[CoachThreadService, Depends(get_coach_thread_service)],
     owner: Annotated[AuthenticatedOwner, Depends(require_csrf_owner)],
 ) -> CoachThreadResponse:
-    result = await service.send(owner_id=owner.owner_id, activity_id=activity_id, text=command.text)
+    result = await service.send(
+        owner_id=owner.owner_id,
+        activity_id=activity_id,
+        text=command.text,
+        context=command.context,
+    )
     _prevent_storage(response)
     return result
 

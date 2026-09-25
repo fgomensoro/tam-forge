@@ -1,4 +1,8 @@
-"""A coaching thread on a real database: help before commit, answer after, accept evidence."""
+"""A coaching thread on a real database: help before commit, answer after, accept evidence.
+
+Every block is coached, the sealed final mock included; help before the commit is still
+recorded as assistance on the thread.
+"""
 
 from __future__ import annotations
 
@@ -125,8 +129,8 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
     from tamforge_backend.agents.roles.coach import CoachService
     from tamforge_backend.cards.models import Card
     from tamforge_backend.coaching.models import CoachEvidence
+    from tamforge_backend.coaching.schemas import CoachDraftField, CoachWorkingContext
     from tamforge_backend.coaching.service import (
-        CoachingConflict,
         CoachingInvalidRequest,
         CoachingUnavailable,
         CoachThreadService,
@@ -234,21 +238,54 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
                     assert before.assistance_mode == "none"
                     assert before.next_step.startswith("Write your independent attempt")
                     opened = await service(session).send(
-                        owner_id=owner_id, activity_id=coached_id, text="empiezo"
+                        owner_id=owner_id,
+                        activity_id=coached_id,
+                        text="empiezo",
+                        context=CoachWorkingContext(),
                     )
                     assert opened.assistance_mode == "coach_preparation"
                     hinted = await service(session).send(
-                        owner_id=owner_id, activity_id=coached_id, text="dame una pista"
+                        owner_id=owner_id,
+                        activity_id=coached_id,
+                        text="dame una pista",
+                        context=CoachWorkingContext(),
                     )
                     assert hinted.assistance_mode == "hint_ladder"
                     again = await service(session).send(
-                        owner_id=owner_id, activity_id=coached_id, text="ahora sí"
+                        owner_id=owner_id,
+                        activity_id=coached_id,
+                        text="ahora sí",
+                        context=CoachWorkingContext(),
                     )
                     assert again.assistance_mode == "hint_ladder"
-                    with pytest.raises(CoachingConflict, match="does not allow"):
-                        await service(session).send(
-                            owner_id=owner_id, activity_id=forbidden_id, text="hola"
-                        )
+
+                # A block whose AI role is none is coached too, and the learner's step and
+                # unsaved draft reach the Coach's request without being stored.
+                async with factory() as session:
+                    forbidden = await service(session).thread(
+                        owner_id=owner_id, activity_id=forbidden_id
+                    )
+                    assert forbidden.coaching_allowed
+                    assert forbidden.next_step.startswith("Write your independent attempt")
+                    standing = await service(session).send(
+                        owner_id=owner_id,
+                        activity_id=forbidden_id,
+                        text="hola",
+                        context=CoachWorkingContext(
+                            step=" Do it ",
+                            fields=[
+                                CoachDraftField(name="audience", value="CFO"),
+                                CoachDraftField(name="blank", value="   "),
+                            ],
+                        ),
+                    )
+                    assert [m.speaker for m in standing.messages] == ["learner", "coach"]
+                    assert standing.assistance_mode == "coach_preparation"
+                    assert "CFO" not in " ".join(m.text for m in standing.messages)
+                    request = transport.requests[-1]
+                    assert request.block.allowed_ai_role == "none"  # type: ignore[attr-defined]
+                    assert request.working_step == "Do it"  # type: ignore[attr-defined]
+                    assert request.working_fields == (("audience", "CFO"),)  # type: ignore[attr-defined]
 
                 async with factory() as session:
                     async with transaction_scope(session):
@@ -283,7 +320,10 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
 
                 async with factory() as session:
                     after = await service(session).send(
-                        owner_id=owner_id, activity_id=coached_id, text="ya lo hice"
+                        owner_id=owner_id,
+                        activity_id=coached_id,
+                        text="ya lo hice",
+                        context=CoachWorkingContext(),
                     )
                     assert after.thread_id is not None
                     assert after.assistance_mode == "hint_ladder"
@@ -352,20 +392,29 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
                 async with factory() as session:
                     disabled = CoachThreadService(session, coach=CoachService(None, model="m"))
                     with pytest.raises(CoachingUnavailable):
-                        await disabled.send(owner_id=owner_id, activity_id=coached_id, text="más")
+                        await disabled.send(
+                            owner_id=owner_id,
+                            activity_id=coached_id,
+                            text="más",
+                            context=CoachWorkingContext(),
+                        )
                     thread = await disabled.thread(owner_id=owner_id, activity_id=coached_id)
                     assert len(thread.messages) == 8
 
-                # An interviewer block forbids coaching during Attempt A, not after it.
+                # An interviewer block is coached during Attempt A too; a hint is assistance.
                 async with factory() as session:
                     before = await service(session).thread(
                         owner_id=owner_id, activity_id=interview_id
                     )
-                    assert before.next_step.startswith("Commit Attempt A first")
-                    with pytest.raises(CoachingConflict, match="only after Attempt A"):
-                        await service(session).send(
-                            owner_id=owner_id, activity_id=interview_id, text="a hint?"
-                        )
+                    assert before.next_step.startswith("Write your independent attempt")
+                    hinted = await service(session).send(
+                        owner_id=owner_id,
+                        activity_id=interview_id,
+                        text="dame una pista",
+                        context=CoachWorkingContext(),
+                    )
+                    assert hinted.assistance_mode == "hint_ladder"
+                    assert transport.requests[-1].phase == "before_commit"  # type: ignore[attr-defined]
 
                 async with factory() as session:
                     async with transaction_scope(session):
@@ -439,30 +488,40 @@ def test_coach_thread_lifecycle_on_postgres(test_database_url: str) -> None:
                     )
                     assert opened.coaching_allowed and opened.committed
                     coached = await service(session).send(
-                        owner_id=owner_id, activity_id=interview_id, text="how did it go?"
+                        owner_id=owner_id,
+                        activity_id=interview_id,
+                        text="how did it go?",
+                        context=CoachWorkingContext(),
                     )
-                    assert [m.speaker for m in coached.messages] == ["learner", "coach"]
+                    assert [m.speaker for m in coached.messages] == ["learner", "coach"] * 2
                     assert transport.requests[-1].block.allowed_ai_role == "interviewer"  # type: ignore[attr-defined]
 
                 # The Phase 1 interview cycle: Attempt A, coaching handoff, Attempt B.
                 contract("interview")
                 async with factory() as session:
                     coached = await service(session).send(
-                        owner_id=owner_id, activity_id=interview_id, text="and Attempt B?"
+                        owner_id=owner_id,
+                        activity_id=interview_id,
+                        text="and Attempt B?",
+                        context=CoachWorkingContext(),
                     )
                     assert [m.speaker for m in coached.messages][-2:] == ["learner", "coach"]
 
-                # The sealed final mock is an interviewer block too, and stays uncoached.
+                # The sealed final mock is an interviewer block too, and is coached as well.
                 contract("sealed_interview")
                 async with factory() as session:
                     sealed = await service(session).thread(
                         owner_id=owner_id, activity_id=interview_id
                     )
-                    assert not sealed.coaching_allowed
-                    with pytest.raises(CoachingConflict, match="does not allow"):
-                        await service(session).send(
-                            owner_id=owner_id, activity_id=interview_id, text="and now?"
-                        )
+                    assert sealed.coaching_allowed
+                    coached = await service(session).send(
+                        owner_id=owner_id,
+                        activity_id=interview_id,
+                        text="and now?",
+                        context=CoachWorkingContext(),
+                    )
+                    assert [m.speaker for m in coached.messages][-2:] == ["learner", "coach"]
+                    assert "sealed_final_mock" in transport.requests[-1].block.phases  # type: ignore[attr-defined]
             finally:
                 await engine.dispose()
 
@@ -486,6 +545,7 @@ def test_the_committed_attempt_carries_the_thread_assistance(test_database_url: 
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from tamforge_backend.agents.roles.coach import CoachService
     from tamforge_backend.coaching.models import CoachThread
+    from tamforge_backend.coaching.schemas import CoachWorkingContext
     from tamforge_backend.coaching.service import CoachThreadService
     from tamforge_backend.database import database_url_to_sync
     from tamforge_backend.learning.models import ActivityInstance, Attempt
@@ -517,7 +577,10 @@ def test_the_committed_attempt_carries_the_thread_assistance(test_database_url: 
                 async with factory() as session:
                     coach = CoachService(FakeTransport(), model="claude-opus-5")
                     hinted = await CoachThreadService(session, coach=coach).send(
-                        owner_id=owner_id, activity_id=coached_id, text="dame una pista"
+                        owner_id=owner_id,
+                        activity_id=coached_id,
+                        text="dame una pista",
+                        context=CoachWorkingContext(),
                     )
                     assert hinted.assistance_mode == "hint_ladder"
 

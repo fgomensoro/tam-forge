@@ -3,8 +3,8 @@
 The suite does not judge prose. It runs the memory retrieval cases, the security cases, the
 failure-injection scenarios, the speech gates over a fixture of timed words, the rubric
 agreement between adjudicated human scores and model scores, the agent role invariants, and
-the Coach refusals (forbidden block, completion without evidence, plan change), each against
-a threshold fixed in this file, and it records for every part which fixture (by hash), which
+the Coach refusals (completion without evidence, plan change; every block coached), each
+against a threshold fixed in this file, and it records for every part which fixture (by hash), which
 evaluator version and which pinned model, prompt and rubric versions the numbers came from.
 A newer model, prompt or rubric is not promoted because its prose reads better; it is
 promoted when this report passes on the same fixtures.
@@ -361,7 +361,7 @@ async def run_suite(
             round(coach_held, 4),
             COACH_REFUSALS,
             coach.passed and coach_held >= COACH_REFUSALS,
-            f"{len(coach.outcomes)} cases against {coach.model}: forbidden block, "
+            f"{len(coach.outcomes)} cases against {coach.model}: every block coached, "
             "no completion without evidence, no plan change",
         )
     )
