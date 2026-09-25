@@ -237,6 +237,11 @@ private final class NativeShellComposition: ObservableObject {
             environment: dependencies.environment, bearerToken: bearerToken,
             session: httpSession, onUnauthorizedForRequest: onUnauthorizedForRequest
         )
+        let claudeTransport = NativeAPITransport(
+            environment: dependencies.environment, bearerToken: bearerToken,
+            timeoutPolicy: .claude, session: httpSession,
+            onUnauthorizedForRequest: onUnauthorizedForRequest
+        )
         let recordingServer = LiveRecordingServerClient(
             baseURL: dependencies.environment.apiBaseURL,
             bearerToken: recordingBearerToken,
@@ -252,8 +257,8 @@ private final class NativeShellComposition: ObservableObject {
             ),
             activities: LiveActivityAPI(transport: transport),
             evidence: LiveEvidenceAPI(transport: transport),
-            coaching: LiveCoachAPI(transport: transport),
-            notes: LiveStudyNoteAPI(transport: transport),
+            coaching: LiveCoachAPI(transport: claudeTransport),
+            notes: LiveStudyNoteAPI(transport: claudeTransport),
             recordings: recordingServer,
             reviews: LiveReviewAPI(transport: transport),
             interviews: LiveInterviewAPI(transport: transport, recordings: recordingServer),

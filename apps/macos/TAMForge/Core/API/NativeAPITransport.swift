@@ -176,6 +176,9 @@ struct TimeoutPolicy: Sendable {
     let resource: TimeInterval
 
     static let standard = Self(request: 15, resource: 60)
+    /// The coach and note drafts wait on Claude inside the request, which the server bounds
+    /// at 120 s (`COACH_WALL_TIME_SECONDS`); the standard 15 s gave up on answers it then saved.
+    static let claude = Self(request: 150, resource: 180)
 }
 
 struct NativeAPIDiagnostic: Sendable, CustomStringConvertible, Equatable {
