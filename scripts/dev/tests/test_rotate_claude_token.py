@@ -198,3 +198,21 @@ def test_the_host_script_skips_the_heartbeat_wait_for_the_inactive_slot(
     assert result.stdout == "inactive a\n"
     assert (secrets / "claude-oauth-b.env").read_text() == f"CLAUDE_CODE_OAUTH_TOKEN_B={TOKEN}\n"
     assert "select clock_timestamp()" not in log.read_text()
+
+
+def test_a_token_pasted_from_wrapped_lines_arrives_whole(
+    fake_ssh: tuple[dict[str, str], Path, Path],
+) -> None:
+    """`claude setup-token` hard-wraps the token, so a copy of it carries line breaks."""
+    env, _, stdin_log = fake_ssh
+    head, tail = TOKEN[:12], TOKEN[12:]
+    result = subprocess.run(
+        ["bash", str(SCRIPT), "b"],
+        input=f"{head}\n {tail}\n",
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert stdin_log.read_text() == f"CLAUDE_CODE_OAUTH_TOKEN_B={TOKEN}\n"
+    assert tail not in result.stdout + result.stderr

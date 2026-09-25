@@ -36,6 +36,9 @@ fi
 
 printf 'Paste the new token (input is hidden): ' >&2
 IFS= read -rs token
+# `claude setup-token` hard-wraps the token, so a copy of it arrives as several lines in
+# one paste. Take the rest of that paste too; it is already buffered, so the wait is short.
+while IFS= read -rs -t 1 more; do token+="$more"; done
 printf '\n' >&2
 token="${token//[[:space:]]/}"
 case "$token" in
