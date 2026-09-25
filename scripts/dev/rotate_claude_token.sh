@@ -34,11 +34,11 @@ if [ "${TAMFORGE_SKIP_SETUP_TOKEN:-0}" != "1" ]; then
   fi
 fi
 
-printf 'Paste the new token (input is hidden): ' >&2
-IFS= read -rs token
-# `claude setup-token` hard-wraps the token, so a copy of it arrives as several lines in
-# one paste. Take the rest of that paste too; it is already buffered, so the wait is short.
-while IFS= read -rs -t 1 more; do token+="$more"; done
+printf 'Paste the whole token, both lines if it wraps, then press Enter on an empty line (input is hidden): ' >&2
+# `claude setup-token` hard-wraps the token, and its lines may arrive in separate pastes,
+# so the token ends at the first empty line rather than the first line break.
+token=""
+while IFS= read -rs line && [ -n "${line//[[:space:]]/}" ]; do token+="$line"; done
 printf '\n' >&2
 token="${token//[[:space:]]/}"
 case "$token" in

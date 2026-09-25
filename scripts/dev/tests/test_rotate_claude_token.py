@@ -206,9 +206,10 @@ def test_a_token_pasted_from_wrapped_lines_arrives_whole(
     """`claude setup-token` hard-wraps the token, so a copy of it carries line breaks."""
     env, _, stdin_log = fake_ssh
     head, tail = TOKEN[:12], TOKEN[12:]
+    # Each line may be pasted on its own, so only the empty line ends the token.
     result = subprocess.run(
         ["bash", str(SCRIPT), "b"],
-        input=f"{head}\n {tail}\n",
+        input=f"{head}\n {tail}\n\nnot-part-of-the-token\n",
         env=env,
         capture_output=True,
         text=True,
