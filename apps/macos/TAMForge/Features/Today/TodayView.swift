@@ -484,7 +484,7 @@ private struct TodaySupportCard: View {
     }
 }
 
-private enum TodayFormat {
+enum TodayFormat {
     static func block(_ raw: String) -> String { raw.replacingOccurrences(of: "_", with: " ").capitalized }
     static func state(_ raw: String) -> String { raw.replacingOccurrences(of: "_", with: " ") }
     static func role(_ raw: String) -> String { raw == "none" ? "None" : raw }

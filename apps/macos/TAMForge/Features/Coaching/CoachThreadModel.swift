@@ -11,6 +11,19 @@ struct ActivityStanding: Equatable, Sendable {
     /// 1-based.
     let stepNumber: Int?
     let stepCount: Int
+
+    /// The standing the task guide shows at the top of the activity screen.
+    static func from(activity: ActivityDetail) -> ActivityStanding {
+        let steps = TaskGuide.steps(for: activity.taskContract.block)
+        let current = TaskGuide.currentStep(for: activity)
+        return ActivityStanding(
+            activityID: activity.id,
+            block: TodayFormat.block(activity.taskContract.block.rawValue),
+            stepLabel: current.map { steps[$0] },
+            stepNumber: current.map { $0 + 1 },
+            stepCount: steps.count
+        )
+    }
 }
 
 /// Where the owner is in the app. The shell keeps the route and the day's plan; the
@@ -20,15 +33,13 @@ final class CoachContext: ObservableObject {
     @Published var route: ShellRoute = .today
     @Published var activity: ActivityStanding?
     @Published var todaySummary: String = ""
-    /// Set by the activity screen while shown: the draft's non-empty fields.
+    /// Set by the activity screen while shown: the draft's fields. Blank ones are not sent.
     var draftFields: () -> [CoachDraftField] = { [] }
 
     /// The day's plan as the coach reads it: one line per task, in roadmap order.
     static func summary(of snapshot: TodaySnapshot) -> String {
         snapshot.tasks.sorted { $0.roadmapOrder < $1.roadmapOrder }.map { task in
-            let block = task.block.replacingOccurrences(of: "_", with: " ").capitalized
-            let state = task.state.replacingOccurrences(of: "_", with: " ")
-            return "- \(task.objective) (\(block), \(state), \(task.timeboxMinutes) min)"
+            "- \(task.objective) (\(TodayFormat.block(task.block)), \(TodayFormat.state(task.state)), \(task.timeboxMinutes) min)"
         }
         .joined(separator: "\n")
     }
@@ -50,6 +61,10 @@ final class CoachThreadModel: ObservableObject {
     let context: CoachContext
     private let api: any CoachAPI
     private var contextObservation: AnyCancellable?
+    /// Requests in flight. A reload that finishes during a send must not end the busy state.
+    private var inFlight = 0 {
+        didSet { isBusy = inFlight > 0 }
+    }
 
     init(api: any CoachAPI, context: CoachContext) {
         self.api = api
@@ -82,8 +97,14 @@ final class CoachThreadModel: ObservableObject {
         }
     }
 
+    /// The loaded activity thread, only while it belongs to the activity on screen.
+    var shownActivityThread: CoachThread? {
+        guard let activityThread, activityThread.activityID == activityID else { return nil }
+        return activityThread
+    }
+
     var messages: [CoachMessage] {
-        activityID == nil ? generalThread?.messages ?? [] : activityThread?.messages ?? []
+        activityID == nil ? generalThread?.messages ?? [] : shownActivityThread?.messages ?? []
     }
 
     var canSend: Bool {
@@ -150,7 +171,8 @@ final class CoachThreadModel: ObservableObject {
         let step = Self.clip(standing?.stepLabel ?? "", to: 200)
         var budget = 12_000 - step.unicodeScalars.count
         var fields: [CoachDraftField] = []
-        for field in context.draftFields().prefix(20) {
+        let written = context.draftFields().filter { !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        for field in written.prefix(20) {
             let name = Self.clip(field.name, to: 64)
             let room = min(4_000, budget - name.unicodeScalars.count)
             guard room > 0 else { break }
@@ -168,8 +190,8 @@ final class CoachThreadModel: ObservableObject {
 
     @discardableResult
     private func perform(_ operation: () async throws -> Void) async -> Bool {
-        isBusy = true
-        defer { isBusy = false }
+        inFlight += 1
+        defer { inFlight -= 1 }
         do {
             try await operation()
             errorMessage = nil

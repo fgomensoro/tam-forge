@@ -373,6 +373,8 @@ private final class NativeWorkspaceState: ObservableObject {
     let classes: ClassesModel
     let cards: CardsModel
     let progress: ProgressModel
+    /// The floating coach and where it thinks the owner is standing (`coach.context`).
+    let coach: CoachThreadModel
     let drafts = InMemoryActivityDraftStore()
     let timerJournal: any ActivityTimerJournaling
 
@@ -393,6 +395,7 @@ private final class NativeWorkspaceState: ObservableObject {
         classes = ClassesModel(api: services.classes)
         cards = CardsModel(api: services.cards, coordinator: recording)
         progress = ProgressModel(api: services.progress)
+        coach = CoachThreadModel(api: services.coaching, context: CoachContext())
         #if DEBUG
             let arguments = ProcessInfo.processInfo.arguments
             if arguments.contains("-ui-test-signed-in") || arguments.contains("-ui-test-signed-out")
@@ -475,6 +478,9 @@ private struct NativeWorkspaceView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .background(Organic.Color.bg)
+            .overlay(alignment: .bottomTrailing) {
+                CoachOverlay(model: state.coach).padding(Organic.Space.p24)
+            }
         }
         .task(id: session.featureRefreshVersion) {
             guard session.featureRefreshVersion > 0 else { return }
@@ -491,6 +497,13 @@ private struct NativeWorkspaceView: View {
             } else {
                 state.evidence.markStale()
             }
+        }
+        .onChange(of: session.selectedRoute, initial: true) { _, route in
+            state.coach.context.route = route
+            Task { await state.coach.routeChanged() }
+        }
+        .onReceive(state.today.$state) { load in
+            state.coach.context.todaySummary = load.snapshot.map(CoachContext.summary(of:)) ?? ""
         }
         .onChange(of: session.selectedRoute) { oldRoute, newRoute in
             guard case .evidence = oldRoute else { return }
@@ -585,7 +598,7 @@ private struct NativeWorkspaceView: View {
                 activityID: identifier, api: services.activities, notes: services.notes,
                 recordings: services.recordings, recording: recording,
                 reviews: services.reviews, drafts: state.drafts, timerJournal: state.timerJournal,
-                focusSelfReview: focusSelfReview, cards: state.cards
+                focusSelfReview: focusSelfReview, cards: state.cards, coachContext: state.coach.context
             )
             .id(identifier)
         default:
@@ -613,14 +626,16 @@ private struct NativeActivityScreen: View {
     @StateObject private var note: StudyNoteModel
     @StateObject private var spoken: SpokenAttemptModel
     @StateObject private var review: ReviewModel
+    let activityID: Int
     let focusSelfReview: Bool
     let cards: CardsModel
+    let coachContext: CoachContext
 
     init(
         activityID: Int, api: any ActivityAPI, notes: any StudyNoteAPI,
         recordings: any RecordingServerServicing, recording: RecordingCoordinator, reviews: any ReviewAPI,
         drafts: any ActivityDraftStoring, timerJournal: any ActivityTimerJournaling, focusSelfReview: Bool,
-        cards: CardsModel
+        cards: CardsModel, coachContext: CoachContext
     ) {
         _model = StateObject(
             wrappedValue: ActivityWorkspaceModel(
@@ -633,14 +648,30 @@ private struct NativeActivityScreen: View {
                 activityID: activityID, coordinator: recording, server: recordings
             ))
         _review = StateObject(wrappedValue: ReviewModel(activityID: activityID, api: reviews))
+        self.activityID = activityID
         self.focusSelfReview = focusSelfReview
         self.cards = cards
+        self.coachContext = coachContext
     }
 
     var body: some View {
         ActivityWorkspaceView(
-            model: model, uploader: uploader, focusSelfReview: focusSelfReview, coach: nil, note: note,
+            model: model, uploader: uploader, focusSelfReview: focusSelfReview, note: note,
             spoken: spoken, aiReview: review, cards: cards
         )
+        // Tell the floating coach where the owner stands and what they have written so far.
+        .onChange(of: model.activity.map { ActivityStanding.from(activity: $0) }, initial: true) { _, standing in
+            coachContext.activity = standing
+            coachContext.draftFields = { [weak model = self.model] in
+                guard let model, model.activity?.state.isEditable == true else { return [] }
+                return model.draft.values.sorted { $0.key < $1.key }.map { CoachDraftField(name: $0.key, value: $0.value) }
+            }
+        }
+        .onDisappear {
+            // The next activity's screen may already have published itself; leave it alone.
+            guard coachContext.activity?.activityID == activityID else { return }
+            coachContext.activity = nil
+            coachContext.draftFields = { [] }
+        }
     }
 }

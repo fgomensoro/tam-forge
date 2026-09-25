@@ -59,6 +59,24 @@ final class CoachThreadModelTests: XCTestCase {
         XCTAssertEqual(model.draft, "")
     }
 
+    func testBlankDraftFieldsAreNotSent() async {
+        let api = FakeCoachAPI()
+        let context = activityContext()
+        context.draftFields = {
+            [
+                CoachDraftField(name: "attempt", value: "Queues decouple producers."),
+                CoachDraftField(name: "empty", value: ""),
+                CoachDraftField(name: "spaces", value: "  \n\t "),
+            ]
+        }
+        let model = CoachThreadModel(api: api, context: context)
+        model.draft = "is this enough?"
+
+        await model.send()
+
+        XCTAssertEqual(api.lastWorkingContext?.fields.map(\.name), ["attempt"])
+    }
+
     func testTheWorkingContextIsClampedToTheServerLimits() async {
         let api = FakeCoachAPI()
         let context = CoachContext()
@@ -120,16 +138,60 @@ final class CoachThreadModelTests: XCTestCase {
         XCTAssertNotNil(model.generalThread)
     }
 
-    func testARouteChangeWhileClosedLoadsNothing() async {
+    func testARouteChangeWhileClosedDropsTheActivityThreadAndLoadsNothing() async {
         let api = FakeCoachAPI()
         let context = activityContext()
         let model = CoachThreadModel(api: api, context: context)
+        await model.toggle()
+        await model.toggle()
+        XCTAssertEqual(model.activityThread?.activityID, 19)
 
-        context.route = .today
+        context.route = .activity(20)
         await model.routeChanged()
 
         XCTAssertFalse(model.isPresented)
-        XCTAssertEqual(api.calls, [])
+        XCTAssertNil(model.activityThread)
+        XCTAssertEqual(api.calls, ["thread:19"])
+    }
+
+    func testAThreadForAnotherActivityIsNeverShown() async {
+        let api = FakeCoachAPI()
+        let context = activityContext()
+        let model = CoachThreadModel(api: api, context: context)
+        await model.reload()
+        XCTAssertEqual(model.messages.map(\.text), ["thread 19"])
+
+        // The shell moves the route before it calls routeChanged().
+        context.route = .activity(20)
+
+        XCTAssertEqual(model.activityThread?.activityID, 19)
+        XCTAssertNil(model.shownActivityThread)
+        XCTAssertEqual(model.messages, [])
+    }
+
+    func testARouteChangeDuringASendKeepsTheCoachBusyUntilTheSendReturns() async {
+        let api = FakeCoachAPI()
+        let gate = ActivityTestGate()
+        api.sendGate = gate
+        let context = activityContext()
+        let model = CoachThreadModel(api: api, context: context)
+        await model.toggle()
+        model.draft = "hint?"
+
+        let sending = Task { await model.send() }
+        await fulfillment(of: [gate.entered], timeout: 1)
+        context.route = .today
+        await model.routeChanged()
+
+        XCTAssertEqual(api.calls, ["thread:19", "send:19:hint?", "general"])
+        XCTAssertTrue(model.isBusy, "the send is still in flight")
+        XCTAssertFalse(model.canSend)
+        await model.send()
+        XCTAssertEqual(api.calls.filter { $0.hasPrefix("send") }, ["send:19:hint?"], "no second send")
+
+        gate.release()
+        await sending.value
+        XCTAssertFalse(model.isBusy)
     }
 
     func testClosingTheCoachLoadsNothing() async {
@@ -216,6 +278,34 @@ final class CoachThreadModelTests: XCTestCase {
         )
     }
 
+    func testTheCoachNamesBlocksAndStatesExactlyAsTodayDoes() {
+        let raw = [("career_pipeline", "output_committed"), ("tam_case", "ready")]
+        let snapshot = todaySnapshot(tasks: raw.enumerated().map { index, pair in
+            task(order: index, block: pair.0, state: pair.1, objective: "o", minutes: 5)
+        })
+
+        XCTAssertEqual(
+            CoachContext.summary(of: snapshot),
+            raw.map { "- o (\(TodayFormat.block($0.0)), \(TodayFormat.state($0.1)), 5 min)" }.joined(separator: "\n")
+        )
+    }
+
+    func testTheStandingNamesTheBlockAndTheGuidesCurrentStep() {
+        var activity = ActivityFixtures.detail(state: .active)
+        activity.taskContract.block = .technicalLearning
+
+        XCTAssertEqual(
+            ActivityStanding.from(activity: activity),
+            ActivityStanding(activityID: 41, block: "Technical Learning", stepLabel: "Hide the source", stepNumber: 2, stepCount: 6)
+        )
+
+        activity.state = .incomplete
+        XCTAssertEqual(
+            ActivityStanding.from(activity: activity),
+            ActivityStanding(activityID: 41, block: "Technical Learning", stepLabel: nil, stepNumber: nil, stepCount: 6)
+        )
+    }
+
     func testTheLiveClientSendsTheContextsAndUsesTheGeneralRoutes() async throws {
         let fixture = URLProtocolFixture()
         let threadBody = Data("""
@@ -280,6 +370,7 @@ final class CoachThreadModelTests: XCTestCase {
 
         XCTAssertEqual(LiveCoachAPI.translate(.problem(problem(status: 503, code: "coach_unavailable"))), .unavailable)
         XCTAssertEqual(LiveCoachAPI.translate(.problem(problem(status: 401, code: nil))), .unauthorized)
+        XCTAssertEqual(LiveCoachAPI.translate(.problem(problem(status: 403, code: "coaching_not_allowed"))), .notAllowed)
         XCTAssertEqual(LiveCoachAPI.translate(.problem(problem(status: 409, code: nil))), .conflict)
         XCTAssertEqual(LiveCoachAPI.translate(.decodingResponse), .invalidResponse)
     }
@@ -340,6 +431,7 @@ final class CoachThreadModelTests: XCTestCase {
 private final class FakeCoachAPI: CoachAPI {
     var failure: CoachAPIError?
     var duringCall: (() -> Void)?
+    var sendGate: ActivityTestGate?
     private(set) var calls: [String] = []
     private(set) var lastWorkingContext: CoachWorkingContext?
     private(set) var lastScreenContext: CoachScreenContext?
@@ -352,6 +444,7 @@ private final class FakeCoachAPI: CoachAPI {
     func send(activityID: Int, text: String, context: CoachWorkingContext) async throws -> CoachThread {
         lastWorkingContext = context
         try record("send:\(activityID):\(text)")
+        await sendGate?.wait()
         return activityThread(activityID)
     }
 
@@ -382,7 +475,9 @@ private final class FakeCoachAPI: CoachAPI {
     private func activityThread(_ activityID: Int) -> CoachThread {
         CoachThread(
             activityID: activityID, threadID: 3, coachingAllowed: true, committed: false,
-            nextStep: "Write your independent attempt.", assistanceMode: "none", messages: []
+            nextStep: "Write your independent attempt.", assistanceMode: "none", messages: [
+                CoachMessage(id: 1, speaker: "coach", text: "thread \(activityID)", nextStep: nil, proposedEvidence: [], createdAt: Date()),
+            ]
         )
     }
 }
