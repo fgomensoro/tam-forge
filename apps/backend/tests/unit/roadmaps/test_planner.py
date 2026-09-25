@@ -131,7 +131,12 @@ async def test_a_reforecast_that_keeps_the_current_program_key_is_refused_by_nam
     current = {"rest_weekdays": [6], "program": {"key": "demo", "title": "Demo"}, "days": {}}
 
     proposal = await service.reforecast(
-        files=FILES, current_scheme=current, evidence=(), today=date(2026, 9, 12), instruction=""
+        files=FILES,
+        current_scheme=current,
+        evidence=(),
+        today=date(2026, 9, 12),
+        first_day=FIRST_DAY,
+        instruction="",
     )
 
     assert not proposal.accepted
