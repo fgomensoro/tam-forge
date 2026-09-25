@@ -67,9 +67,11 @@ class _Loaded:
     thread: CoachThread | None
 
 
-def next_step_for(activity: ActivityInstance) -> str:
+def next_step_for(activity: ActivityInstance, *, allowed_ai_role: str = "") -> str:
     """The plan's next step, derived from state; the Coach repeats it, never invents it."""
     if activity.output_committed_at is None:
+        if allowed_ai_role == "interviewer":
+            return "Commit Attempt A first; the coach answers after the commit."
         return "Write your independent attempt; ask the coach for a hint only when stuck."
     if activity.state == "output_committed":
         return "Submit the mandatory self-review for this block."
@@ -119,7 +121,7 @@ class CoachThreadService:
                         owner_id=owner_id, activity_id=activity_id
                     ),
                     learner_message=text.strip(),
-                    next_step=next_step_for(loaded.activity),
+                    next_step=next_step_for(loaded.activity, allowed_ai_role=block.allowed_ai_role),
                     prior_messages=tuple(
                         (cast(Any, item.speaker), item.text)
                         for item in prior[-PRIOR_MESSAGE_LIMIT:]
@@ -350,7 +352,9 @@ class CoachThreadService:
             assistance_mode=cast(
                 Any, "none" if loaded.thread is None else loaded.thread.assistance_mode
             ),
-            next_step=next_step_for(loaded.activity),
+            next_step=next_step_for(
+                loaded.activity, allowed_ai_role=loaded.definition.allowed_ai_role
+            ),
             messages=messages,
         )
 
