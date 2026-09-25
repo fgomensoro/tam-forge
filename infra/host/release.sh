@@ -65,5 +65,7 @@ fi
 log "readyz 200, current is $(readlink -f "$current")"
 
 # Keep the last five releases, never the live one, so a rollback always has a target.
-# grep exits 1 when nothing is left to prune; that is not a failed release.
-ls -1d "$root"/releases/*/ | sort | head -n -5 | { grep -vx "$(readlink -f "$current")/" || true; } | xargs -r rm -rf
+live="$(readlink -f "$current")"
+for old in $(ls -1d "$root"/releases/*/ | sort | head -n -5); do
+  [[ "$(readlink -f "$old")" == "$live" ]] || rm -rf "$old"
+done
