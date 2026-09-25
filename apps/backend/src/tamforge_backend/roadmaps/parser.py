@@ -29,6 +29,7 @@ _FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
 _WIKI_LINK = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
 _MARKDOWN_LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)(?:\s+[^)]*)?\)")
 _LIST_ITEM = re.compile(r"^\s*(?:[-+*]|\d+[.)])\s+(.+?)\s*$")
+_QUEUE_ID = re.compile(r"\bP\d+-Q\d+\b")
 
 
 SCHEME_FILE_NAME = "roadmap.yaml"
@@ -238,6 +239,76 @@ def _exit_criteria(
     )
 
 
+def _section_lines(content: str, heading: str) -> list[str]:
+    """Visible lines under the first `heading`, up to the next heading at its level or above."""
+    lines: list[str] = []
+    level: int | None = None
+    for line in _visible_lines(content):
+        match = _HEADING.match(line)
+        if match is not None:
+            if level is not None and len(match.group(1)) <= level:
+                break
+            if level is None and _text(match.group(2)) == heading:
+                level = len(match.group(1))
+                continue
+        if level is not None:
+            lines.append(line)
+    return lines
+
+
+def _interview_queue(markdown: Mapping[str, str]) -> dict[str, dict[str, str]]:
+    """Queue items by ID, from headings like `### P1-Q16 — ...` and their `- Key: value` bullets."""
+    items: dict[str, dict[str, str]] = {}
+    for content in markdown.values():
+        for line in _visible_lines(content):
+            heading = _HEADING.match(line)
+            title = "" if heading is None else _text(heading.group(2))
+            match = _QUEUE_ID.match(title)
+            if match is None or match.group(0) in items:
+                continue
+            fields: dict[str, str] = {}
+            for entry in _section_lines(content, title):
+                item = _LIST_ITEM.match(entry)
+                key, colon, value = ("", "", "") if item is None else item.group(1).partition(":")
+                if colon:
+                    fields[_text(key).casefold()] = _text(value)
+            # Other notes may reuse the ID in a heading; only the queue entry has the question.
+            if "exact question" in fields:
+                items[match.group(0)] = fields
+    return items
+
+
+def _queue_objective(
+    queue: Mapping[str, Mapping[str, str]], markdown: Mapping[str, str], file: str, heading: str
+) -> str | None:
+    """The exact question a spoken block's source section assigns, with audience and limit.
+
+    The week files name the day's queue item only as a bullet (`Interview: P1-Q16 in
+    [[Interview Queue]]`), so the question itself lives in the queue file. A section
+    that names no item, or more than one, keeps the scheme's objective.
+    """
+    ids = {
+        found
+        for line in _section_lines(markdown.get(file, ""), heading)
+        for found in _QUEUE_ID.findall(line)
+    }
+    if len(ids) != 1:
+        return None
+    (item_id,) = ids
+    fields = queue.get(item_id, {})
+    question = fields.get("exact question")
+    if not question:
+        return None
+    parts = [f"{item_id}: {question}"]
+    if fields.get("default audience"):
+        parts.append(f"Audience: {fields['default audience']}.")
+    if fields.get("answer limit"):
+        parts.append(f"Answer limit: {fields['answer limit']}.")
+    objective = " ".join(parts)
+    # Approval also writes the objective as the task's curriculum node title (512 bytes).
+    return objective if len(objective.encode("utf-8")) <= 512 else None
+
+
 def _contract(task: NormalizedTask) -> NormalizedTaskContract:
     return NormalizedTaskContract(
         stable_id=task.stable_id,
@@ -299,12 +370,19 @@ def parse_roadmap_scheme(*, files: Mapping[str, bytes], config: ConfigBundle) ->
     if issues:
         raise RoadmapParseError("; ".join(issues))
     markdown = decode_markdown(files)
+    queue = _interview_queue(markdown)
     tasks: list[NormalizedTask] = []
     for day_number, day in enumerate(scheme.days, start=1):
         for order, block in enumerate(day.blocks, start=1):
             contract = config.roadmap_contracts[block.type]
             is_correction = block.type == "correction"
             exercise = None if is_correction else config.exercise(block.exercise_type)
+            objective = block.objective
+            if block.type == "communication":
+                objective = (
+                    _queue_objective(queue, markdown, block.source.file, block.source.heading)
+                    or objective
+                )
             tasks.append(
                 NormalizedTask(
                     stable_id=block.id,
@@ -319,7 +397,7 @@ def parse_roadmap_scheme(*, files: Mapping[str, bytes], config: ConfigBundle) ->
                     mapping_version=None if exercise is None else exercise.mapping_version,
                     required=block.required and not is_correction,
                     timebox_minutes=block.minutes,
-                    objective=block.objective,
+                    objective=objective,
                     required_output=tuple(contract.required_output),
                     pass_criteria=tuple(contract.pass_criteria),
                     evidence_requirements=tuple(contract.evidence_requirements),
