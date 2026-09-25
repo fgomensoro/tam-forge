@@ -53,7 +53,8 @@ cat > /etc/tamforge/secrets/$file.new
 chown root:tamforge-claude /etc/tamforge/secrets/$file.new
 chmod 0640 /etc/tamforge/secrets/$file.new
 mv -f /etc/tamforge/secrets/$file.new /etc/tamforge/secrets/$file
-systemctl restart tamforge-claude-worker
+# The API reads the tokens too, for the Claude calls it answers inside a request.
+systemctl restart tamforge-claude-worker tamforge-api
 # The heartbeat speaks for the active slot only; rotating the other one has nothing to wait for.
 # The first owner, as the worker picks it.
 active="\$(sudo -u postgres psql -d tamforge -Atc "select coalesce((select slot from claude_token_slots where owner_id = (select min(id) from owners)), 'a')")"
@@ -75,7 +76,7 @@ echo "Installing the slot $label token and waiting up to $((wait_seconds / 60)) 
 # printf is a shell builtin, so the token never shows up in a process listing.
 if ! result="$(printf '%s=%s\n' "$variable" "$token" | ssh "$host" "$remote")"; then
   unset token
-  echo "The host step failed, possibly after the new token was installed. Check 'journalctl -u tamforge-claude-worker' on the host." >&2
+  echo "The host step failed, possibly after the new token was installed. Check 'journalctl -u tamforge-claude-worker -u tamforge-api' on the host." >&2
   exit 1
 fi
 unset token

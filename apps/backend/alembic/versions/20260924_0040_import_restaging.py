@@ -8,16 +8,14 @@ Once one exists, downgrade fails on the restored unique constraint.
 
 from alembic import op
 
-revision = "20260924_0039_import_restaging"
-down_revision = "20260923_0038_version_starts_on"
+revision = "20260924_0040_import_restaging"
+down_revision = "20260923_0039_coach_assistance"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
-    op.drop_constraint(
-        "uq_roadmap_imports_source_package_hash", "roadmap_imports", type_="unique"
-    )
+    op.drop_constraint("uq_roadmap_imports_source_package_hash", "roadmap_imports", type_="unique")
     op.create_index(
         "ix_roadmap_imports_source_id_package_hash",
         "roadmap_imports",

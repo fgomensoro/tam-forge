@@ -1,11 +1,13 @@
-"""The Coach: speaks only after the learner commits, writes only evidence and notes.
+"""The Coach: hints before the learner commits, corrects after, writes only evidence and notes.
 
 Three rules, all enforced by shape rather than by discipline at the call site:
 
 - It never runs in a block whose `allowed_ai_role` forbids it (`none`, or a role
   other than coach or tutor, except an interviewer block whose procedure is the
-  interview cycle, which schedules coaching between Attempt A and Attempt B), and
-  never before the learner commits an attempt.
+  interview cycle, which schedules coaching between Attempt A and Attempt B).
+  Before the learner commits it asks a recall question and gives hints on request; a
+  hint is reported in `hint_given` and the caller records it as assistance on the
+  attempt. After the commit it corrects.
 - Its output is a message, the next step taken from the plan the caller hands it
   (never invented), and proposed evidence the learner still has to accept. There is
   no field through which it could mark anything done.
@@ -17,7 +19,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -38,7 +40,7 @@ from .contracts import (
     prepare_role_prompt,
 )
 
-COACH_SCHEMA_ID = "urn:tamforge:schema:coach-v1"
+COACH_SCHEMA_ID = "urn:tamforge:schema:coach-v2"
 NOTE_SCHEMA_ID = "urn:tamforge:schema:coach-note-v1"
 COACH_JOB_TYPE = "claude.followup"
 COACH_MAX_TURNS = 4
@@ -47,6 +49,7 @@ COACHING_ROLES: frozenset[str] = frozenset({"coach", "tutor"})
 # The interview cycle's own procedure has a coaching step after Attempt A; the sealed
 # final mock, also an interviewer block, has none.
 INTERVIEW_CYCLE_PHASE = "interview_cycle"
+CoachPhase = Literal["before_commit", "after_commit"]
 MAX_MESSAGE_CHARS = 2000
 EvidenceKind = Literal["note", "correction", "question", "card"]
 
@@ -80,6 +83,7 @@ class CoachTurn(BaseModel):
 
     message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
     next_step: str = Field(min_length=1, max_length=500)
+    hint_given: bool = False
     proposed_evidence: tuple[ProposedEvidence, ...] = Field(default=(), max_length=5)
 
 
@@ -106,6 +110,10 @@ class CoachRequest:
     repair_errors: tuple[str, ...] = ()
     handoff: str | None = None
     reference: tuple[str, ...] = ()
+
+    @property
+    def phase(self) -> CoachPhase:
+        return "after_commit" if self.committed_attempt.strip() else "before_commit"
 
 
 class CoachTransport(Protocol):
@@ -167,7 +175,9 @@ def coaching_allowed(block: CoachBlock) -> bool:
     return block.allowed_ai_role == "interviewer" and INTERVIEW_CYCLE_PHASE in block.phases
 
 
-def validate_coach_turn(payload: Mapping[str, object], *, next_step: str) -> tuple[str, ...]:
+def validate_coach_turn(
+    payload: Mapping[str, object], *, next_step: str, phase: CoachPhase = "after_commit"
+) -> tuple[str, ...]:
     """Issues by name; empty means the turn may be shown."""
     try:
         turn = CoachTurn.model_validate(payload)
@@ -177,6 +187,8 @@ def validate_coach_turn(payload: Mapping[str, object], *, next_step: str) -> tup
         return (f"coach turn {location}: {first['msg']}",)
     if turn.next_step.strip() != next_step.strip():
         return ("the next step must be the plan's, not the coach's",)
+    if turn.hint_given and phase == "after_commit":
+        return ("a hint is recorded only before the commit",)
     lowered = turn.message.lower()
     for marker in ("marked as done", "i marked", "i recorded", "i completed"):
         if marker in lowered:
@@ -211,14 +223,7 @@ class _NoteRuntimeAdapter:
         self, run: PreparedAgentRun, *, repair_errors: tuple[str, ...] = ()
     ) -> TransportResult:
         del run
-        request = NoteRequest(
-            block=self.request.block,
-            committed_attempt=self.request.committed_attempt,
-            self_review=self.request.self_review,
-            coach_messages=self.request.coach_messages,
-            accepted_evidence=self.request.accepted_evidence,
-            repair_errors=repair_errors,
-        )
+        request = replace(self.request, repair_errors=repair_errors)
         payload = await self.transport.draft_note(request)
         return TransportResult(payload=payload, turns=1)
 
@@ -233,17 +238,7 @@ class _RuntimeAdapter:
         self, run: PreparedAgentRun, *, repair_errors: tuple[str, ...] = ()
     ) -> TransportResult:
         del run
-        request = CoachRequest(
-            block=self.request.block,
-            committed_attempt=self.request.committed_attempt,
-            learner_message=self.request.learner_message,
-            next_step=self.request.next_step,
-            self_review=self.request.self_review,
-            prior_messages=self.request.prior_messages,
-            repair_errors=repair_errors,
-            handoff=self.request.handoff,
-            reference=self.request.reference,
-        )
+        request = replace(self.request, repair_errors=repair_errors)
         payload = await self.transport.respond(request)
         self.last_payload = payload
         return TransportResult(payload=payload, turns=1)
@@ -258,11 +253,9 @@ class CoachService:
         """One coaching turn, or a contract error the caller renders as such."""
         if not coaching_allowed(request.block):
             raise RoleContractError("this block does not allow coaching")
-        if not request.committed_attempt.strip():
-            raise RoleContractError("the coach speaks only after the learner commits")
         prepare_role_prompt(
             AgentRole.COACH,
-            committed=True,
+            committed=request.phase == "after_commit",
             requested_context=(TASK_BRIEF, COMMITTED_ATTEMPT, SELF_REVIEW),
         )
         if self._transport is None:
@@ -270,7 +263,9 @@ class CoachService:
         adapter = _RuntimeAdapter(self._transport, request)
         runtime = BoundedClaudeRuntime(
             adapter,
-            validate=lambda payload: validate_coach_turn(payload, next_step=request.next_step),
+            validate=lambda payload: validate_coach_turn(
+                payload, next_step=request.next_step, phase=request.phase
+            ),
         )
         digest = hashlib.sha256(
             f"{request.block.stable_id}:{len(request.prior_messages)}:{request.learner_message}".encode()
@@ -280,7 +275,7 @@ class CoachService:
             job_type=COACH_JOB_TYPE,
             model=self._model,
             schema_id=COACH_SCHEMA_ID,
-            prompt_version="v1",
+            prompt_version="v2",
             max_turns=COACH_MAX_TURNS,
             wall_time_seconds=COACH_WALL_TIME_SECONDS,
         )
@@ -379,8 +374,17 @@ def render_coach_prompt(request: CoachRequest) -> str:
         "Required output: " + "; ".join(request.block.required_output),
         "Pass criteria: " + "; ".join(request.block.pass_criteria),
         f"The plan's next step (repeat it verbatim as next_step): {request.next_step}",
-        "Committed attempt:\n" + request.committed_attempt,
     ]
+    if request.phase == "before_commit":
+        lines.append(
+            "Phase: before the commit. The learner has not committed Attempt A yet. Open with "
+            "one recall question for the objective, wait for their attempt, and when they ask "
+            "for help give the smallest hint that unblocks them, never the full answer. Set "
+            "hint_given to true on any turn that gives a hint; it is recorded as assistance."
+        )
+    else:
+        lines.append("Phase: after the commit.")
+        lines.append("Committed attempt:\n" + request.committed_attempt)
     if request.self_review:
         lines.append("Self-review:\n" + request.self_review)
     if request.handoff:
@@ -411,6 +415,7 @@ __all__ = [
     "COACH_JOB_TYPE",
     "COACH_SCHEMA_ID",
     "CoachBlock",
+    "CoachPhase",
     "CoachRequest",
     "CoachService",
     "CoachTransport",

@@ -1,4 +1,4 @@
-"""Coaching threads: the learner writes after committing, the Coach answers in shape.
+"""Coaching threads: the learner may write before or after committing; the Coach answers in shape.
 
 The thread is the durable record: every learner message and every Coach turn is a
 row, and a proposed evidence note becomes evidence only when the learner accepts
@@ -70,7 +70,7 @@ class _Loaded:
 def next_step_for(activity: ActivityInstance) -> str:
     """The plan's next step, derived from state; the Coach repeats it, never invents it."""
     if activity.output_committed_at is None:
-        return "Commit your attempt for this block, then the coach can respond."
+        return "Write your independent attempt; ask the coach for a hint only when stuck."
     if activity.state == "output_committed":
         return "Submit the mandatory self-review for this block."
     if activity.state in {"correction_due", "needs_work"}:
@@ -106,8 +106,6 @@ class CoachThreadService:
                 block = _block(loaded.definition)
                 if not coaching_allowed(block):
                     raise CoachingConflict("this block does not allow coaching")
-                if loaded.activity.output_committed_at is None:
-                    raise CoachingConflict("commit an attempt before asking the coach")
                 thread = loaded.thread or CoachThread(
                     owner_id=owner_id, activity_instance_id=activity_id
                 )
@@ -137,6 +135,11 @@ class CoachThreadService:
                     raise CoachingUnavailable(str(exc)) from None
                 except RoleContractError as exc:
                     raise CoachingConflict(str(exc)) from None
+                if request.phase == "before_commit":
+                    if turn.hint_given:
+                        thread.assistance_mode = "hint_ladder"
+                    elif thread.assistance_mode == "none":
+                        thread.assistance_mode = "coach_preparation"
                 self._session.add(
                     CoachMessage(
                         owner_id=owner_id, thread_id=thread.id, speaker="learner", text=text.strip()
@@ -344,6 +347,9 @@ class CoachThreadService:
             thread_id=None if loaded.thread is None else loaded.thread.id,
             coaching_allowed=coaching_allowed(_block(loaded.definition)),
             committed=loaded.activity.output_committed_at is not None,
+            assistance_mode=cast(
+                Any, "none" if loaded.thread is None else loaded.thread.assistance_mode
+            ),
             next_step=next_step_for(loaded.activity),
             messages=messages,
         )

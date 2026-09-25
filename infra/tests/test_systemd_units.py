@@ -94,13 +94,15 @@ def test_credentials_are_per_service_and_never_shared() -> None:
     assert {u for u, c in creds.items() if public in c} == {"tamforge-api", "tamforge-worker"}
 
 
-def test_only_the_claude_worker_loads_the_subscription_tokens() -> None:
+def test_only_the_api_and_the_claude_worker_load_the_subscription_tokens() -> None:
+    # The API answers the coach, note drafts, roadmap planning and interview follow-ups
+    # inside the request, so it runs Claude itself; no other unit may see a token.
     for token_file in (
         "-/etc/tamforge/secrets/claude-oauth.env",
         "-/etc/tamforge/secrets/claude-oauth-b.env",
     ):
         loaders = [u.stem for u in UNITS if token_file in parse(u).get("EnvironmentFile", [])]
-        assert loaders == ["tamforge-claude-worker"], token_file
+        assert loaders == ["tamforge-api", "tamforge-claude-worker"], token_file
 
 
 def test_the_general_worker_runs_the_general_entrypoint_from_the_immutable_release() -> None:

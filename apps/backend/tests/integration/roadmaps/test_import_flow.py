@@ -281,6 +281,82 @@ def test_a_taken_program_key_is_named_at_staging_and_refused_at_approval(
             sync_engine.dispose()
 
 
+def test_approved_six_week_import_stores_the_queue_question_for_spoken_tasks(
+    test_database_url: str,
+) -> None:
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import create_engine, select, text
+    from sqlalchemy.engine import make_url
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from tamforge_backend.database import database_url_to_sync
+    from tamforge_backend.evidence.config_loader import load_config_bundle
+    from tamforge_backend.roadmaps.models import TaskDefinition
+    from tamforge_backend.roadmaps.package import inspect_zip_stream
+    from tamforge_backend.roadmaps.repository import SqlAlchemyRoadmapRepository
+    from tamforge_backend.roadmaps.service import RoadmapService
+    from tamforge_backend.storage.fake import InMemoryObjectStore
+
+    package_bytes = (FIXTURE.parent / "phase-1-six-week-scheme-v1.zip").read_bytes()
+    config = Config("apps/backend/alembic.ini")
+    config.attributes["database_url"] = test_database_url
+    sync_engine = create_engine(database_url_to_sync(test_database_url))
+    try:
+        command.downgrade(config, "base")
+        command.upgrade(config, "head")
+        with sync_engine.begin() as connection:
+            owner_id = connection.execute(
+                text(
+                    "INSERT INTO owners (github_user_id, github_login) "
+                    "VALUES (102269369, 'fgomensoro') RETURNING id"
+                )
+            ).scalar_one()
+
+        async def exercise() -> str | None:
+            engine = create_async_engine(
+                make_url(test_database_url).set(drivername="postgresql+asyncpg")
+            )
+            factory = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
+            try:
+                async with factory() as session:
+                    service = RoadmapService(
+                        config=load_config_bundle(ROOT / "config"),
+                        repository=SqlAlchemyRoadmapRepository(session),
+                        object_store=InMemoryObjectStore(),
+                        mirror=None,
+                    )
+                    with inspect_zip_stream((package_bytes,)) as package:
+                        staged = await service.stage_package(
+                            owner_id=owner_id,
+                            source_key="obsidian-main",
+                            source_name="TAM Phase 1",
+                            source_kind="obsidian",
+                            package_kind="zip",
+                            idempotency_key="six-week-queue-question",
+                            package=package,
+                        )
+                    approved = await service.approve_import(owner_id=owner_id, import_id=staged.id)
+                    return await session.scalar(
+                        select(TaskDefinition.objective)
+                        .where(TaskDefinition.roadmap_version_id == approved.id)
+                        .where(TaskDefinition.stable_id == "p1-w05-d25-interview")
+                    )
+            finally:
+                await engine.dispose()
+
+        assert asyncio.run(exercise()) == (
+            "P1-Q16: Explain APIs and webhooks to a non-technical customer. "
+            "Audience: customer. Answer limit: 120 seconds."
+        )
+    finally:
+        try:
+            with sync_engine.begin() as connection:
+                connection.execute(text("DROP SCHEMA public CASCADE"))
+                connection.execute(text("CREATE SCHEMA public"))
+        finally:
+            sync_engine.dispose()
+
+
 def test_restaging_after_a_parser_change_replaces_an_unapproved_stale_import(
     test_database_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:

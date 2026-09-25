@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from types import MappingProxyType
 from typing import TypeVar, cast
 
 from pydantic import BaseModel, ConfigDict
@@ -16,6 +17,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.models import CommandReceipt, Owner
+from ..coaching.models import CoachThread
 from ..database import transaction_scope
 from ..models.base import utc_now
 from ..roadmaps.models import TaskDefinition
@@ -69,6 +71,18 @@ from .state_machine import ActivityStateError, TransitionDecision, transition
 from .timers import TimerPolicyError, TimerState, apply_heartbeat, start_timer
 
 _SAFE_IDEMPOTENCY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
+_ASSISTANCE_RANK: Mapping[str, int] = MappingProxyType(
+    {"none": 0, "coach_preparation": 1, "hint_ladder": 2}
+)
+
+
+def stronger_assistance(current: str, coached: str | None) -> str:
+    """The attempt's mode: the coach's mode lifts `none`, never a mode outside its rank."""
+    if coached is None or current not in _ASSISTANCE_RANK:
+        return current
+    return coached if _ASSISTANCE_RANK.get(coached, 0) > _ASSISTANCE_RANK[current] else current
 
 
 def _string_items(payload: object, field: str) -> tuple[str, ...]:
@@ -789,7 +803,11 @@ class ActivityService:
                     original_sql=validated.original_sql,
                     audience=validated.audience,
                     prompt=validated.prompt,
-                    assistance_mode=row.activity.assistance_mode,
+                    assistance_mode=await self._coached_assistance(
+                        owner_id=owner_id,
+                        activity_id=activity_id,
+                        current=row.activity.assistance_mode,
+                    ),
                     commitment_hash=commitment_hash,
                     committed_at=now,
                     created_at=now,
@@ -1508,6 +1526,15 @@ class ActivityService:
         elif parent_attempt_id is not None:
             raise ActivityInvalidRequest("only Attempt B can have a parent attempt")
         return current
+
+    async def _coached_assistance(self, *, owner_id: int, activity_id: int, current: str) -> str:
+        """The stronger of the activity's own mode and what the coach gave before the commit."""
+        coached = await self._session.scalar(
+            select(CoachThread.assistance_mode)
+            .where(CoachThread.owner_id == owner_id)
+            .where(CoachThread.activity_instance_id == activity_id)
+        )
+        return stronger_assistance(current, coached)
 
     async def _load_commitment_artifacts(
         self,

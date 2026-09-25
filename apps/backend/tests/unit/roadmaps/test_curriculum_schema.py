@@ -993,10 +993,10 @@ def test_migration_compiles_upgrade_and_exact_downgrade_without_credentials() ->
 
 def test_import_restaging_migration_trades_the_hash_unique_for_an_index() -> None:
     upgrade_sql = _offline_sql(
-        "upgrade", "20260923_0038_version_starts_on:20260924_0039_import_restaging"
+        "upgrade", "20260923_0039_coach_assistance:20260924_0040_import_restaging"
     )
     downgrade_sql = _offline_sql(
-        "downgrade", "20260924_0039_import_restaging:20260923_0038_version_starts_on"
+        "downgrade", "20260924_0040_import_restaging:20260923_0039_coach_assistance"
     )
 
     assert "DROP CONSTRAINT uq_roadmap_imports_source_package_hash" in upgrade_sql
@@ -1042,4 +1042,4 @@ def test_alembic_has_exactly_one_linear_head() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "20260924_0039_import_restaging (head)"
+    assert result.stdout.strip() == "20260924_0040_import_restaging (head)"

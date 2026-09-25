@@ -102,14 +102,33 @@ final class CoachThreadModelTests: XCTestCase {
         XCTAssertEqual(LiveCoachAPI.translate(.decodingResponse), .invalidResponse)
     }
 
+    func testTheCoachCanBeAskedBeforeTheCommit() async {
+        let api = FakeCoachAPI(thread: thread(allowed: true, committed: false))
+        let model = CoachThreadModel(activityID: 41, api: api)
+        await model.open()
+        model.draft = "what should I recall first?"
+
+        XCTAssertTrue(model.canSend)
+    }
+
+    func testAThreadWithoutAssistanceModeStillDecodes() throws {
+        let json = """
+        {"activity_id": 41, "thread_id": null, "coaching_allowed": true, "committed": false,
+         "next_step": "Write your independent attempt.", "messages": []}
+        """
+        let thread = try JSONDecoder().decode(CoachThread.self, from: Data(json.utf8))
+        XCTAssertNil(thread.assistanceMode)
+    }
+
     private func problem(status: Int, code: String?) -> APIProblem {
         APIProblem(type: nil, title: nil, status: status, detail: nil, instance: nil, code: code)
     }
 
-    private func thread(allowed: Bool) -> CoachThread {
+    private func thread(allowed: Bool, committed: Bool = true) -> CoachThread {
         CoachThread(
-            activityID: 41, threadID: allowed ? 3 : nil, coachingAllowed: allowed, committed: true,
+            activityID: 41, threadID: allowed ? 3 : nil, coachingAllowed: allowed, committed: committed,
             nextStep: allowed ? "Explain the trade-off in one sentence." : "",
+            assistanceMode: "none",
             messages: []
         )
     }
