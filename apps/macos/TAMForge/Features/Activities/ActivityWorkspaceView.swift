@@ -13,7 +13,6 @@ struct ActivityWorkspaceView: View {
     @State private var strongerEvidenceID = ""
     @State private var artifactClass: ActivityArtifactClass = .writtenOutput
     private let focusSelfReview: Bool
-    private let coach: CoachThreadModel?
     private let note: StudyNoteModel?
     private let spoken: SpokenAttemptModel?
     private let aiReview: ReviewModel?
@@ -21,13 +20,12 @@ struct ActivityWorkspaceView: View {
 
     init(
         model: ActivityWorkspaceModel, uploader: ActivityArtifactUploader, focusSelfReview: Bool = false,
-        coach: CoachThreadModel? = nil, note: StudyNoteModel? = nil, spoken: SpokenAttemptModel? = nil,
+        note: StudyNoteModel? = nil, spoken: SpokenAttemptModel? = nil,
         aiReview: ReviewModel? = nil, cards: CardsModel? = nil
     ) {
         self.model = model
         self.uploader = uploader
         self.focusSelfReview = focusSelfReview
-        self.coach = coach
         self.note = note
         self.spoken = spoken
         self.aiReview = aiReview
@@ -158,7 +156,6 @@ struct ActivityWorkspaceView: View {
             if let spoken, activity.taskContract.block == .communicationSpoken {
                 SpokenAttemptPanel(model: spoken)
             }
-            if let coach { CoachPanel(model: coach) }
             if !activity.state.isEditable {
                 if let note { StudyNotePanel(model: note) }
             }

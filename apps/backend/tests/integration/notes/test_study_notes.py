@@ -148,10 +148,11 @@ def test_study_note_lifecycle_on_postgres(test_database_url: str) -> None:
                         await service(session).get(owner_id=owner_id, activity_id=coached_id)
                     with pytest.raises(NoteConflict, match="commit"):
                         await service(session).draft(owner_id=owner_id, activity_id=coached_id)
-                    with pytest.raises(NoteConflict, match="does not allow"):
+                    # Every block may be coached, but the Coach drafts only after a commit.
+                    with pytest.raises(NoteConflict, match="commit"):
                         await service(session).draft(owner_id=owner_id, activity_id=forbidden_id)
 
-                # A block that forbids coaching still gets a note, written by the learner.
+                # A block whose AI role is none still gets a note, written by the learner.
                 async with factory() as session:
                     manual = await service(session).save(
                         owner_id=owner_id,

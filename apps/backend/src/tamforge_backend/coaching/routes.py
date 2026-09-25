@@ -2,18 +2,26 @@
 
 from __future__ import annotations
 
-from typing import Annotated, cast
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..agents.roles.coach import CoachService
+from ..agents.roles.general_coach import GeneralCoachService
 from ..auth.dependencies import get_authenticated_owner, require_csrf_owner
 from ..auth.schemas import AuthenticatedOwner, ProblemResponse
 from ..config import Settings
 from ..database import get_db_session
-from .schemas import AcceptEvidenceCommand, CoachMessageCommand, CoachThreadResponse
+from .general import GeneralCoachThreadService
+from .schemas import (
+    AcceptEvidenceCommand,
+    CoachMessageCommand,
+    CoachThreadResponse,
+    GeneralCoachMessageCommand,
+    GeneralCoachThreadResponse,
+)
 from .service import (
     CoachingConflict,
     CoachingInvalidRequest,
@@ -23,6 +31,8 @@ from .service import (
 )
 
 router = APIRouter(prefix="/api/v1/activities", tags=["coaching"])
+# The Coach outside any activity: Today, Roadmaps and every other screen.
+general_router = APIRouter(prefix="/api/v1/coach", tags=["coaching"])
 
 
 def _prevent_storage(response: Response) -> None:
@@ -31,15 +41,27 @@ def _prevent_storage(response: Response) -> None:
     response.headers["Referrer-Policy"] = "no-referrer"
 
 
+def _coach_transport(request: Request) -> tuple[Any, str]:
+    """The Claude seam while Claude is enabled, else none, and the model the Coach asks for."""
+    settings = cast(Settings, request.app.state.settings)
+    transport = getattr(request.app.state, "coach_transport", None)
+    return (transport if settings.claude_enabled else None), settings.coach_model
+
+
 def get_coach_thread_service(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> CoachThreadService:
-    settings = cast(Settings, request.app.state.settings)
-    transport = getattr(request.app.state, "coach_transport", None)
-    if not settings.claude_enabled:
-        transport = None
-    return CoachThreadService(session, coach=CoachService(transport, model=settings.coach_model))
+    transport, model = _coach_transport(request)
+    return CoachThreadService(session, coach=CoachService(transport, model=model))
+
+
+def get_general_coach_service(
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> GeneralCoachThreadService:
+    transport, model = _coach_transport(request)
+    return GeneralCoachThreadService(session, coach=GeneralCoachService(transport, model=model))
 
 
 @router.get("/{activity_id}/coach", response_model=CoachThreadResponse)
@@ -62,7 +84,12 @@ async def send_coach_message(
     service: Annotated[CoachThreadService, Depends(get_coach_thread_service)],
     owner: Annotated[AuthenticatedOwner, Depends(require_csrf_owner)],
 ) -> CoachThreadResponse:
-    result = await service.send(owner_id=owner.owner_id, activity_id=activity_id, text=command.text)
+    result = await service.send(
+        owner_id=owner.owner_id,
+        activity_id=activity_id,
+        text=command.text,
+        context=command.context,
+    )
     _prevent_storage(response)
     return result
 
@@ -83,6 +110,29 @@ async def accept_coach_evidence(
         question=command.question,
         answer=command.answer,
     )
+    _prevent_storage(response)
+    return result
+
+
+@general_router.get("", response_model=GeneralCoachThreadResponse)
+async def read_general_coach_thread(
+    response: Response,
+    service: Annotated[GeneralCoachThreadService, Depends(get_general_coach_service)],
+    owner: Annotated[AuthenticatedOwner, Depends(get_authenticated_owner)],
+) -> GeneralCoachThreadResponse:
+    result = await service.thread(owner_id=owner.owner_id)
+    _prevent_storage(response)
+    return result
+
+
+@general_router.post("/messages", response_model=GeneralCoachThreadResponse)
+async def send_general_coach_message(
+    command: GeneralCoachMessageCommand,
+    response: Response,
+    service: Annotated[GeneralCoachThreadService, Depends(get_general_coach_service)],
+    owner: Annotated[AuthenticatedOwner, Depends(require_csrf_owner)],
+) -> GeneralCoachThreadResponse:
+    result = await service.send(owner_id=owner.owner_id, text=command.text, context=command.context)
     _prevent_storage(response)
     return result
 
@@ -117,4 +167,9 @@ async def coaching_exception_handler(request: Request, exc: Exception) -> JSONRe
     return coaching_problem_response(exc)
 
 
-__all__ = ["coaching_exception_handler", "coaching_problem_response", "router"]
+__all__ = [
+    "coaching_exception_handler",
+    "coaching_problem_response",
+    "general_router",
+    "router",
+]

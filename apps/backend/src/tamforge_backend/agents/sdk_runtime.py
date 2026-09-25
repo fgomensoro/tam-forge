@@ -30,6 +30,7 @@ from .compatibility import (
 from .roles.class_analysis import ClassAnalysisRequest
 from .roles.coach import CoachRequest, NoteRequest
 from .roles.debrief import DebriefRequest
+from .roles.general_coach import GeneralCoachRequest
 from .roles.interview_follow_up import FollowUpRequest
 from .roles.monthly_report import MonthlyReportRequest
 from .roles.practice_review import PracticeReviewRequest
@@ -144,6 +145,14 @@ COACH_SYSTEM_PROMPT = (
     "language. Return only the object."
 )
 
+GENERAL_COACH_SYSTEM_PROMPT = (
+    "You are the TAM Forge coach, outside any single study block. The learner can ask about "
+    "their plan, what to study next, a concept, or how to use the app. Ground every answer in "
+    "the screen context you are given and say so when it does not contain what they ask. "
+    "Never claim to have recorded, scheduled, changed or completed anything. Answer in the "
+    "learner's language, briefly. Return only the object."
+)
+
 QueryFactory = Callable[..., AsyncIterator[Any]]
 
 
@@ -239,6 +248,18 @@ class AgentSdkRuntime:
             schema=coach_turn_schema(),
             model=self._environ.get("TAMFORGE_COACH_MODEL", "claude-opus-5"),
             system_prompt=COACH_SYSTEM_PROMPT,
+            max_turns=4,
+        )
+        return {} if run.structured_output is None else dict(run.structured_output)
+
+    async def general_reply(self, request: GeneralCoachRequest) -> Mapping[str, object]:
+        from .roles.general_coach import general_coach_schema, render_general_prompt
+
+        run = await self._structured(
+            prompt=render_general_prompt(request),
+            schema=general_coach_schema(),
+            model=self._environ.get("TAMFORGE_COACH_MODEL", "claude-opus-5"),
+            system_prompt=GENERAL_COACH_SYSTEM_PROMPT,
             max_turns=4,
         )
         return {} if run.structured_output is None else dict(run.structured_output)

@@ -1,11 +1,11 @@
 """Study notes: drafted at the end of a block, edited by the learner, approved into evidence.
 
-The Coach drafts only where the block allows coaching and only after the learner
-committed; the learner can always write the note by hand. Approval renders the note as
-Markdown, stores it in the object store under the learner's artifacts, records an
-`Artifact` of class `recall_note` linked to the activity, and freezes the note. The
-assistance recorded on the note comes from what happened (a coach draft, or a coaching
-thread with coach messages), never from the Coach's own claim.
+The Coach drafts on any block, but only after the learner committed; the learner can
+always write the note by hand. Approval renders the note as Markdown, stores it in the
+object store under the learner's artifacts, records an `Artifact` of class `recall_note`
+linked to the activity, and freezes the note. The assistance recorded on the note comes
+from what happened (a coach draft, or a coaching thread with coach messages), never from
+the Coach's own claim.
 """
 
 from __future__ import annotations
@@ -22,13 +22,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..agents.roles.coach import (
-    CoachNoteDraft,
-    CoachService,
-    CoachUnavailable,
-    NoteRequest,
-    coaching_allowed,
-)
+from ..agents.roles.coach import CoachNoteDraft, CoachService, CoachUnavailable, NoteRequest
 from ..agents.roles.contracts import RoleContractError
 from ..cards.importing import note_card_commands, skill_slug_for
 from ..cards.service import CardService
@@ -58,7 +52,7 @@ class NoteNotFound(NotesError):
 
 
 class NoteConflict(NotesError):
-    """The note is frozen, the block forbids coaching, or nothing was committed yet."""
+    """The note is frozen, or nothing was committed yet."""
 
 
 class NoteInvalidRequest(NotesError):
@@ -113,8 +107,6 @@ class StudyNoteService:
                 if loaded.note is not None and loaded.note.status == "approved":
                     raise NoteConflict("an approved note is frozen; it cannot be redrafted")
                 block = _block(loaded.definition)
-                if not coaching_allowed(block):
-                    raise NoteConflict("this block does not allow coaching")
                 attempt = await self._committed_attempt(owner_id=owner_id, activity_id=activity_id)
                 if not attempt:
                     raise NoteConflict("commit an attempt before asking for a note")

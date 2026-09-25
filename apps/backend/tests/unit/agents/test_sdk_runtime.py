@@ -18,9 +18,14 @@ from tamforge_backend.agents.compatibility import (
     ProbeError,
     ProbeQuotaExhausted,
 )
+from tamforge_backend.agents.roles.general_coach import GeneralCoachRequest, general_coach_schema
 from tamforge_backend.agents.roles.interview_follow_up import FollowUpRequest
 from tamforge_backend.agents.runtime import AgentAuthenticationFailed, AgentServiceUnavailable
-from tamforge_backend.agents.sdk_runtime import PROBE_PROMPT, AgentSdkRuntime
+from tamforge_backend.agents.sdk_runtime import (
+    GENERAL_COACH_SYSTEM_PROMPT,
+    PROBE_PROMPT,
+    AgentSdkRuntime,
+)
 from tamforge_backend.roadmaps.planner import EvidenceLine, PlannerRequest
 
 TOKEN_ENV = {"CLAUDE_CODE_OAUTH_TOKEN": "redacted-fixture-token"}
@@ -202,6 +207,26 @@ async def test_follow_up_sends_the_answer_and_returns_the_decision() -> None:
     prompt = query.calls[0]["prompt"]
     assert "Question asked: Why are you leaving?" in prompt and "- Why now?" in prompt
     assert query.calls[0]["options"].model == "claude-fable-5-1"
+
+
+@pytest.mark.anyio
+async def test_general_reply_sends_the_screen_under_the_general_prompt_and_schema() -> None:
+    turn = {"message": "Empeza por el bloque A."}
+    query = FakeQuery(
+        [SystemMessage(subtype="init", data={"model": "m"}), _result(structured_output=turn)]
+    )
+    request = GeneralCoachRequest(
+        screen="Today", summary="- block A (ready)", learner_message="que hago?"
+    )
+
+    payload = await _runtime(query).general_reply(request)
+
+    assert payload == turn
+    options = query.calls[0]["options"]
+    assert "Screen the learner is on: Today." in query.calls[0]["prompt"]
+    assert options.system_prompt == GENERAL_COACH_SYSTEM_PROMPT
+    assert options.output_format == {"type": "json_schema", "schema": general_coach_schema()}
+    assert options.model == "claude-opus-5" and options.max_turns == 4
 
 
 @pytest.mark.anyio

@@ -7,9 +7,11 @@ from tamforge_backend.agents.roles.contracts import (
     COMMITTED_ATTEMPT,
     ROLE_CONTRACTS,
     ROLES_BEFORE_COMMITMENT,
+    SCREEN_CONTEXT,
     SELF_REVIEW,
     SOURCE_MATERIAL,
     TASK_BRIEF,
+    WORKING_DRAFT,
     RoleContractError,
     contract_for,
     prepare_role_prompt,
@@ -19,13 +21,16 @@ from tamforge_backend.agents.tools.registry import AgentRole
 
 def test_the_coach_may_prepare_before_the_attempt_but_sees_only_its_context() -> None:
     contract = prepare_role_prompt(
-        AgentRole.COACH, committed=False, requested_context=(TASK_BRIEF,)
+        AgentRole.COACH, committed=False, requested_context=(TASK_BRIEF, WORKING_DRAFT)
     )
     assert contract.role is AgentRole.COACH
 
     allowed = contract_for(AgentRole.COACH).allowed_context
-    assert {TASK_BRIEF, COMMITTED_ATTEMPT, SELF_REVIEW} == set(allowed)
+    assert {TASK_BRIEF, COMMITTED_ATTEMPT, SELF_REVIEW, WORKING_DRAFT, SCREEN_CONTEXT} == set(
+        allowed
+    )
     assert SOURCE_MATERIAL not in allowed
+    assert (WORKING_DRAFT, SCREEN_CONTEXT) == ("working_draft", "screen_context")
 
 
 def test_the_five_roles_have_five_distinct_prompt_contracts() -> None:

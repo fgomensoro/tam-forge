@@ -1,24 +1,26 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
-from pathlib import Path
+from collections.abc import Iterable, Mapping
 
 import pytest
+from tamforge_backend.agents.roles import coach as coach_module
 from tamforge_backend.agents.roles.coach import (
     CoachBlock,
     CoachRequest,
     CoachService,
     CoachUnavailable,
     NoteRequest,
-    coaching_allowed,
     render_coach_prompt,
     render_note_prompt,
     validate_coach_turn,
     validate_note_draft,
 )
-from tamforge_backend.agents.roles.contracts import RoleContractError
-from tamforge_backend.evidence.config_loader import load_config_bundle
-from tamforge_backend.roadmaps.scheme import DEFAULT_AI_ROLES
+from tamforge_backend.agents.roles.contracts import (
+    WORKING_DRAFT,
+    RoleContractError,
+    RolePromptContract,
+)
+from tamforge_backend.agents.tools.registry import AgentRole
 
 BLOCK = CoachBlock(
     stable_id="p1-w01-d01-roadmap",
@@ -56,44 +58,24 @@ def _request(**overrides: object) -> CoachRequest:
     return CoachRequest(**data)  # type: ignore[arg-type]
 
 
-def test_coaching_is_allowed_only_where_the_block_says_so() -> None:
-    assert coaching_allowed(BLOCK)
-    assert coaching_allowed(CoachBlock("x", "o", "tutor", (), ()))
-    assert not coaching_allowed(CoachBlock("x", "o", "none", (), ()))
-    assert coaching_allowed(CoachBlock("x", "o", "interviewer", (), (), ("frame", "attempt_a")))
-    assert coaching_allowed(CoachBlock("x", "o", "interviewer", (), (), ("interview_cycle",)))
-    assert not coaching_allowed(CoachBlock("x", "o", "interviewer", (), (), ("sealed_final_mock",)))
-    assert not coaching_allowed(CoachBlock("x", "o", "none", (), (), ("interview_cycle",)))
-    for sealed in ("planner", "reviewer", "analyst"):
-        assert not coaching_allowed(CoachBlock("x", "o", sealed, (), ()))
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "block",
+    [
+        CoachBlock("x", "o", "planner", (), ()),
+        CoachBlock("x", "o", "analyst", (), ()),
+        CoachBlock("x", "o", "none", (), ()),
+        CoachBlock("x", "o", "interviewer", (), (), ("sealed_final_mock",)),
+    ],
+    ids=["planner", "analyst", "none", "sealed-final-mock"],
+)
+async def test_every_block_is_coached_whatever_its_ai_role(block: CoachBlock) -> None:
+    transport = FakeTransport([GOOD])
 
+    turn = await CoachService(transport, model="m").turn(_request(block=block))
 
-def test_every_interviewer_contract_is_coached_after_commit_except_the_sealed_mock() -> None:
-    # Each one forbids coaching during the attempt; only the sealed mock forbids it after.
-    config_dir = Path(__file__).parents[5] / "config"
-    phase1 = load_config_bundle(config_dir / "releases" / "phase-1-six-week-v1")
-    month = load_config_bundle(config_dir)
-    contracts = [
-        (key, phase1.roadmap_contracts[key])
-        for key in {t.contract for t in phase1.roadmap_tasks if t.allowed_ai_role == "interviewer"}
-    ] + [
-        (key, month.roadmap_contracts[key])
-        for key, role in DEFAULT_AI_ROLES.items()
-        if role == "interviewer"
-    ]
-    coached, refused = set(), set()
-    for key, contract in contracts:
-        block = CoachBlock(
-            stable_id=key,
-            objective="o",
-            allowed_ai_role="interviewer",
-            required_output=contract.required_output,
-            pass_criteria=contract.pass_criteria,
-            phases=tuple(step.phase for step in contract.procedure),
-        )
-        (coached if coaching_allowed(block) else refused).add(key)
-    assert coached == {"interview", "case", "communication"}
-    assert refused == {"sealed_interview"}
+    assert turn.next_step == NEXT
+    assert len(transport.requests) == 1
 
 
 def test_the_phase_follows_the_committed_attempt() -> None:
@@ -131,15 +113,56 @@ def test_the_prompt_after_the_commit_carries_the_attempt() -> None:
 
 
 @pytest.mark.anyio
-async def test_an_interviewer_block_is_coached_only_after_attempt_a() -> None:
+async def test_an_interviewer_block_is_coached_before_attempt_a_too() -> None:
     interviewer = CoachBlock("x", "o", "interviewer", (), (), ("frame", "attempt_a"))
-    transport = FakeTransport([GOOD])
+    transport = FakeTransport([{**GOOD, "hint_given": True}, GOOD])
     service = CoachService(transport, model="m")
-    with pytest.raises(RoleContractError, match="only after Attempt A is committed"):
-        await service.turn(_request(block=interviewer, committed_attempt=""))
-    assert transport.requests == []
+
+    before = await service.turn(_request(block=interviewer, committed_attempt=""))
     await service.turn(_request(block=interviewer))
-    assert len(transport.requests) == 1
+
+    assert before.hint_given
+    assert [request.phase for request in transport.requests] == ["before_commit", "after_commit"]
+
+
+def test_the_prompt_says_where_the_learner_is_standing_and_that_it_is_unsaved() -> None:
+    prompt = render_coach_prompt(
+        _request(
+            committed_attempt="",
+            working_step="Do it",
+            working_fields=(("audience", "CFO"),),
+        )
+    )
+    assert "step: Do it" in prompt
+    assert "\n- audience: CFO" in prompt
+    assert "unsaved" in prompt and "not evidence" in prompt
+    assert "step: unknown" in render_coach_prompt(_request(working_fields=(("a", "b"),)))
+    assert "unsaved" not in render_coach_prompt(_request())
+
+
+@pytest.mark.anyio
+async def test_the_working_draft_is_asked_of_the_contract_only_when_the_learner_sent_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requested: list[frozenset[str]] = []
+    real = coach_module.prepare_role_prompt
+
+    def spy(
+        role: AgentRole, *, committed: bool, requested_context: Iterable[str]
+    ) -> RolePromptContract:
+        requested.append(frozenset(requested_context))
+        return real(role, committed=committed, requested_context=requested_context)
+
+    monkeypatch.setattr(coach_module, "prepare_role_prompt", spy)
+    transport = FakeTransport([GOOD, GOOD, GOOD])
+    service = CoachService(transport, model="m")
+
+    await service.turn(_request())
+    await service.turn(_request(working_step="Do it"))
+    await service.turn(_request(working_fields=(("audience", "CFO"),)))
+
+    assert [WORKING_DRAFT in kinds for kinds in requested] == [False, True, True]
+    assert transport.requests[2].working_fields == (("audience", "CFO"),)
 
 
 def test_turn_validation_refuses_completion_claims_and_invented_next_steps() -> None:
@@ -187,13 +210,6 @@ async def test_one_repair_then_refusal_and_runtime_failures_are_unavailable() ->
     disabled = CoachService(None, model="m")
     with pytest.raises(CoachUnavailable):
         await disabled.turn(_request())
-
-
-@pytest.mark.anyio
-async def test_the_coach_refuses_forbidden_blocks() -> None:
-    service = CoachService(FakeTransport([GOOD]), model="m")
-    with pytest.raises(RoleContractError, match="does not allow coaching"):
-        await service.turn(_request(block=CoachBlock("s", "o", "none", (), ())))
 
 
 def test_the_prompt_carries_the_brief_the_attempt_and_repair_errors() -> None:
@@ -249,8 +265,8 @@ def test_note_validation_refuses_completion_claims_and_malformed_cards() -> None
 
 
 @pytest.mark.anyio
-async def test_the_coach_drafts_a_note_only_where_allowed_and_after_a_commit() -> None:
-    transport = FakeNoteTransport([NOTE])
+async def test_the_coach_drafts_a_note_on_any_block_but_only_after_a_commit() -> None:
+    transport = FakeNoteTransport([NOTE, NOTE])
     service = CoachService(transport, model="claude-opus-5")
 
     draft = await service.draft_note(
@@ -268,10 +284,10 @@ async def test_the_coach_drafts_a_note_only_where_allowed_and_after_a_commit() -
     assert "coach: add retries" in prompt and "- Retries use exponential backoff." in prompt
     assert "do not invent queries" in prompt
 
-    with pytest.raises(RoleContractError, match="does not allow coaching"):
-        await service.draft_note(
-            NoteRequest(block=CoachBlock("s", "o", "none", (), ()), committed_attempt="x")
-        )
+    uncoached_role = await service.draft_note(
+        NoteRequest(block=CoachBlock("s", "o", "none", (), ()), committed_attempt="x")
+    )
+    assert uncoached_role.title == NOTE["title"]
     with pytest.raises(RoleContractError, match="only after the learner commits"):
         await service.draft_note(NoteRequest(block=BLOCK, committed_attempt="  "))
     with pytest.raises(CoachUnavailable):

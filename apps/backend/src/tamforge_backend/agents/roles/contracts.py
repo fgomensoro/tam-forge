@@ -34,6 +34,11 @@ SELF_REVIEW = "self_review"
 RUBRIC = "rubric"
 EVIDENCE_SUMMARY = "evidence_summary"
 SPEECH_METRICS = "speech_metrics"
+# What the learner has in front of them and has not saved: the task-guide step and the
+# draft fields of an activity, or the screen they are on. It aims a hint; it is never
+# evidence.
+WORKING_DRAFT = "working_draft"
+SCREEN_CONTEXT = "screen_context"
 
 # The Planner plans a day before anything is committed. The Coach may speak before the
 # commit too: it asks the recall question and hands out hints, and every hint it gives
@@ -89,7 +94,7 @@ ROLE_CONTRACTS: Mapping[AgentRole, RolePromptContract] = MappingProxyType(
             AgentRole.COACH,
             "tamforge.coach",
             "urn:tamforge:schema:coach-v2",
-            (TASK_BRIEF, COMMITTED_ATTEMPT, SELF_REVIEW),
+            (TASK_BRIEF, COMMITTED_ATTEMPT, SELF_REVIEW, WORKING_DRAFT, SCREEN_CONTEXT),
         ),
         AgentRole.REVIEWER: _contract(
             AgentRole.REVIEWER,
@@ -134,10 +139,12 @@ __all__ = [
     "ROLE_CONTRACTS",
     "ROADMAP_STATE",
     "RUBRIC",
+    "SCREEN_CONTEXT",
     "SELF_REVIEW",
     "SOURCE_MATERIAL",
     "SPEECH_METRICS",
     "TASK_BRIEF",
+    "WORKING_DRAFT",
     "ContextKind",
     "RoleContractError",
     "RolePromptContract",

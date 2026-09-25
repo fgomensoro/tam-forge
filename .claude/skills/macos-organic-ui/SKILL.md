@@ -46,7 +46,7 @@ wrong size while looking like it followed the rules.
 
 From `TAMForge/Core/Design/OrganicComponents.swift`:
 
-- `.organicCard(radius:padding:shadowed:)` — surface fill and radius; pass `shadowed: true` only for the Today hero card and the Cards flashcard, the only two the handoff shadows
+- `.organicCard(radius:padding:shadowed:)` — surface fill and radius; pass `shadowed: true` only for the Today hero card, the Cards flashcard (the two the handoff shadows) and the floating Coach panel, which sits over the page content and needs the elevation to read as separate from it
 - `.organicFocusRing(_:radius:)` — 2 pt accent ring, offset 2
 - `OrganicPrimaryButtonStyle` — accent-400 fill, neutral-900 text
 - `OrganicSecondaryButtonStyle` — divider border, subtle fill
