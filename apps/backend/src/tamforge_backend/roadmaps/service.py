@@ -135,6 +135,14 @@ def _issue_payload(issue: ValidationIssue) -> dict[str, object]:
     }
 
 
+def _rejection_report(code: str, path: str | None, message: str) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "accepted": False,
+        "issues": [{"code": code, "path": path, "severity": "error", "message": message}],
+    }
+
+
 def _empty_roadmap(version: str) -> ParsedRoadmap:
     return ParsedRoadmap(
         schema_version=1,
@@ -320,11 +328,17 @@ class RoadmapService:
             raise InvalidImportRequest("Idempotency-Key is invalid")
 
         snapshot_path, package_hash = _snapshot(package, package_kind)
+        # Validate before deduplicating: a deterministic package keeps its hash
+        # across deploys, so only a fresh parse tells whether a stored import
+        # still describes what approval would now build.
+        report, failure_code, parsed = self._validate(package)
+        normalized_hash = None if parsed is None else parsed.normalized_hash
         duplicate = await self._repository.find_duplicate_import(
             owner_id=owner_id,
             source_key=source_key,
             idempotency_key=idempotency_key,
             package_hash=package_hash,
+            normalized_hash=normalized_hash,
         )
         if duplicate is not None:
             if duplicate.idempotency_key == idempotency_key and (
@@ -354,28 +368,19 @@ class RoadmapService:
             package_hash=package_hash,
             object_key=object_key,
             idempotency_key=idempotency_key,
+            normalized_hash=normalized_hash,
         )
         record = created.record
         if not created.created:
             return record
         await self._repository.begin_validation(owner_id=owner_id, import_id=record.id)
-        if package.issues:
+        if parsed is None:
+            assert failure_code is not None
             return await self._repository.reject_validation(
                 owner_id=owner_id,
                 import_id=record.id,
-                validation_report={
-                    "schema_version": 1,
-                    "accepted": False,
-                    "issues": [_issue_payload(item) for item in package.issues],
-                },
-                failure_code="invalid_package",
-            )
-        try:
-            files = {item.manifest.path: item.staged_path.read_bytes() for item in package.files}
-            parsed = parse_roadmap(files=files, config=self._config)
-        except (RoadmapParseError, UnicodeError, ValueError) as exc:
-            return await self._reject_invalid(
-                owner_id, record.id, "roadmap_validation_failed", None, str(exc)
+                validation_report=report,
+                failure_code=failure_code,
             )
         # The key becomes the version's unique key within the source; approving a
         # taken one could never succeed, so the Review step must name it now.
@@ -403,7 +408,35 @@ class RoadmapService:
         return await self._repository.finish_validation(
             owner_id=owner_id,
             import_id=record.id,
-            validation_report={
+            validation_report=report,
+            semantic_diff=semantic_diff,
+        )
+
+    def _validate(
+        self, package: InspectedRoadmapPackage
+    ) -> tuple[dict[str, object], str | None, ParsedRoadmap | None]:
+        """The validation report, the failure code and the parse, which is None on rejection."""
+        if package.issues:
+            return (
+                {
+                    "schema_version": 1,
+                    "accepted": False,
+                    "issues": [_issue_payload(item) for item in package.issues],
+                },
+                "invalid_package",
+                None,
+            )
+        try:
+            files = {item.manifest.path: item.staged_path.read_bytes() for item in package.files}
+            parsed = parse_roadmap(files=files, config=self._config)
+        except (RoadmapParseError, UnicodeError, ValueError) as exc:
+            return (
+                _rejection_report("roadmap_validation_failed", None, str(exc)),
+                "validation_failed",
+                None,
+            )
+        return (
+            {
                 "schema_version": 1,
                 "accepted": True,
                 "normalized_hash": parsed.normalized_hash,
@@ -413,7 +446,8 @@ class RoadmapService:
                 "scheme_summary": scheme_summary_from_payload(parsed.scheme),
                 "issues": [],
             },
-            semantic_diff=semantic_diff,
+            None,
+            parsed,
         )
 
     async def _reject_invalid(
@@ -422,11 +456,7 @@ class RoadmapService:
         return await self._repository.reject_validation(
             owner_id=owner_id,
             import_id=import_id,
-            validation_report={
-                "schema_version": 1,
-                "accepted": False,
-                "issues": [{"code": code, "path": path, "severity": "error", "message": message}],
-            },
+            validation_report=_rejection_report(code, path, message),
             failure_code="validation_failed",
         )
 

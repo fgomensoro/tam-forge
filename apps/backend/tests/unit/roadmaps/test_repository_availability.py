@@ -85,7 +85,11 @@ class DroppedConnectionSession:
     [
         pytest.param(
             lambda repository: repository.find_duplicate_import(
-                owner_id=1, source_key="core", idempotency_key="k", package_hash="ab" * 32
+                owner_id=1,
+                source_key="core",
+                idempotency_key="k",
+                package_hash="ab" * 32,
+                normalized_hash=None,
             ),
             id="find_duplicate_import",
         ),
@@ -98,6 +102,7 @@ class DroppedConnectionSession:
                 package_hash="ab" * 32,
                 object_key="roadmaps/1/core.zip",
                 idempotency_key="k",
+                normalized_hash=None,
             ),
             id="create_staged_import",
         ),

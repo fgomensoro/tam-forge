@@ -310,7 +310,6 @@ def test_models_name_checks_uniques_and_index_every_foreign_key() -> None:
         "roadmap_imports": {
             "pk_roadmap_imports",
             "uq_roadmap_imports_owner_idempotency",
-            "uq_roadmap_imports_source_package_hash",
             "ck_roadmap_imports_status_allowed",
             "ck_roadmap_imports_package_hash_length",
             "ck_roadmap_imports_validation_report_object",
@@ -987,7 +986,23 @@ def test_migration_compiles_upgrade_and_exact_downgrade_without_credentials() ->
             assert f"CONSTRAINT {constraint_name}" in upgrade_sql
         for index in table.indexes:
             assert index.name is not None
+            if index.name == "ix_roadmap_imports_source_id_package_hash":
+                continue
             assert index.name in upgrade_sql
+
+
+def test_import_restaging_migration_trades_the_hash_unique_for_an_index() -> None:
+    upgrade_sql = _offline_sql(
+        "upgrade", "20260923_0039_coach_assistance:20260924_0040_import_restaging"
+    )
+    downgrade_sql = _offline_sql(
+        "downgrade", "20260924_0040_import_restaging:20260923_0039_coach_assistance"
+    )
+
+    assert "DROP CONSTRAINT uq_roadmap_imports_source_package_hash" in upgrade_sql
+    assert "CREATE INDEX ix_roadmap_imports_source_id_package_hash" in upgrade_sql
+    assert "DROP INDEX ix_roadmap_imports_source_id_package_hash" in downgrade_sql
+    assert "ADD CONSTRAINT uq_roadmap_imports_source_package_hash UNIQUE" in downgrade_sql
 
 
 def test_task_reference_forward_migration_compiles_exact_shape() -> None:
@@ -1027,4 +1042,4 @@ def test_alembic_has_exactly_one_linear_head() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "20260923_0039_coach_assistance (head)"
+    assert result.stdout.strip() == "20260924_0040_import_restaging (head)"
