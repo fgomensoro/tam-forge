@@ -256,3 +256,32 @@ jobs:
           enable-cache: true
       - run: uv sync --all-packages --all-extras --frozen
       - run: uv run python scripts/ci/check_repository_policy.py
+
+  deploy:
+    # Every green run on main becomes the live release on tamforge-prod. The key in
+    # PROD_DEPLOY_KEY is bound on the host to infra/host/deploy-receive.sh and cannot
+    # open a shell; see docs/runbooks/production-release.md.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [macos-native, native-ui, backend-unit, backend-integration, e2e, openapi, secret-scan]
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the deploy key
+        env:
+          PROD_DEPLOY_KEY: ${{ secrets.PROD_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$PROD_DEPLOY_KEY" > ~/.ssh/deploy
+          chmod 0600 ~/.ssh/deploy
+          echo "46.224.232.77 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGI0M9bpJX6hPakMop0pneczCDVQQdhKDZNgdbbXOwP3" > ~/.ssh/known_hosts
+      - name: Ship this commit as a release
+        run: |
+          release="$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_SHA::7}"
+          echo "release $release"
+          git archive --format=tar HEAD \
+            | ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes -o BatchMode=yes root@46.224.232.77 "$release"
+      - name: Verify the public endpoint
+        run: curl --fail --silent --show-error --output /dev/null --write-out 'readyz %{http_code}\n' https://app.homegastos.xyz/readyz
