@@ -162,8 +162,7 @@ jobs:
           --publish 127.0.0.1:9000:9000
           --env MINIO_ROOT_USER=tamforge
           --env MINIO_ROOT_PASSWORD=tamforge-local
-          quay.io/minio/minio:RELEASE.2024-06-13T22-53-53Z
-          server /data
+          bitnamilegacy/minio:2024.6.13-debian-12-r2@sha256:aa1752895e6d2b420e394d55241d5b2c948960715db0a50bb648f430e447e645
       - name: Wait for isolated MinIO
         run: |
           for attempt in {1..30}; do
@@ -217,8 +216,7 @@ jobs:
           --publish 127.0.0.1:9000:9000
           --env MINIO_ROOT_USER=tamforge
           --env MINIO_ROOT_PASSWORD=tamforge-local
-          quay.io/minio/minio:RELEASE.2024-06-13T22-53-53Z
-          server /data
+          bitnamilegacy/minio:2024.6.13-debian-12-r2@sha256:aa1752895e6d2b420e394d55241d5b2c948960715db0a50bb648f430e447e645
       - name: Wait for isolated MinIO
         run: |
           for attempt in {1..30}; do

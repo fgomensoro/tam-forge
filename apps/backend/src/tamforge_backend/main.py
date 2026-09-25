@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .agents.sdk_runtime import AgentSdkRuntime
+from .agents.token_slots import follow_deployment_slot, installed_tokens
 from .api import register_routes
 from .config import Settings
 from .database import create_database_resources
@@ -78,6 +79,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.interview_follow_up_transport = app.state.planner_transport
             app.state.report_transport = app.state.planner_transport
             app.state.report_sender = build_report_sender(os.environ)
+            # Both slots' tokens as the process started with them; a switch to slot B later
+            # overwrites the variable slot A arrived in.
+            slot_tokens = installed_tokens(os.environ)
+
+            async def follow_token_slot() -> None:
+                await follow_deployment_slot(
+                    database.session_factory, app.state.planner_transport, slot_tokens
+                )
+
+            # A database that is not up yet leaves slot A until the first beat reads it.
+            with suppress(Exception):
+                await follow_token_slot()
 
             async def probe_ingest() -> None:
                 # Built here rather than at startup on purpose. The store is
@@ -104,6 +117,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await report_worker_heartbeats(
                     app.state.operational_health, heartbeat_store, now=utc_now()
                 )
+                # The owner's slot switch reaches the API's one runtime on this beat, as it
+                # reaches the Claude worker on its own.
+                await follow_token_slot()
 
             worker_reader = asyncio.create_task(
                 run_probe_loop(read_worker_heartbeats, interval_seconds=HEARTBEAT_INTERVAL_SECONDS)
