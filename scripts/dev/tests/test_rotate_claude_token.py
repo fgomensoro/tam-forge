@@ -25,20 +25,29 @@ def fake_ssh(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:
         encoding="utf-8",
     )
     ssh.chmod(0o700)
+    # The script reads the token from the macOS clipboard; stand one in as a file.
+    clipboard = tmp_path / "clipboard"
+    (bin_dir / "pbpaste").write_text('#!/bin/bash\ncat "$FAKE_CLIPBOARD"\n', encoding="utf-8")
+    (bin_dir / "pbcopy").write_text('#!/bin/bash\ncat > "$FAKE_CLIPBOARD"\n', encoding="utf-8")
+    (bin_dir / "pbpaste").chmod(0o700)
+    (bin_dir / "pbcopy").chmod(0o700)
     env = {
         **os.environ,
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
         "FAKE_SSH_ARGV": str(argv_log),
         "FAKE_SSH_STDIN": str(stdin_log),
         "TAMFORGE_SKIP_SETUP_TOKEN": "1",
+        "FAKE_CLIPBOARD": str(clipboard),
     }
     return env, argv_log, stdin_log
 
 
-def run(env: dict[str, str], token: str, *args: str) -> subprocess.CompletedProcess[str]:
+def run(env: dict[str, str], copied: str, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run the script with `copied` on the clipboard; the operator only presses Enter."""
+    Path(env["FAKE_CLIPBOARD"]).write_text(copied, encoding="utf-8")
     return subprocess.run(
         ["bash", str(SCRIPT), *args],
-        input=f"{token}\n",
+        input="\n",
         env=env,
         capture_output=True,
         text=True,
@@ -200,20 +209,14 @@ def test_the_host_script_skips_the_heartbeat_wait_for_the_inactive_slot(
     assert "select clock_timestamp()" not in log.read_text()
 
 
-def test_a_token_pasted_from_wrapped_lines_arrives_whole(
+def test_a_token_copied_from_wrapped_lines_arrives_whole(
     fake_ssh: tuple[dict[str, str], Path, Path],
 ) -> None:
-    """`claude setup-token` hard-wraps the token, so a copy of it carries line breaks."""
+    """`claude setup-token` hard-wraps the token, so a copy of it carries a line break."""
     env, _, stdin_log = fake_ssh
     head, tail = TOKEN[:12], TOKEN[12:]
-    # Each line may be pasted on its own, so only the empty line ends the token.
-    result = subprocess.run(
-        ["bash", str(SCRIPT), "b"],
-        input=f"{head}\n {tail}\n\nnot-part-of-the-token\n",
-        env=env,
-        capture_output=True,
-        text=True,
-    )
+    result = run(env, f" {head}\n {tail}\n", "b")
     assert result.returncode == 0, result.stderr
     assert stdin_log.read_text() == f"CLAUDE_CODE_OAUTH_TOKEN_B={TOKEN}\n"
     assert tail not in result.stdout + result.stderr
+    assert Path(env["FAKE_CLIPBOARD"]).read_text() == ""

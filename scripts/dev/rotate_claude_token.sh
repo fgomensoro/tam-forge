@@ -34,13 +34,14 @@ if [ "${TAMFORGE_SKIP_SETUP_TOKEN:-0}" != "1" ]; then
   fi
 fi
 
-printf 'Paste the whole token, both lines if it wraps, then press Enter on an empty line (input is hidden): ' >&2
-# `claude setup-token` hard-wraps the token, and its lines may arrive in separate pastes,
-# so the token ends at the first empty line rather than the first line break.
-token=""
-while IFS= read -rs line && [ -n "${line//[[:space:]]/}" ]; do token+="$line"; done
+printf 'Copy the token printed above (all of it, line breaks are fine), then press Enter here. ' >&2
+IFS= read -rs _
 printf '\n' >&2
-token="${token//[[:space:]]/}"
+# Read from the clipboard instead of the terminal: `claude setup-token` wraps the token over
+# lines, and pasting wrapped lines into a hidden prompt cut it short. Every space and line
+# break is stripped, and the clipboard is emptied so the token does not linger there.
+token="$(pbpaste | tr -d '[:space:]')"
+pbcopy < /dev/null
 case "$token" in
   sk-ant-oat*) ;;
   *)
