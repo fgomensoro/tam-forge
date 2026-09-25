@@ -538,6 +538,7 @@ class SqlAlchemyTodayRepository:
                         .distinct()
                     )
                 ).all()
+                if activity_id is not None
             }
         notes: dict[int, int] = {}
         if activity_ids:
