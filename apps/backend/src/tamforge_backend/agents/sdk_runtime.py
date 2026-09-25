@@ -41,6 +41,7 @@ from .runtime import (
     AgentServiceUnavailable,
 )
 from .settings import FORBIDDEN_CREDENTIAL_VARS, SUBSCRIPTION_TOKEN_VAR, WORKER_TELEMETRY_OPT_OUTS
+from .token_slots import TokenSlot, install_slot_token
 
 SDK_DISTRIBUTION = "claude-agent-sdk"
 PROBE_SCHEMA: Mapping[str, object] = {
@@ -419,6 +420,10 @@ class AgentSdkRuntime:
             if self._environ.get(SUBSCRIPTION_TOKEN_VAR, "").strip()
             else "none"
         )
+
+    def use_slot(self, slot: TokenSlot, tokens: Mapping[TokenSlot, str]) -> None:
+        """Point later calls at the chosen slot's token; the API's one runtime outlives a switch."""
+        install_slot_token(slot, tokens=tokens, environ=self._environ)
 
     def _worker_environment(self) -> dict[str, str]:
         token = self._environ.get(SUBSCRIPTION_TOKEN_VAR, "").strip()
