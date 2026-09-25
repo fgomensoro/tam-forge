@@ -65,4 +65,5 @@ fi
 log "readyz 200, current is $(readlink -f "$current")"
 
 # Keep the last five releases, never the live one, so a rollback always has a target.
-ls -1d "$root"/releases/*/ | sort | head -n -5 | grep -vx "$(readlink -f "$current")/" | xargs -r rm -rf
+# grep exits 1 when nothing is left to prune; that is not a failed release.
+ls -1d "$root"/releases/*/ | sort | head -n -5 | { grep -vx "$(readlink -f "$current")/" || true; } | xargs -r rm -rf
