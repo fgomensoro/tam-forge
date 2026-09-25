@@ -36,14 +36,17 @@ not this rule.
 
 Install the token as a root-owned service credential: a file the backend's own
 service account can read, that the interactive login the operator deploys with
-cannot write to and that a stray `git add` cannot pick up. Restrict its permissions
-to that one reader. The production host has two slots, one per subscription. Slot A is
-`/etc/tamforge/secrets/claude-oauth.env`, holding the single line
-`CLAUDE_CODE_OAUTH_TOKEN=<token>`; slot B is `/etc/tamforge/secrets/claude-oauth-b.env`,
-holding `CLAUDE_CODE_OAUTH_TOKEN_B=<token>`. Both are mode 0640, owned by
-`root:tamforge-claude`, and the Claude worker's unit loads both through `EnvironmentFile`.
-The database stores only which slot is active (`claude_token_slots`, "a" or "b"), and the
-worker applies that choice on every beat. TAM Forge's own repository and database store no
+cannot write to and that a stray `git add` cannot pick up. The production host has two
+slots, one per subscription. Slot A is `/etc/tamforge/secrets/claude-oauth.env`, holding
+the single line `CLAUDE_CODE_OAUTH_TOKEN=<token>`; slot B is
+`/etc/tamforge/secrets/claude-oauth-b.env`, holding `CLAUDE_CODE_OAUTH_TOKEN_B=<token>`.
+Both are mode 0640, owned by `root:tamforge-claude`. Two units load both through
+`EnvironmentFile`, which systemd reads as root before dropping privileges: the Claude
+worker, for queued jobs, and the API, because the coach, note drafts, roadmap generation
+and reforecast, and interview follow-ups call Claude inside the request. No other unit
+loads them. The database stores only which slot is active (`claude_token_slots`, "a" or
+"b"); the worker applies that choice on every beat and the API on its own 20-second
+heartbeat. TAM Forge's own repository and database store no
 token and no copy of one; the attestation this procedure produces records that the operator
 looked at the policy, never the secret that lets Claude run.
 
@@ -58,22 +61,23 @@ repository on the operator's Mac. It runs
 `claude setup-token`, asks for the resulting token with input hidden, and installs it
 over a single ssh session to the production host (`TAMFORGE_HOST`, default
 `hetzner-server-2`): the new file replaces the old one atomically with the ownership and
-mode above, then `tamforge-claude-worker` restarts. The script then waits, up to 15
-minutes by default (`TAMFORGE_ROTATE_WAIT_SECONDS`), for the first heartbeat of the new
-worker process, and exits non-zero unless it reports ready. The wait can be long on
-success: the worker beats only after a whole step, and with a working token that step
-first runs the Claude jobs queued while it was down. A refused token reports within
-seconds. When the rotated slot is not the active one, the script restarts the worker and
-returns without waiting, because the heartbeat reports the active slot only; switch to the
-new slot in Settings > Claude. The token travels only on ssh's standard input and never appears in a command
-line or a local file; `claude setup-token` itself prints it once, so clear the terminal
+mode above, then `tamforge-claude-worker` and `tamforge-api` restart so neither keeps
+the old token. The script then waits, up to 15 minutes by default
+(`TAMFORGE_ROTATE_WAIT_SECONDS`), for the first heartbeat of the new worker process, and
+exits non-zero unless it reports ready. The wait can be long on success: the worker beats
+only after a whole step, and with a working token that step first runs the Claude jobs
+queued while it was down. A refused token reports within seconds. When the rotated slot is
+not the active one, the script restarts both services and returns without waiting, because
+the heartbeat reports the active slot only; switch to the new slot in Settings > Claude.
+The token travels only on ssh's standard input and never appears in a command line or a
+local file; `claude setup-token` itself prints it once, so clear the terminal
 afterwards.
 
 The Mac app's Settings window (Cmd+,) has a Claude pane that shows the active slot's worker
 status, a Slot A / Slot B switch and the rotation command for the chosen slot. Switching
 sends only the slot name to `PUT /ops/claude/slot`; the worker picks it up on its next beat
-and probes the new token. When one subscription runs out of quota, switch to the other slot
-there. The app never sees a token, and no TAM Forge endpoint accepts one.
+and probes the new token, and the API within 20 seconds. When one subscription runs out of
+quota, switch to the other slot there. The app never sees a token, and no TAM Forge endpoint accepts one.
 
 ## Confirming the policy
 
@@ -192,6 +196,11 @@ It then requires a current attestation and the subscription credential itself. A
 missing credential is a refusal, never a fallback, because a fallback is exactly what
 must not exist here. Every rejection names the variable and never its value, and the
 token is a `SecretStr` that stays redacted in reprs, dumps and JSON.
+
+The API never goes through `for_worker`, so `AgentSdkRuntime` repeats the check before
+every run, in the API and in the worker alike: the CLI starts only when the subscription
+token is present and none of `FORBIDDEN_CREDENTIAL_VARS` is. Anything else fails as a
+refused credential. There is no path to Claude through an API key.
 
 The worker process receives only what `worker_environment()` returns: the subscription
 token plus the telemetry opt-outs. Nonessential traffic, error reporting and the bug

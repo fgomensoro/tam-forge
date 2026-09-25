@@ -55,7 +55,7 @@ def test_the_token_travels_only_on_ssh_stdin(fake_ssh: tuple[dict[str, str], Pat
     assert "ready" in result.stdout
 
 
-def test_the_host_side_installs_the_file_atomically_and_restarts_the_worker(
+def test_the_host_side_installs_the_file_atomically_and_restarts_every_reader(
     fake_ssh: tuple[dict[str, str], Path, Path],
 ) -> None:
     env, argv_log, _ = fake_ssh
@@ -67,7 +67,7 @@ def test_the_host_side_installs_the_file_atomically_and_restarts_the_worker(
         "chown root:tamforge-claude /etc/tamforge/secrets/claude-oauth.env.new",
         "chmod 0640 /etc/tamforge/secrets/claude-oauth.env.new",
         "mv -f /etc/tamforge/secrets/claude-oauth.env.new /etc/tamforge/secrets/claude-oauth.env",
-        "systemctl restart tamforge-claude-worker",
+        "systemctl restart tamforge-claude-worker tamforge-api",
         "worker_heartbeats",
     ):
         assert fragment in remote
@@ -171,7 +171,7 @@ def test_the_host_script_installs_0640_before_the_restart_and_reads_only_newer_b
     assert oct(target.stat().st_mode & 0o777) == "0o640"
     assert log.read_text().splitlines() == [
         "-rw-------",
-        "restart tamforge-claude-worker",
+        "restart tamforge-claude-worker tamforge-api",
         "claude-oauth.env",
         "select coalesce((select slot from claude_token_slots"
         " where owner_id = (select min(id) from owners)), 'a')",

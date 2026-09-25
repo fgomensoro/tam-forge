@@ -14,6 +14,11 @@ Group=tamforge
 WorkingDirectory=/opt/tamforge/current
 ExecStart=/opt/tamforge/current/.venv/bin/uvicorn tamforge_backend.main:app --host 127.0.0.1 --port 8000
 EnvironmentFile=/etc/tamforge/api.env
+# The subscription tokens, one file per slot. The coach, note drafts, roadmap planning and
+# interview follow-ups run Claude inside the request, with the slot the database says is
+# active; replaced by `make rotate-claude-token SLOT=a|b`.
+EnvironmentFile=-/etc/tamforge/secrets/claude-oauth.env
+EnvironmentFile=-/etc/tamforge/secrets/claude-oauth-b.env
 # ProtectHome makes /home unreadable, and asyncpg probes ~/.postgresql before every
 # connection; a readable HOME keeps that probe a clean miss.
 Environment=HOME=%S/tamforge/api
