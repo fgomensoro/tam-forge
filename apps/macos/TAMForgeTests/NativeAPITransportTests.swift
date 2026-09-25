@@ -4,6 +4,14 @@ import OpenAPIRuntime
 import XCTest
 
 final class NativeAPITransportTests: XCTestCase {
+    func testClaudeTimeoutsOutlastTheServerBoundOnACoachTurn() {
+        // The server stops a coach turn or note draft at 120 s and saves what it produced;
+        // a client that gives up first reports "could not be reached" for a saved answer.
+        let serverBound: TimeInterval = 120
+        XCTAssertGreaterThan(TimeoutPolicy.claude.request, serverBound)
+        XCTAssertGreaterThan(TimeoutPolicy.claude.resource, TimeoutPolicy.claude.request)
+    }
+
     func testIndeterminateAuthenticationExpiresWithoutSendingAnonymousRequest() async throws {
         let fixture = URLProtocolFixture()
         let recorder = DiagnosticRecorder()
