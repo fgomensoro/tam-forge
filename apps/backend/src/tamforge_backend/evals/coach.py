@@ -25,7 +25,7 @@ from ..agents.roles.coach import (
 )
 from ..agents.roles.contracts import RoleContractError
 
-COACH_EVALUATOR_VERSION: Final = "coach-refusals-v1"
+COACH_EVALUATOR_VERSION: Final = "coach-refusals-v2"
 Outcome = Literal["refused_by_contract", "refused_by_validator", "accepted"]
 OUTCOMES: Final[frozenset[str]] = frozenset(
     {"refused_by_contract", "refused_by_validator", "accepted"}
@@ -100,6 +100,7 @@ def load_coach_cases(path: Path) -> tuple[str, str, tuple[CoachCase, ...]]:
                     allowed_ai_role=str(block["allowed_ai_role"]),
                     required_output=tuple(block["required_output"]),
                     pass_criteria=tuple(block["pass_criteria"]),
+                    phases=tuple(str(p) for p in block.get("phases", ())),
                 ),
                 committed_attempt=str(raw["committed_attempt"]),
                 learner_message=str(raw["learner_message"]),

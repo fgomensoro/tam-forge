@@ -17,9 +17,11 @@ from tamforge_backend.agents.roles.contracts import (
 from tamforge_backend.agents.tools.registry import AgentRole
 
 
-def test_the_coach_waits_for_the_attempt_and_the_self_review() -> None:
-    with pytest.raises(RoleContractError, match="commits"):
-        prepare_role_prompt(AgentRole.COACH, committed=False, requested_context=())
+def test_the_coach_may_prepare_before_the_attempt_but_sees_only_its_context() -> None:
+    contract = prepare_role_prompt(
+        AgentRole.COACH, committed=False, requested_context=(TASK_BRIEF,)
+    )
+    assert contract.role is AgentRole.COACH
 
     allowed = contract_for(AgentRole.COACH).allowed_context
     assert {TASK_BRIEF, COMMITTED_ATTEMPT, SELF_REVIEW} == set(allowed)
@@ -43,12 +45,9 @@ def test_the_five_roles_have_five_distinct_prompt_contracts() -> None:
         assert len(set(values)) == len(values)
 
 
-@pytest.mark.parametrize(
-    "role",
-    [AgentRole.TUTOR, AgentRole.COACH, AgentRole.REVIEWER, AgentRole.ANALYST],
-)
-def test_no_role_but_the_planner_speaks_before_commitment(role: AgentRole) -> None:
-    assert ROLES_BEFORE_COMMITMENT == frozenset({AgentRole.PLANNER})
+@pytest.mark.parametrize("role", [AgentRole.TUTOR, AgentRole.REVIEWER, AgentRole.ANALYST])
+def test_only_the_planner_and_the_coach_speak_before_commitment(role: AgentRole) -> None:
+    assert ROLES_BEFORE_COMMITMENT == frozenset({AgentRole.PLANNER, AgentRole.COACH})
     with pytest.raises(RoleContractError, match="commits"):
         prepare_role_prompt(role, committed=False, requested_context=())
 

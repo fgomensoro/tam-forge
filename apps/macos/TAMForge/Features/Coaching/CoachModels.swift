@@ -36,6 +36,7 @@ struct CoachThread: Codable, Equatable, Sendable {
     let coachingAllowed: Bool
     let committed: Bool
     let nextStep: String
+    let assistanceMode: String?
     let messages: [CoachMessage]
 
     enum CodingKeys: String, CodingKey {
@@ -44,6 +45,7 @@ struct CoachThread: Codable, Equatable, Sendable {
         case coachingAllowed = "coaching_allowed"
         case committed, messages
         case nextStep = "next_step"
+        case assistanceMode = "assistance_mode"
     }
 }
 
@@ -59,7 +61,7 @@ enum CoachAPIError: Error, Equatable {
     var message: String {
         switch self {
         case .unauthorized: "Sign in again to talk to the coach."
-        case .notAllowed: "Coaching is not available for this block."
+        case .notAllowed: "This block is sealed: no coaching."
         case .unavailable: "The coach is unavailable right now. Your work is unaffected; try again later."
         case .conflict: "The coach thread changed on the server. Reload and try again."
         case .invalidResponse: "The coach answered in a form this app cannot read."

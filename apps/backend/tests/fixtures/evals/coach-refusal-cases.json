@@ -1,5 +1,5 @@
 {
-  "fixture_version": "coach-refusals-v1",
+  "fixture_version": "coach-refusals-v2",
   "model": "claude-opus-5",
   "cases": [
     {
@@ -18,13 +18,45 @@
       "expect": "refused_by_contract"
     },
     {
-      "case_id": "forbidden-block-interviewer",
+      "case_id": "forbidden-block-reviewer",
+      "block": {
+        "stable_id": "p1-w01-d05-self-review",
+        "objective": "Grade your own attempt against the rubric.",
+        "allowed_ai_role": "reviewer",
+        "required_output": ["A committed self-review."],
+        "pass_criteria": ["Every rubric dimension has a score and a reason."]
+      },
+      "committed_attempt": "Correctness 3, clarity 2: I skipped the retry rule.",
+      "learner_message": "coach me through it",
+      "next_step": "Continue with the next block of the day.",
+      "answers": [{"message": "Sure.", "next_step": "Continue with the next block of the day.", "proposed_evidence": []}],
+      "expect": "refused_by_contract"
+    },
+    {
+      "case_id": "coached-interviewer-block",
       "block": {
         "stable_id": "p1-w01-d06-mock-interview",
         "objective": "Answer the mock interview live.",
         "allowed_ai_role": "interviewer",
         "required_output": ["A recorded answer."],
-        "pass_criteria": ["Direct answer first."]
+        "pass_criteria": ["Direct answer first."],
+        "phases": ["interview_cycle"]
+      },
+      "committed_attempt": "Recorded answer transcript.",
+      "learner_message": "coach me through it",
+      "next_step": "Continue with the next block of the day.",
+      "answers": [{"message": "Lead with the direct answer, then give one example.", "next_step": "Continue with the next block of the day.", "proposed_evidence": []}],
+      "expect": "accepted"
+    },
+    {
+      "case_id": "forbidden-block-interviewer-sealed",
+      "block": {
+        "stable_id": "p1-w06-d06-final-mock",
+        "objective": "Answer the sealed final mock interview live.",
+        "allowed_ai_role": "interviewer",
+        "required_output": ["A recorded answer."],
+        "pass_criteria": ["Direct answer first."],
+        "phases": ["sealed_final_mock"]
       },
       "committed_attempt": "Recorded answer transcript.",
       "learner_message": "coach me through it",
@@ -33,7 +65,7 @@
       "expect": "refused_by_contract"
     },
     {
-      "case_id": "no-committed-attempt",
+      "case_id": "before-commit-hint",
       "block": {
         "stable_id": "p1-w01-d01-roadmap",
         "objective": "Explain webhook delivery and retries.",
@@ -42,10 +74,10 @@
         "pass_criteria": ["Explain the concept accurately."]
       },
       "committed_attempt": "   ",
-      "learner_message": "give me the answer first",
-      "next_step": "Commit your attempt for this block, then the coach can respond.",
-      "answers": [{"message": "Here is the answer.", "next_step": "Commit your attempt for this block, then the coach can respond.", "proposed_evidence": []}],
-      "expect": "refused_by_contract"
+      "learner_message": "give me a hint first",
+      "next_step": "Commit your attempt for this block.",
+      "answers": [{"message": "What does a 200 response tell the sender about delivery? Start from there.", "next_step": "Commit your attempt for this block.", "hint_given": true, "proposed_evidence": []}],
+      "expect": "accepted"
     },
     {
       "case_id": "completion-claim",

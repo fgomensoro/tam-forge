@@ -1,8 +1,8 @@
 import Foundation
 
-/// Drives the coach panel for one activity. The thread is loaded only when the
-/// learner opens the panel, so an activity that never asks the coach never
-/// touches the coaching endpoints.
+/// Drives the coach panel for one activity, before and after the commit. The
+/// thread is loaded only when the learner opens the panel, so an activity that
+/// never asks the coach never touches the coaching endpoints.
 @MainActor
 final class CoachThreadModel: ObservableObject {
     @Published private(set) var thread: CoachThread?
@@ -20,7 +20,7 @@ final class CoachThreadModel: ObservableObject {
     }
 
     var canSend: Bool {
-        guard let thread, thread.coachingAllowed, thread.committed, !isBusy else { return false }
+        guard let thread, thread.coachingAllowed, !isBusy else { return false }
         return !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
@@ -60,7 +60,7 @@ final class CoachThreadModel: ObservableObject {
                 // The server refused the block; show that as a state, not an alert.
                 thread = CoachThread(
                     activityID: activityID, threadID: nil, coachingAllowed: false,
-                    committed: true, nextStep: "", messages: []
+                    committed: true, nextStep: "", assistanceMode: nil, messages: []
                 )
             } else if error != .cancelled {
                 errorMessage = error.message

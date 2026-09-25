@@ -251,6 +251,9 @@
 		D50000000000000000000020 /* TodayTaskStatusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000B /* TodayTaskStatusTests.swift */; };
 		D5000000000000000000001E /* TodayTaskStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000A /* TodayTaskStatus.swift */; };
 		D5000000000000000000001F /* TodayTaskStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000A /* TodayTaskStatus.swift */; };
+		FE00000000000000000001AE /* TaskGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000000010A /* TaskGuide.swift */; };
+		FE00000000000000000001AF /* TaskGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000000010A /* TaskGuide.swift */; };
+		FE00000000000000000001B0 /* TaskGuideTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000000000000000000010B /* TaskGuideTests.swift */; };
 		D50000000000000000000032 /* OrganicSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000C /* OrganicSidebar.swift */; };
 		D50000000000000000000033 /* OrganicSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000C /* OrganicSidebar.swift */; };
 		D50000000000000000000034 /* OrganicToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5000000000000000000000D /* OrganicToolbar.swift */; };
@@ -436,6 +439,8 @@
 		FB6000000000000000001009 /* ClaudeSettingsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeSettingsModelTests.swift; sourceTree = "<group>"; };
 		D5000000000000000000000A /* TodayTaskStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayTaskStatus.swift; sourceTree = "<group>"; };
 		D5000000000000000000000B /* TodayTaskStatusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayTaskStatusTests.swift; sourceTree = "<group>"; };
+		FE000000000000000000010A /* TaskGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskGuide.swift; sourceTree = "<group>"; };
+		FE000000000000000000010B /* TaskGuideTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskGuideTests.swift; sourceTree = "<group>"; };
 		D5000000000000000000000C /* OrganicSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganicSidebar.swift; sourceTree = "<group>"; };
 		D5000000000000000000000D /* OrganicToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganicToolbar.swift; sourceTree = "<group>"; };
 		D5000000000000000000000E /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
@@ -544,6 +549,7 @@
 				E20000000000000000000078 /* ActivityWorkspaceTests.swift */,
 				D50000000000000000000002 /* OrganicDesignTests.swift */,
 				D5000000000000000000000B /* TodayTaskStatusTests.swift */,
+				FE000000000000000000010B /* TaskGuideTests.swift */,
 			);
 			path = TAMForgeTests;
 			sourceTree = "<group>";
@@ -772,6 +778,7 @@
 				E2000000000000000000006E /* LiveActivityAPI.swift */,
 				E2000000000000000000006F /* ActivityWorkspaceModel.swift */,
 				E20000000000000000000070 /* ActivityWorkspaceView.swift */,
+				FE000000000000000000010A /* TaskGuide.swift */,
 			);
 			path = Activities;
 			sourceTree = "<group>";
@@ -1124,6 +1131,7 @@
 				D50000000000000000000F02 /* OrganicStyles.swift in Sources */,
 				D5000000000000000000001C /* OrganicWindow.swift in Sources */,
 				D5000000000000000000001E /* TodayTaskStatus.swift in Sources */,
+				FE00000000000000000001AE /* TaskGuide.swift in Sources */,
 				D50000000000000000000032 /* OrganicSidebar.swift in Sources */,
 				D50000000000000000000034 /* OrganicToolbar.swift in Sources */,
 				D50000000000000000000036 /* SignInView.swift in Sources */,
@@ -1264,6 +1272,8 @@
 				D5000000000000000000001D /* OrganicWindow.swift in Sources */,
 				D5000000000000000000001F /* TodayTaskStatus.swift in Sources */,
 				D50000000000000000000020 /* TodayTaskStatusTests.swift in Sources */,
+				FE00000000000000000001AF /* TaskGuide.swift in Sources */,
+				FE00000000000000000001B0 /* TaskGuideTests.swift in Sources */,
 				D50000000000000000000033 /* OrganicSidebar.swift in Sources */,
 				D50000000000000000000035 /* OrganicToolbar.swift in Sources */,
 				D50000000000000000000037 /* SignInView.swift in Sources */,

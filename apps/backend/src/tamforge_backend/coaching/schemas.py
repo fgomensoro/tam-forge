@@ -32,6 +32,7 @@ class CoachThreadResponse(StrictModel):
     thread_id: int | None
     coaching_allowed: bool
     committed: bool
+    assistance_mode: Literal["none", "coach_preparation", "hint_ladder"]
     next_step: str
     messages: list[CoachMessageResponse]
 
