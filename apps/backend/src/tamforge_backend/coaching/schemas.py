@@ -68,6 +68,25 @@ class CoachMessageCommand(StrictModel):
     context: CoachWorkingContext = Field(default_factory=CoachWorkingContext)
 
 
+class GeneralCoachContext(StrictModel):
+    """The screen the learner is on and what the app says it shows; never stored."""
+
+    screen: Annotated[str, Field(min_length=1, max_length=64)]
+    summary: Annotated[str, Field(max_length=4000)] = ""
+
+
+class GeneralCoachMessageCommand(StrictModel):
+    text: Annotated[str, Field(min_length=1, max_length=8192)]
+    context: GeneralCoachContext
+
+
+class GeneralCoachThreadResponse(StrictModel):
+    """The owner's general thread: no activity, no next step, no evidence to accept."""
+
+    thread_id: int | None
+    messages: list[CoachMessageResponse]
+
+
 class AcceptEvidenceCommand(StrictModel):
     """Accept one proposal. A card may be edited on the way in; blank fields keep the proposal."""
 
@@ -85,4 +104,7 @@ __all__ = [
     "CoachMessageResponse",
     "CoachThreadResponse",
     "CoachWorkingContext",
+    "GeneralCoachContext",
+    "GeneralCoachMessageCommand",
+    "GeneralCoachThreadResponse",
 ]

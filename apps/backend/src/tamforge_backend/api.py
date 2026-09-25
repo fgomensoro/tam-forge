@@ -20,6 +20,7 @@ from .classes.routes import classes_exception_handler
 from .classes.routes import router as classes_router
 from .classes.service import ClassesError
 from .coaching.routes import coaching_exception_handler
+from .coaching.routes import general_router as general_coach_router
 from .coaching.routes import router as coaching_router
 from .coaching.service import CoachingError
 from .coverage_ledger.routes import coverage_exception_handler
@@ -79,6 +80,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(auth_router)
     app.include_router(activity_router)
     app.include_router(coaching_router)
+    app.include_router(general_coach_router)
     app.include_router(notes_router)
     app.include_router(interviews_router)
     app.include_router(reference_router)
