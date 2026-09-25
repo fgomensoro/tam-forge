@@ -58,7 +58,9 @@ turning into an unplanned outage of the one feature that depends on it.
 
 Run `make rotate-claude-token SLOT=a` (or `SLOT=b`; the default is `a`) from the
 repository on the operator's Mac. It runs
-`claude setup-token`, asks for the resulting token with input hidden, and installs it
+`claude setup-token`, then waits for Enter and reads the token from the clipboard (copy it
+from the terminal, line breaks and all; spaces and line breaks are stripped and the
+clipboard is emptied afterwards), and installs it
 over a single ssh session to the production host (`TAMFORGE_HOST`, default
 `hetzner-server-2`): the new file replaces the old one atomically with the ownership and
 mode above, then `tamforge-claude-worker` and `tamforge-api` restart so neither keeps
